@@ -75,6 +75,18 @@ posts on a timer.
   official launcher, an official banner notice, or your edits in `config/overrides.json`), the
   **same message is edited silently**, with no second ping and no duplicate post.
 
+**Maintenance times before the official notice (estimates).** The maintenance notice usually
+arrives days after the Special Program, so until then the card can only show `TBA`. Since
+**1.2.0** the bot fills those gaps from community countdown sites
+(`{game}-countdown.gengamer.in`, `gachacountdown.online`):
+
+- an estimate is used **only** for a time that no official source has given yet, and it is
+  replaced automatically the moment the official notice is seen (the same silent edit);
+- the card says so: `🕒 maintenance start, maintenance end estimated from Gacha Countdown — the
+  official notice replaces it automatically`, and the run summary carries the same line;
+- `COUNTDOWN_ESTIMATES=0` switches it off, and a countdown site is only asked for a game that
+  is actually missing a time (no request is wasted on a version that is already out).
+
 ### 2. Redemption code card: posted once per code (also Components V2)
 
 Each game posts to **its own codes channel** (`DISCORD_WEBHOOK_CODES_GENSHIN`, `…_STARRAIL`,
@@ -94,7 +106,7 @@ Each game posts to **its own codes channel** (`DISCORD_WEBHOOK_CODES_GENSHIN`, `
 │ [ 🎁 VESNAONPATROL ] [ 🎁 EPIC2026 ]                    ← one Redeem button per code, INSIDE the card
 │ ※ Tap a code to open the official redemption page with it filled in, or redeem in-game: …
 │ ─────────────
-│ [ Redeem Page ] [ Youtube ] [ Twitch ]
+│ [ <a:starward11> Citlali News ]                       ← community row, its own row (COMMUNITY_BUTTONS)
 │ -# Source: PromoGacha, hoyo-codes.seria.moe (verified) • Codes expire — redeem soon.
 └─────────────────────────────────────────────────────────────
 ```
@@ -212,6 +224,8 @@ any name below works without editing YAML.
 | `EMOJI_YOUTUBE` / `EMOJI_TWITCH` | your animated emojis | format `a:name:id` (animated), `name:id`, a unicode emoji, or `none` |
 | `EMOJI_SOURCE` / `EMOJI_REDEEM` | — / 🎁 | emojis for the Source and Redeem buttons |
 | `EXTRA_BUTTONS` | — | JSON list (max 3) of extra buttons on every card, e.g. a community invite |
+| `COMMUNITY_BUTTONS` | `[{"label":"Citlali News","url":"https://discord.gg/HyrVP9wRXu","emoji":"a:starward11:1439878792653832253"}]` | the bottom row of a **codes** card (`none` = no row). Youtube / Twitch / Redeem Page are not shown there — they belong to the livestream card |
+| `COUNTDOWN_ESTIMATES` | on | `0` = never fill program / maintenance times from countdown sites |
 | `ENABLED_FEATURES` | `schedule,codes` | `schedule` · `codes` · `none` (paused / cold standby) |
 | `GAMES` | all enabled | allow-list, e.g. `genshin,starrail` |
 | `ENABLE_GAMES` | — | switch prepared games on, e.g. `hna` or `hna,ananta` |
@@ -444,7 +458,7 @@ should see in Discord, and how to tell that the whole thing is working.
   dry run, live cards to a test channel, or everything at once (see
   [Manual controls](#-manual-controls)).
 - **CI** (`.github/workflows/ci.yml`) runs on every PR and every push to `main`: install,
-  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **55 offline tests
+  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **60 offline tests
   with no network and no secrets**:
   - real official posts captured on 2026-09-25, which must reproduce your reference cards'
     timestamps;
@@ -558,6 +572,17 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 ---
 
 ## 🗒 Changelog
+
+### 1.2.0 — 2026-09-25 · card buttons and maintenance estimates
+- **Codes card buttons cleaned up.** `Redeem Page`, `Youtube` and `Twitch` are gone from codes
+  cards — the livestream buttons belong to the Special Program / Special Broadcast card, and
+  `Redeem Page` was redundant next to one prefilled Redeem button per code.
+- **New community row** after a separator: `Citlali News` → `https://discord.gg/HyrVP9wRXu` with
+  the animated `starward11` emoji (`COMMUNITY_BUTTONS`, max 3, `none` = off).
+- **Maintenance times are estimated when the official notice hasn't arrived yet** (countdown
+  sites, lowest priority, marked with a 🕒 line on the card, replaced automatically).
+- Time parsing understands named zones such as `8:00 AM EDT`.
+- Docs: `docs/SOURCES.md` lists every countdown source; **60 offline tests**.
 
 ### 1.1.1 — 2026-09-25 · fixes from the first live runs
 - **Expired codes are no longer mistaken for new ones.** The first live dry run showed 3 HSR +

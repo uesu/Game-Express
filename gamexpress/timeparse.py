@@ -30,8 +30,18 @@ MONTHS = {
 }
 
 _TIME = r"(?P<h>\d{1,2})[:：](?P<mi>\d{2})(?::(?P<s>\d{2}))?\s*(?P<ampm>[AaPp]\.?\s?[Mm]\.?)?"
+# Named zones: countdown sites write "8:00 AM EDT" instead of "(UTC-4)". US zones use the
+# fixed offset of the abbreviation — good enough for an estimate; official posts that carry a
+# real offset keep winning through schedule.PRIORITY. Ambiguous ones (CST, IST) are left out.
+ZONES = {
+    "EDT": -4, "EST": -5, "CDT": -5, "MDT": -6, "PDT": -7, "PST": -8,
+    "UTC": 0, "GMT": 0, "BST": 1, "CET": 1, "CEST": 2,
+    "ICT": 7, "WIB": 7, "HKT": 8, "SGT": 8, "PHT": 8, "JST": 9, "KST": 9,
+    "AEST": 10, "AEDT": 11,
+}
 _TZ = (r"(?:\s*[\(（]?\s*(?:(?P<tzname>UTC|GMT)\s*(?P<tzsign>[+\-−–])\s*(?P<tzh>\d{1,2})"
-       r"(?::?(?P<tzm>\d{2}))?|(?P<server>server\s+time))\s*[\)）]?)?")
+       r"(?::?(?P<tzm>\d{2}))?|(?P<zone>" + "|".join(sorted(ZONES, key=len, reverse=True)) + r")"
+       r"|(?P<server>server\s+time))\s*[\)）]?)?")
 _JOIN = r"(?:\s*,?\s*(?:at|@|-|–|,)?\s*)"
 _MONTH_NAMES = "|".join(sorted(MONTHS, key=len, reverse=True))
 
@@ -68,6 +78,8 @@ def _offset(m: re.Match, default_offset: float | None) -> float | None:
         if hours > 14:
             return None
         return sign * hours
+    if m.groupdict().get("zone"):
+        return ZONES.get(m.group("zone").upper())
     return default_offset
 
 

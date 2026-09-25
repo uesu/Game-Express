@@ -34,6 +34,14 @@ DEFAULT_EMOJI = {
     "banners": "",
 }
 
+# Shown on every CODES card, in its own row under the codes (separated from the per-code
+# Redeem links): a link to the user's own community server. Override with the variable
+# COMMUNITY_BUTTONS (JSON list, max 3) — set it to "none" to switch the row off.
+DEFAULT_COMMUNITY_BUTTONS = [
+    {"label": "Citlali News", "url": "https://discord.gg/HyrVP9wRXu",
+     "emoji": "a:starward11:1439878792653832253"},
+]
+
 # round 13/14 nitter fleet from News-Express (live-probed there, 2026-09-20);
 # the chain stops at the first instances that answer with real entries.
 # x.yuuki.sh answers 403 to GitHub's runners (seen in the first live runs, 2026-09-25) — kept
@@ -160,6 +168,7 @@ class Settings:
     heartbeat_min: int
     state_path: Path
     extra_buttons: list[dict]
+    community_buttons: list[dict]
     emoji: dict[str, dict | None]
     show_legend: bool
     repost: str
@@ -171,6 +180,7 @@ class Settings:
     enable_games: set[str] = field(default_factory=set)   # ENABLE_GAMES=hna,ananta -> switch on prepared games
     aliases: dict[str, list[str]] = field(default_factory=dict)   # game key -> extra env-name slugs (GI, HSR…)
     codes_mark_expired: bool = True    # edit posted code cards when every source lists the code as expired
+    countdown_estimates: bool = True   # COUNTDOWN_ESTIMATES=0 -> never fill times from countdown sites
 
     # -- routing ---------------------------------------------------------------
     def _game_slugs(self, game_key: str) -> list[str]:
@@ -239,6 +249,18 @@ def _merge_json_blobs(env: dict) -> None:
                 env[k] = str(v)
 
 
+def _buttons_env(env: Mapping[str, str], name: str, limit: int = 3) -> list[dict]:
+    """EXTRA_BUTTONS / COMMUNITY_BUTTONS = JSON list of {label,url[,emoji]}; bad JSON -> []."""
+    raw = _env(env, name)
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    return [b for b in parsed if isinstance(b, dict) and b.get("url") and b.get("label")][:limit]
+
+
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     env = dict(os.environ if env is None else env)
     _merge_json_blobs(env)
@@ -253,14 +275,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     games_filter = {g.strip().lower() for g in (_env(env, "GAMES") + "," + _env(env, "GAME")).split(",")
                     if g.strip()}
     nitter = [u.strip().rstrip("/") for u in _env(env, "NITTER_INSTANCES").split(",") if u.strip()]
-    extra: list[dict] = []
-    raw_extra = _env(env, "EXTRA_BUTTONS")
-    if raw_extra:
-        try:
-            parsed = json.loads(raw_extra)
-            extra = [b for b in parsed if isinstance(b, dict) and b.get("url") and b.get("label")][:3]
-        except json.JSONDecodeError:
-            extra = []
+    extra = _buttons_env(env, "EXTRA_BUTTONS", 3)
+    community = _buttons_env(env, "COMMUNITY_BUTTONS") or list(DEFAULT_COMMUNITY_BUTTONS)
+    if _env(env, "COMMUNITY_BUTTONS", "").strip().lower() in ("none", "off", "-", "0", "false"):
+        community = []
     emoji = {k: parse_emoji(_env(env, f"EMOJI_{k.upper()}", v)) for k, v in DEFAULT_EMOJI.items()}
     state_path = Path(_env(env, "STATE_PATH")) if _env(env, "STATE_PATH") else DEFAULT_STATE_PATH
     return Settings(
@@ -283,7 +301,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         heartbeat_min=max(5, _int(env, "HEARTBEAT_MINUTES", 1440)),
         state_path=state_path,
         extra_buttons=extra,
+        community_buttons=community,
         emoji=emoji,
+        countdown_estimates=_bool(env, "COUNTDOWN_ESTIMATES", True),
         show_legend=_bool(env, "SHOW_LEGEND", True),
         repost=_env(env, "REPOST").replace(" ", "").lower(),
         log_level=_env(env, "LOG_LEVEL", "INFO").upper(),

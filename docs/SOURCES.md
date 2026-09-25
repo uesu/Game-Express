@@ -38,6 +38,28 @@ that moved to Sophon downloads. On 2026-09-24 it still reported GI 5.5.0 while t
 | PromoGacha data | `https://raw.githubusercontent.com/gripcrip-blip/codehub/main/data/codes.json` → jsDelivr mirror | **aggregator**: every entry says where it was copied from (`hoyo-codes` = seria, `Fandom Wiki`), and entries are never removed. It counts as that upstream, and stale copies are ignored *(v1.1.1)* | ✅ |
 | Official posts | X / HoYoLAB text that explicitly lists "Redemption Codes" | **official**: posts immediately | extraction tested on real tweets (no false positives) |
 
+## Countdown / timer sites (v1.2.0 — estimates only)
+
+The official maintenance notice arrives days after the Special Program, so until then the card
+would show `TBA`. These community sites extrapolate the patch cycle (42 days for HoYoverse,
+~42 days for Kuro) and fill the gap. They are an **estimate**: `schedule.PRIORITY['countdown']`
+is the lowest priority in the bot, so an estimate is used only when no official source has
+given that time, and it is replaced — with the 🕒 line on the card — the moment the official
+notice is seen. `COUNTDOWN_ESTIMATES=0` switches the feature off.
+
+| Source | URL | Parsed from | Status |
+|---|---|---|---|
+| gengamer.in livestream | `https://{genshin,hsr,zenless,wuthering}-countdown.gengamer.in/livestream` | `Release Date & Time: Friday, October 23 at 8:00 AM EDT` → the **program** time | ✅ checked 2026-09-25 |
+| gengamer.in version | `https://{game}-countdown.gengamer.in/` | same line / live countdown → **maintenance start** | ✅ |
+| Gacha Countdown | `https://gachacountdown.online/games/{genshin,hsr,zzz,wuwa}/` | `39 Days 14 Hours 09 Minutes 08 Seconds` (a delta from now) → **maintenance start** | ✅ |
+| version-counter.netlify.app | https://version-counter.netlify.app | client-rendered; no absolute date in the HTML | ⏳ add once it exposes a date |
+| gengamer countdown network | `https://gachacountdown.online/`, `https://wuthering-countdown.gengamer.in/` … | same parsers, per game | ✅ |
+| game8 maintenance pages | `https://game8.co/games/{genshin-impact,honkai-star-rail,zenless-zone-zero,wuthering-waves}/…` | not verified yet — add through `COUNTDOWN_SOURCES` once a page with an absolute date is found | ⏳ |
+| torikushiii/hoyoverse-api · hoyolab-auto · ennead.cc | https://github.com/torikushiii/hoyoverse-api · https://api.ennead.cc/mihoyo | **codes / HoYoLAB mirrors only** — no schedule endpoint (ennead answers with its code-endpoint list), so nothing to add here | ❌ for schedules |
+
+Prepared but empty: `hna` and `ananta` — no countdown site tracks a game before release. Fill
+`gamexpress/sources/countdown.py:SOURCES` when one appears.
+
 **Gate (v1.1):**
 
 1. An official source posts immediately.

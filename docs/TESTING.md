@@ -13,7 +13,7 @@ That workflow:
 
 ## 0. Before merging a PR
 
-The PR's **CI — compile + offline tests** check must be green. It runs 55 offline tests, which
+The PR's **CI — compile + offline tests** check must be green. It runs 60 offline tests, which
 cover:
 
 - the real official posts, which must reproduce your reference cards' timestamps;
@@ -41,7 +41,8 @@ Run **`test: sample-cards`** (`kind: all`, `ping` off).
 
 Check each of these:
 
-- [ ] The **buttons are inside the card** (Youtube / Twitch / Redeem Page, and per-code Redeem).
+- [ ] The **buttons are inside the card**: schedule cards carry Youtube / Twitch / Source,
+      codes cards carry one Redeem link per code and the `Citlali News` row underneath.
 - [ ] The **timestamps show your local time** and "in 3 days" style relative times.
 - [ ] **The emojis animate.** If you see `:name:` instead, give `@everyone` *Use External Emojis*
       in that channel, or change `EMOJI_*`.
@@ -72,6 +73,9 @@ Open the run → **Summary**:
 - **In a live dry run, the Special Program line is often missing from the cards.** Announcements
   older than a few days aren't in the feeds any more. In production the bot sees them when they
   are new; for an old version you can pin the time in `config/overrides.json`.
+- `🕒 HSR 4.6: maintenance start, maintenance end estimated from Gacha Countdown — the official
+  notice replaces it automatically` → no official maintenance notice yet, so the card shows the
+  countdown site's prediction. Correct, and it disappears as soon as the notice is seen.
 - `⚠️ HSR 4.7 phase 1: 4★ shown as TBA — 2 name(s) found, 3 expected` → the uncertain 4★ list was
   correctly replaced by TBA.
 - `⏱️ run took …s` → typically 5–20 s.
@@ -123,7 +127,7 @@ this to check real data end-to-end before going live.
 
 ```bash
 pip install -r requirements.txt pyyaml
-python tests/test_smoke.py                 # 55 offline tests
+python tests/test_smoke.py                 # 60 offline tests
 python -m gamexpress validate              # routing, pings, card limits
 python -m gamexpress preview               # previews/index.html = every card, Discord-style
 DRY_RUN=1 TEST_MODE=1 BOOTSTRAP_POST=1 STATE_PATH=/tmp/s.json python -m gamexpress run

@@ -17,7 +17,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from .cards import mark_test, schedule_payload
+from .cards import ESTIMATE_LABELS, mark_test, schedule_payload
 from .config import Game
 from .discord import webhook_fingerprint
 from .models import Item
@@ -59,8 +59,11 @@ QUOTED = re.compile(r"[\"“「『]([^\"”」』\n]{2,40})[\"”」』]")
 PHASE1 = re.compile(r"phase\s*(?:I|1)\b(?!I)|first\s+(?:half|phase)|1st\s+(?:half|phase)", re.I)
 PHASE2 = re.compile(r"phase\s*(?:II|2)\b|second\s+(?:half|phase)|2nd\s+(?:half|phase)", re.I)
 
-# precedence of sources for a field (higher wins)
-PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "x": 40, "launcher": 20}
+# precedence of sources for a field (higher wins). 'countdown' is the lowest: a countdown
+# site only ever fills a field no official source has given yet, and loses the moment one does.
+PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "x": 40, "launcher": 20, "countdown": 10}
+ESTIMATED_KEYS = ("program_ts", "preinstall_ts", "maint_start_ts", "maint_end_ts")
+MAINT_HOURS_ESTIMATE = 5          # typical HoYoverse / Kuro maintenance window
 
 
 @dataclass
@@ -314,8 +317,62 @@ def _four_star_problem(game: Game, four: list[str], unsure: bool, existing: list
     return None
 
 
+def _unmark_estimated(data: dict, key: str) -> None:
+    if key in (data.get("estimated") or []):
+        data["estimated"] = [k for k in data["estimated"] if k != key]
+        if not data["estimated"]:
+            data.pop("estimated", None)
+            data.pop("estimate_sources", None)
+
+
+def apply_estimates(data: dict, prov: dict, estimates: dict | None, now: int) -> list[str]:
+    """Fill program / maintenance times a countdown site predicts, but ONLY fields no official
+    source has given yet (PRIORITY['countdown'] is the lowest). Returns the keys it estimated."""
+    if not estimates:
+        return []
+    added: list[str] = []
+    for key in ESTIMATED_KEYS:
+        ts = estimates.get(key)
+        if not ts or data.get(key):
+            continue
+        ts = int(ts)
+        if not now - 12 * 3600 <= ts <= now + 120 * 86400:      # nonsense / ancient -> ignore
+            continue
+        data[key] = ts
+        prov[key] = [PRIORITY["countdown"], now]
+        added.append(key)
+    if "maint_start_ts" in added and not data.get("maint_end_ts"):
+        data["maint_end_ts"] = int(data["maint_start_ts"]) + MAINT_HOURS_ESTIMATE * 3600
+        prov["maint_end_ts"] = [PRIORITY["countdown"], now]
+        added.append("maint_end_ts")
+    if added:
+        known = data.get("estimated") or []
+        data["estimated"] = sorted(set(known) | set(added),
+                                   key=lambda k: ESTIMATED_KEYS.index(k) if k in ESTIMATED_KEYS else 99)
+        src = list(data.get("estimate_sources") or [])
+        for label in estimates.get("labels") or []:
+            if label not in src:
+                src.append(label)
+        data["estimate_sources"] = src[:3]
+    return added
+
+
+def needs_estimate(state, game_key: str, now: int) -> bool:
+    """True when this game still misses a program / maintenance time -> worth asking a
+    countdown site (otherwise the run doesn't spend a single request on it)."""
+    for rec in (state.schedule_records(game_key) or {}).values():
+        data = rec.get("data") or {}
+        start = data.get("maint_start_ts")
+        if start and now > int(start) + 12 * 3600:
+            continue                                   # version already live — nothing to predict
+        if not data.get("program_ts") or not start:
+            return True
+    return False
+
+
 def merge(game: Game, version: str, extracts: list[Extract], record: dict, override: dict,
-          launcher: dict, now: int, notes: list[str] | None = None) -> dict:
+          launcher: dict, now: int, notes: list[str] | None = None,
+          estimates: dict | None = None) -> dict:
     """Return the merged card data (record['data'] is the previous state).
     4★ rule: no data or ANY doubt (wrong count, odd name, sources disagree) -> TBA;
     config/overrides.json is always trusted."""
@@ -332,6 +389,8 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
         if cur is None or pri > cur[0] or (pri == cur[0] and ts >= cur[1]):
             data[key] = value
             prov[key] = [pri, ts]
+            if pri > PRIORITY["countdown"]:
+                _unmark_estimated(data, key)      # an official time replaces an estimate
 
     program_items = []
     for e in sorted(extracts, key=lambda x: x.item.published_ts):
@@ -406,6 +465,9 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
         record.setdefault("pre_detected_ts", data["preinstall_ts"])
         prov["preinstall_ts"] = [PRIORITY["launcher"], now]
 
+    # countdown sites: an ESTIMATE for every field no official source has given yet
+    apply_estimates(data, prov, estimates, now)
+
     # human overrides win over everything
     for key in ("program_ts", "preinstall_ts", "maint_start_ts", "maint_end_ts"):
         if key in override:
@@ -476,9 +538,11 @@ async def run(ctx) -> None:
                 by_version[rv] = []
 
         bootstrapped = ctx.state.is_bootstrapped("schedule", game.key)
+        est = (ctx.estimates.get(game.key) or {}) if s.countdown_estimates else {}
         for ver in sorted(by_version, key=version_key):
+            version_est = est if (est.get("version") in (None, ver)) else {}
             await _handle_version(ctx, game, ver, by_version[ver], records, overrides.get(ver, {}),
-                                  live_info, bootstrapped)
+                                  live_info, bootstrapped, version_est)
         if not bootstrapped and ctx.reachable.get(game.key, True):
             ctx.state.mark_bootstrapped("schedule", game.key)   # only after a source really answered
     problem = repost_problem(s.repost, ctx.games, ctx.state.schedule_records)   # after this run's records
@@ -487,12 +551,20 @@ async def run(ctx) -> None:
 
 
 async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], records: dict,
-                          override: dict, live_info: dict, bootstrapped: bool) -> None:
+                          override: dict, live_info: dict, bootstrapped: bool,
+                          estimates: dict | None = None) -> None:
     s, now = ctx.settings, ctx.now
     record = records.setdefault(ver, {"status": "new", "first_seen": now})
     notes: list[str] = []
-    data = merge(game, ver, extracts, record, override, live_info, now, notes)
+    data = merge(game, ver, extracts, record, override, live_info, now, notes, estimates)
     ctx.report.extend(notes)
+    estimated = data.get("estimated") or []
+    if estimated and estimated != record.get("estimated_reported"):
+        record["estimated_reported"] = estimated
+        what = ", ".join(ESTIMATE_LABELS.get(k, k) for k in estimated)
+        ctx.report.append(f"🕒 {game.short} {ver}: {what} estimated from "
+                          f"{', '.join(data.get('estimate_sources') or ['countdown sites'])} — "
+                          "the official notice replaces it automatically")
     record["data"] = data
     kinds = {e.kind for e in extracts}
     status = record.get("status")

@@ -32,6 +32,7 @@ from gamexpress.models import CodeHit, Item  # noqa: E402
 from gamexpress.runner import Ctx, failover_check  # noqa: E402
 from gamexpress.samples import CODE_SAMPLES, SCHEDULE_SAMPLES  # noqa: E402
 from gamexpress.sources import codes as csrc  # noqa: E402
+from gamexpress.sources import countdown  # noqa: E402
 from gamexpress.sources.hoyolab import _post_text  # noqa: E402
 from gamexpress.sources.kuro import parse_launcher_index  # noqa: E402
 from gamexpress.sources.launcher import parse_branches  # noqa: E402
@@ -983,7 +984,115 @@ def test_repost_feedback_and_first_run_notes():
         assert [x["method"] for x in ctx.webhook.sent] == ["POST"] and not any("repost" in r for r in ctx.report)
 
 
-# =========================================================================== runner
+
+# =========================================================================== 1.2.0 (card buttons + countdown estimates)
+def test_code_card_buttons_are_the_code_links_then_the_community_row():
+    s = settings()
+    codes = [{"code": "VESNAONPATROL", "sources": ["ogc", "fandom"], "rewards": "Primogem ×40"}]
+    p = cards.codes_payloads(GAMES["genshin"], codes, s, s.ping("codes", "genshin"), LIVE_NOW)[0]
+    flat = json.dumps(p, ensure_ascii=False)
+    box = p["components"][-1]["components"]
+    rows = [c for c in box if c["type"] == 1]
+    assert [b["label"] for b in rows[0]["components"]] == ["VESNAONPATROL"]       # one Redeem link per code
+    assert [b["label"] for b in rows[-1]["components"]] == ["Citlali News"]       # community row, at the end
+    assert rows[-1]["components"][0]["url"] == "https://discord.gg/HyrVP9wRXu"
+    assert rows[-1]["components"][0]["emoji"] == {"id": "1439878792653832253", "name": "starward11",
+                                                  "animated": True}
+    assert box[box.index(rows[-1]) - 1]["type"] == 14            # a separator in front of the row
+    for gone in ("Redeem Page", "Youtube", "Twitch"):            # livestream buttons, not code buttons
+        assert gone not in flat, gone
+    assert not cards.validate_payload(p)
+    ww = cards.codes_payloads(GAMES["wuwa"], [{"code": "WUTHERINGGIFT", "sources": ["ogc"]}],
+                              s, s.ping("codes", "wuwa"), LIVE_NOW)[0]
+    rows = [c for c in ww["components"][-1]["components"] if c["type"] == 1]
+    assert [b["label"] for b in rows[-1]["components"]] == ["Citlali News"]       # in-game-only game too
+    # the livestream card keeps Youtube / Twitch
+    labels = [b["label"] for c in _render("starrail")["components"][1]["components"] if c["type"] == 1
+              for b in c["components"]]
+    assert labels[:2] == ["Youtube", "Twitch"]
+    # configurable: COMMUNITY_BUTTONS=none -> no row at all
+    off = settings(COMMUNITY_BUTTONS="none")
+    assert off.community_buttons == []
+    p2 = cards.codes_payloads(GAMES["genshin"], codes, off, off.ping("codes", "genshin"), LIVE_NOW)[0]
+    assert [c for c in p2["components"][-1]["components"] if c["type"] == 1] == [
+        {"type": 1, "components": [cards.link_button("VESNAONPATROL",
+                                                    "https://genshin.hoyoverse.com/en/gift?code=VESNAONPATROL",
+                                                    {"name": "🎁"})]}]
+    custom = settings(COMMUNITY_BUTTONS='[{"label":"My Server","url":"https://discord.gg/abc"}]')
+    assert [b["label"] for b in custom.community_buttons] == ["My Server"]
+
+
+def test_countdown_pages_are_parsed():
+    now = LIVE_NOW
+    gengamer = (FIX / "countdown_gengamer_gi_livestream.html").read_text(encoding="utf-8")
+    hit = countdown.parse_page("program", gengamer, now)
+    assert hit["version"] == "7.2" and hit["ts"] == 1792756800        # Friday, October 23 at 8:00 AM EDT
+    gacha = (FIX / "countdown_gachacountdown_gi.html").read_text(encoding="utf-8")
+    hit2 = countdown.parse_page("update", gacha, now)
+    assert hit2["version"] == "7.2"
+    assert hit2["ts"] == now + 39 * 86400 + 14 * 3600 + 9 * 60 + 8    # 39d 14h 09m 08s from now
+    assert countdown.find_version("Countdown to Version 7.2") == "7.2"
+    assert "Hello & bye" in countdown.strip_html("<script>x=1</script><p>Hello &amp; bye</p>")
+    assert countdown.SOURCES["wuwa"] and not countdown.SOURCES["ananta"]      # not released yet
+
+
+def test_apply_estimates_never_overwrites_official_times():
+    data, prov = {"maint_start_ts": 100}, {}
+    assert schedule.apply_estimates(data, prov, {"maint_start_ts": 200}, 0) == []
+    assert data["maint_start_ts"] == 100 and "estimated" not in data
+    assert schedule.apply_estimates({}, {}, {"program_ts": 10 ** 10}, 0) == []        # absurd -> ignored
+    data2, prov2 = {}, {}
+    added = schedule.apply_estimates(data2, prov2, {"maint_start_ts": 1790712000,
+                                                    "labels": ["Gacha Countdown"]}, 1790000000)
+    assert added == ["maint_start_ts", "maint_end_ts"]                            # +5 h window
+    assert data2["maint_end_ts"] == 1790712000 + 5 * 3600
+    assert data2["estimated"] == ["maint_start_ts", "maint_end_ts"] and data2["estimate_sources"] == ["Gacha Countdown"]
+    assert prov2["maint_start_ts"][0] == schedule.PRIORITY["countdown"] < schedule.PRIORITY["kuro"]
+
+
+def test_estimated_maintenance_times_fill_only_what_official_misses():
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        ww = item_from_fx_json("wuwa", fx("fx_wuwa_3_7_broadcast.json"))
+        estimate = {"wuwa": {"version": "3.7", "maint_start_ts": 1790712000, "labels": ["Gacha Countdown"]}}
+        ctx = make_ctx(sp, items={"wuwa": [ww]}, now=1789300000, BOOTSTRAP_POST=1)
+        ctx.estimates = estimate
+        asyncio.run(schedule.run(ctx))
+        posts = [x for x in ctx.webhook.sent if x["method"] == "POST"]
+        assert len(posts) == 1
+        flat = json.dumps(posts[0]["payload"], ensure_ascii=False)
+        assert "<t:1790712000:f>" in flat and "<t:1790730000:t>" in flat       # start + the 5 h estimate
+        assert "estimated from Gacha Countdown" in flat
+        assert any(r.startswith("🕒 WW 3.7: maintenance start, maintenance end estimated") for r in ctx.report)
+        ctx.state.save()
+        # the official maintenance notice arrives -> it wins and the 🕒 line disappears silently
+        notice = Item("kuro", "wuwa", "9001", "https://wutheringwaves.kurogames.com/en/main/news/detail/9001",
+                      "Version 3.7 Update Maintenance Notice",
+                      "Version 3.7 pre-download will begin at 2026-09-28 10:00 (UTC+8).\n"
+                      "Maintenance Time: 2026-09-30 04:00 - 11:00 (UTC+8)\nCompensation: Astrite ×300",
+                      1790000000)
+        ctx = make_ctx(sp, items={"wuwa": [ww, notice]}, now=1790001000)
+        ctx.estimates = estimate
+        asyncio.run(schedule.run(ctx))
+        assert [x["method"] for x in ctx.webhook.sent] == ["PATCH"]
+        flat2 = json.dumps(ctx.webhook.sent[0]["payload"], ensure_ascii=False)
+        assert "<t:1790712000:f>" in flat2 and "<t:1790737200:t>" in flat2     # the official window
+        assert "estimated from" not in flat2
+        assert ctx.state.schedule_records("wuwa")["3.7"]["data"].get("estimated") is None
+
+
+def test_an_estimate_for_another_version_is_ignored():
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        ww = item_from_fx_json("wuwa", fx("fx_wuwa_3_7_broadcast.json"))
+        ctx = make_ctx(sp, items={"wuwa": [ww]}, now=1789300000, BOOTSTRAP_POST=1)
+        ctx.estimates = {"wuwa": {"version": "9.9", "maint_start_ts": 1790712000, "labels": ["X"]}}
+        asyncio.run(schedule.run(ctx))
+        assert [x["method"] for x in ctx.webhook.sent] == ["POST"]
+        assert "estimated from" not in json.dumps(ctx.webhook.sent[0]["payload"], ensure_ascii=False)
+
+
+ # =========================================================================== runner
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0
