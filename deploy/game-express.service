@@ -1,0 +1,20 @@
+# systemd unit (Oracle Cloud Always Free / any Linux VM, no Docker):
+#   sudo cp deploy/game-express.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now game-express
+#   journalctl -u game-express -f        # live logs
+[Unit]
+Description=Game-Express (schedule announcements + code poster)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Game-Express
+EnvironmentFile=/home/ubuntu/Game-Express/.env
+ExecStart=/home/ubuntu/Game-Express/.venv/bin/python -m gamexpress bot
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

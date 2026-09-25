@@ -1,0 +1,106 @@
+name: Game-Express Monitor
+
+# Schedule announcements + code poster. Runs every 10 minutes but only POSTS when an
+# official post matches a pattern (special program / broadcast / maintenance notice /
+# new verified code) — most runs change nothing and commit nothing.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # GitHub may delay scheduled runs under load; see README → "More punctual triggers"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — build + log the cards, never post, never commit'
+        type: boolean
+        default: false
+      only:
+        description: 'Run one feature'
+        type: choice
+        options: [all, schedule, codes]
+        default: all
+      game:
+        description: 'Optional: one game key (genshin, starrail, zzz, wuwa, hna, ananta)'
+        required: false
+        default: ''
+      test_card:
+        description: 'Post SAMPLE cards to your channels to check the look (your 4 reference cards + codes cards)'
+        type: choice
+        options: [none, schedule, codes, all]
+        default: none
+      repost:
+        description: 'Optional: force a NEW post of a tracked version, e.g. genshin:7.2'
+        required: false
+        default: ''
+
+concurrency:
+  # One run at a time; a trigger that arrives mid-run QUEUES (never cancels — a run can
+  # sit between "posted to Discord" and "state committed").
+  group: game-express-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  monitor:
+    # Development / template repo: set the repository VARIABLE ENABLED_FEATURES=none and the
+    # scheduled runs are skipped entirely (manual runs such as test_card still work).
+    if: github.event_name == 'workflow_dispatch' || vars.ENABLED_FEATURES != 'none'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Every repo secret + variable, as JSON: per-game overrides such as
+      # DISCORD_WEBHOOK_CODES_WUWA or PING_SCHEDULE_GENSHIN work without editing this file.
+      GE_SECRETS_JSON: ${{ toJSON(secrets) }}
+      GE_VARS_JSON: ${{ toJSON(vars) }}
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - name: Check out (branch HEAD, so a queued run sees the previous run's state)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Show resolved config (routing, pings, emojis)
+        run: python -m gamexpress validate || true
+
+      - name: Post sample cards (test_card)
+        if: github.event_name == 'workflow_dispatch' && inputs.test_card != 'none'
+        env:
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: python -m gamexpress test-card --kind "${{ inputs.test_card }}"
+
+      - name: Run monitor
+        id: run
+        if: github.event_name != 'workflow_dispatch' || inputs.test_card == 'none'
+        env:
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+          ONLY: ${{ inputs.only != 'all' && inputs.only || '' }}
+          GAME: ${{ inputs.game }}
+          REPOST: ${{ inputs.repost }}
+        run: python -m gamexpress run
+
+      - name: Commit state (also after a partial failure, so nothing is ever posted twice)
+        if: always() && !inputs.dry_run && steps.run.conclusion != 'skipped'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/state.json 2>/dev/null || true
+          if git diff --cached --quiet; then echo "state unchanged — nothing to commit"; exit 0; fi
+          git commit -m "auto: update state [skip ci]"
+          for i in 1 2 3 4 5; do
+            if git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              exit 0
+            fi
+            sleep $((i * 3))
+          done
+          echo "::error::could not push state/state.json after 5 attempts"
+          exit 1
