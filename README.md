@@ -87,6 +87,22 @@ arrives days after the Special Program, so until then the card can only show `TB
 - `COUNTDOWN_ESTIMATES=0` switches it off, and a countdown site is only asked for a game that
   is actually missing a time (no request is wasted on a version that is already out).
 
+**The announcement's own link and key art (since 1.3.0).** A run only sees posts inside its
+lookback window, so a version that is already a week old can end up with a card that links to the
+*Update and Maintenance Notice* — and shows that notice's cover — simply because the Special
+Program announcement had scrolled out. Since **1.3.0** the bot looks the announcement up:
+
+- the **official news pages** (`genshin.hoyoverse.com/en/news`, `hsr.hoyoverse.com/en-us/news`,
+  `zenless.hoyoverse.com/en-us/news`, `wutheringwaves.kurogames.com/en/main/news`) archive every
+  announcement with its cover, and an article page carries the embedded stream — whose YouTube
+  thumbnail is the program's own 1280×720 artwork;
+- failing that, the **HoYoLAB news list is paged back** past the lookback window;
+- images are always upgraded to the biggest rendition the source serves (tweet photo → `?name=orig`,
+  YouTube → `maxresdefault`), and the card says where the key art came from
+  (`🖼️ key art: HoYoLAB — the official announcement`);
+- one lookup per version that still needs it, never for a version that is already live, and
+  `PROGRAM_MEDIA=0` switches it off.
+
 ### 2. Redemption code card: posted once per code (also Components V2)
 
 Each game posts to **its own codes channel** (`DISCORD_WEBHOOK_CODES_GENSHIN`, `…_STARRAIL`,
@@ -226,6 +242,7 @@ any name below works without editing YAML.
 | `EXTRA_BUTTONS` | — | JSON list (max 3) of extra buttons on every card, e.g. a community invite |
 | `COMMUNITY_BUTTONS` | `[{"label":"Citlali News","url":"https://discord.gg/HyrVP9wRXu","emoji":"a:starward11:1439878792653832253"}]` | the bottom row of a **codes** card (`none` = no row). Youtube / Twitch / Redeem Page are not shown there — they belong to the livestream card |
 | `COUNTDOWN_ESTIMATES` | on | `0` = never fill program / maintenance times from countdown sites |
+| `PROGRAM_MEDIA` | on | `0` = never look the program announcement up on the official news page (the card then keeps whatever the run's own feed showed) |
 | `ENABLED_FEATURES` | `schedule,codes` | `schedule` · `codes` · `none` (paused / cold standby) |
 | `GAMES` | all enabled | allow-list, e.g. `genshin,starrail` |
 | `ENABLE_GAMES` | — | switch prepared games on, e.g. `hna` or `hna,ananta` |
@@ -572,6 +589,24 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 ---
 
 ## 🗒 Changelog
+
+### 1.3.0 — 2026-09-25 · the schedule card shows the real announcement
+- **The card now shows the program announcement, not whichever post the run happened to see.**
+  HSR 4.6 linked to the *Update and Maintenance Notice* and showed its Pompom cover, because the
+  Special Program preview (article 46691962) was 11 days older and had fallen out of the lookback
+  window. A new lookup finds the announcement on the **official news page** (or the HoYoLAB news
+  list, paged back past the window) and uses its link, its key art and its air time.
+- **A maintenance notice's own cover is no longer used as the card image** — it is not the
+  program's key art. The notice stays as a Source link when nothing better is known.
+- **Images are upgraded to the biggest rendition each source serves** (`gamexpress/media.py`):
+  tweet photos get `?name=orig` (X serves `small` by default), nitter `/pic/` proxies are
+  rewritten to `pbs.twimg.com`, and YouTube thumbnails go `hqdefault` → `maxresdefault`
+  (1280×720). A URL that already asks for a size is left exactly as the source gave it.
+- The air time from a recovered announcement is an official time, so a program that has already
+  aired is still shown (`<t:…:F> or <t:…:R>` — "5 days ago"), and it never overwrites a time an
+  official post already gave.
+- `PROGRAM_MEDIA=0` switches the lookup off. `docs/SOURCES.md` lists the news pages and what each
+  one is verified to serve.
 
 ### 1.2.0 — 2026-09-25 · card buttons and maintenance estimates
 - **Codes card buttons cleaned up.** `Redeem Page`, `Youtube` and `Twitch` are gone from codes

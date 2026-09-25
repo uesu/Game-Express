@@ -269,6 +269,8 @@ def schedule_payload(game: Game, d: dict, settings: Settings, ping: Ping,
         what = ", ".join(ESTIMATE_LABELS.get(k, k) for k in d["estimated"])
         src = ", ".join((d.get("estimate_sources") or ["countdown sites"])[:2])
         foot.append(f"🕒 {what} estimated from {src} — the official notice replaces it automatically")
+    if d.get("media_from"):
+        foot.append(f"🖼️ key art: {d['media_from']} — the official announcement")
     if d.get("source_links"):
         foot.append("Source: " + " · ".join(f"[{n}]({u})" for n, u in d["source_links"][:3]))
     if updated_ts:

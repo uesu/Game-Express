@@ -181,6 +181,7 @@ class Settings:
     aliases: dict[str, list[str]] = field(default_factory=dict)   # game key -> extra env-name slugs (GI, HSR…)
     codes_mark_expired: bool = True    # edit posted code cards when every source lists the code as expired
     countdown_estimates: bool = True   # COUNTDOWN_ESTIMATES=0 -> never fill times from countdown sites
+    program_media: bool = True         # PROGRAM_MEDIA=0 -> never look an announcement up on the news page
 
     # -- routing ---------------------------------------------------------------
     def _game_slugs(self, game_key: str) -> list[str]:
@@ -304,6 +305,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         community_buttons=community,
         emoji=emoji,
         countdown_estimates=_bool(env, "COUNTDOWN_ESTIMATES", True),
+        program_media=_bool(env, "PROGRAM_MEDIA", True),
         show_legend=_bool(env, "SHOW_LEGEND", True),
         repost=_env(env, "REPOST").replace(" ", "").lower(),
         log_level=_env(env, "LOG_LEVEL", "INFO").upper(),
@@ -366,6 +368,7 @@ class Game:
     banner_patterns: list[str] = field(default_factory=list)
     youtube: str = ""
     twitch: str = ""
+    news_url: str = ""                 # official news page: archives every announcement + its key art
     card: CardStyle = field(default_factory=CardStyle)
     codes: dict = field(default_factory=dict)
     note: str = ""
@@ -410,6 +413,7 @@ def load_games(path: Path | None = None) -> dict[str, Game]:
             banner_patterns=list(g.get("banner_patterns") or []),
             youtube=g.get("youtube", ""),
             twitch=g.get("twitch", ""),
+            news_url=g.get("news_url", ""),
             card=card,
             codes=dict(g.get("codes") or {}),
             note=g.get("note", ""),

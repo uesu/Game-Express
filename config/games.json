@@ -27,6 +27,7 @@
       "program_label": "Special Program",
       "program_patterns": ["special program"],
       "banner_patterns": ["event wish"],
+      "news_url": "https://genshin.hoyoverse.com/en/news",
       "youtube": "https://www.youtube.com/@GenshinImpact/videos",
       "twitch": "https://www.twitch.tv/genshinimpactofficial",
       "card": {
@@ -53,6 +54,7 @@
       "program_label": "Special Program",
       "program_patterns": ["special program"],
       "banner_patterns": ["event warp"],
+      "news_url": "https://hsr.hoyoverse.com/en-us/news",
       "youtube": "https://www.youtube.com/@HonkaiStarRail/streams",
       "twitch": "https://www.twitch.tv/honkaistarrail",
       "card": {
@@ -78,6 +80,7 @@
       "program_label": "Special Program",
       "program_patterns": ["special program"],
       "banner_patterns": ["exclusive channel", "signal search"],
+      "news_url": "https://zenless.hoyoverse.com/en-us/news",
       "youtube": "https://www.youtube.com/@ZZZ_Official/videos",
       "twitch": "https://www.twitch.tv/zenlesszonezero",
       "card": {
@@ -103,6 +106,7 @@
       "program_label": "Special Broadcast",
       "program_patterns": ["special broadcast"],
       "banner_patterns": ["featured resonator", "resonator convene", "convene"],
+      "news_url": "https://wutheringwaves.kurogames.com/en/main/news",
       "youtube": "https://www.youtube.com/@WutheringWaves/streams",
       "twitch": "https://www.twitch.tv/wuthering_waves",
       "card": {

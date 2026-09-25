@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from .cards import ESTIMATE_LABELS, mark_test, schedule_payload
 from .config import Game
 from .discord import webhook_fingerprint
+from .media import rank, youtube_thumb
 from .models import Item
 from .sources.codes import extract_codes_from_text
 from .state import stable_hash
@@ -30,7 +31,6 @@ from .textutil import (
     sentences,
     twitch_url,
     version_key,
-    youtube_id,
     youtube_video_url,
 )
 from .timeparse import find_datetimes, find_duration_hours, find_time_ranges, parse_iso
@@ -61,7 +61,7 @@ PHASE2 = re.compile(r"phase\s*(?:II|2)\b|second\s+(?:half|phase)|2nd\s+(?:half|p
 
 # precedence of sources for a field (higher wins). 'countdown' is the lowest: a countdown
 # site only ever fills a field no official source has given yet, and loses the moment one does.
-PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "x": 40, "launcher": 20, "countdown": 10}
+PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "news": 45, "x": 40, "launcher": 20, "countdown": 10}
 ESTIMATED_KEYS = ("program_ts", "preinstall_ts", "maint_start_ts", "maint_end_ts")
 MAINT_HOURS_ESTIMATE = 5          # typical HoYoverse / Kuro maintenance window
 
@@ -370,9 +370,61 @@ def needs_estimate(state, game_key: str, now: int) -> bool:
     return False
 
 
+def apply_program_media(data: dict, prov: dict, media: dict | None, now: int) -> list[str]:
+    """Give the card the ANNOUNCEMENT it should be showing: the program article's own link and
+    its key art, instead of whatever the run happened to see.
+
+    Why: HSR 4.6 linked to the *Update and Maintenance Notice* and showed its Pompom cover,
+    because the Special Program preview (article 46691962) was 11 days older and had already
+    fallen out of the lookback window. The official news pages archive every announcement, so
+    the right link and the right picture are recoverable weeks later.
+
+    program_ts is filled too when no official post has given one — the article IS official, it
+    just arrived before the window. Returns the keys it changed."""
+    if not media or not media.get("url"):
+        return []
+    changed: list[str] = []
+    ts = media.get("program_ts")
+    # A recovered announcement is OFFICIAL, so an air time that has already passed is kept (the
+    # card renders it as "5 days ago") — unlike a countdown estimate, only absurd values go.
+    if not data.get("program_ts") and ts and now - 90 * 86400 <= int(ts) <= now + 120 * 86400:
+        data["program_ts"] = int(ts)
+        prov["program_ts"] = [PRIORITY["news"], now]
+        changed.append("program_ts")
+    label = media.get("source") or "Official News"
+    data["title_url"] = media.get("youtube") or media["url"]
+    data["source_url"] = media["url"]
+    data["source_label"] = label
+    if media.get("youtube"):
+        data["youtube_video"] = media["youtube"]
+    links = [(lbl, u) for lbl, u in (data.get("source_links") or []) if u != media["url"]]
+    links.insert(0, (label, media["url"]))
+    data["source_links"] = links[:3]
+    images = rank(media.get("images"))
+    if images:
+        data["images"] = images
+        data["media_from"] = label           # the card says where the key art came from
+    return changed + ["title_url", "source_url"]
+
+
+def needs_media(state, game_key: str, now: int) -> bool:
+    """True when a tracked version still shows somebody else's announcement -> worth one page
+    fetch to find the program article. Never for a version that is already live, and never
+    twice for the same version."""
+    for rec in (state.schedule_records(game_key) or {}).values():
+        data = rec.get("data") or {}
+        start = data.get("maint_start_ts")
+        if start and now > int(start) + 12 * 3600:
+            continue                                   # long live — the card is history by now
+        if data.get("program_seen") or data.get("media_from"):
+            continue                                   # already the right announcement
+        return True
+    return False
+
+
 def merge(game: Game, version: str, extracts: list[Extract], record: dict, override: dict,
           launcher: dict, now: int, notes: list[str] | None = None,
-          estimates: dict | None = None) -> dict:
+          estimates: dict | None = None, media: dict | None = None) -> dict:
     """Return the merged card data (record['data'] is the previous state).
     4★ rule: no data or ANY doubt (wrong count, odd name, sources disagree) -> TBA;
     config/overrides.json is always trusted."""
@@ -433,6 +485,7 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
 
     # presentation: title link / image / source from the best program post
     if program_items:
+        data["program_seen"] = True          # this card already shows the real announcement
         best = sorted(program_items, key=lambda e: (-PRIORITY.get(e.item.source, 0), e.item.published_ts))[0]
         images = next((e.fields.get("images") for e in program_items if e.fields.get("images")), None)
         yt = data.get("youtube_video")
@@ -440,24 +493,28 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
         data["source_url"] = best.item.url
         data["source_label"] = best.item.source_label
         if images:
-            data["images"] = images
+            data["images"] = rank(images)
         elif yt:
-            data["images"] = [f"https://i.ytimg.com/vi/{youtube_id(yt)}/maxresdefault.jpg"]
+            data["images"] = [youtube_thumb(yt)]
         links = []
         for e in program_items:
             label = e.item.source_label
             if label not in [lbl for lbl, _ in links]:
                 links.append((label, e.item.url))
         data["source_links"] = links[:3]
-    elif not data.get("title_url"):
-        notice = next((e for e in extracts if e.kind == "maintenance"), None)
-        if notice:
-            data.setdefault("title_url", notice.item.url)
-            data.setdefault("source_url", notice.item.url)
-            data.setdefault("source_label", notice.item.source_label)
-            data.setdefault("source_links", [(notice.item.source_label, notice.item.url)])
-            if notice.fields.get("notice_images") and not data.get("images"):
-                data["images"] = notice.fields["notice_images"]
+    else:
+        # nobody in the lookback window announced the program: look the article up on the
+        # official news page / HoYoLAB news list (link + full-size key art + air time).
+        apply_program_media(data, prov, media, now)
+        if not data.get("title_url"):
+            notice = next((e for e in extracts if e.kind == "maintenance"), None)
+            if notice:
+                data.setdefault("title_url", notice.item.url)
+                data.setdefault("source_url", notice.item.url)
+                data.setdefault("source_label", notice.item.source_label)
+                data.setdefault("source_links", [(notice.item.source_label, notice.item.url)])
+                # NOTE: the notice's own cover is deliberately NOT used as the card image — a
+                # maintenance notice cover (Pompom on HSR 4.6) is not the program's key art.
 
     # launcher: pre-download became available (official client signal)
     if launcher.get("pre") == version and not data.get("preinstall_ts"):
@@ -539,10 +596,11 @@ async def run(ctx) -> None:
 
         bootstrapped = ctx.state.is_bootstrapped("schedule", game.key)
         est = (ctx.estimates.get(game.key) or {}) if s.countdown_estimates else {}
+        media = (ctx.media.get(game.key) or {}) if s.program_media else {}
         for ver in sorted(by_version, key=version_key):
             version_est = est if (est.get("version") in (None, ver)) else {}
             await _handle_version(ctx, game, ver, by_version[ver], records, overrides.get(ver, {}),
-                                  live_info, bootstrapped, version_est)
+                                  live_info, bootstrapped, version_est, media.get(ver))
         if not bootstrapped and ctx.reachable.get(game.key, True):
             ctx.state.mark_bootstrapped("schedule", game.key)   # only after a source really answered
     problem = repost_problem(s.repost, ctx.games, ctx.state.schedule_records)   # after this run's records
@@ -552,11 +610,11 @@ async def run(ctx) -> None:
 
 async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], records: dict,
                           override: dict, live_info: dict, bootstrapped: bool,
-                          estimates: dict | None = None) -> None:
+                          estimates: dict | None = None, media: dict | None = None) -> None:
     s, now = ctx.settings, ctx.now
     record = records.setdefault(ver, {"status": "new", "first_seen": now})
     notes: list[str] = []
-    data = merge(game, ver, extracts, record, override, live_info, now, notes, estimates)
+    data = merge(game, ver, extracts, record, override, live_info, now, notes, estimates, media)
     ctx.report.extend(notes)
     estimated = data.get("estimated") or []
     if estimated and estimated != record.get("estimated_reported"):
