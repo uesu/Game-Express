@@ -15,7 +15,7 @@ from .config import Game, Settings, active_games, load_games, load_overrides
 from .discord import WebhookClient
 from .http import BOT_UA, Fetcher, Probe
 from .models import Item
-from .sources import hoyolab, kuro, launcher
+from .sources import countdown, hoyolab, kuro, launcher
 from .sources.codes import CodeSources
 from .sources.twitter import XClient
 from .state import State
@@ -42,6 +42,7 @@ class Ctx:
     errors: list[str] = field(default_factory=list)
     active: bool = True
     elapsed: float = 0.0
+    estimates: dict = field(default_factory=dict)   # game key -> countdown-site estimate
 
 
 async def gather_versions(ctx: Ctx) -> None:
@@ -77,6 +78,21 @@ async def _gather_game(ctx: Ctx, g: Game, since: int) -> None:
     log.info("[%s] %d official item(s) matched in the last %dh (live %s, pre-install %s)", g.key,
              len(items), ctx.settings.lookback_hours, ctx.versions.get(g.key, {}).get("live") or "?",
              ctx.versions.get(g.key, {}).get("pre") or "—")
+
+
+async def gather_estimates(ctx: Ctx) -> None:
+    """Ask the countdown sites — only for games that still miss a program / maintenance time,
+    and only when the schedule feature is on (COUNTDOWN_ESTIMATES=0 switches it off)."""
+    if "schedule" not in ctx.settings.features or not ctx.settings.countdown_estimates:
+        return
+    keys = [g.key for g in ctx.games if schedule.needs_estimate(ctx.state, g.key, ctx.now)]
+    if not keys:
+        return
+    got = await asyncio.gather(*(countdown.fetch_game(ctx.fetcher, k, ctx.now) for k in keys))
+    for key, est in zip(keys, got):
+        if est:
+            ctx.estimates[key] = est
+            log.info("[%s] countdown estimate: %s", key, est)
 
 
 async def gather_items(ctx: Ctx) -> None:
@@ -136,6 +152,7 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
         if features and ctx.games:
             await gather_versions(ctx)
             await gather_items(ctx)
+            await gather_estimates(ctx)
             for g in ctx.games:
                 if not ctx.reachable.get(g.key, True):
                     ctx.warnings.append(f"{g.short}: no announcement source answered this run — the next run "

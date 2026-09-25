@@ -47,7 +47,8 @@ The operator's scheduler (cron-job.org) only calls GitHub's API to start the wor
 receives no data about Discord users.
 
 Each service has its own privacy policy. Links in cards (YouTube, Twitch, HoYoLAB, X, redeem
-pages) open third-party sites, and their policies apply.
+pages, and the Discord invite button configured through `COMMUNITY_BUTTONS`) open third-party
+sites, and their policies apply.
 
 ## 5. Retention
 

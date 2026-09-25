@@ -155,6 +155,14 @@ def _std_buttons(game: Game, settings: Settings, extra: list[dict] | None = None
     return buttons[:5]
 
 
+ESTIMATE_LABELS = {
+    "program_ts": "program time",
+    "preinstall_ts": "pre-install",
+    "maint_start_ts": "maintenance start",
+    "maint_end_ts": "maintenance end",
+}
+
+
 def _emoji_of(value) -> dict | None:
     from .config import parse_emoji
     if isinstance(value, dict):
@@ -257,6 +265,10 @@ def schedule_payload(game: Game, d: dict, settings: Settings, ping: Ping,
     foot: list[str] = []
     if settings.show_legend:
         foot.append(LEGEND)
+    if d.get("estimated"):
+        what = ", ".join(ESTIMATE_LABELS.get(k, k) for k in d["estimated"])
+        src = ", ".join((d.get("estimate_sources") or ["countdown sites"])[:2])
+        foot.append(f"🕒 {what} estimated from {src} — the official notice replaces it automatically")
     if d.get("source_links"):
         foot.append("Source: " + " · ".join(f"[{n}]({u})" for n, u in d["source_links"][:3]))
     if updated_ts:
@@ -326,10 +338,11 @@ def codes_card(game: Game, chunk: list[dict], settings: Settings, ping: Ping, de
     if hint and live:
         children.append(text(f"※ {hint}"))
     children.append(sep())
-    extra = []
-    if game.redeem_page:
-        extra.append(link_button("Redeem Page", game.redeem_page, settings.emoji.get("redeem")))
-    buttons = (extra + _std_buttons(game, settings))[:5]
+    # Own row, under the codes and separated from the per-code Redeem links: the community
+    # invite (+ EXTRA_BUTTONS). No Redeem Page / Youtube / Twitch here — those belong to the
+    # livestream (special program / special broadcast) card, not to a codes card.
+    buttons = [link_button(b["label"], b["url"], _emoji_of(b.get("emoji")))
+               for b in (settings.community_buttons + settings.extra_buttons)][:5]
     if buttons:
         children.append(action_row(buttons))
     srcs = sorted({s for c in chunk for s in c.get("sources", [])})
