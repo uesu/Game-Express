@@ -61,6 +61,7 @@
           "Stir-Fried Fish Noodles ×5"
         ],
         "sources": [
+          "codehub",
           "ennead",
           "seria"
         ],
@@ -326,6 +327,7 @@
         "posted_at": 1790332129,
         "rewards": null,
         "sources": [
+          "codehub",
           "seria"
         ],
         "status": "posted",
@@ -1624,12 +1626,19 @@
       "4.6": {
         "data": {
           "compensation": "Stellar Jade ×300",
+          "estimate_sources": [
+            "hsr-countdown"
+          ],
+          "estimated": [
+            "program_ts"
+          ],
           "images": [
             "https://upload-os-bbs.hoyolab.com/upload/community/2026/09/23/1ee62eca62a4d646b14004634c661188_3519077431557110128.png"
           ],
           "maint_end_ts": 1790564400,
           "maint_start_ts": 1790546400,
           "preinstall_ts": 1790229600,
+          "program_ts": 1790341813,
           "source_label": "HoYoLAB",
           "source_links": [
             [
@@ -1641,6 +1650,9 @@
           "title_url": "https://www.hoyolab.com/article/46814308",
           "version": "4.6"
         },
+        "estimated_reported": [
+          "program_ts"
+        ],
         "first_seen": 1790323161,
         "message_id": "1552988935062294550",
         "payload_hash": "b99e82d0aeacfabd",
@@ -1661,6 +1673,10 @@
           "preinstall_ts": [
             50,
             1790229608
+          ],
+          "program_ts": [
+            10,
+            1790341813
           ]
         },
         "status": "posted",
@@ -1671,12 +1687,19 @@
       "3.7": {
         "data": {
           "compensation": "Astrite x300, Crystal Solvent x2",
+          "estimate_sources": [
+            "wuthering-countdown"
+          ],
+          "estimated": [
+            "program_ts"
+          ],
           "images": [
             "https://hw-media-cdn-mingchao.kurogame.com/object/1790006400000/m39h4r47zx7muv6xlk-1790072631821.jpg"
           ],
           "maint_end_ts": 1790737200,
           "maint_start_ts": 1790712000,
           "preinstall_ts": 1790560800,
+          "program_ts": 1790341813,
           "source_label": "Official News",
           "source_links": [
             [
@@ -1688,6 +1711,9 @@
           "title_url": "https://wutheringwaves.kurogames.com/en/main/news/detail/5476",
           "version": "3.7"
         },
+        "estimated_reported": [
+          "program_ts"
+        ],
         "first_seen": 1790323161,
         "prov": {
           "compensation": [
@@ -1705,6 +1731,10 @@
           "preinstall_ts": [
             50,
             1790072775
+          ],
+          "program_ts": [
+            10,
+            1790341813
           ]
         },
         "status": "seeded"
