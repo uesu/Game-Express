@@ -4,7 +4,7 @@ name: Game-Express Test
 # It NEVER commits and never touches state/state.json, so it is safe on the production
 # repos, and it is not blocked by ENABLED_FEATURES=none (works on the dev repo too).
 #
-#   offline-tests      the CI suite: 40+ offline tests + config validation (no network, no posts)
+#   offline-tests      the CI suite: 50+ offline tests + config validation (no network, no posts)
 #   webhooks           ONE small "✅ connected" card per webhook, listing which game/feature
 #                      cards that channel will receive (checks every per-game codes secret)
 #   sample-cards       your 4 reference schedule cards + one codes card per game, labelled
@@ -88,6 +88,7 @@ jobs:
       - name: 2 · Offline tests (no network, no secrets)
         if: env.TEST == 'offline-tests' || env.TEST == 'full'
         run: |
+          pip install -r requirements-bot.txt pyyaml --disable-pip-version-check -q   # bot + workflow checks too
           python -m compileall -q gamexpress tests
           python tests/test_smoke.py
 

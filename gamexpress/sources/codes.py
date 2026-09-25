@@ -9,8 +9,10 @@
                 Wuthering Waves; NOISY: it also lists stale / concatenated entries, so it can only
                 CONFIRM a code, never post one alone)
   ennead        https://api.ennead.cc/mihoyo/{genshin|starrail|zenless}/codes  ({active, inactive})
-  fandom        MediaWiki API wikitext (same query seria + PromoGacha use)
-  codehub       PromoGacha's GitHub-hosted data/codes.json (daily GHA; includes Wuthering Waves)
+  fandom        MediaWiki API wikitext (same query seria + PromoGacha use); 'valid until' dates
+                are parsed — a passed date marks the code expired even under 'Active'
+  codehub       PromoGacha's GitHub-hosted data/codes.json — an AGGREGATOR of seria + the wikis
+                that never deletes entries: each hit counts as its upstream (CodeHit.origin)
   wuthering.gg  https://wuthering.gg/codes  (HTML table; marks expired codes explicitly)
   x             official tweets (codes are extracted only with explicit code wording)
 
@@ -23,8 +25,10 @@ redeem-validator vouches for it.
 from __future__ import annotations
 
 import asyncio
+import calendar
 import logging
 import re
+import time
 
 from ..http import Fetcher
 from ..models import CodeHit
@@ -133,10 +137,26 @@ def parse_ogc(data) -> list[CodeHit]:
         if not code or code in seen:
             continue
         seen.add(code)
-        rewards = [str(r).replace(" x", " ×") for r in (c.get("rewards") or [])
-                   if r and "File:" not in str(r)]
-        hits.append(CodeHit(code, "ogc", rewards or None))
+        hits.append(CodeHit(code, "ogc", clean_reward_list(c.get("rewards") or []) or None))
     return drop_concatenations(hits)
+
+
+def clean_reward_list(rewards: list) -> list[str]:
+    """['Credit x50,000', 'Credit x50000', 'Unknown reward (77cb..._640...) x100'] -> ['Credit ×50,000']
+    (Open Gacha Codes merges several scrapers: it repeats items and leaves unmapped icon hashes)."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for r in rewards:
+        text = re.sub(r"\s+", " ", str(r or "")).strip()
+        if not text or "File:" in text or re.match(r"unknown\s+(?:reward|item)", text, re.I):
+            continue
+        text = re.sub(r"\s[x×]\s?(?=[\d,]+$)", " ×", text)
+        key = re.sub(r"[^a-z0-9]", "", text.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+    return out
 
 
 def parse_humbao(text: str) -> list[CodeHit]:
@@ -149,10 +169,137 @@ def parse_humbao(text: str) -> list[CodeHit]:
     return hits
 
 
-_ROW_TEMPLATE = re.compile(r"\{\{\s*(?:Redemption\s+)?Code\s+Row\s*\|(?P<body>.*?)\}\}", re.I | re.S)
+# ----------------------------------------------------------------------------- expiry dates
+_MONTHS = {m: i for i, m in enumerate(
+    ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), start=1)}
+_ISO_DATE = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T]+(\d{1,2}):(\d{2}))?")
+_NAMED_DATE = re.compile(r"([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})(?:[, ]+(?:at\s+)?(\d{1,2}):(\d{2}))?")
+_NO_EXPIRY = re.compile(r"(?:unknown|indef(?:inite)?|none|n/?a|tba|permanent|\?+|-+)\.?")
+_EXPIRED_WORD = re.compile(r"(?:exp(?:ired)?|ended|invalid)\.?")
+_WIKI_MARKUP = re.compile(r"<[^>]+>|'{2,3}")
 
 
-def parse_fandom(data: dict) -> list[CodeHit]:
+def _us_dst(y: int, m: int, d: int, hh: int) -> bool:
+    """US daylight time: 2nd Sunday of March 02:00 -> 1st Sunday of November 02:00 (local)."""
+    def nth_sunday(month: int, n: int) -> int:
+        return 1 + (6 - calendar.weekday(y, month, 1)) % 7 + 7 * (n - 1)
+    return (3, nth_sunday(3, 2), 2) <= (m, d, hh) < (11, nth_sunday(11, 1), 2)
+
+
+def _tz_offset(text: str, y: int, m: int, d: int, hh: int) -> float:
+    if re.search(r"\bPDT\b", text):
+        return -7
+    if re.search(r"\bPST\b", text):
+        return -8
+    if re.search(r"\bPT\b|Pacific", text, re.I):
+        return -7 if _us_dst(y, m, d, hh) else -8
+    if re.search(r"\bE[DS]?T\b|Eastern", text):
+        return -4 if _us_dst(y, m, d, hh) else -5
+    off = re.search(r"\b(?:UTC|GMT)\s*([+-])\s*(\d{1,2})(?::?(\d{2}))?", text)
+    if off:
+        sign = 1 if off.group(1) == "+" else -1
+        return sign * (int(off.group(2)) + int(off.group(3) or 0) / 60)
+    return 0.0                                  # the wiki tables say "All times ... are UTC"
+
+
+def looks_like_expiry(text: str) -> bool:
+    t = _WIKI_MARKUP.sub(" ", text or "").strip().lower()
+    return bool(_ISO_DATE.search(t) or _NAMED_DATE.search(t) or _NO_EXPIRY.fullmatch(t)
+                or _EXPIRED_WORD.fullmatch(t))
+
+
+def parse_expiry(text: str, now: float | None = None) -> tuple[bool, int | None]:
+    """'2026-09-21' / '2025-08-03 23:59' / 'September 21, 2026 08:59 (PT)' / 'unknown' / 'exp'
+    -> (expired?, valid-until unix time or None). A bare date means the END of that day."""
+    now = time.time() if now is None else now
+    t = _WIKI_MARKUP.sub(" ", text or "").strip()
+    low = t.lower()
+    if not t or _NO_EXPIRY.fullmatch(low):
+        return False, None
+    if _EXPIRED_WORD.fullmatch(low):
+        return True, None
+    m = _ISO_DATE.search(t)
+    if m:
+        y, mo, d = int(m[1]), int(m[2]), int(m[3])
+        hh, mi = (int(m[4]), int(m[5])) if m[4] else (23, 59)
+    else:
+        m = _NAMED_DATE.search(t)
+        if not m or m[1][:3].lower() not in _MONTHS:
+            return False, None
+        y, mo, d = int(m[3]), _MONTHS[m[1][:3].lower()], int(m[2])
+        hh, mi = (int(m[4]), int(m[5])) if m[4] else (23, 59)
+    if not (2020 <= y <= 2100 and 1 <= mo <= 12 and 1 <= d <= 31 and 0 <= hh <= 23 and 0 <= mi <= 59):
+        return False, None
+    ts = int(calendar.timegm((y, mo, d, hh, mi, 59, 0, 0, 0)) - _tz_offset(t, y, mo, d, hh) * 3600)
+    return ts <= now, ts
+
+
+# ----------------------------------------------------------------------------- fandom wikitext
+_NAMED_FIELD = re.compile(r"^\s*[A-Za-z_][\w ]*=")
+_LIST_TEMPLATE = re.compile(r"\{\{\s*(?:Item|Card)\s+List\s*\|([^|}]+)", re.I)
+
+
+def _templates(wikitext: str, name_re: str):
+    """(position, body) of every {{Name|...}} template. Nested templates such as
+    {{Item List|...}} stay inside the body (a plain regex would stop at their closing braces)."""
+    for m in re.finditer(r"\{\{\s*(?:" + name_re + r")\s*\|", wikitext, re.I):
+        depth, i = 1, m.end()
+        while i < len(wikitext) and depth:
+            if wikitext.startswith("{{", i):
+                depth, i = depth + 1, i + 2
+            elif wikitext.startswith("}}", i):
+                depth, i = depth - 1, i + 2
+            else:
+                i += 1
+        if depth == 0:
+            yield m.start(), wikitext[m.end():i - 2]
+
+
+def _split_top(body: str) -> list[str]:
+    """Split template fields on '|' that are not inside {{...}} or [[...]]."""
+    out, cur, depth, i = [], [], 0, 0
+    while i < len(body):
+        two = body[i:i + 2]
+        if two in ("{{", "[["):
+            depth, i = depth + 1, i + 2
+            cur.append(two)
+            continue
+        if two in ("}}", "]]"):
+            depth, i = max(0, depth - 1), i + 2
+            cur.append(two)
+            continue
+        if body[i] == "|" and depth == 0:
+            out.append("".join(cur))
+            cur = []
+        else:
+            cur.append(body[i])
+        i += 1
+    out.append("".join(cur))
+    return [x.strip() for x in out]
+
+
+def _wiki_rewards(fields: list[str]) -> str | None:
+    for f in fields:
+        m = _LIST_TEMPLATE.search(f)
+        if m:
+            return m.group(1).strip()
+    for f in fields:
+        if re.search(r"[A-Za-z][^*|]*\*\s*[\d,]+", f) and "{{" not in f and "=" not in f:
+            return f.strip()
+    return None
+
+
+def parse_fandom(data: dict, now: float | None = None) -> list[CodeHit]:
+    """Fandom wiki code tables (MediaWiki API wikitext).
+
+    * template rows: {{Code Row|CODE[;CODE2...]|server|rewards|discovered|valid-until}} (Genshin)
+      and {{Redemption Code Row|CODE|ref=...|server|{{Item List|...}}|discovered|valid-until}}
+      (Star Rail / ZZZ). Several codes may share one row.
+    * plain wikitable rows (Wuthering Waves): |CODE||server||{{Card List|...}} ... Valid until: <date>
+    A row is EXPIRED when it sits under an Expired heading / comment, says 'exp', or its
+    valid-until date has passed. Wiki editors often leave dead livestream codes under
+    'Active' for days, so the date is what counts."""
+    now = time.time() if now is None else now
     pages = ((data or {}).get("query") or {}).get("pages") or {}
     wikitext = ""
     for page in pages.values():
@@ -163,51 +310,77 @@ def parse_fandom(data: dict) -> list[CodeHit]:
     if not wikitext:
         return []
     hits: list[CodeHit] = []
-    # 1) template rows ({{Code Row|CODE|server|rewards…}} / {{Redemption Code Row|…}}),
-    #    honoring <!-- active --> / <!-- expired --> section comments when present
+
+    # 1) template rows, honoring <!-- active --> / <!-- expired --> comments and headings
+    markers = sorted(
+        [(m.start(), "expired" not in m.group(0).lower()) for m in
+         re.finditer(r"<!--[^>]*?(active|expired)[^>]*?-->", wikitext, re.I)]
+        + [(m.start(), not re.search(r"expired|inactive|invalid", m.group(0), re.I)) for m in
+           re.finditer(r"\n=+[^=\n]*(?:active|expired|inactive|invalid)[^=\n]*=+", wikitext, re.I)])
     active = True
-    markers = [(m.start(), "expired" not in m.group(0).lower()) for m in
-               re.finditer(r"<!--[^>]*?(active|expired)[^>]*?-->", wikitext, re.I)]
-    for m in _ROW_TEMPLATE.finditer(wikitext):
-        while markers and markers[0][0] < m.start():
+    for pos, body in _templates(wikitext, r"(?:Redemption\s+)?Code\s+Row"):
+        while markers and markers[0][0] < pos:
             active = markers.pop(0)[1]
-        fields = [f.strip() for f in m.group("body").split("|")]
-        if any(f.replace(" ", "").lower() == "notacode=yes" for f in fields):
+        fields = _split_top(body)
+        named = {k.strip().lower(): v.strip() for k, _, v in
+                 (f.partition("=") for f in fields if _NAMED_FIELD.match(f))}
+        positional = [f for f in fields if not _NAMED_FIELD.match(f)]
+        if not positional or named.get("notacode", "").lower() == "yes":
             continue
-        positional = [f for f in fields if "=" not in f]
-        if not positional:
+        if any(f.strip().upper() == "CN" for f in positional[1:3]):
+            continue                                          # China-only code
+        codes = [c for c in (sanitize(x) for x in re.split(r"[;,/]", positional[0])) if c]
+        if not codes:
             continue
-        if any(f.upper() == "CN" for f in positional[1:3]):
-            continue
-        code = sanitize(positional[0])
-        if not code:
-            continue
-        expired = not active or any(re.fullmatch(r"(?:expired|ended)\s*=\s*(?:yes|true|1)", f, re.I) for f in fields)
-        hits.append(CodeHit(code, "fandom", None, expired=expired))
-    # 2) plain wikitable (Wuthering Waves page): first cell of each row; rows after an
-    #    "Expired" heading are reported as expired
+        # fields: code | server | rewards | discovered | valid-until. Only the 5th field is an expiry:
+        # when editors leave it out, the last field is the DISCOVERED date, which must not expire a code.
+        tail = next((named[k] for k in ("expiry", "expires", "valid", "until", "end") if named.get(k)),
+                    positional[4] if len(positional) > 4 else "")
+        date_expired, valid_until = parse_expiry(tail, now) if looks_like_expiry(tail) else (False, None)
+        flagged = any(named.get(k, "").lower() in ("yes", "true", "1") for k in ("expired", "ended"))
+        rewards = _wiki_rewards(fields)
+        for code in codes:
+            hits.append(CodeHit(code, "fandom", rewards, expired=(not active) or date_expired or flagged,
+                                expires_at=valid_until))
+
+    # 2) plain wikitable rows (Wuthering Waves page)
     if not hits:
-        parts = re.split(r"\n=+\s*(?:Expired|Inactive|Invalid)\b[^\n]*", wikitext, maxsplit=1, flags=re.I)
-        for idx, table in enumerate(parts):
-            for row in re.split(r"\n\|-", table):
-                cells = [c.strip() for c in re.split(r"\|\||\n\|", row) if c.strip()]
-                if not cells:
-                    continue
-                first = re.sub(r"<[^>]+>|'''?|\[\[|\]\]", "", cells[0]).strip(" |*")
-                code = sanitize(first.split("\n")[0])
-                if code and first.upper() == first.split("\n")[0].upper():
-                    hits.append(CodeHit(code, "fandom", None, expired=idx > 0))
+        heading = re.search(r"\n=+\s*(?:Expired|Inactive|Invalid)\b[^\n]*", wikitext, re.I)
+        expired_from = heading.start() if heading else len(wikitext)
+        offset = 0
+        for chunk in re.split(r"(\n\|-|\n\|\})", wikitext):
+            pos, offset = offset, offset + len(chunk)
+            m = re.search(r"(?m)^\|(?![-}+])\s*([^|\n]*?)\s*\|\|", chunk)
+            if not m:
+                continue
+            raw = re.sub(r"'{2,3}|<[^>]+>|\[\[|\]\]", "", m.group(1)).strip(" *")
+            if not re.fullmatch(r"[A-Z0-9]{5,20}", raw):     # headers, templates, prose
+                continue
+            code = sanitize(raw)
+            if not code:
+                continue
+            until = re.search(r"Valid\s+until:?\s*(.+?)(?:'{2,3}|\n|$)", chunk, re.I)
+            date_expired, valid_until = parse_expiry(until.group(1), now) if until else (False, None)
+            hits.append(CodeHit(code, "fandom", _wiki_rewards([chunk]),
+                                expired=pos >= expired_from or date_expired, expires_at=valid_until))
     return hits
 
 
 def parse_codehub(data: dict, slug: str) -> list[CodeHit]:
+    """PromoGacha's data/codes.json is an AGGREGATOR: every entry names where it was copied
+    from (hoyo-codes = seria, Fandom Wiki) and entries are never removed. It therefore only
+    counts as that upstream source (never as an extra, independent one)."""
     hits = []
     for c in (data or {}).get("codes") or []:
         if c.get("game") != slug:
             continue
         code = sanitize(c.get("code") or "")
-        if code:
-            hits.append(CodeHit(code, "codehub", c.get("reward") or None))
+        if not code:
+            continue
+        upstream = str((c.get("source") or {}).get("name") or "").lower()
+        origin = "seria" if "hoyo-codes" in upstream or "seria" in upstream else (
+            "fandom" if "fandom" in upstream or "wiki" in upstream else "")
+        hits.append(CodeHit(code, "codehub", c.get("reward") or None, origin=origin))
     return hits
 
 

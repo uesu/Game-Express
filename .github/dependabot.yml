@@ -1,7 +1,10 @@
 # Dependabot = an OPTIONAL helper that opens pull requests when a dependency or a GitHub
 # Action has a new version. It never changes main by itself: CI tests every PR, you merge
-# (or enable the opt-in auto-merge: variable AUTO_MERGE_DEPENDABOT=yes). The monitor does
-# NOT need it to run. Keep it in the development repo; see docs/DEPENDABOT.md.
+# (or turn on the opt-in auto-merge: repository variable AUTO_MERGE_DEPENDABOT=yes, handled by
+# the last job of ci.yml). The monitor does NOT need it to run. See docs/DEPENDABOT.md.
+#
+# No custom labels on purpose: Dependabot then uses its default "dependencies" label and
+# creates it automatically (custom labels must exist in the repo first).
 version: 2
 updates:
   - package-ecosystem: pip
@@ -9,8 +12,10 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # requirements.txt uses ranges (aiohttp>=3.9,<4) and every run already installs the newest
+    # allowed release, so only open a PR when a release falls OUTSIDE the range (a new major).
+    versioning-strategy: increase-if-necessary
     open-pull-requests-limit: 5
-    labels: [dependencies, python]
     commit-message:
       prefix: "deps(python)"
     groups:
@@ -23,7 +28,6 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
-    labels: [dependencies, github-actions]
     commit-message:
       prefix: "deps(actions)"
     groups:

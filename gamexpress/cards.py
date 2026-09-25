@@ -217,18 +217,24 @@ def schedule_payload(game: Game, d: dict, settings: Settings, ping: Ping,
     url = d.get("title_url") or d.get("source_url")
     head = f"## [{title}]({url})" if url else f"## {title}"
     pts = d.get("program_ts")
-    ts_line = f"{discord_ts(pts, 'F')} or {discord_ts(pts, 'R')}" if pts else f"{d.get('program_name') or game.program_label}: {TBA}"
+    if pts:
+        ts_line = f"{discord_ts(pts, 'F')} or {discord_ts(pts, 'R')}"
+    elif d.get("maint_start_ts") or d.get("preinstall_ts"):
+        ts_line = ""      # the program aired before the update notice — never show a misleading "TBA"
+    else:
+        ts_line = f"{d.get('program_name') or game.program_label}: {TBA}"
+    top = f"{head}\n{ts_line}" if ts_line else head
     maint = maintenance_block(game, d)
     banners = banners_block(game, d)
 
     children: list[dict] = []
     if game.card.maintenance_first:          # WW order: timestamps → maintenance + note → banners
-        children.append(text(f"{head}\n{ts_line}"))
+        children.append(text(top))
         children += [sep(), text(f"{maint}\n\n{game.card.note}" if game.card.note else maint)]
         if game.card.show_banners:
             children += [sep(), text(banners)]
     else:                                     # GI / HSR / ZZZ order
-        first = f"{head}\n{ts_line}" + (f"\n\n{game.card.note}" if game.card.note else "")
+        first = top + (f"\n\n{game.card.note}" if game.card.note else "")
         children.append(text(first))
         if game.card.show_banners:
             children += [sep(), text(banners)]

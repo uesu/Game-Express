@@ -13,7 +13,7 @@ That workflow:
 
 ## 0. Before merging a PR
 
-The PR's **CI — compile + offline tests** check must be green. It runs 47 offline tests, which
+The PR's **CI — compile + offline tests** check must be green. It runs 55 offline tests, which
 cover:
 
 - the real official posts, which must reproduce your reference cards' timestamps;
@@ -65,7 +65,13 @@ Open the run → **Summary**:
 - Lines like `📜 HSR 4.6: schedule card posted` mean the card **would be posted** (this is a dry
   run). The full card JSON is in the log.
   - To see a card, paste the JSON into [discohook.app](https://discohook.app).
-- `⏳ GI SOMECODE: pending (only ogc)` → a code seen by only one source. It's correctly held back.
+- `⏳ GI: 2 new code(s) waiting for a second source: GS71XOXYLG (only ennead), …` → codes seen by
+  only one source. They're correctly held back until another source confirms them.
+- `🧊 HSR: 12 code(s) ignored — already expired` → codes some source still lists, but another
+  source (or their *valid until* date) says they're dead. They're correctly never posted.
+- **In a live dry run, the Special Program line is often missing from the cards.** Announcements
+  older than a few days aren't in the feeds any more. In production the bot sees them when they
+  are new; for an old version you can pin the time in `config/overrides.json`.
 - `⚠️ HSR 4.7 phase 1: 4★ shown as TBA — 2 name(s) found, 3 expected` → the uncertain 4★ list was
   correctly replaced by TBA.
 - `⏱️ run took …s` → typically 5–20 s.
@@ -84,8 +90,13 @@ this to check real data end-to-end before going live.
 1. Set up cron-job.org by following [SCHEDULER.md](SCHEDULER.md), then press **TEST RUN**.
    Expect `204`.
 2. Check the **first live run**. Its summary says it seeded the current announcements and codes
-   **silently** (no posts). This is correct.
-   - To post what's current right away, set `BOOTSTRAP_POST=1` for that one run, then delete it.
+   **silently** (`🌱 … seeded silently`, no posts). This is correct.
+   - To post what's current on that first run instead, set `BOOTSTRAP_POST=1` **before** it,
+     then delete it.
+   - **Already seeded?** Run the Monitor with `repost` set to an upcoming version from the
+     summary (e.g. `starrail:4.6`). A card for a version that's already out (`genshin:7.1` after
+     its update) is old news. A version that hasn't been announced yet (`genshin:7.2`) can't be
+     reposted, and the summary explains why.
 3. From then on, new codes and announcements are posted automatically.
 
 ## 6. Healthy-system checklist (check weekly, or when in doubt)
@@ -112,7 +123,7 @@ this to check real data end-to-end before going live.
 
 ```bash
 pip install -r requirements.txt pyyaml
-python tests/test_smoke.py                 # 47 offline tests
+python tests/test_smoke.py                 # 55 offline tests
 python -m gamexpress validate              # routing, pings, card limits
 python -m gamexpress preview               # previews/index.html = every card, Discord-style
 DRY_RUN=1 TEST_MODE=1 BOOTSTRAP_POST=1 STATE_PATH=/tmp/s.json python -m gamexpress run

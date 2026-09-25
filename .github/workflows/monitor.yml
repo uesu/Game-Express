@@ -41,7 +41,7 @@ on:
         required: false
         default: ''
       repost:
-        description: 'Optional: force a NEW post of a tracked version, e.g. genshin:7.2'
+        description: 'Optional: post a version card again as a NEW message, e.g. starrail:4.6 (only versions the bot has already seen; the run summary lists them)'
         required: false
         default: ''
 
@@ -50,9 +50,9 @@ permissions:
 
 jobs:
   monitor:
-    # Development repo (uesu/Game-Express): set the repository VARIABLE ENABLED_FEATURES=none
-    # and every monitor run is skipped, even if something triggers it by mistake.
-    # (The Test workflow still works there.)
+    # Only on a development COPY that must never post: set the repository VARIABLE
+    # ENABLED_FEATURES=none and every monitor run is skipped, even if something triggers it by
+    # mistake (the Test workflow still works there). Never set it on the repo that posts.
     if: vars.ENABLED_FEATURES != 'none'
     runs-on: ubuntu-latest
     timeout-minutes: 15
