@@ -1,11 +1,1551 @@
 {
   "bootstrapped": {
+    "codes:genshin": 1790323434,
+    "codes:starrail": 1790323434,
+    "codes:wuwa": 1790323434,
+    "codes:zzz": 1790323434,
     "schedule:genshin": 1790323164,
     "schedule:starrail": 1790323164,
     "schedule:wuwa": 1790323164,
     "schedule:zzz": 1790323164
   },
-  "codes": {},
+  "codes": {
+    "genshin": {
+      "2BJ64QRZ7RT8": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "Primogem*60;Adventurer's Experience*5",
+        "sources": [
+          "codehub",
+          "ennead",
+          "humbao",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "BALLETCOLLAB": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Hero's Wit ×3",
+          "Mora ×10,000",
+          "Mystic Enhancement Ore ×3",
+          "Primogem ×30"
+        ],
+        "sources": [
+          "codehub",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "CODENAMEK": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Masked Ball Invitation Letter ×1"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "DATG5HG1PL89": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Mora ×10000",
+          "Adventurer's Experience ×10",
+          "Fine Enhancement Ore ×5",
+          "Jueyun Chili Chicken ×5",
+          "Stir-Fried Fish Noodles ×5"
+        ],
+        "sources": [
+          "ennead",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "DUGODWKRHAKDNJ": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Hero's Wit ×3",
+          "Mora ×10,000",
+          "Mystic Enhancement Ore ×3",
+          "Primogem ×30"
+        ],
+        "sources": [
+          "codehub",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "EHVE2TEAFY6O": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Adventurer's Experience ×10",
+          "Fine Enhancement Ore ×5",
+          "Jueyun Chili Chicken ×5",
+          "Mora ×10,000",
+          "Stir-Fried Fish Noodles ×5"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "EPIC2026": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "40 primogems, five hero's wit, and 20k mora",
+        "sources": [
+          "codehub",
+          "ennead",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "EZSB8889C2BZ": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Adventurer's Experience ×10",
+          "Fine Enhancement Ore ×5",
+          "Jueyun Chili Chicken ×5",
+          "Mora ×10,000",
+          "Stir-Fried Fish Noodles ×5"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "GENSHINGIFT": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Hero's Wit ×3",
+          "Primogem ×50"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "GS70XINGOJ": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Hero's Wit ×3",
+          "Mora ×30,000",
+          "Mystic Enhancement Ore ×5"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "GS70XRNWFB": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "30000 Mora + 3 Hero's Wit + 5 Fine Enhancement Ore",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "GS71XAVWDS": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "Mora*30000;Hero's Wit*3;Mystic Enhancement Ore*5",
+        "sources": [
+          "codehub",
+          "ennead",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "GS71XDYGEO": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Mora ×30000",
+          "Hero's Wit ×3",
+          "Mystic Enhancement Ore ×5"
+        ],
+        "sources": [
+          "ennead",
+          "humbao"
+        ],
+        "status": "seeded"
+      },
+      "GS71XOXYLG": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Mora ×30000",
+          "Hero's Wit ×3",
+          "Mystic Enhancement Ore ×5"
+        ],
+        "sources": [
+          "ennead"
+        ],
+        "status": "seeded"
+      },
+      "GS71XYNSYJ": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Mora ×30000",
+          "Hero's Wit ×3",
+          "Mystic Enhancement Ore ×5"
+        ],
+        "sources": [
+          "codehub",
+          "ennead",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "GS71YTAICB": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Mora ×30,000",
+          "Hero's Wit ×3",
+          "Mystic Enhancement Ore ×5"
+        ],
+        "sources": [
+          "ennead",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "LEGEDILJKSGM": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Adventurer's Experience ×5",
+          "Primogem ×60"
+        ],
+        "sources": [
+          "codehub",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "MYSNEZHNAYACAREER": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Hero's Wit ×3",
+          "Mora ×20,000",
+          "Primogem ×160",
+          "Primogem ×20,000"
+        ],
+        "sources": [
+          "codehub",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "NMI20MAJGIBP": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Geode of Replication ×160",
+          "Primogem ×20"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "P7G0XA30H0Q3": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": null,
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "PFY1S40I88T9": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Adventurer's Experience ×5",
+          "Primogem ×60"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "PLDXI8VFKI7C": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": null,
+        "sources": [
+          "codehub",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "PLDXIB886Y1S": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Mora ×10000",
+          "Adventurer's Experience ×10",
+          "Fine Enhancement Ore ×5",
+          "Jueyun Chili Chicken ×5",
+          "Stir-Fried Fish Noodles ×5"
+        ],
+        "sources": [
+          "ennead",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "PRIMADONNA": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Mora ×50,000",
+          "Mora ×50000",
+          "Primogem ×100"
+        ],
+        "sources": [
+          "codehub",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "REKVIEM": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Mystic Enhancement Ore ×10",
+          "Primogem ×100"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "SNEZHNAYA": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Fine Enhancement Ore ×5",
+          "Hero's Wit ×3",
+          "Mora ×30,000"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "UIVIBUQM6Q8A": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Adventurer's Experience ×10",
+          "Fine Enhancement Ore ×5",
+          "Jueyun Chili Chicken ×5",
+          "Mora ×10,000",
+          "Stir-Fried Fish Noodles ×5"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "VESNA0923": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Hero's Wit ×5",
+          "Primogem ×100"
+        ],
+        "sources": [
+          "codehub",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "VESNAONPATROL": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "Primogem*40;Mora*20000;Hero's Wit*3",
+        "sources": [
+          "codehub",
+          "ennead",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "WA8MJCETGXLR": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": null,
+        "sources": [
+          "fandom"
+        ],
+        "status": "seeded"
+      },
+      "XVIZDH2B9WGX": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Adventurer's Experience ×10",
+          "Fine Enhancement Ore ×5",
+          "Jueyun Chili Chicken ×5",
+          "Mora ×10,000",
+          "Stir-Fried Fish Noodles ×5"
+        ],
+        "sources": [
+          "codehub",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "Y1INABQB6DEX": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "60 primogems and five adventurer's experience",
+        "sources": [
+          "codehub",
+          "ennead",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "Y6JYMKV6JKSL": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "Primogem*60;Adventurer's Experience*5",
+        "sources": [
+          "codehub",
+          "ennead",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "YOAL3V36XHS7": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Adventurer's Experience ×10",
+          "Fine Enhancement Ore ×5",
+          "Jueyun Chili Chicken ×5",
+          "Mora ×10,000",
+          "Stir-Fried Fish Noodles ×5"
+        ],
+        "sources": [
+          "codehub",
+          "ogc"
+        ],
+        "status": "seeded"
+      }
+    },
+    "starrail": {
+      "2TKRKAR6YG2X": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Credit ×50000",
+          "Stellar Jade ×100",
+          "Unknown reward (0b12bdf76fa4abc6b4d1fdfc0fb4d6f5_4521150989210768295) ×50000",
+          "Unknown reward (77cb5426637574ba524ac458fa963da0_6409817950389238658) ×100"
+        ],
+        "sources": [
+          "fandom",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "4T28RJM4MS3B": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Credit ×10,000",
+          "Stellar Jade ×50"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "4TKSX77Y58QK": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "30 stellar jade, three traveler’s guides, five condensed aether, four lost gold fragments, and 20k credits",
+        "sources": [
+          "codehub",
+          "ennead",
+          "humbao",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "5S6ZHRWTDNJB": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "60 stellar jade",
+        "sources": [
+          "codehub",
+          "humbao",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "7S4AD2X35NE3": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Stellar Jade ×100",
+          "Traveler's Guide ×5",
+          "Unknown reward (508229a94e4fa459651f64c1cd02687a_6307505132287490837) ×5",
+          "Unknown reward (77cb5426637574ba524ac458fa963da0_6409817950389238658) ×100"
+        ],
+        "sources": [
+          "codehub",
+          "fandom",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "8SMSVJWJM7ZT": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Credit ×10,000",
+          "Stellar Jade ×50"
+        ],
+        "sources": [
+          "codehub",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "AT45Q": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Credit ×50,000",
+          "Credit ×50000",
+          "Stellar Jade ×100"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "BESTCOFFEEEVER": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Express Special Blend - Rustic Infusion ×2",
+          "Express Special Blend: Rustic Infusion ×2",
+          "Traveler's Guide ×3"
+        ],
+        "sources": [
+          "fandom",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "BGF3A": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Stellar Jade ×100",
+          "Traveler's Guide ×5"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "BLADEFITCHECK": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Cold Joke ×2",
+          "Traveler's Guide ×3"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "CREATIONNYMPH": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "60 stellar jade and one fuel",
+        "sources": [
+          "codehub",
+          "ennead",
+          "fandom",
+          "humbao",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "CTK5DRQVT48F": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": null,
+        "sources": [
+          "codehub",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "FAREWELL": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "60 stellar jade and one fuel",
+        "sources": [
+          "codehub",
+          "fandom",
+          "humbao",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "HAILYAOGUANG": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Songlotus Cake ×2",
+          "Traveler's Guide ×3"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "HT3QMCJ9U4JB": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": null,
+        "sources": [
+          "fandom"
+        ],
+        "status": "seeded"
+      },
+      "IFYOUAREREADINGTHIS": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "60 stellar jade and one fuel",
+        "sources": [
+          "codehub",
+          "fandom",
+          "humbao",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "KA5SV3FJM7WX": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Credit ×50000",
+          "Stellar Jade ×100",
+          "Unknown reward (0b12bdf76fa4abc6b4d1fdfc0fb4d6f5_4521150989210768295) ×50000",
+          "Unknown reward (77cb5426637574ba524ac458fa963da0_6409817950389238658) ×100"
+        ],
+        "sources": [
+          "codehub",
+          "fandom",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "KBJ8VZ6Y27QX": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Credit ×5,000",
+          "Credit ×5000",
+          "Refined Aether ×3",
+          "Stellar Jade ×60",
+          "Traveler's Guide ×2"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "LSJ9JARPZH33": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Stellar Jade ×100",
+          "Traveler's Guide ×5",
+          "Unknown reward (508229a94e4fa459651f64c1cd02687a_6307505132287490837) ×5",
+          "Unknown reward (77cb5426637574ba524ac458fa963da0_6409817950389238658) ×100"
+        ],
+        "sources": [
+          "fandom",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "MALSV2F247FP": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Refined Aether ×4",
+          "Stellar Jade ×100",
+          "Unknown reward (77cb5426637574ba524ac458fa963da0_6409817950389238658) ×100",
+          "Unknown reward (7cb0e487e051f177d3f41de8d4bbc521_2556290033227986328) ×4"
+        ],
+        "sources": [
+          "codehub",
+          "fandom",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "MH5KC": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Refined Aether ×4",
+          "Stellar Jade ×100"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "NSJR3B97ZZ5X": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Credit ×10,000",
+          "Credit ×10000",
+          "Stellar Jade ×50"
+        ],
+        "sources": [
+          "fandom",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "OMEGA": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "60 stellar jade and one fuel",
+        "sources": [
+          "ennead",
+          "fandom",
+          "humbao",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "PSJQKBQPYGMT": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Credit ×10,000",
+          "Stellar Jade ×50"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "STARRAILFATE2026": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "The Fluffy Multi-Functional Fan Glowstick ×2",
+          "Traveler's Guide ×3"
+        ],
+        "sources": [
+          "fandom",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "STARRAILGIFT": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "50 stellar jade, 10k credits, two traveler’s guides, and five bottled soda",
+        "sources": [
+          "codehub",
+          "ennead",
+          "fandom",
+          "humbao",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "SUB2SPARXIE": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Sparxie Unlimited Edition Collectibles ×2",
+          "Traveler's Guide ×3"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "SUNSWEPTROBIN": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Classic SoulGlad ×2",
+          "Traveler's Guide ×3"
+        ],
+        "sources": [
+          "codehub",
+          "ennead",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "WA4AV2F24PYX": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Stellar Jade ×50",
+          "Credit ×10000"
+        ],
+        "sources": [
+          "codehub",
+          "ennead",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "WAK84U29VLYP": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": null,
+        "sources": [
+          "fandom"
+        ],
+        "status": "seeded"
+      },
+      "WAVEFLAIRSTYLE": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Traveler's Guide ×3",
+          "Speeding Jet Surfboard ×2"
+        ],
+        "sources": [
+          "codehub",
+          "ennead",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "XAK9QJ454SG7": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Credit ×10,000",
+          "Credit ×10000",
+          "Stellar Jade ×50"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "XTJ9MV38DL3X": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": null,
+        "sources": [
+          "fandom"
+        ],
+        "status": "seeded"
+      },
+      "YAJQ2TR6ZY2P": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Refined Aether ×4",
+          "Stellar Jade ×100",
+          "Unknown reward (77cb5426637574ba524ac458fa963da0_6409817950389238658) ×100",
+          "Unknown reward (7cb0e487e051f177d3f41de8d4bbc521_2556290033227986328) ×4"
+        ],
+        "sources": [
+          "fandom",
+          "ogc"
+        ],
+        "status": "seeded"
+      }
+    },
+    "wuwa": {
+      "2NDANNIVERSARY": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 2 Forgery Premium Supply + 40000 Shell Credit",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "AGONISON": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 1 Weekly Challenge Supply Pack + 2 Advanced Sealed Tube",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "BACKTOSCHOOL": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 4 Premium Resonance Potion + 5 Advanced Energy Core",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "BAHAMUTKXMHM": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Medium Energy Core ×5",
+          "Medium Resonance Potion ×5",
+          "Shell Credit ×5,000"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "BEYONDTHEDOOR": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Energy Core + 2 Medium Nutrient Block",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "BURNINGSUN": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 4 Premium Resonance Potion + 5 Advanced Energy Core",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "CRUMBLEDCITY": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Energy Core + 2 Medium Nutrient Block",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "DARKSIDE": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Resonance Potion + 2 Medium Revival Inhaler",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "DCARD3VN7M": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Medium Energy Core ×5",
+          "Medium Resonance Potion ×5",
+          "Shell Credit ×5,000"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "DREAMSPERSIST": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Energy Core + 2 Medium Nutrient Block",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "ENDLESSSUMMER": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Resonance Potion + 2 Medium Revival Inhaler",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "ETERNALFLAME": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Energy Core + 2 Medium Nutrient Block",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "EVERSHINE": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 20 Premium Tuner + 5 Advanced Sealed Tube",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "F5F4D3B2A2": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Escape from Duckov Collab Livery ×1"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "FACEALEPH1": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 4 Premium Resonance Potion + 5 Advanced Energy Core",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "FACETHEFATE": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 20 Premium Tuner + 5 Advanced Sealed Tube",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "FALLINGSANCTUM": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Premium Resonance Potion + 2 Advanced Revival Inhaler",
+        "sources": [
+          "codehub",
+          "fandom"
+        ],
+        "status": "seeded"
+      },
+      "FASTERHIGHERSTRONGER": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "80 Astrite",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "FIGHTFORHOPE": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Enclosure Tank + 20000 Shell Credit",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "FINDSENTINEL": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 2 Premium Enclosure Tank + 40000 Shell Credit",
+        "sources": [
+          "codehub",
+          "fandom"
+        ],
+        "status": "seeded"
+      },
+      "FLAMESOFHEART": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 2 Forgery Premium Supply + 40000 Shell Credit",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "HEARTOFSWORD": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Resonance Potion + 2 Medium Revival Inhaler",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "HITTHEROAD": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 2 Forgery Premium Supply + 40000 Shell Credit",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "ILLUSIONHAUNTS": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Resonance Potion + 2 Medium Revival Inhaler",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "INTOTHEFOG": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 2 Forgery Premium Supply + 20000 Shell Credit",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "JOURNEYWELL": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 2 Forgery Premium Supply + 2 Advanced Sealed Tube",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "MECHANISMCITY": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 4 Premium Resonance Potion + 5 Advanced Energy Core",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "MOONLIGHT": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 2 Forgery Premium Supply + 40000 Shell Credit",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "NOMATTERTHECOST": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Resonance Potion + 2 Medium Revival Inhaler",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "PAPERPLANE": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 4 Premium Resonance Potion + 5 Advanced Energy Core",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "PTTMYZSOM": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Medium Energy Core ×5",
+          "Medium Resonance Potion ×5",
+          "Shell Credit ×5,000"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "RABBITHOLE": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Energy Core + 2 Medium Nutrient Block",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "RISKEVERYTHING": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Energy Core + 2 Medium Nutrient Block",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "RUNEREADER": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Enclosure Tank + 20000 Shell Credit",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "SAYCHEESE": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Enclosure Tank + 20000 Shell Credit",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "SHADOWOFGLORY": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 4 Premium Resonance Potion + 5 Advanced Energy Core",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "SLICEDSPACE": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Enclosure Tank + 20,000 Shell Credit",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "SOLARISSUPERCUP": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "80 Astrite",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "STARCHASER": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 20 Premium Tuner + 5 Advanced Sealed Tube",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "STRANGEVISITORS": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Resonance Potion + 2 Medium Revival Inhaler",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "TERMINOLOGYINFOBOX": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": null,
+        "sources": [
+          "fandom"
+        ],
+        "status": "seeded"
+      },
+      "THEANSWER": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Enclosure Tank + 20000 Shell Credit",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "THISISFINALE": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 3 Advanced Enclosure Tank + 20000 Shell Credit",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "WAKINGMOON": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 20 Premium Tuner + 5 Advanced Sealed Tube",
+        "sources": [
+          "codehub",
+          "fandom"
+        ],
+        "status": "seeded"
+      },
+      "WARMSUNLIGHT": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "100 Astrite + 4 Premium Enclosure Tank + 40000 Shell Credit",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "WUTHERINGGIFT": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Astrite ×50",
+          "Medium Energy Bag ×2",
+          "Medium Revival Inhaler ×2",
+          "Premium Resonance Potion ×2",
+          "Shell Credit ×10,000",
+          "Shell Credit ×15,000"
+        ],
+        "sources": [
+          "fandom",
+          "ogc",
+          "wuthering.gg"
+        ],
+        "status": "seeded"
+      },
+      "WUWA4PC": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Astrite ×50",
+          "Shell Credit ×20,000"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      }
+    },
+    "zzz": {
+      "CBW0884678": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Denny ×20,000"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "FLINTWORKS": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Dennies ×30000",
+          "Denny ×30,000",
+          "Polychrome ×300",
+          "Senior Investigator Log ×2",
+          "Senior Investigator Logs ×2",
+          "W-Engine Energy Module ×3"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "ROSCAELIFER0617": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Polychrome ×30"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "VRELEASE31": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Polychrome ×50"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "ZENLESSGIFT": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "50 polychrome, two official investigator logs, three w-engine power supplies, and one bangboo algorithm module",
+        "sources": [
+          "codehub",
+          "ennead",
+          "fandom",
+          "humbao",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "ZZZ2YEAR": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Polychrome ×50"
+        ],
+        "sources": [
+          "codehub",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "ZZZ30BANGBOO": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Denny ×6,666",
+          "Polychrome ×60"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "ZZZ31REMIELLE": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Denny ×6,666",
+          "Polychrome ×60"
+        ],
+        "sources": [
+          "codehub",
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "ZZZDREAMLAND": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Denny ×6,666",
+          "Polychrome ×30"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "ZZZGRIND32": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "Polychrome*20;Denny*2,222",
+        "sources": [
+          "codehub",
+          "ennead",
+          "fandom",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "ZZZINK32": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "Polychrome*20;Denny*2,222",
+        "sources": [
+          "codehub",
+          "ennead",
+          "fandom",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "ZZZMEIJI": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "3 Senior Investigator Log + 3 W-Engine Energy Module + 30,000 Denny",
+        "sources": [
+          "codehub"
+        ],
+        "status": "seeded"
+      },
+      "ZZZSEASON3": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Polychrome ×50"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      },
+      "ZZZVOID32": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": "Polychrome*20;Denny*2,222",
+        "sources": [
+          "codehub",
+          "ennead",
+          "fandom",
+          "ogc",
+          "seria"
+        ],
+        "status": "seeded"
+      },
+      "ZZZY2ANNIV": {
+        "first_seen": 1790323430,
+        "last_seen": 1790323430,
+        "rewards": [
+          "Dennies ×30000",
+          "Denny ×30,000",
+          "Polychrome ×300",
+          "Senior Investigator Log ×2",
+          "Senior Investigator Logs ×2",
+          "W-Engine Energy Module ×3"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "seeded"
+      }
+    }
+  },
   "heartbeat": {
     "app_version": "1.1.0",
     "every_min": 1440,
