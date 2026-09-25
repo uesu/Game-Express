@@ -19,7 +19,7 @@ from collections.abc import Callable
 from ..config import Game
 from ..http import Fetcher
 from ..models import Item
-from ..textutil import html_to_text, structured_to_text
+from ..textutil import find_version, html_to_text, structured_to_text, youtube_video_url
 from ..timeparse import parse_iso
 
 log = logging.getLogger("gamexpress.hoyolab")
@@ -132,3 +132,72 @@ async def fetch_items(fetcher: Fetcher, game: Game, want: Callable[[str], bool],
         log.warning("[%s] HoYoLAB API unreachable — using the c3kay mirror", game.key)
         items = await c3kay_items(fetcher, game, want, since_ts)
     return items
+
+
+# --------------------------------------------------------------------------- program lookup
+PROGRAM_TITLE = re.compile(r"special\s+(?:program|broadcast)|livestream\s+preview", re.I)
+
+
+def pick_program(lists: list[dict], version: str | None, patterns: list[str]) -> tuple[str, dict, dict] | None:
+    """The version's program article out of raw getNewsList pages -> (post_id, wrapper, post).
+
+    Deliberately ignores `created_at`: the whole point is to reach an announcement that has
+    already fallen out of the run's lookback window (HSR 4.6: the Special Program preview was
+    11 days older than the maintenance notice that the card had linked to)."""
+    pats = [p.lower() for p in patterns]
+    best = None
+    for data in lists:
+        if not isinstance(data, dict) or data.get("retcode") != 0:
+            continue
+        for wrapper in (data.get("data") or {}).get("list") or []:
+            post = wrapper.get("post") or {}
+            subject = (post.get("subject") or "").strip()
+            if not post.get("post_id") or not subject:
+                continue
+            lead = subject.lower()
+            if not (PROGRAM_TITLE.search(subject) or any(p in lead for p in pats)):
+                continue
+            if version and find_version(subject) not in (version, None):
+                continue
+            created = int(post.get("created_at") or 0)
+            if best is None or created > int(best[1].get("post", {}).get("created_at") or 0):
+                best = (str(post["post_id"]), wrapper, post)
+    return best
+
+
+async def find_program(fetcher: Fetcher, game: Game, version: str | None, pages: int = 3) -> dict | None:
+    """-> {'url','title','images','ts','source'} for the version's Special Program article, or
+    None. Pages the official news list back until it finds one (page_size 20 x `pages`)."""
+    gid = game.hoyolab_gid
+    if not gid:
+        return None
+    last_id, lists = "", []
+    for _ in range(max(1, pages)):
+        params = {"gids": gid, "page_size": 20, "type": 1}
+        if last_id:
+            params["last_id"] = last_id
+        data = await fetcher.get_json(API + "getNewsList", source="hoyolab", headers=HEADERS, params=params)
+        if not data or data.get("retcode") != 0:
+            break
+        rows = (data.get("data") or {}).get("list") or []
+        lists.append(data)
+        if not rows:
+            break
+        last_id = str((rows[-1].get("post") or {}).get("post_id") or "")
+        if not last_id:
+            break
+    hit = pick_program(lists, version, game.program_patterns)
+    if not hit:
+        return None
+    pid, wrapper, post = hit
+    full = await _full_post(fetcher, gid, pid)
+    images = _images(wrapper)
+    text, youtube = (post.get("content") or post.get("desc") or ""), None
+    if full:
+        text, links, imgs = _post_text(full.get("post") or {})
+        images = _images(full) or imgs or images
+        youtube = youtube_video_url(links, text)
+    log.info("[%s] HoYoLAB program article: %s", game.key, post.get("subject"))
+    return {"url": ARTICLE_URL.format(pid), "title": (post.get("subject") or "").strip(),
+            "images": images, "text": text, "youtube": youtube,
+            "ts": int(post.get("created_at") or 0), "source": "HoYoLAB"}

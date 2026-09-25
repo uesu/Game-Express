@@ -38,6 +38,39 @@ that moved to Sophon downloads. On 2026-09-24 it still reported GI 5.5.0 while t
 | PromoGacha data | `https://raw.githubusercontent.com/gripcrip-blip/codehub/main/data/codes.json` → jsDelivr mirror | **aggregator**: every entry says where it was copied from (`hoyo-codes` = seria, `Fandom Wiki`), and entries are never removed. It counts as that upstream, and stale copies are ignored *(v1.1.1)* | ✅ |
 | Official posts | X / HoYoLAB text that explicitly lists "Redemption Codes" | **official**: posts immediately | extraction tested on real tweets (no false positives) |
 
+## Official news pages + media (v1.3.0 — the announcement's own link and key art)
+
+These are **official** sources: they carry the announcement itself, not an interpretation of it.
+They are used for *presentation* (which link and which picture the card shows) and, when no
+official post in the lookback window gave one, for the program air time — which is as
+trustworthy as any other official post, because that is what it is.
+
+| Source | URL | Parsed from | Status |
+|---|---|---|---|
+| HoYoLAB news list | `bbs-api-os.hoyolab.com/.../getNewsList?gids=<gid>&type=1&page_size=20&last_id=…` | paged back past the lookback window; `subject` matched against the game's program patterns + version; `cover_list` is the article cover | ✅ official API, already in use |
+| HSR news page | https://hsr.hoyoverse.com/en-us/news (+ `?type=notice`) | server-rendered entries: cover on `fastcdn.hoyoverse.com`, article id, title, `M/D/YYYY` | ✅ checked 2026-09-25 |
+| HSR article page | https://hsr.hoyoverse.com/en-us/news/166179 | full-size cover **and** the embedded `youtube.com/watch?v=…` → `maxresdefault.jpg` (1280×720) | ✅ checked 2026-09-25 |
+| Genshin news page | https://genshin.hoyoverse.com/en/news | same template | ⏳ same template, not separately captured |
+| ZZZ news page | https://zenless.hoyoverse.com/en-us/news | same template | ⏳ same template, not separately captured |
+| WW news page | https://wutheringwaves.kurogames.com/en/main/news | Kuro's own template; the JSON article menus in `sources/kuro.py` remain the primary WW source | ⏳ client-rendered list — the menus cover it |
+
+**Image renditions** (`gamexpress/media.py`) — every source hands back a small picture by default:
+
+| What the source gives | What the card uses |
+|---|---|
+| `pbs.twimg.com/media/X.jpg` | `…X.jpg?name=orig` (X serves `small` unless you ask) |
+| `pbs.twimg.com/media/X?format=jpg&name=large` | unchanged — it already asks for a size |
+| `nitter.<instance>/pic/media%2FX.jpg` | `https://pbs.twimg.com/media/X.jpg?name=orig` |
+| `i.ytimg.com/vi/ID/hqdefault.jpg` | `…/maxresdefault.jpg` (1280×720 instead of 480×360) |
+| `fastcdn.hoyoverse.com/content-v2/…` | unchanged — already the full-size article cover |
+
+Ranking puts the program's own artwork first: a livestream thumbnail, then a full-size tweet
+photo, then an article cover. Nothing is ever rewritten to a host the source did not give us.
+
+**Not used:** Reddit (`reddit.com/r/<official sub>/…/search.json`) was considered as an image
+fallback. It is skipped for now — the official pages already serve the key art at full size, and a
+subreddit preview image is a re-upload, so it would be the first non-official pixel on a card.
+
 ## Countdown / timer sites (v1.2.0 — estimates only)
 
 The official maintenance notice arrives days after the Special Program, so until then the card

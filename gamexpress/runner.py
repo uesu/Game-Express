@@ -15,7 +15,7 @@ from .config import Game, Settings, active_games, load_games, load_overrides
 from .discord import WebhookClient
 from .http import BOT_UA, Fetcher, Probe
 from .models import Item
-from .sources import countdown, hoyolab, kuro, launcher
+from .sources import countdown, hoyolab, kuro, launcher, newspage
 from .sources.codes import CodeSources
 from .sources.twitter import XClient
 from .state import State
@@ -43,6 +43,7 @@ class Ctx:
     active: bool = True
     elapsed: float = 0.0
     estimates: dict = field(default_factory=dict)   # game key -> countdown-site estimate
+    media: dict = field(default_factory=dict)       # game key -> version -> program announcement
 
 
 async def gather_versions(ctx: Ctx) -> None:
@@ -93,6 +94,42 @@ async def gather_estimates(ctx: Ctx) -> None:
         if est:
             ctx.estimates[key] = est
             log.info("[%s] countdown estimate: %s", key, est)
+
+
+async def gather_program_media(ctx: Ctx) -> None:
+    """Find the program announcement for any tracked version whose card still shows somebody
+    else's post — the official news page first (it archives every announcement and carries the
+    key art), then the HoYoLAB news list, which is paged back past the lookback window.
+
+    At most one lookup per game+version that still needs it, never for a version that is already
+    live, and PROGRAM_MEDIA=0 switches the whole thing off."""
+    if "schedule" not in ctx.settings.features or not ctx.settings.program_media:
+        return
+    for g in ctx.games:
+        if not schedule.needs_media(ctx.state, g.key, ctx.now):
+            continue
+        found: dict = {}
+        for ver, rec in (ctx.state.schedule_records(g.key) or {}).items():
+            d = rec.get("data") or {}
+            if d.get("program_seen") or d.get("media_from"):
+                continue                                   # already the right announcement
+            hit = (await newspage.fetch_program(ctx.fetcher, g, ver, ctx.now)
+                   or await hoyolab.find_program(ctx.fetcher, g, ver))
+            if not hit:
+                continue
+            # the air time comes from the article's own text, through the same extractor that
+            # every other official post goes through — no separate date parsing here
+            item = Item(source="hoyolab", game=g.key, id=ver, url=hit["url"], title=hit.get("title") or "",
+                        text=hit.get("text") or "", published_ts=hit.get("ts") or ctx.now,
+                        images=list(hit.get("images") or []))
+            fields = schedule.extract_program(g, item)
+            hit["program_ts"] = fields.get("program_ts")
+            hit["youtube"] = hit.get("youtube") or fields.get("youtube_video")
+            hit["images"] = hit.get("images") or fields.get("images") or []
+            found[ver] = hit
+        if found:
+            ctx.media[g.key] = found
+            log.info("[%s] program announcement recovered for %s", g.key, ", ".join(sorted(found)))
 
 
 async def gather_items(ctx: Ctx) -> None:
@@ -152,6 +189,7 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
         if features and ctx.games:
             await gather_versions(ctx)
             await gather_items(ctx)
+            await gather_program_media(ctx)
             await gather_estimates(ctx)
             for g in ctx.games:
                 if not ctx.reachable.get(g.key, True):

@@ -25,14 +25,14 @@ sys.path.insert(0, str(ROOT))
 FIX = ROOT / "tests" / "fixtures"
 GOLDEN = FIX / "golden"
 
-from gamexpress import cards, codeposter, schedule  # noqa: E402
+from gamexpress import cards, codeposter, media, schedule  # noqa: E402
 from gamexpress.config import load_games, load_overrides, load_settings, parse_emoji, parse_ping  # noqa: E402
 from gamexpress.discord import WebhookClient, _split, webhook_fingerprint  # noqa: E402
 from gamexpress.models import CodeHit, Item  # noqa: E402
 from gamexpress.runner import Ctx, failover_check  # noqa: E402
 from gamexpress.samples import CODE_SAMPLES, SCHEDULE_SAMPLES  # noqa: E402
 from gamexpress.sources import codes as csrc  # noqa: E402
-from gamexpress.sources import countdown  # noqa: E402
+from gamexpress.sources import countdown, hoyolab, newspage  # noqa: E402
 from gamexpress.sources.hoyolab import _post_text  # noqa: E402
 from gamexpress.sources.kuro import parse_launcher_index  # noqa: E402
 from gamexpress.sources.launcher import parse_branches  # noqa: E402
@@ -1090,6 +1090,139 @@ def test_an_estimate_for_another_version_is_ignored():
         asyncio.run(schedule.run(ctx))
         assert [x["method"] for x in ctx.webhook.sent] == ["POST"]
         assert "estimated from" not in json.dumps(ctx.webhook.sent[0]["payload"], ensure_ascii=False)
+
+
+# =========================================================================== 1.3.0 (program media)
+def test_images_are_upgraded_to_the_full_size_rendition():
+    # a tweet photo: X serves `small` unless you ask for the original upload
+    assert media.twimg_orig("https://pbs.twimg.com/media/HR70hTAaoAA8Dzz.jpg") == \
+        "https://pbs.twimg.com/media/HR70hTAaoAA8Dzz.jpg?name=orig"
+    assert media.twimg_orig("https://pbs.twimg.com/media/HR70hTAaoAA8Dzz?format=jpg&name=large") == \
+        "https://pbs.twimg.com/media/HR70hTAaoAA8Dzz?format=jpg&name=large"      # already sized — untouched
+    # a nitter mirror's pic proxy -> the twimg CDN, then the original
+    assert media.upgrade("https://nitter.cf/pic/media%2FHR70hTAaoAA8Dzz.jpg") == \
+        "https://pbs.twimg.com/media/HR70hTAaoAA8Dzz.jpg?name=orig"
+    # a YouTube thumbnail: 480x360 -> 1280x720, from a watch URL, a short link or a bare id
+    assert media.youtube_thumb("https://www.youtube.com/watch?v=ItNs39qvw_w") == \
+        "https://i.ytimg.com/vi/ItNs39qvw_w/maxresdefault.jpg"
+    assert media.youtube_thumb("ItNs39qvw_w") == "https://i.ytimg.com/vi/ItNs39qvw_w/maxresdefault.jpg"
+    assert media.upgrade("https://i.ytimg.com/vi/ItNs39qvw_w/hqdefault.jpg") == \
+        "https://i.ytimg.com/vi/ItNs39qvw_w/maxresdefault.jpg"
+    # an official article cover is already full size -> never rewritten to another host
+    cover = "https://fastcdn.hoyoverse.com/content-v2/hkrpg/166179/c66081f0bbfae6d938b50c41e595c185_1.jpg"
+    assert media.upgrade(cover) == cover and media.upgrade("") == ""
+    # ranking: livestream artwork first, then a full-size tweet photo, then a cover
+    ranked = media.rank([cover, "https://pbs.twimg.com/media/HR70hTAaoAA8Dzz.jpg",
+                         "https://i.ytimg.com/vi/ItNs39qvw_w/maxresdefault.jpg", ""])
+    assert ranked == ["https://i.ytimg.com/vi/ItNs39qvw_w/maxresdefault.jpg",
+                      "https://pbs.twimg.com/media/HR70hTAaoAA8Dzz.jpg?name=orig", cover]
+    assert media.rank(None) == [] and media.rank([cover] * 9) == [cover]         # duplicates collapse
+    assert len(media.rank([cover.replace("/166179/", f"/{i}/") for i in range(9)])) == 4   # capped at 4
+
+
+def test_official_news_page_entries_are_parsed():
+    page = (FIX / "newspage_hsr_news.html").read_text(encoding="utf-8")
+    entries = newspage.parse_news_page(page, "https://hsr.hoyoverse.com/en-us/news")
+    assert [e["id"] for e in entries] == ["166181", "166180", "166179", "166100", "166116", "165975"]
+    first = entries[0]
+    assert first["url"] == "https://hsr.hoyoverse.com/en-us/news/166181"          # relative href resolved
+    assert first["title"] == 'Improv Tour Trailer: "It Became Art"'               # site suffix stripped
+    assert first["image"].startswith("https://fastcdn.hoyoverse.com/content-v2/hkrpg/166181/")
+    assert first["ts"] == 0                                   # a bare M/D/YYYY carries no time — never guessed
+    # only the program entry matches, and only for its own version
+    prog = [e for e in entries if newspage._matches(GAMES["starrail"], e["title"], "4.6")]
+    assert [e["id"] for e in prog] == ["166100"]
+    assert newspage._matches(GAMES["starrail"], prog[0]["title"], "4.5") is False
+    assert newspage._matches(GAMES["starrail"], entries[2]["title"], "4.6") is False   # a trailer is not it
+    # the article page yields the embedded stream -> the 1280x720 artwork
+    art = newspage.parse_article((FIX / "newspage_hsr_article.html").read_text(encoding="utf-8"))
+    assert art["youtube"] == "https://www.youtube.com/watch?v=ItNs39qvw_w"
+    assert "166179" in art["images"][0] and "Tap to unmute" not in art["text"]
+
+
+def test_hoyolab_program_article_is_picked_not_the_maintenance_notice():
+    page = fx("hoyolab_starrail_newslist_program.json")
+    hit = hoyolab.pick_program([page], "4.6", GAMES["starrail"].program_patterns)
+    assert hit and hit[0] == "46691962"                        # the Special Program preview, not 46814308
+    assert hit[2]["subject"] == "Version 4.6 Special Program Preview"
+    assert hoyolab.pick_program([page], "4.5", GAMES["starrail"].program_patterns) is None   # other version
+    assert hoyolab.pick_program([{"retcode": 1}], "4.6", ["special program"]) is None        # API error page
+    assert hoyolab.pick_program([], "4.6", ["special program"]) is None
+
+
+def test_the_program_announcement_replaces_the_maintenance_notice_on_the_card():
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        notice = hoyolab_item("hoyolab_starrail_46814308_full.json", "starrail")
+        ctx = make_ctx(sp, items={"starrail": [notice]}, now=1790000000, BOOTSTRAP_POST=1)
+        asyncio.run(schedule.run(ctx))
+        posts = [x for x in ctx.webhook.sent if x["method"] == "POST"]
+        assert len(posts) == 1
+        flat = json.dumps(posts[0]["payload"], ensure_ascii=False)
+        assert "hoyolab.com/article/46814308" in flat          # all the run saw was the notice
+        assert "pompom" not in flat.lower()                    # ...but its cover is NOT the program's art
+        assert "🖼️" not in flat
+        assert schedule.needs_media(ctx.state, "starrail", 1790000000)     # -> worth one lookup
+        ctx.state.save()
+        # the lookup finds the Special Program preview: link + key art + air time
+        found = {"url": "https://www.hoyolab.com/article/46691962",
+                 "title": "Version 4.6 Special Program Preview",
+                 "images": ["https://pbs.twimg.com/media/HR70hTAaoAA8Dzz.jpg"],
+                 "youtube": "https://www.youtube.com/watch?v=EXAMPLE1234",
+                 "program_ts": 1789860600, "source": "HoYoLAB"}
+        ctx = make_ctx(sp, items={"starrail": [notice]}, now=1790000000)
+        ctx.media = {"starrail": {"4.6": found}}
+        asyncio.run(schedule.run(ctx))
+        assert [x["method"] for x in ctx.webhook.sent] == ["PATCH"]       # same card, edited silently
+        flat2 = json.dumps(ctx.webhook.sent[0]["payload"], ensure_ascii=False)
+        assert "youtube.com/watch?v=EXAMPLE1234" in flat2                 # title -> the announcement's stream
+        assert "hoyolab.com/article/46691962" in flat2                    # Source -> the announcement itself
+        assert "pbs.twimg.com/media/HR70hTAaoAA8Dzz.jpg?name=orig" in flat2    # full-size key art
+        assert "<t:1789860600:F>" in flat2 and "<t:1789860600:R>" in flat2     # the air time, user's format
+        assert "🖼️ key art: HoYoLAB — the official announcement" in flat2
+        rec = ctx.state.schedule_records("starrail")["4.6"]
+        assert rec["data"]["media_from"] == "HoYoLAB"
+        assert "program_seen" not in rec["data"]                # the lookup never claims a real post
+        assert not schedule.needs_media(ctx.state, "starrail", 1790000000)     # never looked up twice
+    # PROGRAM_MEDIA=0 -> the lookup is skipped entirely, so the card keeps the notice link and
+    # stays "needs a lookup" (a fresh state, so this is a clean first post and not an edit)
+    with tempfile.TemporaryDirectory() as tmp:
+        sp2 = Path(tmp) / "state.json"
+        notice = hoyolab_item("hoyolab_starrail_46814308_full.json", "starrail")
+        ctx = make_ctx(sp2, items={"starrail": [notice]}, now=1790000000, PROGRAM_MEDIA=0, BOOTSTRAP_POST=1)
+        ctx.media = {"starrail": {"4.6": found}}
+        asyncio.run(schedule.run(ctx))
+        posts = [x for x in ctx.webhook.sent if x["method"] == "POST"]
+        assert len(posts) == 1
+        flat3 = json.dumps(posts[0]["payload"], ensure_ascii=False)
+        assert "46691962" not in flat3 and "🖼️" not in flat3
+        assert schedule.needs_media(ctx.state, "starrail", 1790000000)
+
+
+def test_program_media_is_only_looked_up_when_it_is_missing():
+    s = settings()
+    assert s.program_media and not settings(PROGRAM_MEDIA=0).program_media
+    assert GAMES["starrail"].news_url == "https://hsr.hoyoverse.com/en-us/news"
+    assert GAMES["genshin"].news_url == "https://genshin.hoyoverse.com/en/news"
+    assert GAMES["wuwa"].news_url == "https://wutheringwaves.kurogames.com/en/main/news"
+    assert schedule.PRIORITY["news"] < schedule.PRIORITY["hoyolab"]       # an in-feed post still wins
+    assert schedule.PRIORITY["news"] > schedule.PRIORITY["x"]
+    # no media -> nothing changes, and an empty dict is not an error
+    data, prov = {"title_url": "https://x/y"}, {}
+    assert schedule.apply_program_media(data, prov, None, 0) == []
+    assert schedule.apply_program_media(data, prov, {}, 0) == []
+    assert data == {"title_url": "https://x/y"}
+    # an absurd air time is dropped, but a past one is kept (it is an official post, not a guess)
+    d2 = {}
+    schedule.apply_program_media(d2, {}, {"url": "https://x/y", "program_ts": 10 ** 10}, 1790000000)
+    assert "program_ts" not in d2
+    d3 = {}
+    schedule.apply_program_media(d3, {}, {"url": "https://x/y", "program_ts": 1789860600}, 1790000000)
+    assert d3["program_ts"] == 1789860600
+    # an existing official program time is never overwritten by the lookup
+    d4 = {"program_ts": 1789860600}
+    schedule.apply_program_media(d4, {}, {"url": "https://x/y", "program_ts": 1780000000}, 1790000000)
+    assert d4["program_ts"] == 1789860600
 
 
  # =========================================================================== runner
