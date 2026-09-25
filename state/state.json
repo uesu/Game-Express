@@ -311,6 +311,26 @@
         ],
         "status": "seeded"
       },
+      "PNKZ3WLNN8G6": {
+        "first_seen": 1790332129,
+        "gate": "redeem-validated",
+        "last_seen": 1790332129,
+        "message_id": "1552990319136477316",
+        "msg_codes": [
+          "PNKZ3WLNN8G6"
+        ],
+        "msg_part": [
+          1,
+          1
+        ],
+        "posted_at": 1790332129,
+        "rewards": null,
+        "sources": [
+          "seria"
+        ],
+        "status": "posted",
+        "webhook_fp": "ee502f83bdf4"
+      },
       "PRIMADONNA": {
         "first_seen": 1790323430,
         "last_seen": 1790323430,
