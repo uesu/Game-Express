@@ -36,12 +36,14 @@ DEFAULT_EMOJI = {
 
 # round 13/14 nitter fleet from News-Express (live-probed there, 2026-09-20);
 # the chain stops at the first instances that answer with real entries.
+# x.yuuki.sh answers 403 to GitHub's runners (seen in the first live runs, 2026-09-25) — kept
+# last so it only costs a request when everything before it failed (it may work on a VPS).
 DEFAULT_NITTER = [
-    "https://nitter.cf", "https://xitter.cf", "https://nitter.jaydenha.uk", "https://x.yuuki.sh",
-    "https://x.n0g.xyz", "https://nitter.meowing.monster", "https://nitter.click",
-    "https://nitter.xitter.cc", "https://nitter.miningtcup.me", "https://nitter.netbub.com",
-    "https://shitter.thepixora.com", "https://nitter.perennialte.ch", "https://nitter.privacydev.net",
-    "https://nitter.net", "https://xcancel.com",
+    "https://nitter.cf", "https://xitter.cf", "https://nitter.jaydenha.uk", "https://x.n0g.xyz",
+    "https://nitter.meowing.monster", "https://nitter.click", "https://nitter.xitter.cc",
+    "https://nitter.miningtcup.me", "https://nitter.netbub.com", "https://shitter.thepixora.com",
+    "https://nitter.perennialte.ch", "https://nitter.privacydev.net", "https://nitter.net",
+    "https://xcancel.com", "https://x.yuuki.sh",
 ]
 
 
@@ -283,7 +285,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         extra_buttons=extra,
         emoji=emoji,
         show_legend=_bool(env, "SHOW_LEGEND", True),
-        repost=_env(env, "REPOST"),
+        repost=_env(env, "REPOST").replace(" ", "").lower(),
         log_level=_env(env, "LOG_LEVEL", "INFO").upper(),
         http_timeout=_int(env, "HTTP_TIMEOUT", 20),
         no_ping=_bool(env, "NO_PING"),

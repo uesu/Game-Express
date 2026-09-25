@@ -131,9 +131,11 @@ moves). ANANTA has no character gacha, so its card hides the banner section.
 
 ## 🚀 Setup — 6 steps (GitHub Actions + cron-job.org)
 
-1. **Get the repo.** Production runs in your public instance repos (alpha / bravo, see
-   [Redundancy](#-redundancy-fallback-chains--two-instance-fail-over)); this repo is the
-   development home. Public repos get unlimited free Actions minutes.
+1. **Get the repo.** The simplest setup is one repo that is both the code home and production.
+   A second instance repo for fail-over is optional (see
+   [Redundancy](#-redundancy-fallback-chains--two-instance-fail-over)). Public repos get
+   unlimited free Actions minutes. A private repo works too, but it should run every 30 minutes
+   instead of every 10 ([why](docs/SCHEDULER.md#minutes-and-private-repositories)).
 2. **Create webhooks.** In Discord: *Channel → Edit Channel → Integrations → Webhooks → New
    Webhook → Copy Webhook URL*. One for the schedule channel, and one per game codes channel.
 3. **Add the secrets** in *Settings → Secrets and variables → Actions → Secrets → New repository
@@ -164,8 +166,15 @@ moves). ANANTA has no character gacha, so its card hides the banner section.
    disabled in `monitor.yml`, so the two schedulers can never race.
 
 **First real run = silent seed.** Current announcements and every existing code are recorded
-without posting, so deploying never spams old items. To post what's current on the first run,
-set the variable `BOOTSTRAP_POST=1` once.
+without posting, so deploying never spams old items. The summary lists what was seeded
+(`🌱 HSR 4.6: seeded silently`, `🌱 GI: seeded 34 existing codes`). To post what's current on
+the very first run instead, set the variable `BOOTSTRAP_POST=1` before that run.
+
+**Already seeded and want a current card posted now?** Run the Monitor with
+`repost = starrail:4.6` (any version shown in a summary). The card is posted as a new message
+and is then kept up to date like any other. If the version's Special Program aired before the
+bot was running, its time isn't in the feeds any more, so the card simply leaves that line
+out. You can pin it in `config/overrides.json` (`"program_ts": "2026-09-20T19:30:00+08:00"`).
 
 ---
 
@@ -296,13 +305,23 @@ cards from the official posts:
 2. a **redeem-validator** (hoyo-codes.seria.moe or Hum-Bao, which both try every code on a real
    account) reports it working, and no validator reports it expired;
 3. at least `CODES_MIN_SOURCES` (default **2**) *independent* community sources list it as
-   active **and no source lists it as expired**. Open Gacha Codes and ennead count as one
-   source because they share a backend; the others are fandom, PromoGacha and wuthering.gg.
+   active **and no source lists it as expired**.
+   - Open Gacha Codes and ennead count as one source, because they share a backend.
+   - PromoGacha copies seria and the wikis, so it counts as whichever of those it copied.
+   - The other independent sources are fandom and wuthering.gg.
+
+**Expiry dates come first.** If a source gives an explicit *valid until* date and that date
+has passed, the code is expired, no matter who else still lists it. This matters because:
+- wiki editors often leave 24-hour livestream codes under *Active* for days;
+- aggregators never delete anything.
+
+A posted code whose date passes is struck through on the card silently.
 
 Anything else waits as *pending* for up to 14 days and is posted the moment a second source
-confirms it. The job summary shows why each code is waiting (`only ogc`,
-`listed as expired by seria`, …). Glued-together codes, placeholders and codes with lowercase
-fan text are filtered out before the gate.
+confirms it. The job summary lists those codes with the reason (`only fandom`). It counts the
+already-expired ones in one line (`🧊 HSR: 12 code(s) ignored — already expired`) instead of
+listing each. Glued-together codes, placeholders and unmapped reward icons are filtered out
+before the gate.
 
 ---
 
@@ -328,7 +347,7 @@ Inputs `kind` (all / schedule / codes), `game` and `ping` (off by default) narro
 | `dry_run` | real run, logs the card JSON, never posts or commits |
 | `only` | `schedule` or `codes` |
 | `game` | one game key |
-| `repost` | force a **new** post of a tracked version, e.g. `genshin:7.2` |
+| `repost` | post a version card again as a **new** message, e.g. `starrail:4.6`. Only versions the bot has already seen in an official post work, so an unannounced `genshin:7.2` can't be reposted yet. The summary says so, and lists the tracked versions |
 
 **CLI** (local, VPS or bot host): `python -m gamexpress <command>`
 
@@ -380,10 +399,12 @@ next run re-reads the last `LOOKBACK_HOURS` (72 h), so nothing is missed.
 - The [bot mode](#-discord-bot--free-hosting) can be the standby too: it answers `/codes` and
   `/schedule` from the imported state and takes over if Actions stops.
 
-**Development repo vs. instance repos.** Following the News-Express convention, this repo is
-the development and PR home, and production runs in the instance repos (alpha / bravo). In the
-development repo, set the variable `ENABLED_FEATURES=none`: the monitor is then skipped even if
-something triggers it, while the **Game-Express Test** workflow still works.
+**One repo or several.** One repo can be the code home and production at once: CI tests every
+PR before you merge, and merging deploys it. You can also follow the News-Express convention of
+a development repo plus instance repos (alpha / bravo). Only a development copy that must never
+post gets the variable `ENABLED_FEATURES=none`. The monitor is then skipped even if something
+triggers it, while the **Game-Express Test** workflow still works. Never set it on the repo
+that posts.
 
 **Scheduler: cron-job.org, one job per instance repo.** GitHub's native `schedule:` is
 disabled (commented out) in `monitor.yml`, exactly like News-Express, because two schedulers
@@ -423,7 +444,7 @@ should see in Discord, and how to tell that the whole thing is working.
   dry run, live cards to a test channel, or everything at once (see
   [Manual controls](#-manual-controls)).
 - **CI** (`.github/workflows/ci.yml`) runs on every PR and every push to `main`: install,
-  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **47 offline tests
+  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **55 offline tests
   with no network and no secrets**:
   - real official posts captured on 2026-09-25, which must reproduce your reference cards'
     timestamps;
@@ -445,6 +466,8 @@ should see in Discord, and how to tell that the whole thing is working.
 | Symptom | Fix |
 |---|---|
 | Nothing posted for days | Normal. It posts only on official announcements and new codes. Check the job summary: *"nothing new"* plus source health. |
+| First Monitor runs posted nothing | Correct: the first run per game is a **silent seed** (`🌱 … seeded silently`). Use `repost = starrail:4.6` to post a current card now |
+| `repost` posted nothing | the version isn't tracked yet (not announced, or never seen). The summary says `version … isn't tracked` and lists the ones that are |
 | `400 … components` in the log | a card broke a Discord limit. `python -m gamexpress validate` pinpoints it (CI also catches this) |
 | No ping | `PING_ROLE_ID` unset or `none`; the role must be mentionable, or the webhook needs *Mention @everyone, @here and All Roles* |
 | Emojis show as `:name:` | the webhook's channel needs *Use External Emojis* for `@everyone`, or change `EMOJI_*` |
@@ -454,7 +477,7 @@ should see in Discord, and how to tell that the whole thing is working.
 | cron-job.org shows **401** | the token expired or is wrong: make a new classic token (`repo` scope) and paste it into the job's header ([docs/SCHEDULER.md](docs/SCHEDULER.md)) |
 | cron-job.org shows **404** | wrong owner / repo / file name in the URL, or the token can't see the repo |
 | cron-job.org shows **422** | the branch in the body doesn't exist (`{"ref":"main"}`) or the workflow has no `workflow_dispatch` |
-| Runs are skipped (grey) | the variable `ENABLED_FEATURES=none` is set: correct on the dev repo, remove it on instance repos |
+| Runs are skipped (grey) | the variable `ENABLED_FEATURES=none` is set. That's only for a development copy; remove it on the repo that posts |
 | A code isn't posted | it's *pending*: only one source has it, or a source lists it as expired. The job summary shows the reason. Official / redeem-validated codes post immediately |
 | `4 Star Characters: TBA` although the names are known | the official text didn't list exactly the expected number, or two posts disagreed. Put the names in `config/overrides.json`; the card is edited on the next run |
 | `webhooks` test shows ✗ / `not a webhook URL` | the secret holds something else (a channel link, extra spaces). Copy the webhook URL again |
@@ -536,6 +559,42 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 
 ## 🗒 Changelog
 
+### 1.1.1 — 2026-09-25 · fixes from the first live runs
+- **Expired codes are no longer mistaken for new ones.** The first live dry run showed 3 HSR +
+  3 WW livestream codes that had expired on 2026-09-21 but were still listed as active. Wikis
+  keep them under *Active*, PromoGacha never deletes, and Open Gacha Codes lags. The bot now:
+  - reads *valid until* dates on the fandom wikis (all three table formats, with time zones);
+  - treats a passed date as expired, whatever other sources say;
+  - strikes the code through on already-posted cards.
+- **More accurate wiki parsing:**
+  - Genshin rows that hold several codes are split;
+  - Star Rail rows with nested `{{Item List}}` keep their dates;
+  - the stray `TERMINOLOGYINFOBOX` "code" is gone.
+- **PromoGacha counts as its upstream.** It counts as seria or fandom, and its stale copies are
+  ignored.
+- **Cleaner rewards.** Open Gacha Codes `Unknown reward (hash)` entries and duplicate reward
+  lines are dropped.
+- **Shorter summaries.** Expired codes are counted in one line; codes waiting for a second
+  source are listed in one line.
+- **Schedule cards:**
+  - no more misleading `Special Program: TBA` once the update is known (the program already
+    aired);
+  - `repost` now explains when a version isn't tracked (e.g. an unannounced `genshin:7.2`);
+  - the first run notes versions that are already out.
+- **Dependabot:**
+  - auto-merge moved into `ci.yml` as a job that runs after the tests (the separate
+    `workflow_run` workflow never fired);
+  - no custom labels (they had to exist first);
+  - only PRs for versions outside the allowed range.
+- **One repo can be production.** The docs no longer tell you to set `ENABLED_FEATURES=none` on
+  this repo; that variable is only for a development copy. [SCHEDULER.md](docs/SCHEDULER.md)
+  explains private repos: 2,000 free Actions minutes a month means a 30-minute schedule.
+- **Tests are hermetic again.** The bot test read the repo's `state/state.json`, so it failed
+  (on `main` too) as soon as the Monitor had committed real codes. It now uses its own state.
+- **Test workflow:** `offline-tests` installs discord.py + PyYAML so no check is skipped.
+  `x.yuuki.sh` (403 on GitHub runners) moved to the end of the nitter fleet. **55 offline
+  tests.**
+
 ### 1.1.0 — 2026-09-25 · per-game code channels, cron-job.org, Test workflow
 - **Per-game codes webhooks** for all 6 games (`DISCORD_WEBHOOK_CODES_GENSHIN` · `_STARRAIL` ·
   `_HNA` · `_ZZZ` · `_WUWA` · `_ANANTA`, short names like `_HSR` / `_WW` work too).
@@ -556,7 +615,7 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 - `check-webhooks` command, `test-card --ping` (no ping by default, 🧪 TEST label),
   `validate` shows which secret feeds which channel, and `preview` writes an HTML page.
 - Optional Dependabot auto-merge (off unless `AUTO_MERGE_DEPENDABOT=yes`), grouped weekly
-  Dependabot PRs. New docs: SCHEDULER, TESTING, DEPENDABOT. **47 offline tests.**
+  Dependabot PRs. New docs: SCHEDULER, TESTING, DEPENDABOT. 47 offline tests.
 
 ### 1.0.0 — 2026-09-25 · initial release
 - **Schedule announcements** for GI / HSR / ZZZ / WW, with HNA and ANANTA prepared.

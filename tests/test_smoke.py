@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import traceback
 from pathlib import Path
 
@@ -513,34 +514,55 @@ def test_bot_registers_commands_and_replies_v2():
         print("    (discord.py not installed — skipped)")
         return
     import gc
-    captured = {}
-    original_run = discord.Client.run
-    discord.Client.run = lambda self, token, **kw: captured.update(client=self, token=token)
-    os.environ["DISCORD_BOT_TOKEN"] = "fake.token.value"
-    try:
-        from gamexpress import bot
-        assert bot.run_bot() == 0
-    finally:
-        discord.Client.run = original_run
-        os.environ.pop("DISCORD_BOT_TOKEN", None)
-    client = captured["client"]
-    tree = next(o for o in gc.get_objects() if isinstance(o, app_commands.CommandTree) and o.client is client)
-    cmds = {c.name: c for c in tree.get_commands()}
-    assert sorted(cmds) == ["codes", "schedule", "status"]
-    sent = []
+    with tempfile.TemporaryDirectory() as tmp:
+        # the bot gets its OWN state file: the repo's state/state.json holds live data once the
+        # monitor has run (and codes count as active for 2 days), so it must never decide the result
+        state_file = Path(tmp) / "state.json"
+        captured = {}
+        original_run = discord.Client.run
+        discord.Client.run = lambda self, token, **kw: captured.update(client=self, token=token)
+        os.environ["DISCORD_BOT_TOKEN"] = "fake.token.value"
+        os.environ["STATE_PATH"] = str(state_file)
+        try:
+            from gamexpress import bot
+            assert bot.run_bot() == 0
+        finally:
+            discord.Client.run = original_run
+            os.environ.pop("DISCORD_BOT_TOKEN", None)
+            os.environ.pop("STATE_PATH", None)
+        client = captured["client"]
+        tree = next(o for o in gc.get_objects() if isinstance(o, app_commands.CommandTree) and o.client is client)
+        cmds = {c.name: c for c in tree.get_commands()}
+        assert sorted(cmds) == ["codes", "schedule", "status"]
+        sent = []
 
-    async def fake_request(route, **kw):
-        sent.append((route.path, kw.get("json")))
-    client.http.request = fake_request
+        async def fake_request(route, **kw):
+            sent.append((route.path, kw.get("json")))
+        client.http.request = fake_request
 
-    class FakeInteraction:
-        id = 1234
-        token = "itok"
-    asyncio.run(cmds["codes"].callback(FakeInteraction(), app_commands.Choice(name="Genshin Impact", value="genshin")))
-    path, body = sent[-1]
-    assert path.endswith("/callback") and body["type"] == 4
-    assert body["data"]["flags"] == cards.IS_COMPONENTS_V2 and body["data"]["allowed_mentions"] == {"parse": []}
-    assert body["data"]["components"][0]["type"] == 17
+        class FakeInteraction:
+            id = 1234
+            token = "itok"
+        genshin = app_commands.Choice(name="Genshin Impact", value="genshin")
+
+        # 1) no codes known yet -> one notice card (a Container)
+        asyncio.run(cmds["codes"].callback(FakeInteraction(), genshin))
+        path, body = sent[-1]
+        assert path.endswith("/callback") and body["type"] == 4
+        assert body["data"]["flags"] == cards.IS_COMPONENTS_V2 and body["data"]["allowed_mentions"] == {"parse": []}
+        assert [c["type"] for c in body["data"]["components"]] == [17]
+
+        # 2) a code posted just now -> the codes card: title line (TextDisplay) + Container with the code
+        now = int(time.time())
+        state_file.write_text(json.dumps({"codes": {"genshin": {"GENSHINGIFT": {
+            "status": "posted", "first_seen": now, "last_seen": now, "sources": ["seria"],
+            "rewards": ["Primogem ×50"]}}}}), encoding="utf-8")
+        asyncio.run(cmds["codes"].callback(FakeInteraction(), genshin))
+        path, body = sent[-1]
+        assert path.endswith("/callback") and body["type"] == 4
+        assert body["data"]["flags"] == cards.IS_COMPONENTS_V2 and body["data"]["allowed_mentions"] == {"parse": []}
+        assert [c["type"] for c in body["data"]["components"]] == [10, 17]
+        assert "GENSHINGIFT" in json.dumps(body["data"]["components"][1])
 
 
 
@@ -791,8 +813,14 @@ def test_workflows_cron_job_org_and_test_bench():
     for name in ("monitor.yml", "test.yml", "ci.yml"):
         text = (wf / name).read_text(encoding="utf-8")
         assert "actions/checkout@v7" in text and "actions/setup-python@v7" in text, name
-    am = (wf / "dependabot_auto_merge.yml").read_text(encoding="utf-8")
-    assert "vars.AUTO_MERGE_DEPENDABOT == 'yes'" in am and "actions/checkout" not in am
+    am = yaml.safe_load((wf / "ci.yml").read_text(encoding="utf-8"))["jobs"]["automerge"]
+    assert am["needs"] == "test" and "vars.AUTO_MERGE_DEPENDABOT == 'yes'" in am["if"]   # only after green tests
+    assert "dependabot[bot]" in am["if"] and am["permissions"] == {"contents": "write", "pull-requests": "write"}
+    assert not any("checkout" in str(step.get("uses", "")) for step in am["steps"])      # PR code never runs here
+    assert not (wf / "dependabot_auto_merge.yml").exists()
+    dep = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+    assert all("labels" not in u for u in dep["updates"])            # custom labels must pre-exist -> none
+    assert dep["updates"][0]["versioning-strategy"] == "increase-if-necessary"
 
 
 def test_preview_html_renders_cards():
@@ -806,6 +834,153 @@ def test_preview_html_renders_cards():
     assert "&lt;t:" in page and 'data-f="R"' in page and "@ping-role" in page
     assert "<script>" in page and "cdn.discordapp.com/emojis/1508619925940473966.gif" in page
     assert inline("**a** `<b>` [x](https://e.x) <t:1:R>").startswith("<strong>a</strong> <code>&lt;b&gt;</code>")
+
+
+
+# =========================================================================== 1.1.1 (first live runs)
+LIVE_NOW = 1790322634          # 2026-09-25 07:50 UTC — the user's first Test/Monitor runs
+
+
+def test_fandom_live_tables_expiry_and_multi_code_rows():
+    ww = {h.code: h for h in csrc.parse_fandom(fx("fandom_ww_live_trimmed.json"), LIVE_NOW)}
+    assert list(ww) == ["WUTHERINGGIFT", "FALLINGSANCTUM", "FINDSENTINEL", "WAKINGMOON", "HEARTOFSWORD", "BURNINGSUN"]
+    assert not ww["WUTHERINGGIFT"].expired and ww["WUTHERINGGIFT"].expires_at is None
+    assert ww["WAKINGMOON"].expired and ww["WAKINGMOON"].expires_at == 1790006399        # Sep 21 08:59:59 PDT
+    assert ww["WAKINGMOON"].rewards == "Astrite*100;Premium Tuner*20;Advanced Sealed Tube*5"
+    hsr = {h.code: h for h in csrc.parse_fandom(fx("fandom_hsr_live_trimmed.json"), LIVE_NOW)}
+    assert hsr["MALSV2F247FP"].expired and hsr["MALSV2F247FP"].expires_at == 1790035199  # end of 2026-09-21 UTC
+    assert not hsr["OMEGA"].expired and not hsr["CREATIONNYMPH"].expired and not hsr["NSJR3B97ZZ5X"].expired
+    assert hsr["MH5KC"].expired and hsr["MH5KC"].expires_at is None and hsr["SILVERWOLFLV999"].expired
+    assert hsr["CREATIONNYMPH"].rewards == "Stellar Jade*60;Fuel*1;Heroic Variable*1"   # [[a|b]] inside ref=
+    assert csrc.parse_fandom(fx("fandom_hsr_live_trimmed.json"), 1790000000)[0].expired is False  # before the date
+    gi = [h.code for h in csrc.parse_fandom(fx("fandom_gi_live_trimmed.json"), LIVE_NOW)]
+    assert gi == ["VESNAONPATROL", "GS71XAVWDS", "GS71XDYGEO", "GS71XYNSYJ", "GS71XOXYLG", "2BJ64QRZ7RT8"]  # CN skipped
+    assert csrc.parse_expiry("December 14, 2025 07:59 (PT)", LIVE_NOW) == (True, 1765727999)       # PST in winter
+    assert csrc.parse_expiry("indef") == (False, None) and csrc.parse_expiry("exp") == (True, None)
+    assert csrc.parse_expiry("2026-10-01", LIVE_NOW) == (False, 1790899199)
+    # a row without its valid-until column: the discovered date (4th field) is NOT an expiry
+    no_until = {"query": {"pages": {"1": {"revisions": [{"*": "{{Code Row|NEWCODE123|G|Primogem*60|2026-09-20}}"}]}}}}
+    assert [(h.code, h.expired, h.expires_at) for h in csrc.parse_fandom(no_until, LIVE_NOW)] == [("NEWCODE123", False, None)]
+
+
+def test_ogc_reward_cleanup():
+    ogc = {h.code: h.rewards for h in csrc.parse_ogc(fx("ogc_starrail_trimmed.json"))}
+    assert ogc["7S4AD2X35NE3"] == ["Stellar Jade ×100", "Traveler's Guide ×5"]           # no "Unknown reward (hash)"
+    assert ogc["AT45Q"] == ["Credit ×50,000", "Stellar Jade ×100"]                         # duplicate dropped
+    assert ogc["BESTCOFFEEEVER"] == ["Express Special Blend - Rustic Infusion ×2", "Traveler's Guide ×3"]
+    assert "BLADEFITCHECK" in ogc
+
+
+def test_aggregator_copies_count_as_their_upstream():
+    H = CodeHit
+    g = lambda *hits: codeposter.gate(codeposter.group_hits(list(hits), LIVE_NOW)["NEWCODE1"], 2)
+    assert g(H("NEWCODE1", "fandom"), H("NEWCODE1", "codehub", origin="fandom"))[0] is False   # same source twice
+    assert g(H("NEWCODE1", "ogc"), H("NEWCODE1", "codehub", origin="fandom"))[0] is True
+    hub = csrc.parse_codehub(fx("codehub_live_trimmed.json"), "honkai-star-rail")
+    assert [(h.code, h.origin) for h in hub] == [("MALSV2F247FP", "seria")]
+    results = {"seria:hkrpg": [H("OMEGA", "seria", verified=True)], "codehub:honkai-star-rail": hub}
+    kept = codeposter.drop_stale_copies([h for r in results.values() for h in r], results)
+    assert [h.code for h in kept] == ["OMEGA"]                 # seria dropped it -> PromoGacha's copy is stale
+    results["seria:hkrpg"] = None                               # seria down: the copy is the best we have
+    assert [h.code for h in codeposter.drop_stale_copies(hub, results)] == ["MALSV2F247FP"]
+
+
+def test_valid_until_date_beats_every_other_source():
+    H = CodeHit
+    dead = H("NEWCODE1", "fandom", None, expired=True, expires_at=LIVE_NOW - 3600)
+    info = codeposter.group_hits([H("NEWCODE1", "ogc"), H("NEWCODE1", "humbao", verified=True),
+                                  H("NEWCODE1", "x", verified=True), dead], LIVE_NOW)["NEWCODE1"]
+    ok, why = codeposter.gate(info, 2)
+    assert ok is False and why.startswith("expired 2026-09-25")
+    alive = H("NEWCODE1", "fandom", None, expires_at=LIVE_NOW + 86400)          # a future date is fine
+    assert codeposter.gate(codeposter.group_hits([H("NEWCODE1", "ogc"), alive], LIVE_NOW)["NEWCODE1"], 2)[0] is True
+
+
+def test_live_2026_09_25_expired_livestream_codes_are_not_posted():
+    """Regression from the first real dry run: 3 HSR + 3 WW livestream codes expired on
+    2026-09-21 but the wikis still listed them under 'Active', PromoGacha never deletes and
+    Open Gacha Codes lags — they must NOT be posted; the genuinely active ones must be."""
+    hsr_hub = csrc.parse_codehub(fx("codehub_live_trimmed.json"), "honkai-star-rail")
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "s.json"
+        st = State.load(sp)
+        st.mark_bootstrapped("codes", "wuwa")
+        st.mark_bootstrapped("codes", "starrail")
+        st.save()
+        table = {"fandom:wutheringwaves/Redemption_Code": csrc.parse_fandom(fx("fandom_ww_live_trimmed.json"), LIVE_NOW),
+                 "codehub:wuthering-waves": csrc.parse_codehub(fx("codehub_live_trimmed.json"), "wuthering-waves"),
+                 "ogc:wuwa": [CodeHit("WUTHERINGGIFT", "ogc", ["Astrite ×50"])],
+                 "fandom:honkai-star-rail/Redemption_Code": csrc.parse_fandom(fx("fandom_hsr_live_trimmed.json"), LIVE_NOW),
+                 "codehub:honkai-star-rail": hsr_hub,
+                 "ogc:starrail": csrc.parse_ogc(fx("ogc_starrail_trimmed.json")),
+                 "seria:hkrpg": [CodeHit("OMEGA", "seria", "60 stellar jade and one fuel", verified=True)]}
+        ctx = make_ctx(sp, codes_table=table, now=LIVE_NOW)
+        ctx.games = [GAMES["wuwa"], GAMES["starrail"]]
+        asyncio.run(codeposter.run(ctx))
+        posted = " ".join(json.dumps(x["payload"], ensure_ascii=False) for x in ctx.webhook.sent)
+        for dead in ("FALLINGSANCTUM", "FINDSENTINEL", "WAKINGMOON", "MALSV2F247FP", "7S4AD2X35NE3"):
+            assert dead not in posted, dead
+        assert "WUTHERINGGIFT" in posted and "OMEGA" in posted
+        assert ctx.state.code_records("starrail")["7S4AD2X35NE3"]["status"] == "rejected"
+        assert any(r.startswith("🧊 HSR: 1 code(s) ignored — already expired") for r in ctx.report)
+        assert any(r.startswith("⏳ HSR: ") and "NSJR3B97ZZ5X (only fandom)" in r for r in ctx.report)
+        assert not any("pending (listed as expired" in r for r in ctx.report)        # no more 100-line summaries
+
+
+def test_posted_code_is_struck_when_its_valid_until_date_passes():
+    t0 = 1789900000
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        st = State.load(sp)
+        st.mark_bootstrapped("codes", "starrail")
+        st.save()
+        table = {"seria:hkrpg": [CodeHit("LIVE4610", "seria", "Stellar Jade ×100", verified=True)],
+                 "fandom:honkai-star-rail/Redemption_Code": [CodeHit("LIVE4610", "fandom", None, expires_at=t0 + 86400)]}
+        ctx = make_ctx(sp, codes_table=table, now=t0)
+        ctx.games = [GAMES["starrail"]]
+        asyncio.run(codeposter.run(ctx))
+        assert [x["method"] for x in ctx.webhook.sent] == ["POST"]
+        ctx.state.save()
+        table = {"seria:hkrpg": [CodeHit("LIVE4610", "seria", None, verified=True)],    # not re-checked yet
+                 "ogc:starrail": [CodeHit("LIVE4610", "ogc", None)],                     # lagging aggregator
+                 "fandom:honkai-star-rail/Redemption_Code": [
+                     CodeHit("LIVE4610", "fandom", None, expired=True, expires_at=t0 + 86400)]}
+        ctx = make_ctx(sp, codes_table=table, now=t0 + 2 * 86400)
+        ctx.games = [GAMES["starrail"]]
+        asyncio.run(codeposter.run(ctx))
+        assert [x["method"] for x in ctx.webhook.sent] == ["PATCH"]
+        assert "~~`LIVE4610`~~ · expired" in json.dumps(ctx.webhook.sent[0]["payload"], ensure_ascii=False)
+
+
+def test_program_tba_line_hidden_once_the_update_is_known():
+    s = settings()
+    d = {"version": "4.6", "maint_start_ts": 1790546400, "maint_end_ts": 1790564400, "preinstall_ts": 1790229600}
+    txt = json.dumps(cards.schedule_payload(GAMES["starrail"], d, s, s.ping("schedule", "starrail")), ensure_ascii=False)
+    assert "Special Program: TBA" not in txt and "<t:1790546400:F>" in txt
+    teaser = cards.schedule_payload(GAMES["starrail"], {"version": "4.7"}, s, s.ping("schedule", "starrail"))
+    assert "Special Program: TBA" in json.dumps(teaser, ensure_ascii=False)          # nothing known yet -> TBA
+    ww = cards.schedule_payload(GAMES["wuwa"], {"version": "3.7", "maint_start_ts": 1790712000}, s, s.ping("schedule", "wuwa"))
+    assert "Special Broadcast: TBA" not in json.dumps(ww, ensure_ascii=False) and not cards.validate_payload(ww)
+
+
+def test_repost_feedback_and_first_run_notes():
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        for value, expected in (("genshin:7.2", "version 7.2 isn't tracked"), ("genshin7.2", "use game:version"),
+                                ("gensin:7.1", "unknown or inactive game 'gensin'")):
+            ctx = make_ctx(sp, REPOST=value)
+            asyncio.run(schedule.run(ctx))
+            assert any(expected in r for r in ctx.report), (value, ctx.report)
+        sp2 = Path(tmp) / "state2.json"
+        ww = item_from_fx_json("wuwa", fx("fx_wuwa_3_7_broadcast.json"))
+        late = 1789815600 + 10 * 86400                         # the broadcast was 10 days ago
+        ctx = make_ctx(sp2, items={"wuwa": [ww]}, now=late)
+        asyncio.run(schedule.run(ctx))
+        assert ctx.webhook.sent == [] and any(r.startswith("🗂 WW 3.7: already out") for r in ctx.report)
+        ctx.state.save()
+        ctx = make_ctx(sp2, items={"wuwa": [ww]}, now=late + 600, REPOST=" WUWA:3.7 ")    # spaces / case forgiven
+        asyncio.run(schedule.run(ctx))
+        assert [x["method"] for x in ctx.webhook.sent] == ["POST"] and not any("repost" in r for r in ctx.report)
 
 
 # =========================================================================== runner

@@ -430,6 +430,24 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
 
 
 # --------------------------------------------------------------------------- pipeline
+def repost_problem(repost: str, games: list, records_of) -> str | None:
+    """Explain why a REPOST request can't be honoured (None = fine)."""
+    if not repost:
+        return None
+    rg, _, rv = repost.strip().partition(":")
+    keys = [g.key for g in games]
+    if not rv:
+        return f"⚠️ repost '{repost}': use game:version, e.g. starrail:4.6"
+    if rg not in keys:
+        return f"⚠️ repost '{repost}': unknown or inactive game '{rg}' (use one of: {', '.join(keys)})"
+    tracked = sorted(records_of(rg), key=version_key)
+    if rv not in tracked:
+        have = ", ".join(tracked) if tracked else "none yet"
+        return (f"⚠️ repost '{repost}': version {rv} isn't tracked — only versions the bot has already seen "
+                f"in an official post can be reposted (tracked: {have})")
+    return None
+
+
 async def run(ctx) -> None:
     s = ctx.settings
     for game in ctx.games:
@@ -463,6 +481,9 @@ async def run(ctx) -> None:
                                   live_info, bootstrapped)
         if not bootstrapped and ctx.reachable.get(game.key, True):
             ctx.state.mark_bootstrapped("schedule", game.key)   # only after a source really answered
+    problem = repost_problem(s.repost, ctx.games, ctx.state.schedule_records)   # after this run's records
+    if problem:
+        ctx.report.append(problem)
 
 
 async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], records: dict,
@@ -515,6 +536,9 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     if not (fresh_program or fresh_maint or repost):
         if status == "new":
             record["status"] = "tracked"
+            if not bootstrapped:
+                ctx.report.append(f"🗂 {game.short} {ver}: already out / program long past — recorded, "
+                                  f"nothing to announce (repost with {game.key}:{ver} if you want it anyway)")
         return
     if not bootstrapped and not (s.bootstrap_post or s.test_mode) and not repost:
         record["status"] = "seeded"

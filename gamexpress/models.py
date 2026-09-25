@@ -38,3 +38,10 @@ class CodeHit:
     verified: bool = False           # redeem-validated (seria OK / humbao) or the official module
     url: str = ""
     expired: bool = False            # the source explicitly lists this code as EXPIRED / invalid
+    expires_at: int | None = None    # explicit "valid until" time given by the source (unix seconds)
+    origin: str = ""                 # aggregators only: the upstream they copied it from (seria / fandom)
+
+    @property
+    def hard_expired(self) -> bool:
+        """Expired by an explicit, already-passed 'valid until' date — stronger than a list flag."""
+        return bool(self.expired and self.expires_at)

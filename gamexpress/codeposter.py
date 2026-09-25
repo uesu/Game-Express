@@ -11,15 +11,21 @@ Accuracy gate (a code is posted only when ONE of these is true):
 Single-source / disputed codes wait as 'pending' (up to 14 days) until confirmed.
 First run for a game = silent seed (existing codes are recorded, not posted).
 
-Posted cards stay accurate: when every source that still mentions a posted code lists
-it as EXPIRED, the original message is edited silently — the code is struck through and
-its Redeem button removed (CODES_MARK_EXPIRED, default on).
+Expiry dates: when a source gives an explicit valid-until date (the fandom wikis do) and it
+has passed, the code counts as EXPIRED no matter who else still lists it (wikis often leave
+24-hour livestream codes under "Active" for days; aggregators never delete anything).
+PromoGacha is an aggregator: its entries count as the upstream they were copied from.
+
+Posted cards stay accurate: when a posted code's valid-until date passes, or every source
+that still mentions it lists it as EXPIRED, the original message is edited silently — the
+code is struck through and its Redeem button removed (CODES_MARK_EXPIRED, default on).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from .cards import codes_card, codes_payloads, mark_test
 from .config import Game
@@ -47,29 +53,38 @@ def official_hits_from_items(items) -> list[CodeHit]:
     return hits
 
 
-def group_hits(hits: list[CodeHit]) -> dict[str, dict]:
-    """code -> {sources (active), families, expired_by, verified, best_rewards, urls}"""
+def group_hits(hits: list[CodeHit], now: float | None = None) -> dict[str, dict]:
+    """code -> {sources (active), families, expired_by, hard_expired_by, expired_until,
+    verified, best_rewards, urls}. Aggregator hits (PromoGacha) count as their upstream family."""
+    now = time.time() if now is None else now
     grouped: dict[str, dict] = {}
     for h in hits:
-        g = grouped.setdefault(h.code, {"sources": set(), "expired_by": set(), "verified": False,
-                                        "rewards": {}, "urls": []})
+        g = grouped.setdefault(h.code, {"sources": set(), "families": set(), "expired_by": set(),
+                                        "hard_expired_by": set(), "expired_until": None,
+                                        "verified": False, "rewards": {}, "urls": []})
         if h.expired:
             g["expired_by"].add(h.source)
+            if h.expires_at and h.expires_at <= now:         # an explicit valid-until date has passed
+                g["hard_expired_by"].add(h.source)
+                g["expired_until"] = min(filter(None, (g["expired_until"], h.expires_at)))
             continue
         g["sources"].add(h.source)
+        g["families"].add(h.origin or family(h.source))
         g["verified"] = g["verified"] or h.verified
         if h.rewards:
             g["rewards"].setdefault(h.source, h.rewards)
         if h.url:
             g["urls"].append(h.url)
     for g in grouped.values():
-        g["families"] = {family(s) for s in g["sources"]}
         g["best_rewards"] = next((g["rewards"][s] for s in REWARD_PREFERENCE if s in g["rewards"]), None)
     return grouped
 
 
 def gate(info: dict, min_sources: int) -> tuple[bool, str]:
     """(post?, reason)."""
+    if info.get("hard_expired_by"):
+        when = time.strftime("%Y-%m-%d", time.gmtime(info["expired_until"])) if info.get("expired_until") else "?"
+        return False, f"expired {when} (valid-until date in {', '.join(sorted(info['hard_expired_by']))})"
     if info["sources"] & OFFICIAL:
         return True, "official"
     if info["verified"] and not (info["expired_by"] & VALIDATORS):
@@ -83,6 +98,17 @@ def gate(info: dict, min_sources: int) -> tuple[bool, str]:
 
 def passes_gate(info: dict, min_sources: int) -> bool:          # kept for callers / tests
     return gate(info, min_sources)[0]
+
+
+def drop_stale_copies(hits: list[CodeHit], results: dict[str, list[CodeHit] | None]) -> list[CodeHit]:
+    """PromoGacha never deletes entries. A copy of a seria / fandom entry is ignored when that
+    upstream answered this run and no longer lists the code as active."""
+    upstream_active: dict[str, set[str]] = {}
+    for spec, res in results.items():
+        if res is not None:
+            upstream_active.setdefault(spec.split(":")[0], set()).update(h.code for h in res if not h.expired)
+    return [h for h in hits
+            if not (h.origin and h.origin in upstream_active and h.code not in upstream_active[h.origin])]
 
 
 async def prefetch(ctx) -> dict[str, list[CodeHit] | None]:
@@ -100,27 +126,35 @@ async def run(ctx) -> None:
         if not specs:
             continue
         hits: list[CodeHit] = []
+        results = {spec: table.get(spec) for spec in specs if spec != "x"}
         reachable = 0
-        for spec in specs:
-            res = table.get(spec) if spec != "x" else None
+        for res in results.values():
             if res is None:
                 continue
             reachable += 1
             hits.extend(res)
+        hits = drop_stale_copies(hits, results)
         official = official_hits_from_items(ctx.items.get(game.key, []))
         hits.extend(official)
         if not reachable and not official:
             if any(x != "x" for x in specs):
                 ctx.warnings.append(f"{game.short}: every code source was unreachable this run")
             continue
-        grouped = group_hits(hits)
+        grouped = group_hits(hits, now)
         records = ctx.state.code_records(game.key)
         bootstrapped = ctx.state.is_bootstrapped("codes", game.key)
         min_sources = int(game.codes.get("min_sources") or s.codes_min_sources)
         to_post: list[dict] = []
         newly_expired: set[str] = set()
+        waiting: list[str] = []
+        expired_skipped = 0
         for code, info in sorted(grouped.items()):
             rec = records.get(code)
+            if (rec and rec.get("status") == "posted" and info["hard_expired_by"] and not rec.get("expired_at")
+                    and s.codes_mark_expired):
+                rec["expired_at"] = now                   # its valid-until date passed
+                newly_expired.add(code)
+                continue
             if not info["sources"]:
                 # nobody lists it as active any more — only expiry bookkeeping for posted codes
                 if (rec and rec.get("status") == "posted" and info["expired_by"] and not rec.get("expired_at")
@@ -147,13 +181,26 @@ async def run(ctx) -> None:
                                  "last_seen": now, "sources": sorted(info["sources"]),
                                  "rewards": info["best_rewards"], "gate": why}
             elif not rec:
-                records[code] = {"status": "pending", "first_seen": now, "last_seen": now,
-                                 "sources": sorted(info["sources"]), "rewards": info["best_rewards"]}
-                ctx.report.append(f"⏳ {game.short} {code}: pending ({why})")
+                dead = bool(info["hard_expired_by"])
+                records[code] = {"status": "rejected" if dead else "pending", "first_seen": now, "last_seen": now,
+                                 "sources": sorted(info["sources"]), "rewards": info["best_rewards"], "gate": why}
+                if dead or info["expired_by"]:
+                    expired_skipped += 1              # summarised in one line, not one line per code
+                else:
+                    waiting.append(f"{code} ({why})")
+            elif info["hard_expired_by"] and rec.get("status") == "pending":
+                rec.update({"status": "rejected", "gate": why})
         # expire stale pending codes
         for rec in list(records.values()):
             if rec.get("status") == "pending" and now - int(rec.get("first_seen") or now) > PENDING_DAYS * 86400:
                 rec["status"] = "rejected"
+        if waiting:
+            more = f" … +{len(waiting) - 8} more" if len(waiting) > 8 else ""
+            ctx.report.append(f"⏳ {game.short}: {len(waiting)} new code(s) waiting for a second source: "
+                              f"{', '.join(waiting[:8])}{more}")
+        if expired_skipped:
+            ctx.report.append(f"🧊 {game.short}: {expired_skipped} code(s) ignored — already expired "
+                              "(a source lists them as expired or their valid-until date has passed)")
         if not bootstrapped:
             ctx.state.mark_bootstrapped("codes", game.key)
             if not s.bootstrap_post:

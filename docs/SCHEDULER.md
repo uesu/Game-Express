@@ -72,9 +72,9 @@ shows a *Game-Express Monitor* run labelled *"Manually run by \<you\>"*.
 
 ### Two instances (fail-over)
 
-Create **one job per instance repo**, and never one for the development repo
-(`uesu/Game-Express`). The development repo has the variable `ENABLED_FEATURES=none`, so even an
-accidental trigger is skipped there.
+Create **one job per instance repo**, and never one for a development copy (a repo that must
+never post). Such a copy has the variable `ENABLED_FEATURES=none`, so even an accidental trigger
+is skipped there.
 
 | Job | URL repo | Schedule | Repo variables |
 |---|---|---|---|
@@ -117,11 +117,25 @@ The raw state URL looks like this:
 | **404** Not Found | wrong owner / repo / workflow file name, or the token's account can't see the repo | check the URL: `…/repos/<OWNER>/<REPO>/actions/workflows/monitor.yml/dispatches` |
 | **422** Unprocessable | the branch in the body doesn't exist, or the workflow has no `workflow_dispatch` | body `{"ref":"main"}` must match the default branch; merge the PR first |
 | **204** but no run appears | Actions are disabled in the repo | *Settings → Actions → General → Allow all actions*; also check the Actions tab isn't showing "workflows disabled" |
-| run appears but is **skipped** (grey) | repository variable `ENABLED_FEATURES=none` | correct on the development repo; delete it on instance repos |
+| run appears but is **skipped** (grey) | repository variable `ENABLED_FEATURES=none` | correct only on a development copy; delete it on the repo that posts |
 
 **Can runs overlap?** No. `monitor.yml` has a concurrency group with `cancel-in-progress: false`.
 A trigger that arrives while a run is still going waits, and then checks out the newest state.
 Nothing is posted twice and nothing is cancelled halfway.
 
-**Minutes / cost:** public repositories get unlimited free GitHub Actions minutes. One
-Game-Express run takes about 30–60 s including setup.
+## Minutes and private repositories
+
+**Public repositories** get unlimited free GitHub Actions minutes, so every 10 minutes costs
+nothing.
+
+**Private repositories** on GitHub Free include **2,000 minutes a month**. Every run counts as
+at least one full minute, although a Game-Express run takes only about 20–60 s.
+
+| cron-job.org schedule | Runs a month | Private repo |
+|---|---|---|
+| every 10 minutes | about 4,320 | ❌ over the limit: Actions stops for the rest of the month (around day 14) |
+| every 30 minutes (minutes `0,30`) | about 1,440 | ✅ fits, with room left for CI and the Test workflow |
+
+So a private repo should run **every 30 minutes**. Livestream codes usually stay valid for about
+a day, so that is still fast enough. The classic token's `repo` scope already covers private
+repos. Your account's **Billing** page shows the minutes used.
