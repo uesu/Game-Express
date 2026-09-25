@@ -1,0 +1,47 @@
+name: CI — compile + offline tests
+
+# Safety gate for every PR (and Dependabot bumps): proves the monitor installs,
+# compiles and reproduces the reference cards BEFORE anything reaches main.
+# No network, no secrets.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'state/**'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies (a broken requirements.txt fails HERE, not in production)
+        run: |
+          python -m pip install --upgrade pip --disable-pip-version-check -q
+          pip install -r requirements.txt -r requirements-bot.txt pyyaml --disable-pip-version-check -q
+
+      - name: Compile every .py file
+        run: python -m compileall -q gamexpress tests
+
+      - name: Validate config + sample cards
+        run: python -m gamexpress validate
+
+      - name: Offline smoke + golden tests
+        run: python tests/test_smoke.py
+
+      - name: Card preview renders (previews/index.html)
+        run: python -m gamexpress preview --out /tmp/previews > /dev/null
+
+      - name: Bot module imports (discord.py API surface)
+        run: python -c "import discord, discord.app_commands, discord.http; from discord.http import Route; print('discord.py', discord.__version__)"

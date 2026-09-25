@@ -1,0 +1,20 @@
+{
+  "_help": [
+    "Human-verified corrections — they win over every automatic source and the posted card is EDITED in place (silently, no re-ping) on the next run.",
+    "Shape: { \"<game key>\": { \"<version>\": { ...fields } } }. Game keys: genshin, starrail, zzz, wuwa, hna, ananta.",
+    "Times: unix seconds OR ISO text, e.g. \"2026-11-04T06:00:00+08:00\". Fields: program_ts, preinstall_ts, maint_start_ts, maint_end_ts, program_name, version_name, title_url, image, compensation.",
+    "banners: reruns, phase1, phase1_4, phase2, phase2_4, four_star (Wuthering Waves summary line) — lists of names; an empty list shows TBA.",
+    "Example (remove the leading underscore from the game key to activate it):"
+  ],
+  "_starrail": {
+    "4.7": {
+      "banners": {
+        "phase1": ["Character A"],
+        "phase1_4": ["4-star A", "4-star B", "4-star C"],
+        "phase2": ["Character B"],
+        "reruns": ["Rerun A", "Rerun B"]
+      },
+      "maint_start_ts": "2026-11-09T06:00:00+08:00"
+    }
+  }
+}

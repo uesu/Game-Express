@@ -1,0 +1,122 @@
+name: Game-Express Monitor
+
+# Schedule announcements + code poster. It POSTS only when an official post matches a
+# pattern (special program / broadcast / maintenance notice / new verified code); most
+# runs change nothing and commit nothing.
+#
+# TRIGGER = cron-job.org (external scheduler) calling the workflow_dispatch API every
+# 10 minutes. Setup: docs/SCHEDULER.md (cron-job.org job + GitHub classic token).
+# To TEST without touching production state: the "Game-Express Test" workflow.
+
+concurrency:
+  # One run at a time. A trigger that arrives mid-run QUEUES and later checks out the
+  # NEWEST branch head (with the previous run's state/state.json), so nothing is posted
+  # twice. cancel-in-progress MUST stay false: a run can sit between "posted to Discord"
+  # and "state committed" — cancelling it there would allow a re-post.
+  group: game-express-${{ github.ref }}
+  cancel-in-progress: false
+
+on:
+  # ── GITHUB NATIVE SCHEDULE: DISABLED ──────────────────────────────────────────────
+  # cron-job.org is the SINGLE scheduler for this monitor (same setup as News-Express,
+  # where two schedulers raced: both runs checked out the same pre-state commit and
+  # both posted). GitHub's own schedule can also start late or skip runs under load.
+  # To re-enable GitHub's schedule instead, uncomment these two lines AND pause the
+  # cron-job.org job (never run both on the same repo):
+  #   schedule:
+  #     - cron: '*/10 * * * *'
+  workflow_dispatch:          # manual runs + cron-job.org (POST .../workflows/monitor.yml/dispatches)
+    inputs:
+      dry_run:
+        description: 'Dry run — build + log the cards, never post, never commit'
+        type: boolean
+        default: false
+      only:
+        description: 'Run one feature'
+        type: choice
+        options: [all, schedule, codes]
+        default: all
+      game:
+        description: 'Optional: one game key (genshin, starrail, zzz, wuwa, hna, ananta)'
+        required: false
+        default: ''
+      repost:
+        description: 'Optional: force a NEW post of a tracked version, e.g. genshin:7.2'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  monitor:
+    # Development repo (uesu/Game-Express): set the repository VARIABLE ENABLED_FEATURES=none
+    # and every monitor run is skipped, even if something triggers it by mistake.
+    # (The Test workflow still works there.)
+    if: vars.ENABLED_FEATURES != 'none'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUNBUFFERED: '1'
+      # ── Discord webhooks (repository SECRETS) ── routing, most specific first:
+      #    DISCORD_WEBHOOK_<FEATURE>_<GAME>  >  DISCORD_WEBHOOK_<FEATURE>  >  DISCORD_WEBHOOK_URL
+      DISCORD_WEBHOOK_SCHEDULE: ${{ secrets.DISCORD_WEBHOOK_SCHEDULE }}
+      DISCORD_WEBHOOK_CODES: ${{ secrets.DISCORD_WEBHOOK_CODES }}                   # optional fallback for codes
+      DISCORD_WEBHOOK_CODES_GENSHIN: ${{ secrets.DISCORD_WEBHOOK_CODES_GENSHIN }}   # Genshin Impact codes channel
+      DISCORD_WEBHOOK_CODES_STARRAIL: ${{ secrets.DISCORD_WEBHOOK_CODES_STARRAIL }} # Honkai: Star Rail codes channel
+      DISCORD_WEBHOOK_CODES_HNA: ${{ secrets.DISCORD_WEBHOOK_CODES_HNA }}           # Honkai: Nexus Anima codes channel
+      DISCORD_WEBHOOK_CODES_ZZZ: ${{ secrets.DISCORD_WEBHOOK_CODES_ZZZ }}           # Zenless Zone Zero codes channel
+      DISCORD_WEBHOOK_CODES_WUWA: ${{ secrets.DISCORD_WEBHOOK_CODES_WUWA }}         # Wuthering Waves codes channel
+      DISCORD_WEBHOOK_CODES_ANANTA: ${{ secrets.DISCORD_WEBHOOK_CODES_ANANTA }}     # ANANTA codes channel
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}                       # optional catch-all
+      NITTER_RSS_TOKEN: ${{ secrets.NITTER_RSS_TOKEN }}                             # optional (same as News-Express)
+      # ── Everything else, as JSON (catch-all): per-game SCHEDULE webhooks
+      #    (DISCORD_WEBHOOK_SCHEDULE_<GAME>), pings (PING_*), emojis (EMOJI_*) and every other
+      #    variable in the README work without editing this file.
+      GE_SECRETS_JSON: ${{ toJSON(secrets) }}
+      GE_VARS_JSON: ${{ toJSON(vars) }}
+    steps:
+      - name: Check out (branch HEAD, so a queued run sees the previous run's state)
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip --disable-pip-version-check -q
+          pip install -r requirements.txt --disable-pip-version-check -q
+
+      - name: Show resolved config (routing, pings, emojis)
+        run: python -m gamexpress validate || true
+
+      - name: Run monitor
+        id: run
+        env:
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+          ONLY: ${{ inputs.only != 'all' && inputs.only || '' }}
+          GAME: ${{ inputs.game }}
+          REPOST: ${{ inputs.repost }}
+        run: python -m gamexpress run
+
+      - name: Commit state (also after a partial failure, so nothing is ever posted twice)
+        if: always() && !inputs.dry_run && steps.run.conclusion != 'skipped'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/state.json 2>/dev/null || true
+          if git diff --cached --quiet; then echo "state unchanged — nothing to commit"; exit 0; fi
+          git commit -m "auto: update state [skip ci]"
+          for i in 1 2 3 4 5; do
+            if git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              exit 0
+            fi
+            sleep $((i * 3))
+          done
+          echo "::error::could not push state/state.json after 5 attempts"
+          exit 1

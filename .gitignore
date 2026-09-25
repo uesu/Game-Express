@@ -1,0 +1,12 @@
+# local secrets
+.env
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+# previews / scratch
+previews/
+state/*.tmp
+state/*.corrupt.json

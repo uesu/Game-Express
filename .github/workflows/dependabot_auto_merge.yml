@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------------------------------
+# OPTIONAL: automatically MERGE Dependabot PRs once CI is green (same idea as News-Express).
+#
+# DISABLED by default. To enable it (development repo only is enough):
+#   Repo → Settings → Secrets and variables → Actions → Variables
+#   → New repository variable:  AUTO_MERGE_DEPENDABOT  =  yes
+#
+# Safety gates (ALL must hold before anything merges):
+#   • you enabled it with the repository variable
+#   • it runs only after the "CI — compile + offline tests" workflow FINISHED successfully
+#     for that exact PR commit (workflow_run — so it never merges before the tests ran)
+#   • the PR author is dependabot[bot] (never human PRs), it is open, not a draft, and
+#     GitHub reports it mergeable ("clean")
+#   • every check on the PR head commit completed with success / skipped / neutral
+# No checkout step: PR code is never executed with write permissions. See docs/DEPENDABOT.md.
+# ---------------------------------------------------------------------------------------
+name: Dependabot auto-merge (opt-in)
+
+on:
+  workflow_run:
+    workflows: ["CI — compile + offline tests"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: >-
+      vars.AUTO_MERGE_DEPENDABOT == 'yes' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]'
+    steps:
+      - name: Merge the Dependabot PR if every gate passes
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const run = context.payload.workflow_run;
+            const numbers = (run.pull_requests || []).map(p => p.number);
+            if (!numbers.length) { core.info('No PR attached to this CI run — skipping.'); return; }
+            for (const number of numbers) {
+              const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+              if (pr.user.login !== 'dependabot[bot]') { core.info(`#${number}: not a Dependabot PR — skipping.`); continue; }
+              if (pr.state !== 'open' || pr.draft) { core.info(`#${number}: not open / draft — skipping.`); continue; }
+              if (pr.head.sha !== run.head_sha) { core.info(`#${number}: CI ran on an older commit — skipping.`); continue; }
+              if (pr.mergeable_state !== 'clean') { core.info(`#${number}: mergeable_state=${pr.mergeable_state} — skipping.`); continue; }
+              const { data: checks } = await github.rest.checks.listForRef({ owner, repo, ref: pr.head.sha });
+              const runs = checks.check_runs || [];
+              const pending = runs.filter(c => c.status !== 'completed');
+              const bad = runs.filter(c => c.status === 'completed' && !['success', 'skipped', 'neutral'].includes(c.conclusion));
+              if (!runs.length || pending.length || bad.length) {
+                core.info(`#${number}: checks not all green (${runs.length} total, ${pending.length} pending, ${bad.length} failed) — NOT merging.`);
+                continue;
+              }
+              core.info(`#${number}: all gates passed — squash-merging.`);
+              await github.rest.pulls.merge({ owner, repo, pull_number: number, merge_method: 'squash' });
+            }
