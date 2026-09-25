@@ -1,0 +1,148 @@
+{
+  "bootstrapped": {
+    "schedule:genshin": 1790323164,
+    "schedule:starrail": 1790323164,
+    "schedule:wuwa": 1790323164,
+    "schedule:zzz": 1790323164
+  },
+  "codes": {},
+  "heartbeat": {
+    "app_version": "1.1.0",
+    "every_min": 1440,
+    "instance": "alpha",
+    "last_success": 1790323161
+  },
+  "icons": {
+    "genshin": "https://pbs.twimg.com/profile_images/2102589386378686464/tS24hVO2_200x200.jpg",
+    "starrail": "https://pbs.twimg.com/profile_images/2061274429456334851/xQfl3Ve__200x200.jpg",
+    "wuwa": "https://pbs.twimg.com/profile_images/2085696982958665728/qlgc729S_200x200.jpg"
+  },
+  "schedule": {
+    "genshin": {
+      "7.1": {
+        "data": {
+          "compensation": "Primogems ×300",
+          "images": [
+            "https://upload-os-bbs.hoyolab.com/upload/2026/09/22/0/769afb257533e1e3fc075b3262ba0623_8479938435863502783.jpeg"
+          ],
+          "maint_end_ts": 1790132400,
+          "maint_start_ts": 1790114400,
+          "source_label": "HoYoLAB",
+          "source_links": [
+            [
+              "HoYoLAB",
+              "https://www.hoyolab.com/article/46791577"
+            ]
+          ],
+          "source_url": "https://www.hoyolab.com/article/46791577",
+          "title_url": "https://www.hoyolab.com/article/46791577",
+          "version": "7.1"
+        },
+        "first_seen": 1790323161,
+        "prov": {
+          "compensation": [
+            50,
+            1790118002
+          ],
+          "maint_end_ts": [
+            50,
+            1790118002
+          ],
+          "maint_start_ts": [
+            50,
+            1790118002
+          ]
+        },
+        "status": "tracked"
+      }
+    },
+    "starrail": {
+      "4.6": {
+        "data": {
+          "compensation": "Stellar Jade ×300",
+          "images": [
+            "https://upload-os-bbs.hoyolab.com/upload/community/2026/09/23/1ee62eca62a4d646b14004634c661188_3519077431557110128.png"
+          ],
+          "maint_end_ts": 1790564400,
+          "maint_start_ts": 1790546400,
+          "preinstall_ts": 1790229600,
+          "source_label": "HoYoLAB",
+          "source_links": [
+            [
+              "HoYoLAB",
+              "https://www.hoyolab.com/article/46814308"
+            ]
+          ],
+          "source_url": "https://www.hoyolab.com/article/46814308",
+          "title_url": "https://www.hoyolab.com/article/46814308",
+          "version": "4.6"
+        },
+        "first_seen": 1790323161,
+        "prov": {
+          "compensation": [
+            50,
+            1790229608
+          ],
+          "maint_end_ts": [
+            50,
+            1790229608
+          ],
+          "maint_start_ts": [
+            50,
+            1790229608
+          ],
+          "preinstall_ts": [
+            50,
+            1790229608
+          ]
+        },
+        "status": "seeded"
+      }
+    },
+    "wuwa": {
+      "3.7": {
+        "data": {
+          "compensation": "Astrite x300, Crystal Solvent x2",
+          "images": [
+            "https://hw-media-cdn-mingchao.kurogame.com/object/1790006400000/m39h4r47zx7muv6xlk-1790072631821.jpg"
+          ],
+          "maint_end_ts": 1790737200,
+          "maint_start_ts": 1790712000,
+          "preinstall_ts": 1790560800,
+          "source_label": "Official News",
+          "source_links": [
+            [
+              "Official News",
+              "https://wutheringwaves.kurogames.com/en/main/news/detail/5476"
+            ]
+          ],
+          "source_url": "https://wutheringwaves.kurogames.com/en/main/news/detail/5476",
+          "title_url": "https://wutheringwaves.kurogames.com/en/main/news/detail/5476",
+          "version": "3.7"
+        },
+        "first_seen": 1790323161,
+        "prov": {
+          "compensation": [
+            50,
+            1790072775
+          ],
+          "maint_end_ts": [
+            50,
+            1790072775
+          ],
+          "maint_start_ts": [
+            50,
+            1790072775
+          ],
+          "preinstall_ts": [
+            50,
+            1790072775
+          ]
+        },
+        "status": "seeded"
+      }
+    },
+    "zzz": {}
+  },
+  "schema": 1
+}
