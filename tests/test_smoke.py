@@ -277,12 +277,15 @@ def test_games_config_is_valid():
 def test_code_parsers():
     assert [h.code for h in csrc.parse_seria(fx("seria_nap.json"))] == ["ZENLESSGIFT", "ZZZINK32", "ZZZVOID32", "ZZZGRIND32"]
     en = csrc.parse_ennead(fx("ennead_starrail_trimmed.json"))
-    assert [h.code for h in en] == ["STARRAILGIFT", "4TKSX77Y58QK", "CREATIONNYMPH"] and en[1].rewards is None
+    active = [h for h in en if not h.expired]
+    assert [h.code for h in active] == ["STARRAILGIFT", "4TKSX77Y58QK", "CREATIONNYMPH"] and active[1].rewards is None
+    assert [h.code for h in en if h.expired] == ["0206GRANDOPEN"]              # inactive list = expired flag
     assert csrc.parse_hoyolab_material(fx("hoyolab_material_empty.json")) == []
     live = csrc.parse_hoyolab_material(fx("hoyolab_material_live_SYNTHETIC.json"))
     assert [h.code for h in live] == ["VESNAONPATROL"] and live[0].verified
-    assert [h.code for h in csrc.parse_fandom(fx("fandom_hsr_SYNTHETIC.json"))] == ["STARRAILGIFT"]
-    assert [h.code for h in csrc.parse_fandom(fx("fandom_ww_table_SYNTHETIC.json"))] == ["WAKINGMOON", "FINDSENTINEL"]
+    assert [h.code for h in csrc.parse_fandom(fx("fandom_hsr_SYNTHETIC.json")) if not h.expired] == ["STARRAILGIFT"]
+    assert [h.code for h in csrc.parse_fandom(fx("fandom_ww_table_SYNTHETIC.json")) if not h.expired] == [
+        "WAKINGMOON", "FINDSENTINEL"]
     assert [h.code for h in csrc.parse_codehub(fx("codehub_trimmed.json"), "wuthering-waves")] == ["WAKINGMOON", "FINDSENTINEL"]
     assert csrc.sanitize("vesnaonpatrol[1] NEW!") == "VESNAONPATROL" and csrc.sanitize("123456") == ""
 
@@ -538,6 +541,271 @@ def test_bot_registers_commands_and_replies_v2():
     assert path.endswith("/callback") and body["type"] == 4
     assert body["data"]["flags"] == cards.IS_COMPONENTS_V2 and body["data"]["allowed_mentions"] == {"parse": []}
     assert body["data"]["components"][0]["type"] == 17
+
+
+
+# =========================================================================== session 2 (v1.1)
+def test_per_game_codes_webhooks_and_aliases():
+    hooks = {k: f"https://discord.com/api/webhooks/{i}/codes-{k}" for i, k in
+             enumerate(("genshin", "starrail", "hna", "zzz", "wuwa", "ananta"), start=10)}
+    env = {f"DISCORD_WEBHOOK_CODES_{k.upper()}": v for k, v in hooks.items()}
+    s = settings(**env)
+    for key, url in hooks.items():
+        assert s.webhook_source("codes", key) == (f"DISCORD_WEBHOOK_CODES_{key.upper()}", url), key
+    assert s.webhook("schedule", "genshin") == HOOK                           # schedule falls back to URL
+    s = settings(DISCORD_WEBHOOK_CODES_HSR="https://discord.com/api/webhooks/7/hsr",
+                 DISCORD_WEBHOOK_CODES_NEXUSANIMA="https://discord.com/api/webhooks/8/hna",
+                 DISCORD_WEBHOOK_CODES="https://discord.com/api/webhooks/9/all")
+    assert s.webhook_source("codes", "starrail")[0] == "DISCORD_WEBHOOK_CODES_HSR"      # short name works
+    assert s.webhook_source("codes", "hna")[0] == "DISCORD_WEBHOOK_CODES_NEXUSANIMA"    # alias works
+    assert s.webhook_source("codes", "zzz")[0] == "DISCORD_WEBHOOK_CODES"               # feature fallback
+    s = settings(FORCE_WEBHOOK="https://discord.com/api/webhooks/1/test", **env)
+    assert s.webhook_source("codes", "wuwa") == ("FORCE_WEBHOOK", "https://discord.com/api/webhooks/1/test")
+    assert "DISCORD_WEBHOOK_CODES_WUWA" in settings().expected_webhook_names("codes", "wuwa")
+
+
+def test_no_ping_and_test_marker():
+    s = settings(NO_PING="1", PING_CODES_GENSHIN="111111111111111111")
+    assert not s.ping("codes", "genshin") and not s.ping("schedule", "wuwa")
+    s = settings()
+    p = cards.codes_payloads(GAMES["genshin"], CODE_SAMPLES["genshin"], s, s.ping("codes", "genshin"), 1)[0]
+    t = cards.mark_test(p)
+    assert t["components"][0]["content"].startswith("🧪 [TEST] <@&1296268365593186426>")
+    assert "TEST CARD" in t["components"][1]["components"][0]["content"] and not cards.validate_payload(t)
+    assert not p["components"][0]["content"].startswith("🧪")                    # original untouched
+    for key in CODE_SAMPLES:                                                    # one sample per game (6)
+        assert key in GAMES
+    assert set(CODE_SAMPLES) == {"genshin", "starrail", "zzz", "wuwa", "hna", "ananta"}
+
+
+def test_prepared_games_switch_on():
+    from gamexpress.config import active_games
+    keys = lambda s, now=None: [g.key for g in active_games(GAMES, s, now)]  # noqa: E731
+    assert keys(settings(), now=1790000000) == ["genshin", "starrail", "zzz", "wuwa"]
+    assert "hna" in keys(settings(ENABLE_GAMES="hna"), now=1790000000)
+    jan15 = 1800000000                                                          # 2027-01-15 08:00 UTC
+    assert "ananta" in keys(settings(), now=jan15) and "ananta" not in keys(settings(), now=jan15 - 86400)
+    assert keys(settings(GAMES="ananta"), now=1790000000) == ["ananta"]        # explicit test of a prepared game
+
+
+def test_four_star_names_rules():
+    ok = ("Bennett", "March 7th", "Soldier 11", "Topaz & Numby", "Dan Heng • Imbibitor Lunae", "Yumemizuki Mizuki")
+    bad = ("Event Wish", "2026", "Character Event", "Light Cone", "https://x.y", "TBA", "Limited 4-Star")
+    assert all(schedule.plausible_name(n) for n in ok), [n for n in ok if not schedule.plausible_name(n)]
+    assert not any(schedule.plausible_name(n) for n in bad), [n for n in bad if schedule.plausible_name(n)]
+    txt = ('Warp "Butterfly" Phase I: the limited 5-star character "Pearl" and the 4-star characters '
+           '"Event Wish", "Gallagher" and "Pela" will get a boost.')
+    b = schedule.extract_banner(Item("hoyolab", "starrail", "1", "u", "Event Warp", txt, 1))
+    assert b["banner_five"] == ["Pearl"] and b["banner_four_unsure"] is True
+
+
+def _banner_extract(names4, five="Pearl", ts=1, source="hoyolab", unsure=False, phase=1):
+    f = {"banner_five": [five], "banner_four": list(names4), "banner_four_unsure": unsure, "banner_phase": phase}
+    return schedule.Extract(item=Item(source, "starrail", str(ts), f"u{ts}", "Warp", "x", ts), kind="banner",
+                            version="4.7", fields=f)
+
+
+def test_four_star_tba_when_unsure():
+    g = GAMES["starrail"]                                                       # 3 rate-up 4★ per phase
+    rec, notes = {}, []
+    d = schedule.merge(g, "4.7", [_banner_extract(["Gallagher", "Pela"])], rec, {}, {}, 1, notes)
+    assert d["banners"]["phase1"] == ["Pearl"] and d["banners"]["phase1_4"] == []          # 2 of 3 -> TBA
+    assert notes and "2 name(s) found, 3 expected" in notes[0]
+    rec, notes = {}, []
+    d = schedule.merge(g, "4.7", [_banner_extract(["Gallagher", "Pela", "Lynx"])], rec, {}, {}, 1, notes)
+    assert d["banners"]["phase1_4"] == ["Gallagher", "Pela", "Lynx"] and not notes
+    rec["data"] = d                                                             # a 2nd official post disagrees
+    d = schedule.merge(g, "4.7", [_banner_extract(["Gallagher", "Pela", "Lynx"]),
+                                  _banner_extract(["Gallagher", "Pela", "Asta"], ts=2)], rec, {}, {}, 3, notes)
+    assert d["banners"]["phase1_4"] == [] and "disagree" in notes[-1]
+    rec["data"], n = d, len(notes)                                              # sticky: stays TBA, no new note
+    d = schedule.merge(g, "4.7", [_banner_extract(["Gallagher", "Pela", "Lynx"])], rec, {}, {}, 4, notes)
+    assert d["banners"]["phase1_4"] == [] and len(notes) == n
+    ov = {"banners": {"phase1_4": ["Gallagher", "Pela", "Lynx"]}}                # override is always trusted
+    rec["data"] = d
+    d = schedule.merge(g, "4.7", [_banner_extract(["Gallagher", "Pela", "Asta"], ts=2)], rec, ov, {}, 5, notes)
+    assert d["banners"]["phase1_4"] == ["Gallagher", "Pela", "Lynx"]
+    d = schedule.merge(g, "4.7", [_banner_extract([], unsure=True)], {}, {}, {}, 6, [])
+    assert d["banners"]["phase1_4"] == []
+    card = json.dumps(cards.schedule_payload(g, {**d, "version": "4.7"}, settings(), settings().ping("schedule", "starrail")),
+                      ensure_ascii=False)
+    assert "4 Star Characters: TBA" in card
+
+
+def test_new_code_sources_parsers():
+    ogc = csrc.parse_ogc(fx("ogc_genshin_trimmed.json"))
+    codes = [h.code for h in ogc]
+    assert "TEST" not in codes and "UIVIBUQM6Q8AUIVI13C8X156" not in codes and "XVIZDH2B9WGXEHVE2TEAFY6O" not in codes
+    assert {"EPIC2026", "VESNAONPATROL", "UIVIBUQM6Q8A", "XVIZDH2B9WGX"} <= set(codes)   # mixed case normalised
+    assert all(h.source == "ogc" and not h.verified for h in ogc)
+    ww = csrc.parse_ogc(fx("ogc_wuwa.json"))
+    assert [h.code for h in ww][:2] == ["BAHAMUTKXMHM", "DCARD3VN7M"] and ww[0].rewards[0] == "Medium Energy Core ×5"
+    hb = csrc.parse_humbao((FIX / "humbao_genshin.txt").read_text(encoding="utf-8"))
+    assert [h.code for h in hb] == ["2BJ64QRZ7RT8", "GS71XDYGEO"] and all(h.verified for h in hb)
+    wg = csrc.parse_wuthering_gg((FIX / "wuthering_gg_SYNTHETIC.html").read_text(encoding="utf-8"))
+    assert [(h.code, h.expired) for h in wg] == [("WUTHERINGGIFT", False), ("NEWBROADCAST37", False),
+                                                  ("WUWA4PC", True), ("BAHAMUTKXMHM", True)]
+    assert wg[1].rewards == ["100 × Astrite"]
+    seria = csrc.parse_seria({"codes": [{"code": "DEADCODE1", "status": "NOT_OK"}, {"code": "GOODCODE1", "status": "OK"}]})
+    assert [(h.code, h.expired, h.verified) for h in seria] == [("DEADCODE1", True, False), ("GOODCODE1", False, True)]
+    en = csrc.parse_ennead(fx("ennead_genshin_trimmed.json"))
+    assert {h.code for h in en if h.expired} == {"GENSHINGIFT", "6ALMWAVKLK35"}
+    assert csrc.family("ogc") == csrc.family("ennead") != csrc.family("fandom")
+
+
+def test_code_gate_families_and_expired_veto():
+    H = CodeHit
+    g = lambda *hits: codeposter.gate(codeposter.group_hits(list(hits))["NEWCODE1"], 2)  # noqa: E731
+    assert g(H("NEWCODE1", "ogc"), H("NEWCODE1", "ennead"))[0] is False        # same family = 1 source
+    assert g(H("NEWCODE1", "ogc"), H("NEWCODE1", "fandom"))[0] is True
+    ok, why = g(H("NEWCODE1", "ogc"), H("NEWCODE1", "fandom"), H("NEWCODE1", "wuthering.gg", expired=True))
+    assert ok is False and "expired" in why                                     # any expired flag -> hold
+    assert g(H("NEWCODE1", "seria", verified=True), H("NEWCODE1", "ennead", expired=True))[0] is True
+    assert g(H("NEWCODE1", "humbao", verified=True), H("NEWCODE1", "seria", expired=True))[0] is False
+    assert g(H("NEWCODE1", "x", verified=True), H("NEWCODE1", "seria", expired=True))[0] is True   # official wins
+    assert g(H("NEWCODE1", "kuro", verified=True))[1] == "official"
+
+
+def test_posted_code_card_is_edited_when_code_expires():
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        st = State.load(sp)
+        st.mark_bootstrapped("codes", "wuwa")
+        st.save()
+        table = {"ogc:wuwa": [CodeHit("WAKINGMOON", "ogc", ["Astrite ×100"])],
+                 "fandom:wutheringwaves/Redemption_Code": [CodeHit("WAKINGMOON", "fandom", None),
+                                                            CodeHit("FINDSENTINEL", "fandom", None)],
+                 "codehub:wuthering-waves": [CodeHit("FINDSENTINEL", "codehub", None)]}
+        ctx = make_ctx(sp, codes_table=table)
+        ctx.games = [GAMES["wuwa"]]
+        asyncio.run(codeposter.run(ctx))
+        assert [x["method"] for x in ctx.webhook.sent] == ["POST"]
+        rec = ctx.state.code_records("wuwa")["WAKINGMOON"]
+        assert rec["msg_codes"] == ["FINDSENTINEL", "WAKINGMOON"] and rec["status"] == "posted"
+        ctx.state.save()
+        table = {"wuthering.gg": [CodeHit("WAKINGMOON", "wuthering.gg", None, expired=True)],
+                 "fandom:wutheringwaves/Redemption_Code": [CodeHit("WAKINGMOON", "fandom", None, expired=True),
+                                                            CodeHit("FINDSENTINEL", "fandom", None)]}
+        ctx = make_ctx(sp, codes_table=table, now=1789400000)
+        ctx.games = [GAMES["wuwa"]]
+        asyncio.run(codeposter.run(ctx))
+        assert [x["method"] for x in ctx.webhook.sent] == ["PATCH"]
+        edit = ctx.webhook.sent[0]["payload"]
+        flat = json.dumps(edit, ensure_ascii=False)
+        assert "~~`WAKINGMOON`~~ · expired" in flat and "`FINDSENTINEL`" in flat and "1 expired" in flat
+        assert edit["allowed_mentions"] == {"parse": []}
+        ctx.state.save()
+        ctx = make_ctx(sp, codes_table=table, now=1789400600)                  # no repeated edits
+        ctx.games = [GAMES["wuwa"]]
+        asyncio.run(codeposter.run(ctx))
+        assert ctx.webhook.sent == []
+
+
+def test_missing_codes_webhook_names_the_secret():
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        st = State.load(sp)
+        st.mark_bootstrapped("codes", "zzz")
+        st.save()
+        ctx = make_ctx(sp, codes_table={"seria:nap": [CodeHit("ZZZNEW99", "seria", None, verified=True)]},
+                       DISCORD_WEBHOOK_URL="")
+        ctx.games = [GAMES["zzz"]]
+        asyncio.run(codeposter.run(ctx))
+        assert any("DISCORD_WEBHOOK_CODES_ZZZ" in r for r in ctx.report)
+        assert ctx.state.code_records("zzz")["ZZZNEW99"]["status"] == "pending"   # retried once a webhook exists
+
+
+def test_test_mode_posts_latest_card_marked_test():
+    with tempfile.TemporaryDirectory() as tmp:
+        ww = item_from_fx_json("wuwa", fx("fx_wuwa_3_7_broadcast.json"))
+        ctx = make_ctx(Path(tmp) / "s.json", items={"wuwa": [ww]}, now=1789815600 + 5 * 86400, TEST_MODE="1")
+        asyncio.run(schedule.run(ctx))                                          # 5 days old, fresh state
+        posts = [x for x in ctx.webhook.sent if x["method"] == "POST"]
+        assert len(posts) == 1 and posts[0]["payload"]["components"][0]["content"].startswith("🧪 [TEST]")
+
+
+def test_parallel_probe_counts_per_game():
+    from gamexpress.http import Probe
+
+    class Slow:
+        health = {}
+
+        async def get_json(self, url, **k):
+            await asyncio.sleep(0.01)
+            return {"ok": 1} if "good" in url else None
+
+        async def get_text(self, url, **k):
+            return None
+
+    async def main():
+        a, b = Probe(Slow()), Probe(Slow())
+        await asyncio.gather(a.get_json("https://good/1"), b.get_json("https://bad/1"), a.get_json("https://good/2"))
+        return a.ok, b.ok, a.health is b.health
+    assert asyncio.run(main()) == (2, 0, True)
+
+
+RSS = """<?xml version="1.0"?><rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel><title>x</title>
+<item><title>t</title><dc:creator>@Wuthering_Waves</dc:creator><link>https://n/Wuthering_Waves/status/{id}#m</link>
+<description>Version 3.7 Special Broadcast</description><pubDate>Fri, 18 Sep 2026 10:00:00 GMT</pubDate></item>
+</channel></rss>"""
+
+
+def test_nitter_fleet_probed_in_parallel_batches():
+    from gamexpress.sources.twitter import XClient
+    calls = []
+
+    class F:
+        async def get_text(self, url, **k):
+            calls.append(url)
+            await asyncio.sleep(0.01)
+            if "inst3" in url:
+                return RSS.format(id="1111111111")
+            if "inst6" in url:
+                return RSS.format(id="2222222222")
+            return None
+    s = settings(NITTER_INSTANCES=",".join(f"https://inst{i}" for i in range(1, 11)))
+    x = XClient(F(), s)
+    tl = asyncio.run(x.timeline("Wuthering_Waves"))
+    assert [e["id"] for e in tl] and {e["id"] for e in tl} == {"1111111111", "2222222222"}
+    assert len(calls) == 8 and "wuthering_waves" in x.reachable                 # 2 batches of 4, then stop
+
+
+def test_workflows_cron_job_org_and_test_bench():
+    try:
+        import yaml
+    except ImportError:
+        print("    (pyyaml not installed — workflow checks skipped)")
+        return
+    wf = ROOT / ".github" / "workflows"
+    mon = yaml.safe_load((wf / "monitor.yml").read_text(encoding="utf-8"))
+    on = mon.get("on") or mon.get(True)
+    assert "schedule" not in on and "workflow_dispatch" in on                  # cron-job.org is the only trigger
+    env = mon["jobs"]["monitor"]["env"]
+    for key in ("GENSHIN", "STARRAIL", "HNA", "ZZZ", "WUWA", "ANANTA"):
+        assert env[f"DISCORD_WEBHOOK_CODES_{key}"] == f"${{{{ secrets.DISCORD_WEBHOOK_CODES_{key} }}}}"
+    assert mon["concurrency"]["cancel-in-progress"] is False
+    test = yaml.safe_load((wf / "test.yml").read_text(encoding="utf-8"))
+    opts = (test.get("on") or test.get(True))["workflow_dispatch"]["inputs"]["test"]["options"]
+    assert {"webhooks", "sample-cards", "live-dry-run", "live-test-channel", "offline-tests", "full"} <= set(opts)
+    assert test["permissions"] == {"contents": "read"}                           # the test bench never commits
+    for name in ("monitor.yml", "test.yml", "ci.yml"):
+        text = (wf / name).read_text(encoding="utf-8")
+        assert "actions/checkout@v7" in text and "actions/setup-python@v7" in text, name
+    am = (wf / "dependabot_auto_merge.yml").read_text(encoding="utf-8")
+    assert "vars.AUTO_MERGE_DEPENDABOT == 'yes'" in am and "actions/checkout" not in am
+
+
+def test_preview_html_renders_cards():
+    from gamexpress.preview_html import inline, render_page
+    s = settings()
+    pages = [("Code cards", k, p) for k, codes in CODE_SAMPLES.items()
+             for p in cards.codes_payloads(GAMES[k], codes, s, s.ping("codes", k), 1790000000)]
+    pages += [("Schedule cards", k, _render(k)) for k in SCHEDULE_SAMPLES]
+    page = render_page(pages)
+    assert page.count('class="container"') == len(pages) and 'class="btn"' in page
+    assert "&lt;t:" in page and 'data-f="R"' in page and "@ping-role" in page
+    assert "<script>" in page and "cdn.discordapp.com/emojis/1508619925940473966.gif" in page
+    assert inline("**a** `<b>` [x](https://e.x) <t:1:R>").startswith("<strong>a</strong> <code>&lt;b&gt;</code>")
 
 
 # =========================================================================== runner

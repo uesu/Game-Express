@@ -38,7 +38,7 @@ class State:
         self._original = stable_hash(self._comparable())
 
     @classmethod
-    def load(cls, path: Path) -> "State":
+    def load(cls, path: Path) -> State:
         if path.exists():
             try:
                 return cls(path, json.loads(path.read_text(encoding="utf-8") or "{}"))

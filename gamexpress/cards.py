@@ -26,8 +26,8 @@ from typing import Any
 from urllib.parse import quote
 
 from .config import Game, Ping, Settings
-from .timeparse import discord_ts
 from .textutil import truncate
+from .timeparse import discord_ts
 
 IS_COMPONENTS_V2 = 1 << 15
 MAX_COMPONENTS = 40
@@ -281,64 +281,101 @@ def pretty_rewards(raw: str | list | None) -> str:
     return " • ".join(out)
 
 
+def codes_card(game: Game, chunk: list[dict], settings: Settings, ping: Ping, detected_ts: int,
+               part: tuple[int, int] = (1, 1)) -> dict:
+    """ONE code message. A code dict may carry "expired": True — it is then shown struck
+    through, without a Redeem button (used when a posted card is edited after the code dies)."""
+    n = len(chunk)
+    dead = sum(1 for c in chunk if c.get("expired"))
+    plural = "s" if n != 1 else ""
+    head = f"## 🎁 {game.name} Redemption Code{plural}"
+    if dead and dead == n:
+        sub = f"-# {'all ' if n > 1 else ''}{n} code{plural} in this post expired • posted {discord_ts(detected_ts, 'R')}"
+    elif dead:
+        sub = f"-# {n} codes • {dead} expired • detected {discord_ts(detected_ts, 'R')}"
+    else:
+        sub = f"-# {n} new code{plural} • detected {discord_ts(detected_ts, 'R')}"
+    if part[1] > 1:
+        sub += f" • part {part[0]}/{part[1]}"
+    children: list[dict] = []
+    if game.icon:
+        children.append(section([head, sub], thumbnail(game.icon)))
+    else:
+        children.append(text(f"{head}\n{sub}"))
+    children.append(sep())
+    lines = []
+    for c in chunk:
+        rw = pretty_rewards(c.get("rewards"))
+        code_md = f"~~`{c['code']}`~~ · expired" if c.get("expired") else f"`{c['code']}`"
+        lines.append(f"✦ {code_md}" + (f"\n-# {truncate(rw, 180)}" if rw else ""))
+    children.append(text("\n".join(lines) if lines else "No codes."))
+    children.append(sep())
+    live = [c for c in chunk if not c.get("expired")]
+    if game.redeem_url and live:
+        btns = [link_button(c["code"], game.redeem_url.format(code=quote(c["code"])),
+                            settings.emoji.get("redeem")) for c in live]
+        for i in range(0, len(btns), 5):
+            children.append(action_row(btns[i:i + 5]))
+    hint = game.codes.get("redeem_hint")
+    if hint and live:
+        children.append(text(f"※ {hint}"))
+    children.append(sep())
+    extra = []
+    if game.redeem_page:
+        extra.append(link_button("Redeem Page", game.redeem_page, settings.emoji.get("redeem")))
+    buttons = (extra + _std_buttons(game, settings))[:5]
+    if buttons:
+        children.append(action_row(buttons))
+    srcs = sorted({s for c in chunk for s in c.get("sources", [])})
+    foot = "-# Source: " + (", ".join(SOURCE_LABELS.get(s, s) for s in srcs) if srcs else "—")
+    foot += " • Codes expire — redeem soon." if live else " • Expired codes are kept for reference."
+    children.append(text(foot))
+    top = _top_line(ping, f"{game.name} Redemption Codes! 🎁") if part[0] == 1 else ""
+    return _payload(top, container(children, game.color), ping if part[0] == 1 else Ping())
+
+
 def codes_payloads(game: Game, codes: list[dict], settings: Settings, ping: Ping,
                    now_ts: int) -> list[dict]:
     """One card per ≤10 codes. Each code gets a prefilled 'Redeem' button when the game
-    has web redemption (GI / HSR / ZZZ); otherwise the in-game hint is shown."""
-    payloads: list[dict] = []
+    has web redemption (GI / HSR / ZZZ); otherwise the in-game hint is shown. Only the
+    first card of a batch pings."""
     chunks = [codes[i:i + CODES_PER_CARD] for i in range(0, len(codes), CODES_PER_CARD)] or [[]]
-    for idx, chunk in enumerate(chunks):
-        n = len(chunk)
-        head = f"## 🎁 {game.name} Redemption Code{'s' if n != 1 else ''}"
-        sub = f"-# {n} new code{'s' if n != 1 else ''} • detected {discord_ts(now_ts, 'R')}"
-        if len(chunks) > 1:
-            sub += f" • part {idx + 1}/{len(chunks)}"
-        children: list[dict] = []
-        if game.icon:
-            children.append(section([head, sub], thumbnail(game.icon)))
-        else:
-            children.append(text(f"{head}\n{sub}"))
-        children.append(sep())
-        lines = []
-        for c in chunk:
-            rw = pretty_rewards(c.get("rewards"))
-            lines.append(f"✦ `{c['code']}`" + (f"\n-# {truncate(rw, 180)}" if rw else ""))
-        children.append(text("\n".join(lines) if lines else "No codes."))
-        children.append(sep())
-        if game.redeem_url:
-            btns = [link_button(c["code"], game.redeem_url.format(code=quote(c["code"])),
-                                settings.emoji.get("redeem")) for c in chunk]
-            for i in range(0, len(btns), 5):
-                children.append(action_row(btns[i:i + 5]))
-        hint = game.codes.get("redeem_hint")
-        if hint:
-            children.append(text(f"※ {hint}"))
-        children.append(sep())
-        extra = []
-        if game.redeem_page:
-            extra.append(link_button("Redeem Page", game.redeem_page, settings.emoji.get("redeem")))
-        buttons = (extra + _std_buttons(game, settings))[:5]
-        if buttons:
-            children.append(action_row(buttons))
-        srcs = sorted({s for c in chunk for s in c.get("sources", [])})
-        foot = "-# Source: " + (", ".join(SOURCE_LABELS.get(s, s) for s in srcs) if srcs else "—")
-        foot += " • Codes expire — redeem soon."
-        children.append(text(foot))
-        top = _top_line(ping, f"{game.name} Redemption Codes! 🎁") if idx == 0 else ""
-        p = _payload(top, container(children, game.color), ping if idx == 0 else Ping())
-        payloads.append(p)
-    return payloads
+    return [codes_card(game, chunk, settings, ping, now_ts, (idx + 1, len(chunks)))
+            for idx, chunk in enumerate(chunks)]
 
 
 SOURCE_LABELS = {
     "hoyolab": "HoYoLAB (official)",
     "x": "Official X",
+    "kuro": "Kuro official news",
     "seria": "hoyo-codes.seria.moe (verified)",
+    "humbao": "hoyoverse-codes (verified)",
+    "ogc": "Open Gacha Codes",
     "ennead": "api.ennead.cc",
     "fandom": "Fandom wiki",
     "codehub": "PromoGacha",
+    "wuthering.gg": "wuthering.gg",
     "manual": "manual",
 }
+
+TEST_NOTE = "🧪 TEST CARD — sample / test data, not a real announcement"
+
+
+def mark_test(payload: dict, note: str = TEST_NOTE) -> dict:
+    """Label a card as a test: a line at the top of the card + '🧪 [TEST]' on the header line.
+    Used by the Test workflow so nobody mistakes a test post for real news or real codes."""
+    import copy
+    p = copy.deepcopy(payload)
+    comps = p.get("components") or []
+    for c in comps:
+        if c.get("type") == 10 and c.get("content") and not c["content"].startswith("🧪"):
+            c["content"] = f"🧪 [TEST] {c['content']}"
+            break
+    for c in comps:
+        if c.get("type") == 17:
+            c["components"].insert(0, text(f"-# {note}"))
+            break
+    return p
 
 
 # --------------------------------------------------------------------------- notice card

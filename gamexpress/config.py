@@ -11,9 +11,10 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = ROOT / "config"
@@ -162,25 +163,61 @@ class Settings:
     repost: str
     log_level: str
     http_timeout: int
+    no_ping: bool = False              # NO_PING=1 -> never ping (test runs)
+    force_webhook: str = ""            # FORCE_WEBHOOK -> every card goes to ONE channel (test channel)
+    test_mode: bool = False            # TEST_MODE=1 -> post current items, mark cards as TEST (never commit)
+    enable_games: set[str] = field(default_factory=set)   # ENABLE_GAMES=hna,ananta -> switch on prepared games
+    aliases: dict[str, list[str]] = field(default_factory=dict)   # game key -> extra env-name slugs (GI, HSR…)
+    codes_mark_expired: bool = True    # edit posted code cards when every source lists the code as expired
 
     # -- routing ---------------------------------------------------------------
-    def webhook(self, feature: str, game_key: str) -> str | None:
-        """DISCORD_WEBHOOK_<FEATURE>_<GAME>  >  DISCORD_WEBHOOK_<FEATURE>  >  DISCORD_WEBHOOK_URL"""
-        f, g = slug(feature), slug(game_key)
-        for name in (f"DISCORD_WEBHOOK_{f}_{g}", f"DISCORD_WEBHOOK_{f}", "DISCORD_WEBHOOK_URL"):
+    def _game_slugs(self, game_key: str) -> list[str]:
+        out = [slug(game_key)]
+        for a in self.aliases.get(game_key, []):
+            if slug(a) not in out:
+                out.append(slug(a))
+        return out
+
+    def webhook_source(self, feature: str, game_key: str) -> tuple[str, str | None]:
+        """(secret name, url). Order: FORCE_WEBHOOK (test channel) > DISCORD_WEBHOOK_<FEATURE>_<GAME>
+        (the game key, or its short name: CODES_GENSHIN / CODES_GI, CODES_STARRAIL / CODES_HSR …)
+        > DISCORD_WEBHOOK_<FEATURE> > DISCORD_WEBHOOK_URL."""
+        if self.force_webhook:
+            return "FORCE_WEBHOOK", self.force_webhook
+        f = slug(feature)
+        names = [f"DISCORD_WEBHOOK_{f}_{g}" for g in self._game_slugs(game_key)]
+        names += [f"DISCORD_WEBHOOK_{f}", "DISCORD_WEBHOOK_URL"]
+        for name in names:
             v = _env(self.env, name)
             if v:
-                return v
-        return None
+                return name, v
+        return "", None
+
+    def webhook(self, feature: str, game_key: str) -> str | None:
+        return self.webhook_source(feature, game_key)[1]
+
+    def expected_webhook_names(self, feature: str, game_key: str) -> str:
+        f = slug(feature)
+        return f"DISCORD_WEBHOOK_{f}_{slug(game_key)} (or DISCORD_WEBHOOK_{f})"
 
     def ping(self, feature: str, game_key: str) -> Ping:
-        """PING_<FEATURE>_<GAME>  >  PING_<FEATURE>  >  PING_ROLE_ID.  'none' = explicit off."""
-        f, g = slug(feature), slug(game_key)
-        for name in (f"PING_{f}_{g}", f"PING_{f}", "PING_ROLE_ID"):
+        """PING_<FEATURE>_<GAME>  >  PING_<FEATURE>  >  PING_ROLE_ID.  'none' = explicit off.
+        NO_PING=1 (test runs) silences everything."""
+        if self.no_ping:
+            return Ping()
+        f = slug(feature)
+        names = [f"PING_{f}_{g}" for g in self._game_slugs(game_key)] + [f"PING_{f}", "PING_ROLE_ID"]
+        for name in names:
             p = parse_ping(_env(self.env, name))
             if p is not None:
                 return p
         return Ping()
+
+
+def _off_to_empty(value: str) -> str:
+    """'none' / 'off' / '-' switch a URL setting off explicitly (an empty value would be
+    re-filled from the GE_VARS_JSON catch-all)."""
+    return "" if value.strip().lower() in ("none", "off", "-", "no", "false", "0") else value
 
 
 def _merge_json_blobs(env: dict) -> None:
@@ -239,7 +276,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         nitter_token=_env(env, "NITTER_RSS_TOKEN"),
         instance_name=_env(env, "INSTANCE_NAME", "alpha") or "alpha",
         instance_role=(_env(env, "INSTANCE_ROLE", "primary") or "primary").lower(),
-        peer_state_url=_env(env, "PEER_STATE_URL"),
+        peer_state_url=_off_to_empty(_env(env, "PEER_STATE_URL")),
         failover_after_min=_int(env, "FAILOVER_AFTER_MINUTES", 90),
         heartbeat_min=max(5, _int(env, "HEARTBEAT_MINUTES", 1440)),
         state_path=state_path,
@@ -249,7 +286,29 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         repost=_env(env, "REPOST"),
         log_level=_env(env, "LOG_LEVEL", "INFO").upper(),
         http_timeout=_int(env, "HTTP_TIMEOUT", 20),
+        no_ping=_bool(env, "NO_PING"),
+        force_webhook=_env(env, "FORCE_WEBHOOK"),
+        test_mode=_bool(env, "TEST_MODE"),
+        enable_games={g.strip().lower() for g in _env(env, "ENABLE_GAMES").split(",") if g.strip()},
+        aliases=_game_aliases(),
+        codes_mark_expired=_bool(env, "CODES_MARK_EXPIRED", True),
     )
+
+
+def _game_aliases() -> dict[str, list[str]]:
+    """key -> [SHORT] from config/games.json, so DISCORD_WEBHOOK_CODES_HSR works like
+    DISCORD_WEBHOOK_CODES_STARRAIL (and PING_CODES_GI like PING_CODES_GENSHIN)."""
+    try:
+        raw = json.loads((CONFIG_DIR / "games.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    out: dict[str, list[str]] = {}
+    for key, g in (raw.get("games") or {}).items():
+        if key.startswith("_") or not isinstance(g, dict):
+            continue
+        names = [g.get("short", "")] + list(g.get("aliases") or [])
+        out[key] = [n for n in names if n and slug(n) != slug(key)]
+    return out
 
 
 # --------------------------------------------------------------------------- games
@@ -288,6 +347,8 @@ class Game:
     card: CardStyle = field(default_factory=CardStyle)
     codes: dict = field(default_factory=dict)
     note: str = ""
+    four_star_count: int | None = None   # rate-up 4★ per banner phase (GI/HSR/WW 3, ZZZ 2); other counts -> TBA
+    auto_enable_on: str = ""             # YYYY-MM-DD: a prepared game switches itself on at launch
 
     @property
     def redeem_url(self) -> str:
@@ -330,16 +391,29 @@ def load_games(path: Path | None = None) -> dict[str, Game]:
             card=card,
             codes=dict(g.get("codes") or {}),
             note=g.get("note", ""),
+            four_star_count=(int(g["four_star_count"]) if g.get("four_star_count") else None),
+            auto_enable_on=str(g.get("auto_enable_on") or ""),
         )
     return games
 
 
-def active_games(games: dict[str, Game], settings: Settings) -> list[Game]:
+def game_is_on(g: Game, settings: Settings, now: float | None = None) -> bool:
+    """enabled in games.json, or listed in ENABLE_GAMES, or its auto_enable_on date has arrived."""
+    if g.enabled or g.key in settings.enable_games:
+        return True
+    if g.auto_enable_on:
+        import time as _t
+        today = _t.strftime("%Y-%m-%d", _t.gmtime(now if now is not None else _t.time()))
+        return today >= g.auto_enable_on
+    return False
+
+
+def active_games(games: dict[str, Game], settings: Settings, now: float | None = None) -> list[Game]:
     out = []
     for g in games.values():
         if settings.games_filter and g.key not in settings.games_filter:
             continue
-        if not g.enabled and g.key not in settings.games_filter:
+        if not game_is_on(g, settings, now) and g.key not in settings.games_filter:
             continue
         out.append(g)
     return out

@@ -11,7 +11,7 @@ import asyncio
 import logging
 import re
 from calendar import timegm
-from typing import Callable
+from collections.abc import Callable
 from urllib.parse import quote, unquote
 
 import feedparser
@@ -24,6 +24,8 @@ from ..textutil import find_urls, html_to_text
 log = logging.getLogger("gamexpress.x")
 
 TOKEN_GATED = {"https://nitter.miningtcup.me"}
+NITTER_BATCH = 4          # instances probed in parallel per round
+NITTER_TIMEOUT = 12       # seconds — a dead mirror must not stall the run
 STATUS_RE = re.compile(r"/status(?:es)?/(\d{8,25})")
 
 
@@ -47,48 +49,65 @@ class XClient:
         self._timelines: dict[str, list[dict] | None] = {}
         self._tweets: dict[str, dict | None] = {}
         self.avatars: dict[str, str] = {}     # account (lower) -> current avatar url
+        self.reachable: set[str] = set()      # accounts with >= 1 working instance this run
+
+    async def _probe(self, inst: str, account: str) -> list | None:
+        """One nitter instance -> parsed feed entries, or None (dead / bot-check / stale)."""
+        url = f"{inst}/{account}/rss"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        if inst in TOKEN_GATED:
+            token = self.settings.nitter_token
+            if not token:
+                return None
+            headers = {"User-Agent": f"Mozilla/5.0 {token}", "Authorization": f"Bearer {token}"}
+            url += f"?token={quote(token, safe='')}"
+        body = await self.fetcher.get_text(url, source="nitter", headers=headers, retries=0,
+                                           timeout=NITTER_TIMEOUT)
+        if not body:
+            return None
+        feed = await asyncio.to_thread(feedparser.parse, body)
+        if not feed.entries:
+            log.info("[x:%s] %s: HTTP 200 but 0 entries (bot check / stale) — next", account, inst)
+            return None
+        return list(feed.entries)
 
     async def timeline(self, account: str) -> list[dict]:
+        """Instances are probed in parallel batches (a dead mirror costs one short timeout
+        for the whole batch instead of one per instance); the first TWO working instances
+        (in fleet order) are merged."""
         if account in self._timelines:
             return self._timelines[account] or []
         entries: dict[str, dict] = {}
         working = 0
-        for inst in self.settings.nitter_instances:
+        fleet = list(self.settings.nitter_instances)
+        for i in range(0, len(fleet), NITTER_BATCH):
             if working >= 2:
                 break
-            url = f"{inst}/{account}/rss"
-            headers = {"User-Agent": "Mozilla/5.0"}
-            if inst in TOKEN_GATED:
-                token = self.settings.nitter_token
-                if not token:
+            batch = fleet[i:i + NITTER_BATCH]
+            results = await asyncio.gather(*(self._probe(inst, account) for inst in batch))
+            for feed_entries in results:
+                if working >= 2 or not feed_entries:
                     continue
-                headers = {"User-Agent": f"Mozilla/5.0 {token}", "Authorization": f"Bearer {token}"}
-                url += f"?token={quote(token, safe='')}"
-            body = await self.fetcher.get_text(url, source="nitter", headers=headers, retries=0)
-            if not body:
-                continue
-            feed = await asyncio.to_thread(feedparser.parse, body)
-            if not feed.entries:
-                log.info("[x:%s] %s: HTTP 200 but 0 entries (bot check / stale) — next", account, inst)
-                continue
-            working += 1
-            for e in feed.entries:
-                m = STATUS_RE.search(e.get("link", ""))
-                if not m:
-                    continue
-                creator = (e.get("author") or e.get("dc_creator") or "").lstrip("@").lower()
-                if creator and creator != account.lower():
-                    continue  # retweet of another account
-                tid = m.group(1)
-                ts = timegm(e.published_parsed) if e.get("published_parsed") else 0
-                html_body = e.get("summary") or e.get("description") or ""
-                text, links, imgs = html_to_text(html_body)
-                entries.setdefault(tid, {
-                    "id": tid, "ts": ts, "title": e.get("title") or "", "text": text or e.get("title") or "",
-                    "links": links, "images": [nitter_pic_to_twimg(i) for i in imgs],
-                })
+                working += 1
+                for e in feed_entries:
+                    m = STATUS_RE.search(e.get("link", ""))
+                    if not m:
+                        continue
+                    creator = (e.get("author") or e.get("dc_creator") or "").lstrip("@").lower()
+                    if creator and creator != account.lower():
+                        continue  # retweet of another account
+                    tid = m.group(1)
+                    ts = timegm(e.published_parsed) if e.get("published_parsed") else 0
+                    html_body = e.get("summary") or e.get("description") or ""
+                    text, links, imgs = html_to_text(html_body)
+                    entries.setdefault(tid, {
+                        "id": tid, "ts": ts, "title": e.get("title") or "", "text": text or e.get("title") or "",
+                        "links": links, "images": [nitter_pic_to_twimg(i) for i in imgs],
+                    })
         if not working:
             log.warning("[x:%s] no working nitter instance this run", account)
+        else:
+            self.reachable.add(account.lower())
         self._timelines[account] = sorted(entries.values(), key=lambda x: x["ts"], reverse=True) if working else None
         return self._timelines[account] or []
 
@@ -96,7 +115,7 @@ class XClient:
         if tweet_id in self._tweets:
             return self._tweets[tweet_id]
         data = await self.fetcher.get_json(f"https://api.fxtwitter.com/status/{tweet_id}", source="fxtwitter",
-                                           headers={"User-Agent": "Game-Express/1.0"}, retries=1)
+                                           headers={"User-Agent": "Game-Express/1.1"}, retries=1)
         t = (data or {}).get("tweet") if isinstance(data, dict) else None
         result = None
         if t:
@@ -132,21 +151,19 @@ class XClient:
     async def items(self, game: Game, want: Callable[[str], bool], since_ts: int) -> list[Item]:
         if not self.settings.x_enabled:
             return []
+        timelines = await asyncio.gather(*(self.timeline(a) for a in game.x_accounts))
+        picked = [(account, e) for account, tl in zip(game.x_accounts, timelines) for e in tl
+                  if not (e["ts"] and e["ts"] < since_ts) and want(e["text"])]
+        details = await asyncio.gather(*(self.tweet(e["id"]) for _, e in picked))
         out: list[Item] = []
-        for account in game.x_accounts:
-            for e in await self.timeline(account):
-                if e["ts"] and e["ts"] < since_ts:
-                    continue
-                if not want(e["text"]):
-                    continue
-                t = await self.tweet(e["id"])
-                text = (t or {}).get("text") or e["text"]
-                out.append(Item(
-                    source="x", game=game.key, id=e["id"],
-                    url=(t or {}).get("url") or f"https://x.com/{account}/status/{e['id']}",
-                    title="", text=text, published_ts=(t or {}).get("ts") or e["ts"],
-                    images=(t or {}).get("photos") or e["images"],
-                    links=(t or {}).get("links") or e["links"], author=account))
+        for (account, e), t in zip(picked, details):
+            text = (t or {}).get("text") or e["text"]
+            out.append(Item(
+                source="x", game=game.key, id=e["id"],
+                url=(t or {}).get("url") or f"https://x.com/{account}/status/{e['id']}",
+                title="", text=text, published_ts=(t or {}).get("ts") or e["ts"],
+                images=(t or {}).get("photos") or e["images"],
+                links=(t or {}).get("links") or e["links"], author=account))
         return out
 
 

@@ -33,7 +33,8 @@ class Item:
 class CodeHit:
     """One code as reported by one source."""
     code: str
-    source: str                      # hoyolab | seria | ennead | fandom | codehub | x
+    source: str                      # hoyolab | seria | humbao | ogc | ennead | fandom | codehub | wuthering.gg | x
     rewards: str | list | None = None
-    verified: bool = False           # seria status OK / official source
+    verified: bool = False           # redeem-validated (seria OK / humbao) or the official module
     url: str = ""
+    expired: bool = False            # the source explicitly lists this code as EXPIRED / invalid

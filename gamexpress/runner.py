@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -12,7 +13,7 @@ import aiohttp
 from . import __version__, codeposter, schedule
 from .config import Game, Settings, active_games, load_games, load_overrides
 from .discord import WebhookClient
-from .http import BOT_UA, Fetcher
+from .http import BOT_UA, Fetcher, Probe
 from .models import Item
 from .sources import hoyolab, kuro, launcher
 from .sources.codes import CodeSources
@@ -40,13 +41,17 @@ class Ctx:
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     active: bool = True
+    elapsed: float = 0.0
 
 
 async def gather_versions(ctx: Ctx) -> None:
     need_hyp = any(g.launcher.get("type") == "hoyoplay" for g in ctx.games)
     need_kuro = any(g.launcher.get("type") == "kuro" for g in ctx.games)
-    hyp = await launcher.hoyoplay_versions(ctx.fetcher) if need_hyp else {}
-    kr = await kuro.launcher_versions(ctx.fetcher) if need_kuro else {}
+
+    async def none() -> dict:
+        return {}
+    hyp, kr = await asyncio.gather(launcher.hoyoplay_versions(ctx.fetcher) if need_hyp else none(),
+                                   kuro.launcher_versions(ctx.fetcher) if need_kuro else none())
     for g in ctx.games:
         t = g.launcher.get("type")
         if t == "hoyoplay" and g.launcher.get("game_id") in hyp:
@@ -55,25 +60,30 @@ async def gather_versions(ctx: Ctx) -> None:
             ctx.versions[g.key] = kr
 
 
+async def _gather_game(ctx: Ctx, g: Game, since: int) -> None:
+    want = schedule.wants(g)
+    probe = Probe(ctx.fetcher)              # counts THIS game's answers while games run in parallel
+    parts = await asyncio.gather(hoyolab.fetch_items(probe, g, want, since),
+                                 kuro.fetch_items(probe, g, want, since),
+                                 ctx.x.items(g, want, since))
+    items: list[Item] = [it for part in parts for it in part]
+    ctx.items[g.key] = items
+    ctx.reachable[g.key] = probe.ok > 0 or any(a.lower() in ctx.x.reachable for a in g.x_accounts)
+    icons = ctx.state.data.setdefault("icons", {})
+    fresh = next((ctx.x.avatars[a.lower()] for a in g.x_accounts if a.lower() in ctx.x.avatars), None)
+    if fresh and icons.get(g.key) != fresh:
+        icons[g.key] = fresh
+    g.icon = icons.get(g.key) or g.icon
+    log.info("[%s] %d official item(s) matched in the last %dh (live %s, pre-install %s)", g.key,
+             len(items), ctx.settings.lookback_hours, ctx.versions.get(g.key, {}).get("live") or "?",
+             ctx.versions.get(g.key, {}).get("pre") or "—")
+
+
 async def gather_items(ctx: Ctx) -> None:
+    """Every game is gathered concurrently (HoYoLAB lists + full posts, Kuro, X timelines),
+    capped by the Fetcher's global request limit."""
     since = ctx.now - ctx.settings.lookback_hours * 3600
-    for g in ctx.games:
-        want = schedule.wants(g)
-        ok_before = sum(h.ok for h in ctx.fetcher.health.values())
-        items: list[Item] = []
-        items += await hoyolab.fetch_items(ctx.fetcher, g, want, since)
-        items += await kuro.fetch_items(ctx.fetcher, g, want, since)
-        items += await ctx.x.items(g, want, since)
-        ctx.items[g.key] = items
-        ctx.reachable[g.key] = sum(h.ok for h in ctx.fetcher.health.values()) > ok_before
-        icons = ctx.state.data.setdefault("icons", {})
-        fresh = next((ctx.x.avatars[a.lower()] for a in g.x_accounts if a.lower() in ctx.x.avatars), None)
-        if fresh and icons.get(g.key) != fresh:
-            icons[g.key] = fresh
-        g.icon = icons.get(g.key) or g.icon
-        log.info("[%s] %d official item(s) matched in the last %dh (live %s, pre-install %s)", g.key,
-                 len(items), ctx.settings.lookback_hours, ctx.versions.get(g.key, {}).get("live") or "?",
-                 ctx.versions.get(g.key, {}).get("pre") or "—")
+    await asyncio.gather(*(_gather_game(ctx, g, since) for g in ctx.games))
 
 
 async def failover_check(ctx: Ctx) -> None:
@@ -116,6 +126,7 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
     own_session = session is None
     session = session or aiohttp.ClientSession(headers={"User-Agent": BOT_UA})
     try:
+        started = time.monotonic()
         fetcher = Fetcher(session, timeout=settings.http_timeout)
         ctx = Ctx(settings=settings, games=active_games(games_all, settings), state=state, fetcher=fetcher,
                   webhook=WebhookClient(session, dry_run=settings.dry_run), x=XClient(fetcher, settings),
@@ -125,19 +136,27 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
         if features and ctx.games:
             await gather_versions(ctx)
             await gather_items(ctx)
+            for g in ctx.games:
+                if not ctx.reachable.get(g.key, True):
+                    ctx.warnings.append(f"{g.short}: no announcement source answered this run — the next run "
+                                        f"re-reads the last {settings.lookback_hours}h, so nothing is missed")
             if "schedule" in features:
                 await schedule.run(ctx)
             if "codes" in features:
                 await codeposter.run(ctx)
         if not features:
             ctx.report.append("⏸️ no active features this run (ENABLED_FEATURES=none or passive standby)")
-        if ctx.active and features and not ctx.errors and not settings.dry_run:
+        ephemeral = settings.dry_run or settings.test_mode
+        if ctx.active and features and not ctx.errors and not ephemeral:
             state.heartbeat(settings.instance_name, __version__, settings.heartbeat_min, ctx.now)
         state.prune(ctx.now)
-        if not settings.dry_run:
+        if not ephemeral:
             if state.save():
                 log.info("state saved -> %s", settings.state_path)
+        elif settings.test_mode:
+            ctx.report.insert(0, "🧪 TEST MODE — cards are marked TEST, the state file is NOT saved")
         log.info("sources: %s", fetcher.summary())
+        ctx.elapsed = time.monotonic() - started
         write_summary(ctx)
         return ctx
     finally:
@@ -147,6 +166,11 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
 
 def write_summary(ctx: Ctx) -> None:
     lines = [f"### Game-Express {__version__} — {ctx.settings.instance_name} ({ctx.settings.instance_role})"]
+    if ctx.settings.dry_run:
+        lines.append("> **DRY RUN** — nothing was posted or saved; \"posted\" below means *would post*. "
+                     "The full card JSON is in the job log (paste it into discohook.app to see it).")
+    elif ctx.settings.test_mode:
+        lines.append("> **TEST MODE** — cards are labelled 🧪 TEST and the state file is not saved.")
     lines += [f"- {r}" for r in ctx.report] or ["- nothing new (no matching announcements / codes)"]
     for w in ctx.warnings:
         lines.append(f"- ⚠️ {w}")
@@ -155,6 +179,8 @@ def write_summary(ctx: Ctx) -> None:
         lines.append(f"- ❌ {e}")
         print(f"::error::{e}")
     lines.append(f"- sources: {ctx.fetcher.summary()}")
+    if ctx.elapsed:
+        lines.append(f"- ⏱️ run took {ctx.elapsed:.1f}s")
     text = "\n".join(lines)
     log.info("\n%s", text)
     path = os.getenv("GITHUB_STEP_SUMMARY")

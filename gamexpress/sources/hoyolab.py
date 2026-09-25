@@ -11,9 +11,10 @@ News types: 1 Notices · 2 Events · 3 Info.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
-from typing import Callable
+from collections.abc import Callable
 
 from ..config import Game
 from ..http import Fetcher
@@ -59,15 +60,18 @@ async def _full_post(fetcher: Fetcher, gid: int, post_id: str) -> dict | None:
 
 async def official_items(fetcher: Fetcher, game: Game, want: Callable[[str], bool],
                          since_ts: int) -> list[Item] | None:
-    """None = the API is unreachable (caller falls back to c3kay)."""
+    """None = the API is unreachable (caller falls back to c3kay). The news lists and the
+    matching full posts are fetched concurrently."""
     gid = game.hoyolab_gid
     if not gid:
         return []
+    lists = await asyncio.gather(*(
+        fetcher.get_json(API + "getNewsList", source="hoyolab", headers=HEADERS,
+                         params={"gids": gid, "page_size": 15, "type": news_type})
+        for news_type in NEWS_TYPES))
     any_ok = False
-    items: dict[str, Item] = {}
-    for news_type in NEWS_TYPES:
-        data = await fetcher.get_json(API + "getNewsList", source="hoyolab", headers=HEADERS,
-                                      params={"gids": gid, "page_size": 15, "type": news_type})
+    picked: dict[str, tuple[dict, dict, int, str]] = {}
+    for data in lists:
         if not data or data.get("retcode") != 0:
             continue
         any_ok = True
@@ -76,24 +80,26 @@ async def official_items(fetcher: Fetcher, game: Game, want: Callable[[str], boo
             pid = str(post.get("post_id") or "")
             created = int(post.get("created_at") or 0)
             subject = (post.get("subject") or "").strip()
-            if not pid or pid in items or created < since_ts:
+            if not pid or pid in picked or created < since_ts:
                 continue
             preview = f"{subject}\n{post.get('content') or ''}\n{post.get('desc') or ''}"
-            if not want(preview):
-                continue
-            full = await _full_post(fetcher, gid, pid)
-            if full:
-                text, links, imgs = _post_text(full.get("post") or {})
-                images = _images(full) or imgs or _images(wrapper)
-            else:  # list preview is truncated but usually holds the key sentences
-                text, links, imgs = (post.get("content") or post.get("desc") or ""), [], []
-                images = _images(wrapper)
-            items[pid] = Item(source="hoyolab", game=game.key, id=pid, url=ARTICLE_URL.format(pid),
-                              title=subject, text=text, published_ts=created, images=images,
-                              links=links, author=((wrapper.get("user") or {}).get("nickname") or ""))
+            if want(preview):
+                picked[pid] = (wrapper, post, created, subject)
     if not any_ok:
         return None
-    return list(items.values())
+    fulls = await asyncio.gather(*(_full_post(fetcher, gid, pid) for pid in picked))
+    items: list[Item] = []
+    for (pid, (wrapper, post, created, subject)), full in zip(picked.items(), fulls):
+        if full:
+            text, links, imgs = _post_text(full.get("post") or {})
+            images = _images(full) or imgs or _images(wrapper)
+        else:  # list preview is truncated but usually holds the key sentences
+            text, links, imgs = (post.get("content") or post.get("desc") or ""), [], []
+            images = _images(wrapper)
+        items.append(Item(source="hoyolab", game=game.key, id=pid, url=ARTICLE_URL.format(pid),
+                          title=subject, text=text, published_ts=created, images=images,
+                          links=links, author=((wrapper.get("user") or {}).get("nickname") or "")))
+    return items
 
 
 async def c3kay_items(fetcher: Fetcher, game: Game, want: Callable[[str], bool],

@@ -19,17 +19,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: Install dependencies (a broken requirements.txt fails HERE, not in production)
         run: |
-          pip install -r requirements.txt
-          pip install -r requirements-bot.txt
+          python -m pip install --upgrade pip --disable-pip-version-check -q
+          pip install -r requirements.txt -r requirements-bot.txt pyyaml --disable-pip-version-check -q
 
       - name: Compile every .py file
         run: python -m compileall -q gamexpress tests
@@ -39,6 +39,9 @@ jobs:
 
       - name: Offline smoke + golden tests
         run: python tests/test_smoke.py
+
+      - name: Card preview renders (previews/index.html)
+        run: python -m gamexpress preview --out /tmp/previews > /dev/null
 
       - name: Bot module imports (discord.py API surface)
         run: python -c "import discord, discord.app_commands, discord.http; from discord.http import Route; print('discord.py', discord.__version__)"

@@ -1,5 +1,5 @@
 {
-  "_help": "Per-game config. Add a game = add an entry. 'enabled': false keeps a game prepared but silent. Card text templates: {game} {version} {program} {version_name}. Every endpoint/id below was verified live on 2026-09-25 (see docs/SOURCES.md).",
+  "_help": "Per-game config. Add a game = add an entry. 'enabled': false keeps a game prepared but silent (switch it on with the ENABLE_GAMES variable, or it switches itself on at 'auto_enable_on'). 'four_star_count' = rate-up 4-stars per banner phase: any other count found -> TBA. Card text templates: {game} {version} {program} {version_name}. Every endpoint/id below was verified live on 2026-09-25 (see docs/SOURCES.md).",
   "defaults": {
     "color": 14922399,
     "card": {
@@ -19,6 +19,7 @@
       "short": "GI",
       "publisher": "HoYoverse",
       "enabled": true,
+      "four_star_count": 3,
       "icon": "https://pbs.twimg.com/profile_images/2102589386378686464/tS24hVO2_200x200.jpg",
       "hoyolab": {"gid": 2, "c3kay": "https://feeds.c3kay.de/genshin.json"},
       "launcher": {"type": "hoyoplay", "game_id": "gopR6Cufr3"},
@@ -33,7 +34,7 @@
         "banners_url": "https://lunaris.moe/banners"
       },
       "codes": {
-        "sources": ["hoyolab:2", "seria:genshin", "ennead:genshin", "fandom:genshin-impact/Promotional_Code", "codehub:genshin-impact", "x"],
+        "sources": ["hoyolab:2", "seria:genshin", "humbao:GENSHIN", "ogc:genshin", "ennead:genshin", "fandom:genshin-impact/Promotional_Code", "codehub:genshin-impact", "x"],
         "redeem_url": "https://genshin.hoyoverse.com/en/gift?code={code}",
         "redeem_page": "https://genshin.hoyoverse.com/en/gift",
         "redeem_hint": "Tap a code to open the official redemption page with it filled in, or redeem in-game: Paimon Menu → Settings → Account → Redeem Now."
@@ -44,6 +45,7 @@
       "short": "HSR",
       "publisher": "HoYoverse",
       "enabled": true,
+      "four_star_count": 3,
       "icon": "https://pbs.twimg.com/profile_images/2061274429456334851/xQfl3Ve__200x200.jpg",
       "hoyolab": {"gid": 6, "c3kay": "https://feeds.c3kay.de/starrail.json"},
       "launcher": {"type": "hoyoplay", "game_id": "4ziysqXOQ8"},
@@ -57,7 +59,7 @@
         "maintenance_heading": "Maintenance Details (STC)"
       },
       "codes": {
-        "sources": ["hoyolab:6", "seria:hkrpg", "ennead:starrail", "fandom:honkai-star-rail/Redemption_Code", "codehub:honkai-star-rail", "x"],
+        "sources": ["hoyolab:6", "seria:hkrpg", "humbao:HSR", "ogc:starrail", "ennead:starrail", "fandom:honkai-star-rail/Redemption_Code", "codehub:honkai-star-rail", "x"],
         "redeem_url": "https://hsr.hoyoverse.com/gift?code={code}",
         "redeem_page": "https://hsr.hoyoverse.com/gift",
         "redeem_hint": "Tap a code to open the official redemption page with it filled in (log in first)."
@@ -68,6 +70,7 @@
       "short": "ZZZ",
       "publisher": "HoYoverse",
       "enabled": true,
+      "four_star_count": 2,
       "icon": "https://pbs.twimg.com/profile_images/2097499758462140416/YGW1eFcg_200x200.jpg",
       "hoyolab": {"gid": 8, "c3kay": "https://feeds.c3kay.de/zenless.json"},
       "launcher": {"type": "hoyoplay", "game_id": "U5hbdsT9W7"},
@@ -81,7 +84,7 @@
         "maintenance_heading": "Maintenance Details"
       },
       "codes": {
-        "sources": ["hoyolab:8", "seria:nap", "ennead:zenless", "fandom:zenless-zone-zero/Redemption_Code", "codehub:zenless-zone-zero", "x"],
+        "sources": ["hoyolab:8", "seria:nap", "humbao:ZZZ", "ogc:zenless", "ennead:zenless", "fandom:zenless-zone-zero/Redemption_Code", "codehub:zenless-zone-zero", "x"],
         "redeem_url": "https://zenless.hoyoverse.com/redemption?code={code}",
         "redeem_page": "https://zenless.hoyoverse.com/redemption",
         "redeem_hint": "Tap a code to open the official redemption page with it filled in (log in first)."
@@ -92,6 +95,7 @@
       "short": "WW",
       "publisher": "Kuro Games",
       "enabled": true,
+      "four_star_count": 3,
       "icon": "https://pbs.twimg.com/profile_images/2085696982958665728/qlgc729S_200x200.jpg",
       "launcher": {"type": "kuro"},
       "kuro_news": true,
@@ -109,8 +113,8 @@
         "four_star_summary": true
       },
       "codes": {
-        "sources": ["fandom:wutheringwaves/Redemption_Code", "codehub:wuthering-waves", "x"],
-        "redeem_hint": "Wuthering Waves codes are redeemed in-game (Terminal → Settings → Redemption Code)."
+        "sources": ["ogc:wuwa", "wuthering.gg", "fandom:wutheringwaves/Redemption_Code", "codehub:wuthering-waves", "x"],
+        "redeem_hint": "Redeem in-game (Union Level 2+): open the menu → Settings ⚙ → Other Settings → Account → Redemption Code → Redeem. Rewards arrive in your mailbox."
       }
     },
     "hna": {
@@ -118,7 +122,8 @@
       "short": "HNA",
       "publisher": "HoYoverse",
       "enabled": false,
-      "note": "Pre-release (no release date yet). HoYoLAB game id 9 is already wired, X = @HonkaiNA. When it launches: set enabled=true, add the HoYoPlay launcher game_id + YouTube/Twitch + code sources.",
+      "aliases": ["NEXUSANIMA"],
+      "note": "Pre-release (no release date announced as of 2026-09). HoYoLAB game id 9 is already wired, X = @HonkaiNA. Switch on with ENABLE_GAMES=hna (or enabled=true); at launch add the HoYoPlay launcher game_id + YouTube/Twitch + code sources (seria/ogc once they list it).",
       "hoyolab": {"gid": 9},
       "launcher": {},
       "x_accounts": ["HonkaiNA"],
@@ -126,14 +131,15 @@
       "program_patterns": ["special program", "livestream", "special broadcast"],
       "youtube": "",
       "twitch": "",
-      "codes": {"sources": ["x"]}
+      "codes": {"sources": ["hoyolab:9", "x"]}
     },
     "ananta": {
       "name": "ANANTA",
       "short": "ANANTA",
       "publisher": "NetEase",
       "enabled": false,
-      "note": "Launches 2027-01-15 (NetEase / Naked Rain). Not a character gacha -> banner section hidden. When it launches: set enabled=true, add YouTube/Twitch + code sources.",
+      "auto_enable_on": "2027-01-15",
+      "note": "Global launch 2027-01-15 (confirmed at gamescom ONL 2026; NetEase / Naked Rain) -> switches itself on that day (set ENABLE_GAMES=ananta to start earlier, e.g. for launch livestreams). No gacha character unlocking -> banner section hidden. At launch: add YouTube/Twitch + more code sources.",
       "x_accounts": ["Ananta_EN"],
       "program_label": "Livestream",
       "program_patterns": ["livestream", "special program", "special broadcast", "showcase"],

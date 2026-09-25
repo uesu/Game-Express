@@ -8,8 +8,9 @@ not every announcement) — X stays the primary WW schedule source.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 from ..config import Game
 from ..http import Fetcher
@@ -32,19 +33,22 @@ async def fetch_items(fetcher: Fetcher, game: Game, want: Callable[[str], bool],
     if not game.kuro_news:
         return []
     articles: dict[int, dict] = {}
-    for menu in MENUS:
-        data = await fetcher.get_json(BASE + menu, source="kuro", retries=1)
+    menus = await asyncio.gather(*(fetcher.get_json(BASE + m, source="kuro", retries=1) for m in MENUS))
+    for data in menus:
         rows = data.get("article") if isinstance(data, dict) else data
         for a in rows or []:
             if isinstance(a, dict) and a.get("articleId"):
                 articles.setdefault(int(a["articleId"]), a)
-    out: list[Item] = []
+    picked = []
     for aid, a in sorted(articles.items(), reverse=True):
         ts = parse_kuro_time(a.get("createTime") or "") or 0
         title = (a.get("articleTitle") or "").strip()
-        if ts < since_ts or not want(f"{title}\n{a.get('articleDesc') or ''}"):
-            continue
-        detail = await fetcher.get_json(DETAIL.format(aid), source="kuro", retries=1)
+        if ts >= since_ts and want(f"{title}\n{a.get('articleDesc') or ''}"):
+            picked.append((aid, a, ts, title))
+    details = await asyncio.gather(*(fetcher.get_json(DETAIL.format(aid), source="kuro", retries=1)
+                                     for aid, *_ in picked))
+    out: list[Item] = []
+    for (aid, a, ts, title), detail in zip(picked, details):
         body = (detail or {}).get("articleContent") or a.get("articleContent") or ""
         text, links, imgs = html_to_text(body)
         cover = a.get("suggestCover") or ""

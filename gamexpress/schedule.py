@@ -17,14 +17,22 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from .cards import schedule_payload
+from .cards import mark_test, schedule_payload
 from .config import Game
 from .discord import webhook_fingerprint
 from .models import Item
-from .state import stable_hash
-from .textutil import (bump_minor, find_version, find_version_name, sentences, twitch_url, version_key,
-                       youtube_id, youtube_video_url)
 from .sources.codes import extract_codes_from_text
+from .state import stable_hash
+from .textutil import (
+    bump_minor,
+    find_version,
+    find_version_name,
+    sentences,
+    twitch_url,
+    version_key,
+    youtube_id,
+    youtube_video_url,
+)
 from .timeparse import find_datetimes, find_duration_hours, find_time_ranges, parse_iso
 
 log = logging.getLogger("gamexpress.schedule")
@@ -175,12 +183,40 @@ def _clean_name(raw: str) -> str:
     return name if 1 < len(name) <= 40 and not re.search(r"https?://|\d{3,}", name) else ""
 
 
+# words that never appear in a character name — a "name" containing one is an extraction slip
+NOT_A_NAME = {
+    "character", "characters", "resonator", "resonators", "agent", "agents", "banner", "banners",
+    "wish", "wishes", "warp", "warps", "convene", "convenes", "signal", "search", "event", "events",
+    "weapon", "weapons", "cone", "cones", "w-engine", "w-engines", "engine", "version", "phase", "half",
+    "tba", "tbd", "unknown", "rerun", "re-run", "reruns", "boosted", "rate", "rates", "drop", "limited",
+    "star", "stars", "rank", "s-rank", "a-rank", "exclusive", "featured", "promotional", "reward", "rewards",
+    "update", "maintenance", "livestream", "program", "broadcast", "http", "https", "www",
+}
+_NAME_CHARS = re.compile(r"[^\W\d_][\w'’.\-&•·: ]*")
+
+
+def plausible_name(name: str) -> bool:
+    """True for something that can be a character name: starts with a letter, ≤ 32 chars,
+    1-6 words, letters/digits/space/'-.&•·: only, no 3+ digit runs, no generic words
+    ('Event', 'Wish', 'Character' …). 'March 7th', 'Soldier 11', 'Topaz & Numby',
+    'Dan Heng • Imbibitor Lunae' pass; 'Event Wish', '2026', 'Character Event' don't."""
+    if not name or len(name) > 32 or re.search(r"\d{3,}", name) or not _NAME_CHARS.fullmatch(name):
+        return False
+    words = [w for w in re.split(r"[\s•·&:]+", name) if w]
+    if not 1 <= len(words) <= 6:
+        return False
+    return not any(w.lower().strip(".'’-") in NOT_A_NAME for w in words)
+
+
 def extract_banner(item: Item) -> dict:
     """Conservative: only quoted names that directly follow '5-star character' /
-    'S-Rank Agent' / '5-star Resonator' (and 4★ equivalents). Weapons never match."""
+    'S-Rank Agent' / '5-star Resonator' (and 4★ equivalents). Weapons never match.
+    A 4★ list that contains anything implausible (or a name that is also a 5★) is flagged
+    `banner_four_unsure` -> the card shows TBA instead of a possibly wrong list."""
     text = item.full
     five: list[str] = []
     four: list[str] = []
+    four_unsure = False
     for s in sentences(text):
         for rx, bucket in ((FIVE_RE, five), (FOUR_RE, four)):
             m = rx.search(s)
@@ -193,12 +229,21 @@ def extract_banner(item: Item) -> dict:
             tail = re.split(r"\b(?:weapon|light\s+cone|w-engine|will\s+receive|drop[-\s]rate)\b", tail, flags=re.I)[0]
             for q in QUOTED.findall(tail):
                 n = _clean_name(q)
-                if n and n not in bucket:
+                if not n:
+                    continue
+                if not plausible_name(n):
+                    if bucket is four:
+                        four_unsure = True
+                    continue
+                if n not in bucket:
                     bucket.append(n)
-    if not five and not four:
+    if any(n in five for n in four):
+        four_unsure = True
+        four = [n for n in four if n not in five]
+    if not five and not four and not four_unsure:
         return {}
     phase = 1 if PHASE1.search(item.full[:600]) else 2 if PHASE2.search(item.full[:600]) else None
-    return {"banner_five": five, "banner_four": four, "banner_phase": phase}
+    return {"banner_five": five, "banner_four": four, "banner_four_unsure": four_unsure, "banner_phase": phase}
 
 
 def extract(game: Game, item: Item) -> Extract | None:
@@ -255,9 +300,25 @@ def _to_ts(value) -> int | None:
     return parse_iso(str(value))
 
 
+def _four_star_problem(game: Game, four: list[str], unsure: bool, existing: list[str] | None,
+                       sticky: str | None) -> str | None:
+    """Why a 4★ list must NOT be shown (-> TBA), or None when it is trustworthy."""
+    if sticky == "official sources disagree":
+        return sticky
+    if unsure:
+        return "a name looked unreliable"
+    if game.four_star_count and len(four) != game.four_star_count:
+        return f"{len(four)} name(s) found, {game.four_star_count} expected"
+    if existing and sorted(existing) != sorted(four):
+        return "official sources disagree"
+    return None
+
+
 def merge(game: Game, version: str, extracts: list[Extract], record: dict, override: dict,
-          launcher: dict, now: int) -> dict:
-    """Return the merged card data (record['data'] is the previous state)."""
+          launcher: dict, now: int, notes: list[str] | None = None) -> dict:
+    """Return the merged card data (record['data'] is the previous state).
+    4★ rule: no data or ANY doubt (wrong count, odd name, sources disagree) -> TBA;
+    config/overrides.json is always trusted."""
     prev = dict(record.get("data") or {})
     prov = dict(record.get("prov") or {})
     data = dict(prev)
@@ -293,9 +354,22 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                 if f.get("banner_five") and prov.get(f"b_{key5}", [0])[0] < PRIORITY["override"]:
                     banners[key5] = f["banner_five"]
                     prov[f"b_{key5}"] = [PRIORITY.get(src, 10), ts]
-                if f.get("banner_four") and prov.get(f"b_{key4}", [0])[0] < PRIORITY["override"]:
-                    banners[key4] = f["banner_four"]
+                four = list(f.get("banner_four") or [])
+                if ((four or f.get("banner_four_unsure"))
+                        and prov.get(f"b_{key4}", [0])[0] < PRIORITY["override"]):
+                    flag = f"b_{key4}_tba"
+                    problem = _four_star_problem(game, four, bool(f.get("banner_four_unsure")),
+                                                 banners.get(key4), prov.get(flag))
                     prov[f"b_{key4}"] = [PRIORITY.get(src, 10), ts]
+                    if problem:
+                        banners[key4] = []                                # TBA
+                        if prov.get(flag) != problem and notes is not None:
+                            notes.append(f"⚠️ {game.short} {version} phase {phase}: 4★ shown as TBA — {problem} "
+                                         f"(found: {', '.join(four) or 'nothing usable'}). Confirm via "
+                                         "config/overrides.json if you know the names.")
+                        prov[flag] = problem
+                    else:
+                        banners[key4] = four
             data["banners"] = banners
 
     # presentation: title link / image / source from the best program post
@@ -395,7 +469,9 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
                           override: dict, live_info: dict, bootstrapped: bool) -> None:
     s, now = ctx.settings, ctx.now
     record = records.setdefault(ver, {"status": "new", "first_seen": now})
-    data = merge(game, ver, extracts, record, override, live_info, now)
+    notes: list[str] = []
+    data = merge(game, ver, extracts, record, override, live_info, now, notes)
+    ctx.report.extend(notes)
     record["data"] = data
     kinds = {e.kind for e in extracts}
     status = record.get("status")
@@ -434,20 +510,25 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
         fresh_program = int(pts) > now - 36 * 3600
     fresh_maint = bool(s.post_on_maintenance and "maintenance" in kinds and maint_start
                        and int(maint_start) > now - 6 * 3600)
+    if s.test_mode and (pts or maint_start):
+        fresh_program = True                  # TEST MODE: show the latest real card, even if older
     if not (fresh_program or fresh_maint or repost):
         if status == "new":
             record["status"] = "tracked"
         return
-    if not bootstrapped and not s.bootstrap_post and not repost:
+    if not bootstrapped and not (s.bootstrap_post or s.test_mode) and not repost:
         record["status"] = "seeded"
         ctx.report.append(f"🌱 {game.short} {ver}: seeded silently (first run — set BOOTSTRAP_POST=1 to post)")
         return
     if status == "seeded" and not repost:
         return
     if not webhook:
-        ctx.report.append(f"⚠️ {game.short} {ver}: no schedule webhook configured (DISCORD_WEBHOOK_SCHEDULE)")
+        ctx.report.append(f"⚠️ {game.short} {ver}: no schedule webhook — add the secret "
+                          f"{s.expected_webhook_names('schedule', game.key)}")
         return
     payload = schedule_payload(game, data, s, ping)
+    if s.test_mode:
+        payload = mark_test(payload)
     res = await ctx.webhook.send(webhook, payload)
     if res.ok:
         record.update({"status": "posted", "message_id": res.message_id, "posted_at": now,

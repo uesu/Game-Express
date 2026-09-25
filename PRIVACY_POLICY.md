@@ -38,9 +38,13 @@ The Service sends ordinary HTTPS requests (no personal data) to:
 - HoYoLAB / HoYoverse (news API, livestream code module, HoYoPlay launcher API);
 - Kuro Games (official website JSON, launcher index);
 - nitter instances, FxTwitter and vxTwitter (public X posts);
-- hoyo-codes.seria.moe, api.ennead.cc, Fandom (MediaWiki API) and GitHub (PromoGacha data, the
-  optional peer-instance state file);
+- hoyo-codes.seria.moe, api.ennead.cc (Open Gacha Codes), wuthering.gg, Fandom (MediaWiki API),
+  and GitHub / jsDelivr (PromoGacha and Hum-Bao code lists, the optional peer-instance state
+  file);
 - Discord (to post and edit the operator's cards and answer slash commands).
+
+The operator's scheduler (cron-job.org) only calls GitHub's API to start the workflow. It
+receives no data about Discord users.
 
 Each service has its own privacy policy. Links in cards (YouTube, Twitch, HoYoLAB, X, redeem
 pages) open third-party sites, and their policies apply.

@@ -20,7 +20,7 @@ import os
 import time
 
 from .cards import IS_COMPONENTS_V2, codes_payloads, notice_payload, schedule_payload
-from .config import Ping, load_games, load_settings
+from .config import Ping, game_is_on, load_games, load_settings
 from .state import State
 from .textutil import version_key
 from .web import STATUS, start_health_server
@@ -59,7 +59,8 @@ def run_bot() -> int:
 
     settings = load_settings()
     games = load_games()
-    choices = [app_commands.Choice(name=g.name, value=g.key) for g in games.values() if g.enabled][:25]
+    choices = [app_commands.Choice(name=g.name, value=g.key) for g in games.values()
+               if game_is_on(g, settings)][:25]     # ENABLE_GAMES / auto_enable_on count too
     intents = discord.Intents.none()
     client = discord.Client(intents=intents)
     tree = app_commands.CommandTree(client)
