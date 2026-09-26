@@ -7,8 +7,6 @@
                   labelled 🧪 TEST; no ping unless --ping
   check-webhooks  send ONE small "✅ connected" card to every configured webhook, listing
                   which game/feature cards that channel will receive
-  probe           debug ONE real schedule post, e.g. `probe starrail:4.6`: what the fetch
-                  found (text, link, every image) and the card it would build. Read-only
   preview         write previews/index.html (Discord-like view of every sample card) + JSON
   validate        check config/games.json + env and print the resolved routing
 """
@@ -46,9 +44,12 @@ def _load_dotenv() -> None:
 
 
 def sample_payloads(kind: str = "all", game: str = "", *, mark: bool = False,
-                    ping: bool = True) -> list[tuple[str, str, dict]]:
+                    ping: bool = True, unlaunched: bool = False) -> list[tuple[str, str, dict]]:
     """[(feature, name, payload)] for every sample card. mark=True labels them 🧪 TEST;
-    ping=False strips the role ping (test posts should not notify a whole role)."""
+    ping=False strips the role ping (test posts should not notify a whole role);
+    unlaunched=True keeps ONLY the games that are not live yet (ENABLE_GAMES off) — a game with
+    no announcement of its own has no real code to fetch, so its card and its channel can only
+    be checked with example data."""
     settings = load_settings()
     games = load_games()
     out = []
@@ -63,10 +64,13 @@ def sample_payloads(kind: str = "all", game: str = "", *, mark: bool = False,
                             schedule_payload(games[key], data, settings, _ping("schedule", key))))
     if kind in ("all", "codes"):
         for key, codes in CODE_SAMPLES.items():
-            if key in games and (not game or game == key):
-                for i, p in enumerate(codes_payloads(games[key], codes, settings,
-                                                     _ping("codes", key), int(time.time()))):
-                    out.append(("codes", f"codes_{key}{'_' + str(i + 1) if i else ''}", p))
+            if key not in games or (game and game != key):
+                continue
+            if unlaunched and games[key].enabled:
+                continue                     # live games get their REAL codes from the real run
+            for i, p in enumerate(codes_payloads(games[key], codes, settings,
+                                                 _ping("codes", key), int(time.time()))):
+                out.append(("codes", f"codes_{key}{'_' + str(i + 1) if i else ''}", p))
     if mark:
         out = [(f, n, mark_test(p)) for f, n, p in out]
     return out
@@ -80,7 +84,8 @@ async def cmd_test_card(args) -> int:
     rc = 0
     async with aiohttp.ClientSession() as session:
         client = WebhookClient(session, dry_run=settings.dry_run or args.dry_run)
-        for feature, name, payload in sample_payloads(args.kind, args.game, mark=True, ping=args.ping):
+        for feature, name, payload in sample_payloads(args.kind, args.game, mark=True, ping=args.ping,
+                                                      unlaunched=args.unlaunched):
             key = name.split("_", 1)[1].split("_")[0]
             secret, url = settings.webhook_source(feature, key)
             if not url:
@@ -213,11 +218,6 @@ def cmd_validate(_args) -> int:
     return 0 if ok else 1
 
 
-async def cmd_probe(args) -> int:
-    from .probe import probe
-    return await probe(args.target or os.getenv("PROBE", ""))
-
-
 async def cmd_run(_args) -> int:
     from .runner import run_once
     ctx = await run_once(load_settings())
@@ -243,10 +243,7 @@ def main(argv: list[str] | None = None) -> int:
     _load_dotenv()
     p = argparse.ArgumentParser(prog="python -m gamexpress", description="Game-Express monitor")
     p.add_argument("command", nargs="?", default="run",
-                   choices=["run", "loop", "bot", "test-card", "check-webhooks", "probe",
-                            "preview", "validate"])
-    p.add_argument("target", nargs="?", default="",
-                   help="probe: the game:version to debug, e.g. starrail:4.6 (also env PROBE)")
+                   choices=["run", "loop", "bot", "test-card", "check-webhooks", "preview", "validate"])
     p.add_argument("--dry-run", action="store_true", help="build + log cards, never post")
     p.add_argument("--only", choices=["schedule", "codes"], help="run one feature")
     p.add_argument("--game", default="", help="restrict to one game key (e.g. starrail)")
@@ -254,6 +251,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--kind", default="all", choices=["all", "schedule", "codes"],
                    help="test-card / check-webhooks / preview")
     p.add_argument("--ping", action="store_true", help="test-card: include your role ping (default: no ping)")
+    p.add_argument("--unlaunched", action="store_true",
+                   help="test-card: only the games that are not live yet — example data, because "
+                        "there is no real announcement to fetch for them")
     p.add_argument("--out", default="previews", help="preview output folder")
     p.add_argument("--minutes", default="", help="loop interval (default LOOP_MINUTES or 10)")
     args = p.parse_args(argv)
@@ -274,8 +274,6 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(cmd_test_card(args))
     if args.command == "check-webhooks":
         return asyncio.run(cmd_check_webhooks(args))
-    if args.command == "probe":
-        return asyncio.run(cmd_probe(args))
     if args.command == "loop":
         return asyncio.run(cmd_loop(args))
     if args.command == "bot":

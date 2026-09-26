@@ -1,12 +1,18 @@
 # Testing Game-Express: is everything working?
 
 Work through the steps in order. Every test runs from GitHub:
-**Actions → Game-Express Monitor → Run workflow → `mode` = test** (the test bench has been built
-into the Monitor since v1.4.0 — there is no separate Test workflow).
+**Actions → Game-Express Monitor → Run workflow → `mode` = test**.
+
+**The tests use real data.** None of them posts a sample card: each one fetches the live sources
+and shows what they really returned, so a wrong link, a wrong picture or a wrong timestamp is
+visible *before* a real announcement goes out.
 
 That workflow:
 
-- never commits and never touches `state/state.json`;
+- posts to the **real** channels, labelled **🧪 TEST**, so you can tell a test card from a real
+  one — and delete it;
+- **never** commits and never touches `state/state.json`, so the live run still posts the real
+  thing later (nothing is skipped as "already seen");
 - pings nobody unless you tick `ping`;
 - works on the development repo too.
 
@@ -28,69 +34,69 @@ Run **`test: webhooks`**.
 
 | You should see | If not |
 |---|---|
-| **one green "✅ Game-Express webhook check" card per webhook**, listing what that channel receives. For example, your GI codes channel lists *Codes · Genshin Impact* | no card → the secret is missing or wrong. The **"1 · Resolved config"** step in the log shows `✓ DISCORD_WEBHOOK_CODES_GENSHIN` or `— none` for every game |
+| **one green "✅ Game-Express webhook check" card per webhook**, listing what that channel receives. For example, your GI codes channel lists *Codes · Genshin Impact* | no card → the secret is missing or wrong. The **Show resolved config** step in the log shows `✓ DISCORD_WEBHOOK_CODES_GENSHIN` or `— none` for every game |
 | log line `[DISCORD_WEBHOOK_…] 1 route(s): OK 200` | `FAILED 401/404` → the webhook was deleted; make a new one and update the secret |
 | HNA / ANANTA marked *prepared (off)* | normal until launch; the secrets are still tested |
 
-## 2. Sample cards: does it look right?
+## 2. Codes: do the real sources return the real codes?
 
-Run **`test: sample-cards`** (`kind: all`, `ping` off).
+Run **`test: codes`** (`ping` off). It does a real run of the codes feature against every live
+source, looking back 30 days, and posts what it really found.
 
-- **Schedule channel**: your 4 reference cards (GI 7.1, HSR 4.6, ZZZ, WW 3.7) labelled
-  **🧪 [TEST]**.
-- **Each codes channel**: its game's sample codes card, labelled 🧪 TEST.
+- **Each codes channel** gets its game's card, labelled **🧪 [TEST]**, with the codes that are
+  actually redeemable right now.
+- **HNA and ANANTA** are not out yet, so there is nothing real to fetch — they get **example
+  codes** instead, purely to prove the card and the channel work.
 
 Check each of these:
 
-- [ ] The **buttons are inside the card**: schedule cards carry Youtube / Twitch / Source,
-      codes cards carry one Redeem link per code and the `Citlali News` row underneath.
-- [ ] The **timestamps show your local time** and "in 3 days" style relative times.
+- [ ] The **codes are real** — try one in the game. A made-up code means a source is returning
+      stale data.
+- [ ] The **Redeem buttons** open the official page with the code filled in (GI / HSR / ZZZ).
+- [ ] The **buttons are inside the card**, and the `Citlali News` row sits underneath.
 - [ ] **The emojis animate.** If you see `:name:` instead, give `@everyone` *Use External Emojis*
       in that channel, or change `EMOJI_*`.
-- [ ] **Redeem buttons** open the official page with the code filled in (GI / HSR / ZZZ).
-- [ ] **Ping**: run once more with `ping` ticked and check that the role is mentioned. The role
-      must be mentionable, or the webhook needs *Mention All Roles*.
+- [ ] **Nothing was saved**: run the live monitor afterwards and the same codes are still posted
+      for real.
 
-Delete the test cards afterwards. They are samples, not real announcements.
+Also read the run **Summary** while you are here:
 
-## 3. Live dry run: do all sources answer?
-
-Run **`test: live-dry-run`**. It does a real run against every live source and builds and
-validates the cards, but posts nothing and saves nothing. It looks back 30 days so there is
-something to build.
-
-Open the run → **Summary**:
-
-- **`sources:`** lists every source with `N ok / M fail`. Healthy means most sources show `ok`.
-  - One dead community source is fine, because every data point has fallbacks.
-  - If *everything* fails, the source is having an outage; try again later.
-- Lines like `📜 HSR 4.6: schedule card posted` mean the card **would be posted** (this is a dry
-  run). The full card JSON is in the log.
-  - To see a card, paste the JSON into [discohook.app](https://discohook.app).
 - `⏳ GI: 2 new code(s) waiting for a second source: GS71XOXYLG (only ennead), …` → codes seen by
-  only one source. They're correctly held back until another source confirms them.
+  only one source, correctly held back until another source confirms them.
 - `🧊 HSR: 12 code(s) ignored — already expired` → codes some source still lists, but another
-  source (or their *valid until* date) says they're dead. They're correctly never posted.
-- **In a live dry run, the Special Program line is often missing from the cards.** Announcements
-  older than a few days aren't in the feeds any more. In production the bot sees them when they
-  are new; for an old version you can pin the time in `config/overrides.json`.
-- `🕒 HSR 4.6: maintenance start, maintenance end estimated from Gacha Countdown — the official
-  notice replaces it automatically` → no official maintenance notice yet, so the card shows the
-  countdown site's prediction. Correct, and it disappears as soon as the notice is seen.
-- `⚠️ HSR 4.7 phase 1: 4★ shown as TBA — 2 name(s) found, 3 expected` → the uncertain 4★ list was
-  correctly replaced by TBA.
-- `⏱️ run took …s` → typically 5–20 s.
+  source (or their *valid until* date) says they are dead. Correctly never posted.
+- `sources:` lists every source with `N ok / M fail`. One dead community source is fine (every
+  data point has fallbacks); if *everything* fails, that source is having an outage.
 
-## 4. Optional: real cards to a private test channel
+## 3. Schedule: is the real announcement card right?
 
-1. Create a private channel and a webhook for it.
-2. Add the secret **`DISCORD_WEBHOOK_TEST`**.
-3. Run **`test: live-test-channel`**.
+Run **`test: schedule`** (`ping` off). It does a real run of the schedule feature and posts the
+real card for the version that is out now — labelled 🧪 TEST.
 
-The *real current* cards, built from live data, go to that channel only, labelled 🧪 TEST. Use
-this to check real data end-to-end before going live.
+This is the test to run **before a Special Program airs**, because it shows exactly what the live
+run would post:
 
-## 5. Go live
+| On the card | What to check |
+|---|---|
+| **Title link** | it opens the **Special Program / Broadcast announcement itself** — not the *Update and Maintenance Notice*. If it opens a notice, the program article was not found; see below |
+| **Key art** | the program's own artwork, and a big one: a YouTube `maxresdefault` thumbnail (1280×720) or a full-size tweet photo — not a small cover from somebody else's post |
+| **Livestream line** | `… or in 3 days` — the date/time must be **your** local time and the right moment (compare with the announcement) |
+| **Maintenance block** | pre-install, start, end and compensation, each as a real Discord timestamp. `estimated from Gacha Countdown` means no official notice yet — correct, and it is replaced automatically when the notice is seen |
+| **Banners** | the 5★ and 4★ names for each phase. **TBA** means no official banner post was in the 30-day window — the honest answer, and pinning the names in `config/overrides.json` fills it in |
+| **Buttons** | YouTube / Twitch / Source, inside the card |
+
+If the title link or the picture is wrong:
+
+- The card is built from whatever official post the run saw. When the Special Program preview is
+  older than the lookback window, the monitor looks it up on the **official news page** (then the
+  HoYoLAB list) and replaces the link, the key art and the air time — see the README under
+  *Version schedule card*. `PROGRAM_MEDIA=0` switches that off.
+- A `fastcdn.hoyoverse.com` cover instead of the livestream art means the article has no embedded
+  YouTube player, so there is no 1280×720 thumbnail to prefer.
+- `⚠️ … 4★ shown as TBA — 2 name(s) found, 3 expected` → the uncertain 4★ list was correctly
+  replaced by TBA.
+
+## 4. Go live
 
 1. Set up cron-job.org by following [SCHEDULER.md](SCHEDULER.md), then press **TEST RUN**.
    Expect `204`.
@@ -104,7 +110,7 @@ this to check real data end-to-end before going live.
      reposted, and the summary explains why.
 3. From then on, new codes and announcements are posted automatically.
 
-## 6. Healthy-system checklist (check weekly, or when in doubt)
+## 5. Healthy-system checklist (check weekly, or when in doubt)
 
 - [ ] cron-job.org **History**: `204` every 10 minutes (per instance).
 - [ ] **Actions**: green *Game-Express Monitor* runs every 10 minutes. Red = open it; the summary
@@ -116,50 +122,28 @@ this to check real data end-to-end before going live.
 - [ ] **Schedule cards appear** after an official *Special Program / Broadcast* post, and are
       **edited silently** once the maintenance notice arrives: pre-install, start, end and
       compensation fill in with no second ping.
+- [ ] **No duplicates**: the same code or announcement is never posted twice, and an unchanged
+      card is never re-sent (state keys + payload hashes).
 
-## 7. Fail-over drill (optional, about 3 hours)
+## 6. Fail-over drill (optional, about 3 hours)
 
 1. **Pause** alpha's cron-job.org job.
 2. After `FAILOVER_AFTER_MINUTES` (150), bravo's run summary says it took over. It posts
    anything new, with no duplicates, because it imported alpha's posted list.
 3. **Resume** alpha. It imports bravo's posts; bravo goes quiet again on its own.
 
-## 8. Local testing (optional, for developers)
+## 7. Local testing (optional, for developers)
 
 ```bash
 pip install -r requirements.txt pyyaml
 python tests/test_smoke.py                 # 67 offline tests
 python -m gamexpress validate              # routing, pings, card limits
 python -m gamexpress preview               # previews/index.html = every card, Discord-style
-python -m gamexpress probe starrail:4.6    # debug ONE real schedule post (read-only)
 DRY_RUN=1 TEST_MODE=1 BOOTSTRAP_POST=1 STATE_PATH=/tmp/s.json python -m gamexpress run
 ```
 
----
-
-## 9. One card looks wrong? Debug it with `probe`
-
-**Actions → Game-Express Monitor → Run workflow → `mode` = live → `probe` = `starrail:4.6`.**
-(Locally: `python -m gamexpress probe starrail:4.6`.) It is read-only — nothing is posted, edited
-or saved — and it prints four sections:
-
-| Section | What it tells you |
-|---|---|
-| **1 · what the lookback window saw** | every official post in the last `LOOKBACK_HOURS`, and which ones matched the version. This is what built the card you have |
-| **2 · what is stored now** | the card as it stands: its `title_url`, its source, its picture, its air time and maintenance time |
-| **3 · the program lookup** | the official news page tab by tab, then the HoYoLAB fallback; the air time parsed out of the article text; **every image found, ranked, each with why it won** and which one the card will show |
-| **4 · the card** | the exact fields the lookup would change (`old → new`) and the finished card JSON — paste it into [discohook.app](https://discohook.app) to see it |
-
-Typical reads:
-
-- *Section 2 links to `…/news/<notice-id>` and section 3 finds a Special Program article* → the
-  card was built from the Update Notice. The next run replaces the link and the picture
-  automatically (the `PROGRAM_MEDIA` lookup, described in the README under *Version schedule
-  card*).
-- *Section 3's first image is a `fastcdn.hoyoverse.com` cover but you expected the livestream
-  art* → the article has no embedded YouTube player, so there is no 1280×720 thumbnail to prefer.
-- *Section 3 says "no program announcement found by EITHER source"* → the version is not on the
-  official news page yet; nothing is changed and the card keeps what it has.
+`TEST_MODE=1` labels the cards 🧪 TEST and skips the state file; `DRY_RUN=1` builds and logs them
+without posting. Locally the two are the equivalent of the workflow's test modes.
 
 ---
 

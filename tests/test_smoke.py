@@ -807,33 +807,39 @@ def test_workflows_cron_job_org_and_test_bench():
     for key in ("GENSHIN", "STARRAIL", "HNA", "ZZZ", "WUWA", "ANANTA"):
         assert env[f"DISCORD_WEBHOOK_CODES_{key}"] == f"${{{{ secrets.DISCORD_WEBHOOK_CODES_{key} }}}}"
     assert mon["concurrency"]["cancel-in-progress"] is False
-    # v1.5.0: still ONE workflow (test.yml stays gone), but the dispatch form now separates
-    # the two things you can do — a LIVE run and the TEST bench — behind a single `mode` input.
+    # v1.6.0: two modes and nothing else — a live run, or a test that uses REAL live data.
     assert not (wf / "test.yml").exists()
     inputs = on["workflow_dispatch"]["inputs"]
+    assert set(inputs) == {"mode", "only", "game", "repost", "test", "ping"}   # no dry_run/probe/kind
     assert inputs["mode"]["options"] == ["live", "test"] and inputs["mode"]["default"] == "live"
     # cron-job.org sends NO inputs at all, so the defaults must be a plain live run
-    assert inputs["probe"]["default"] == "" and inputs["repost"]["default"] == ""
-    assert inputs["dry_run"]["default"] is False
-    assert inputs["only"]["options"] == ["all", "schedule", "codes"]      # the simplify switch…
-    assert "kind" not in inputs                                           # …one input, not two
-    assert {"webhooks", "sample-cards", "live-dry-run", "live-test-channel", "offline-tests", "full"} \
-        <= set(inputs["test"]["options"]) and "ping" in inputs
+    assert inputs["only"]["default"] == "all" and inputs["game"]["default"] == "" \
+        and inputs["repost"]["default"] == ""
+    assert inputs["test"]["options"] == ["webhooks", "codes", "schedule", "all"]
     job = mon["jobs"]["monitor"]
     assert "|| inputs.mode == 'test'" in str(job["if"])          # a test still runs on the dev repo
     steps = {str(s.get("name", "")): s for s in job["steps"]}
     live = {n: s for n, s in steps.items() if n.startswith("LIVE")}
     tests = {n: s for n, s in steps.items() if n.startswith("TEST")}
-    assert len(live) == 3 and len(tests) == 5
-    assert live["LIVE · monitor run"]["if"] == "inputs.mode == 'live' && inputs.probe == ''"
-    probe = next(s for n, s in live.items() if "probe" in n)
-    assert probe["if"] == "inputs.mode == 'live' && inputs.probe != ''"
-    assert 'gamexpress probe "$PROBE"' in probe["run"]                    # the debug input
+    assert len(live) == 2 and len(tests) == 4, (sorted(live), sorted(tests))
+    assert live["LIVE · monitor run"]["if"] == "inputs.mode == 'live'"
     commit = next(s for n, s in live.items() if "commit state" in n)
-    assert "inputs.mode == 'live'" in commit["if"] and "inputs.probe == ''" in commit["if"]
-    for n, s in tests.items():                                            # every test is mode-gated…
+    assert "inputs.mode == 'live'" in commit["if"] and "dry_run" not in commit["if"]
+    for n, s in tests.items():                                   # every test is mode-gated…
         assert s["if"].startswith("inputs.mode == 'test'"), n
         assert "git commit" not in str(s.get("run", "")) and "git push" not in str(s.get("run", ""))
+    # the codes/schedule tests are REAL runs (not sample cards) that can never save the state,
+    # so the live run still posts the real thing later
+    real = [s for n, s in tests.items() if "codes — the REAL" in n or "schedule — the REAL" in n]
+    assert len(real) == 2
+    for s in real:
+        assert s["run"].strip() == "python -m gamexpress run"
+        assert s["env"]["TEST_MODE"] == "1" and s["env"]["BOOTSTRAP_POST"] == "1"
+        assert "runner.temp" in s["env"]["STATE_PATH"] and s["env"]["PEER_STATE_URL"] == "none"
+    assert {s["env"]["ONLY"] for s in real} == {"codes", "schedule"}
+    # a game that is not live yet has nothing real to fetch, so it is checked with example codes
+    unl = next(s for n, s in tests.items() if "not live yet" in n)
+    assert "--unlaunched" in unl["run"] and "--kind codes" in unl["run"]
     for name in ("monitor.yml", "ci.yml"):
         text = (wf / name).read_text(encoding="utf-8")
         assert "actions/checkout@v7" in text and "actions/setup-python@v7" in text, name
@@ -1249,35 +1255,9 @@ def test_program_media_is_only_looked_up_when_it_is_missing():
 
 
  # =========================================================================== runner
-def test_probe_target_and_its_explanations():
-    """`probe` is the debug input for ONE real schedule post: it must fail loudly on a bad
-    target, and it must explain why each image won — that is the whole point of the tool."""
-    from gamexpress import probe as pr
-    assert pr.parse_target("starrail:4.6", GAMES) == ("starrail", "4.6")
-    assert pr.parse_target("  STARRAIL : 4.6 ", GAMES) == ("starrail", "4.6")
-    assert pr.parse_target("starrail", GAMES) == ("starrail", "")        # bare game = newest tracked
-    for bad in ("", "   ", "nosuchgame:1.0"):
-        try:
-            pr.parse_target(bad, GAMES)
-            raise AssertionError(f"{bad!r} should not parse")
-        except ValueError:
-            pass
-    # every candidate is listed, best rendition first, with WHY it beat the others
-    lines = pr.candidate_lines(["https://fastcdn.hoyoverse.com/content-v2/hkrpg/a.jpg",
-                                "https://i.ytimg.com/vi/ABCDEFGHIJK/hqdefault.jpg"])
-    assert "maxresdefault" in lines[0] and "the card shows this one" in lines[0]
-    assert "fastcdn.hoyoverse.com" in lines[1] and "the card shows this one" not in lines[1]
-    assert "no picture" in pr.candidate_lines([])[0]
-    # and the card diff it would make, or an explicit "nothing to change"
-    ch = pr.changes({"title_url": "https://old/notice"},
-                    {"title_url": "https://new/program", "media_from": "Official News"})
-    assert any("title_url" in c and "https://old/notice" in c and "https://new/program" in c for c in ch)
-    assert "nothing" in pr.changes({"a": 1}, {"a": 1})[0]
-
-
-def test_find_program_is_the_one_lookup_the_monitor_and_the_probe_share():
-    """The probe has to show what a REAL run does, so both call runner.find_program: the
-    official news page first, HoYoLAB second, and `trace` records every tab it tried."""
+def test_the_program_lookup_tries_the_news_page_then_hoyolab():
+    """runner.find_program is the ONE lookup: the official news page first (it archives every
+    announcement and carries the key art), the HoYoLAB news list second."""
     from gamexpress.runner import find_program
 
     class News:
@@ -1291,15 +1271,13 @@ def test_find_program_is_the_one_lookup_the_monitor_and_the_probe_share():
                     if last.isdigit() else self.html)
 
     f = News((FIX / "newspage_hsr_news.html").read_text(encoding="utf-8"))
-    trace = []
-    hit = asyncio.run(find_program(f, GAMES["starrail"], "4.6", 1790000000, trace=trace))
+    hit = asyncio.run(find_program(f, GAMES["starrail"], "4.6", 1790000000))
     assert hit["url"] == "https://hsr.hoyoverse.com/en-us/news/166100"      # the Special Program…
     assert "46814308" not in hit["url"]                                     # …not the maintenance notice
     assert hit["images"][0] == "https://i.ytimg.com/vi/ItNs39qvw_w/maxresdefault.jpg"   # 1280x720
     assert hit["source"] == "Official News"
-    assert any("1 program match" in t for t in trace) and any("opening the article" in t for t in trace)
     assert f.urls[0].endswith("?type=notice") and len(f.urls) == 2          # first tab wins -> 2 fetches
-    # the news page finds nothing -> it falls back to the HoYoLAB list, and says so
+    # the news page finds nothing -> it falls back to the HoYoLAB list
     calls = []
 
     async def fake_list(fetcher, game, version, **k):
@@ -1311,14 +1289,27 @@ def test_find_program_is_the_one_lookup_the_monitor_and_the_probe_share():
     old = hoyolab.find_program
     hoyolab.find_program = fake_list
     try:
-        trace2 = []
         hit2 = asyncio.run(find_program(News("<html>nothing here</html>"), GAMES["starrail"],
-                                        "4.6", 1790000000, trace=trace2))
+                                        "4.6", 1790000000))
     finally:
         hoyolab.find_program = old
     assert calls == ["4.6"] and hit2["url"].endswith("46691962")
     assert hit2["images"] == ["https://pbs.twimg.com/media/AAA.jpg"]
-    assert any("falling back to the HoYoLAB" in t for t in trace2)
+
+
+def test_sample_cards_are_only_for_the_games_with_nothing_real_to_fetch():
+    """The codes test posts the REAL codes of the live games, so the sample cards are kept for
+    the games that are not out yet only — a sample must never stand in for a real source."""
+    from gamexpress.__main__ import sample_payloads
+
+    def names(**kw):
+        return [n for _f, n, _p in sample_payloads("codes", **kw)]
+
+    assert set(names()) >= {"codes_genshin", "codes_starrail", "codes_zzz", "codes_wuwa",
+                            "codes_hna", "codes_ananta"}
+    assert names(unlaunched=True) == ["codes_hna", "codes_ananta"]       # the prepared games only
+    assert names(unlaunched=True, game="ananta") == ["codes_ananta"]
+    assert names(game="genshin") == ["codes_genshin"]          # one card per game, all its codes
 
 
 def main() -> int:
