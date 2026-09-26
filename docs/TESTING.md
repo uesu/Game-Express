@@ -1,7 +1,7 @@
 # Testing Game-Express: is everything working?
 
 Work through the steps in order. Every test runs from GitHub:
-**Actions → Game-Express Monitor → Run workflow → choose `test`** (the test bench has been built
+**Actions → Game-Express Monitor → Run workflow → `mode` = test** (the test bench has been built
 into the Monitor since v1.4.0 — there is no separate Test workflow).
 
 That workflow:
@@ -14,7 +14,7 @@ That workflow:
 
 ## 0. Before merging a PR
 
-The PR's **CI — compile + offline tests** check must be green. It runs 65 offline tests, which
+The PR's **CI — compile + offline tests** check must be green. It runs 67 offline tests, which
 cover:
 
 - the real official posts, which must reproduce your reference cards' timestamps;
@@ -128,11 +128,38 @@ this to check real data end-to-end before going live.
 
 ```bash
 pip install -r requirements.txt pyyaml
-python tests/test_smoke.py                 # 65 offline tests
+python tests/test_smoke.py                 # 67 offline tests
 python -m gamexpress validate              # routing, pings, card limits
 python -m gamexpress preview               # previews/index.html = every card, Discord-style
+python -m gamexpress probe starrail:4.6    # debug ONE real schedule post (read-only)
 DRY_RUN=1 TEST_MODE=1 BOOTSTRAP_POST=1 STATE_PATH=/tmp/s.json python -m gamexpress run
 ```
+
+---
+
+## 9. One card looks wrong? Debug it with `probe`
+
+**Actions → Game-Express Monitor → Run workflow → `mode` = live → `probe` = `starrail:4.6`.**
+(Locally: `python -m gamexpress probe starrail:4.6`.) It is read-only — nothing is posted, edited
+or saved — and it prints four sections:
+
+| Section | What it tells you |
+|---|---|
+| **1 · what the lookback window saw** | every official post in the last `LOOKBACK_HOURS`, and which ones matched the version. This is what built the card you have |
+| **2 · what is stored now** | the card as it stands: its `title_url`, its source, its picture, its air time and maintenance time |
+| **3 · the program lookup** | the official news page tab by tab, then the HoYoLAB fallback; the air time parsed out of the article text; **every image found, ranked, each with why it won** and which one the card will show |
+| **4 · the card** | the exact fields the lookup would change (`old → new`) and the finished card JSON — paste it into [discohook.app](https://discohook.app) to see it |
+
+Typical reads:
+
+- *Section 2 links to `…/news/<notice-id>` and section 3 finds a Special Program article* → the
+  card was built from the Update Notice. The next run replaces the link and the picture
+  automatically (the `PROGRAM_MEDIA` lookup, described in the README under *Version schedule
+  card*).
+- *Section 3's first image is a `fastcdn.hoyoverse.com` cover but you expected the livestream
+  art* → the article has no embedded YouTube player, so there is no 1280×720 thumbnail to prefer.
+- *Section 3 says "no program announcement found by EITHER source"* → the version is not on the
+  official news page yet; nothing is changed and the card keeps what it has.
 
 ---
 
