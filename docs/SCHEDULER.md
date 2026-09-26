@@ -134,7 +134,7 @@ at least one full minute, although a Game-Express run takes only about 20–60 s
 | cron-job.org schedule | Runs a month | Private repo |
 |---|---|---|
 | every 10 minutes | about 4,320 | ❌ over the limit: Actions stops for the rest of the month (around day 14) |
-| every 30 minutes (minutes `0,30`) | about 1,440 | ✅ fits, with room left for CI and the Test workflow |
+| every 30 minutes (minutes `0,30`) | about 1,440 | ✅ fits, with room left for CI and the monitor's test bench |
 
 So a private repo should run **every 30 minutes**. Livestream codes usually stay valid for about
 a day, so that is still fast enough. The classic token's `repo` scope already covers private

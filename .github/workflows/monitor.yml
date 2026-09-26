@@ -6,13 +6,29 @@ name: Game-Express Monitor
 #
 # TRIGGER = cron-job.org (external scheduler) calling the workflow_dispatch API every
 # 10 minutes. Setup: docs/SCHEDULER.md (cron-job.org job + GitHub classic token).
-# To TEST without touching production state: the "Game-Express Test" workflow.
+#
+# MANUAL TEST BENCH (v1.4.0): the separate test.yml workflow is gone; pick `test` in this
+# workflow's Run-workflow dialog instead. A test run NEVER posts to the real channels and
+# NEVER commits state (the commit step is gated on `inputs.test == ''`), so it is safe on the
+# production repos and is not blocked by ENABLED_FEATURES=none (works on the dev repo too).
+#   offline-tests      the CI suite: offline tests + compile + config validation (no network)
+#   webhooks           ONE small "✅ connected" card per webhook, listing which game/feature
+#                      cards that channel will receive (checks every per-game codes secret)
+#   sample-cards       your 4 reference schedule cards + one codes card per game, labelled
+#                      🧪 TEST, sent to the REAL routes (each game's codes channel gets its own)
+#   live-dry-run       a full REAL run: every source fetched, cards built and validated,
+#                      shown in the log + job summary — nothing posted, nothing saved
+#   live-test-channel  like live-dry-run but POSTS the real current cards (labelled 🧪 TEST)
+#                      to ONE test channel: secret DISCORD_WEBHOOK_TEST (skipped if unset)
+#   full               offline-tests → webhooks → sample-cards → live-dry-run
+# Step-by-step checklist: docs/TESTING.md
 
 concurrency:
   # One run at a time. A trigger that arrives mid-run QUEUES and later checks out the
   # NEWEST branch head (with the previous run's state/state.json), so nothing is posted
   # twice. cancel-in-progress MUST stay false: a run can sit between "posted to Discord"
-  # and "state committed" — cancelling it there would allow a re-post.
+  # and "state committed" — cancelling it there would allow a re-post. Test runs never write
+  # state, so queueing them is harmless.
   group: game-express-${{ github.ref }}
   cancel-in-progress: false
 
@@ -44,6 +60,20 @@ on:
         description: 'Optional: post a version card again as a NEW message, e.g. starrail:4.6 (only versions the bot has already seen; the run summary lists them)'
         required: false
         default: ''
+      test:
+        description: 'Manual test bench (safe: never posts to real channels, never commits). Leave empty for a normal monitor run.'
+        type: choice
+        options: ['', offline-tests, webhooks, sample-cards, live-dry-run, live-test-channel, full]
+        default: ''
+      kind:
+        description: 'Which cards (test: webhooks / sample-cards / live runs)'
+        type: choice
+        options: [all, schedule, codes]
+        default: all
+      ping:
+        description: 'Test only: include your role ping in test cards (default off: nobody gets notified)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -52,8 +82,9 @@ jobs:
   monitor:
     # Only on a development COPY that must never post: set the repository VARIABLE
     # ENABLED_FEATURES=none and every monitor run is skipped, even if something triggers it by
-    # mistake (the Test workflow still works there). Never set it on the repo that posts.
-    if: vars.ENABLED_FEATURES != 'none'
+    # mistake. A manual TEST run (`test` != '') is still allowed there — it never posts/commits.
+    # Never set ENABLED_FEATURES=none on the repo that posts.
+    if: vars.ENABLED_FEATURES != 'none' || inputs.test != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -75,6 +106,12 @@ jobs:
       #    variable in the README work without editing this file.
       GE_SECRETS_JSON: ${{ toJSON(secrets) }}
       GE_VARS_JSON: ${{ toJSON(vars) }}
+      # ── Test-bench switches (mirrors the old test.yml) ──
+      NO_PING: ${{ !inputs.ping && '1' || '' }}
+      PING_FLAG: ${{ inputs.ping && '--ping' || '' }}
+      GAME_ARG: ${{ inputs.game != 'all' && inputs.game || '' }}
+      KIND: ${{ inputs.kind }}
+      TEST: ${{ inputs.test }}
     steps:
       - name: Check out (branch HEAD, so a queued run sees the previous run's state)
         uses: actions/checkout@v7
@@ -95,8 +132,61 @@ jobs:
       - name: Show resolved config (routing, pings, emojis)
         run: python -m gamexpress validate || true
 
+      # ── MANUAL TEST BENCH (only when `test` is chosen; never posts to real channels) ──
+      - name: T1 · Offline tests (no network, no secrets)
+        if: env.TEST == 'offline-tests' || env.TEST == 'full'
+        run: |
+          pip install -r requirements-bot.txt pyyaml --disable-pip-version-check -q   # bot + workflow checks too
+          python -m compileall -q gamexpress tests
+          python tests/test_smoke.py
+
+      - name: T2 · Webhook check (one small card per webhook)
+        if: env.TEST == 'webhooks' || env.TEST == 'full'
+        run: python -m gamexpress check-webhooks --kind "$KIND" ${GAME_ARG:+--game "$GAME_ARG"}
+
+      - name: T3 · Sample cards (labelled 🧪 TEST) to the real routes
+        if: env.TEST == 'sample-cards' || env.TEST == 'full'
+        run: python -m gamexpress test-card --kind "$KIND" ${GAME_ARG:+--game "$GAME_ARG"} $PING_FLAG
+
+      - name: T4 · Live dry run (real sources, cards built + validated, nothing posted or saved)
+        if: env.TEST == 'live-dry-run' || env.TEST == 'full'
+        env:
+          DRY_RUN: '1'
+          TEST_MODE: '1'
+          BOOTSTRAP_POST: '1'
+          LOOKBACK_HOURS: '720'
+          STATE_PATH: ${{ runner.temp }}/ge-test-state.json
+          ONLY: ${{ inputs.kind != 'all' && inputs.kind || '' }}
+          GAME: ${{ inputs.game != 'all' && inputs.game || '' }}
+          ENABLED_FEATURES: schedule,codes   # also on the dev repo (where the variable says none)
+          INSTANCE_ROLE: primary
+          PEER_STATE_URL: none               # test runs never import the peer's state
+        run: python -m gamexpress run
+
+      - name: T5 · Live cards to the TEST channel (secret DISCORD_WEBHOOK_TEST)
+        if: env.TEST == 'live-test-channel'
+        env:
+          FORCE_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_TEST }}
+          TEST_MODE: '1'
+          BOOTSTRAP_POST: '1'
+          LOOKBACK_HOURS: '720'
+          STATE_PATH: ${{ runner.temp }}/ge-test-state.json
+          ONLY: ${{ inputs.kind != 'all' && inputs.kind || '' }}
+          GAME: ${{ inputs.game != 'all' && inputs.game || '' }}
+          ENABLED_FEATURES: schedule,codes
+          INSTANCE_ROLE: primary
+          PEER_STATE_URL: none
+        run: |
+          if [ -z "$FORCE_WEBHOOK" ]; then
+            echo "::warning::Add the secret DISCORD_WEBHOOK_TEST (a webhook of a private test channel) to use live-test-channel."
+            exit 0
+          fi
+          python -m gamexpress run
+
+      # ── NORMAL MONITOR RUN (skipped entirely when a test was chosen) ──
       - name: Run monitor
         id: run
+        if: inputs.test == ''
         env:
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
           ONLY: ${{ inputs.only != 'all' && inputs.only || '' }}
@@ -105,7 +195,7 @@ jobs:
         run: python -m gamexpress run
 
       - name: Commit state (also after a partial failure, so nothing is ever posted twice)
-        if: always() && !inputs.dry_run && steps.run.conclusion != 'skipped'
+        if: always() && inputs.test == '' && !inputs.dry_run && steps.run.conclusion != 'skipped'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

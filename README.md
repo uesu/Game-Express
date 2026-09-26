@@ -178,14 +178,14 @@ moves). ANANTA has no character gacha, so its card hides the banner section.
    | `DISCORD_WEBHOOK_CODES_ZZZ` | Zenless Zone Zero codes |
    | `DISCORD_WEBHOOK_CODES_WUWA` | Wuthering Waves codes |
    | `DISCORD_WEBHOOK_CODES_ANANTA` | ANANTA codes (used once the game is on) |
-   | `DISCORD_WEBHOOK_TEST` | *optional*: a private test channel for the Test workflow |
+   | `DISCORD_WEBHOOK_TEST` | *optional*: a private test channel for the monitor's `live-test-channel` test mode |
    | `NITTER_RSS_TOKEN` | *optional*: the same one as News-Express |
 
    The same URL may be used for several secrets (for example, one codes channel for every game).
 4. **Add variables** (not secret) in *… → Variables*:
    - `PING_ROLE_ID` = `1296268365593186426` (**leave it unset for no ping**, or `NO_PING=1`)
    - the emojis already default to your animated ones
-5. **Test.** *Actions → **Game-Express Test** → Run workflow*:
+5. **Test.** *Actions → **Game-Express Monitor** → Run workflow → pick a `test` mode*:
    `webhooks` → `sample-cards` → `live-dry-run`. Each mode is explained in
    **[docs/TESTING.md](docs/TESTING.md)**. Nothing is committed and nobody is pinged by default.
 6. **Go live with cron-job.org.** Create one cron-job.org job per instance repo that calls the
@@ -216,7 +216,7 @@ out. You can pin it in `config/overrides.json` (`"program_ts": "2026-09-20T19:30
 | `DISCORD_WEBHOOK_CODES` | optional: codes of any game without its own secret |
 | `DISCORD_WEBHOOK_URL` | optional catch-all fallback |
 | `DISCORD_WEBHOOK_SCHEDULE_<GAME>` | optional per-game schedule channel, e.g. `DISCORD_WEBHOOK_SCHEDULE_WUWA` |
-| `DISCORD_WEBHOOK_TEST` | optional: private channel for the Test workflow's `live-test-channel` mode |
+| `DISCORD_WEBHOOK_TEST` | optional: private channel for the monitor's `live-test-channel` test mode |
 | `NITTER_RSS_TOKEN` | optional token for the token-gated nitter instance |
 | `DISCORD_BOT_TOKEN` | bot mode only |
 
@@ -247,7 +247,7 @@ any name below works without editing YAML.
 | `GAMES` | all enabled | allow-list, e.g. `genshin,starrail` |
 | `ENABLE_GAMES` | — | switch prepared games on, e.g. `hna` or `hna,ananta` |
 | `DRY_RUN` | off | build and log only |
-| `TEST_MODE` | off | cards get a 🧪 TEST label, the freshness/seed rules are skipped and the state is never saved (the Test workflow sets it) |
+| `TEST_MODE` | off | cards get a 🧪 TEST label, the freshness/seed rules are skipped and the state is never saved (the monitor's test modes set it) |
 | `BOOTSTRAP_POST` | off | first run posts current items instead of seeding |
 | `EDIT_ON_UPDATE` | on | silent in-place edits when official info arrives |
 | `POST_ON_MAINTENANCE_NOTICE` | on | if the program announcement was missed, post from the maintenance notice |
@@ -358,7 +358,8 @@ before the gate.
 
 ## 🕹 Manual controls
 
-**Actions → Game-Express Test → Run workflow** (safe on production; never commits):
+**Actions → Game-Express Monitor → Run workflow → `test` = …** (safe on production; a test never
+posts to the real channels and never commits):
 
 | `test` | What happens |
 |---|---|
@@ -371,7 +372,8 @@ before the gate.
 
 Inputs `kind` (all / schedule / codes), `game` and `ping` (off by default) narrow it down.
 
-**Actions → Game-Express Monitor → Run workflow** (the production run; cron-job.org calls it):
+**Actions → Game-Express Monitor → Run workflow → `test` left empty** (the production run;
+cron-job.org calls it):
 
 | Input | Effect |
 |---|---|
@@ -434,8 +436,8 @@ next run re-reads the last `LOOKBACK_HOURS` (72 h), so nothing is missed.
 PR before you merge, and merging deploys it. You can also follow the News-Express convention of
 a development repo plus instance repos (alpha / bravo). Only a development copy that must never
 post gets the variable `ENABLED_FEATURES=none`. The monitor is then skipped even if something
-triggers it, while the **Game-Express Test** workflow still works. Never set it on the repo
-that posts.
+triggers it, while a manual `test` run of the monitor still works there. Never set it on the
+repo that posts.
 
 **Scheduler: cron-job.org, one job per instance repo.** GitHub's native `schedule:` is
 disabled (commented out) in `monitor.yml`, exactly like News-Express, because two schedulers
@@ -471,9 +473,9 @@ deploying to Oracle Cloud Always Free, Koyeb, Render, Railway, or Docker anywher
 **➡️ Full checklist: [docs/TESTING.md](docs/TESTING.md)**. It covers what to click, what you
 should see in Discord, and how to tell that the whole thing is working.
 
-- **Game-Express Test workflow** (`.github/workflows/test.yml`): webhooks, sample cards, live
-  dry run, live cards to a test channel, or everything at once (see
-  [Manual controls](#-manual-controls)).
+- **Monitor test bench** (`monitor.yml`, `test` input — the separate `test.yml` was folded into
+  it in 1.4.0): webhooks, sample cards, live dry run, live cards to a test channel, or everything
+  at once (see [Manual controls](#-manual-controls)).
 - **CI** (`.github/workflows/ci.yml`) runs on every PR and every push to `main`: install,
   compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **60 offline tests
   with no network and no secrets**:
@@ -590,6 +592,18 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 
 ## 🗒 Changelog
 
+### 1.4.0 — 2026-09-25 · the test bench moves into the Monitor
+- **`test.yml` is gone; the manual test bench is now a mode of the Monitor workflow.** In
+  *Actions → Game-Express Monitor → Run workflow*, pick `test` = `webhooks` / `sample-cards` /
+  `live-dry-run` / `live-test-channel` / `offline-tests` / `full`. New inputs `kind` and `ping`
+  came across unchanged.
+- A test run is still safe everywhere: the **Run monitor** step and the **Commit state** step are
+  both gated on `inputs.test == ''`, so a test never posts to the real channels and never writes
+  `state/state.json` — and it still works on a dev repo with `ENABLED_FEATURES=none`
+  (the job's `if` is now `vars.ENABLED_FEATURES != 'none' || inputs.test != ''`).
+- cron-job.org keeps calling the same `monitor.yml` dispatch with no `test` input, so scheduled
+  behaviour is byte-identical to before.
+
 ### 1.3.0 — 2026-09-25 · the schedule card shows the real announcement
 - **The card now shows the program announcement, not whichever post the run happened to see.**
   HSR 4.6 linked to the *Update and Maintenance Notice* and showed its Pompom cover, because the
@@ -651,7 +665,7 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
   explains private repos: 2,000 free Actions minutes a month means a 30-minute schedule.
 - **Tests are hermetic again.** The bot test read the repo's `state/state.json`, so it failed
   (on `main` too) as soon as the Monitor had committed real codes. It now uses its own state.
-- **Test workflow:** `offline-tests` installs discord.py + PyYAML so no check is skipped.
+- **Test bench:** `offline-tests` installs discord.py + PyYAML so no check is skipped.
   `x.yuuki.sh` (403 on GitHub runners) moved to the end of the nitter fleet. **55 offline
   tests.**
 

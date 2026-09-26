@@ -131,7 +131,7 @@ async def cmd_check_webhooks(args) -> int:
             card = container([
                 text("### ✅ Game-Express webhook check"),
                 text("This channel is connected and will receive:\n" + "\n".join(lines)),
-                text(f"-# secret: {names} • sent by the Test workflow • nobody was pinged"),
+                text(f"-# secret: {names} • sent by the monitor's test bench • nobody was pinged"),
             ], 0x57F287)
             payload = {"flags": IS_COMPONENTS_V2, "allowed_mentions": {"parse": []}, "components": [card]}
             res = await client.send(url, payload)

@@ -50,7 +50,7 @@ SCHEDULE_SAMPLES: dict[str, dict] = {
 # live hoyo-codes.seria.moe responses captured 2026-09-25
 CODE_SAMPLES: dict[str, list[dict]] = {
     # real codes seen on 2026-09-25 (GI / HSR / ZZZ / WW) — one sample card per game so the
-    # Test workflow can check EVERY per-game codes channel (DISCORD_WEBHOOK_CODES_<GAME>)
+    # monitor's test bench can check EVERY per-game codes channel (DISCORD_WEBHOOK_CODES_<GAME>)
     "genshin": [
         {"code": "VESNAONPATROL", "rewards": "Primogem*40;Mora*20000;Hero's Wit*3", "sources": ["seria", "codehub"]},
         {"code": "EPIC2026", "rewards": "40 primogems, five hero's wit, and 20k mora", "sources": ["seria", "codehub"]},
