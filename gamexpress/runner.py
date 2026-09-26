@@ -96,22 +96,15 @@ async def gather_estimates(ctx: Ctx) -> None:
             log.info("[%s] countdown estimate: %s", key, est)
 
 
-async def find_program(fetcher, g: Game, ver: str, now: int,
-                       trace: list[str] | None = None) -> dict | None:
+async def find_program(fetcher, g: Game, ver: str, now: int) -> dict | None:
     """THE program lookup, in one place: the official news page first (it archives every
     announcement and carries the key art), then the HoYoLAB news list, which is paged back past
-    the lookback window. Used by the monitor and by `probe`, so the debug report can never
-    drift from what a real run actually does.
+    the lookback window.
 
     -> {'url','title','images','youtube','text','ts','program_ts','source'} or None."""
-    hit = await newspage.fetch_program(fetcher, g, ver, now, trace=trace)
+    hit = await newspage.fetch_program(fetcher, g, ver, now)
     if not hit:
-        if trace is not None:
-            trace.append("official news page found nothing — falling back to the HoYoLAB news list")
         hit = await hoyolab.find_program(fetcher, g, ver)
-        if trace is not None:
-            trace.append(f"HoYoLAB list: {hit['title']}  {hit['url']}" if hit
-                         else "HoYoLAB list: no program article either")
     if not hit:
         return None
     # the air time comes from the article's own text, through the same extractor that

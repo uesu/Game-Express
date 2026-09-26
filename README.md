@@ -178,7 +178,6 @@ moves). ANANTA has no character gacha, so its card hides the banner section.
    | `DISCORD_WEBHOOK_CODES_ZZZ` | Zenless Zone Zero codes |
    | `DISCORD_WEBHOOK_CODES_WUWA` | Wuthering Waves codes |
    | `DISCORD_WEBHOOK_CODES_ANANTA` | ANANTA codes (used once the game is on) |
-   | `DISCORD_WEBHOOK_TEST` | *optional*: a private test channel for the monitor's `live-test-channel` test mode |
    | `NITTER_RSS_TOKEN` | *optional*: the same one as News-Express |
 
    The same URL may be used for several secrets (for example, one codes channel for every game).
@@ -186,8 +185,9 @@ moves). ANANTA has no character gacha, so its card hides the banner section.
    - `PING_ROLE_ID` = `1296268365593186426` (**leave it unset for no ping**, or `NO_PING=1`)
    - the emojis already default to your animated ones
 5. **Test.** *Actions → **Game-Express Monitor** → Run workflow → `mode` = **test***:
-   `webhooks` → `sample-cards` → `live-dry-run`. Each mode is explained in
-   **[docs/TESTING.md](docs/TESTING.md)**. Nothing is committed and nobody is pinged by default.
+   `webhooks` → `codes` → `schedule`. Each one is explained in
+   **[docs/TESTING.md](docs/TESTING.md)**. They post real data labelled 🧪 TEST, never write the
+   state, and nobody is pinged by default.
 6. **Go live with cron-job.org.** Create one cron-job.org job per instance repo that calls the
    `workflow_dispatch` API every 10 minutes, using a GitHub **classic token** with the `repo`
    scope. Step by step: **[docs/SCHEDULER.md](docs/SCHEDULER.md)**. GitHub's own `schedule:` is
@@ -216,7 +216,6 @@ out. You can pin it in `config/overrides.json` (`"program_ts": "2026-09-20T19:30
 | `DISCORD_WEBHOOK_CODES` | optional: codes of any game without its own secret |
 | `DISCORD_WEBHOOK_URL` | optional catch-all fallback |
 | `DISCORD_WEBHOOK_SCHEDULE_<GAME>` | optional per-game schedule channel, e.g. `DISCORD_WEBHOOK_SCHEDULE_WUWA` |
-| `DISCORD_WEBHOOK_TEST` | optional: private channel for the monitor's `live-test-channel` test mode |
 | `NITTER_RSS_TOKEN` | optional token for the token-gated nitter instance |
 | `DISCORD_BOT_TOKEN` | bot mode only |
 
@@ -358,43 +357,39 @@ before the gate.
 
 ## 🕹 Manual controls
 
-**Actions → Game-Express Monitor → Run workflow.** The first input, **`mode`**, says which of the
-two things you are doing; every other input in the dialog belongs to one of them:
+**Actions → Game-Express Monitor → Run workflow.** One input decides everything: **`mode`**.
 
 | `mode` | What it is |
 |---|---|
-| `live` *(default)* | **the real monitor.** This is what cron-job.org triggers — it sends no inputs at all, so the defaults are a plain pass |
-| `test` | **the manual test bench.** Never posts to the real channels and never commits, so it is safe on production and still works on a dev repo with `ENABLED_FEATURES=none` |
-
-Two inputs apply to **both**: `only` — the simplify switch (`all` / `schedule` / `codes`) — and
-`game`, one game key.
+| `live` *(default)* | **the real monitor.** cron-job.org triggers exactly this — it sends no inputs at all. It fetches the official sources, posts a card when something new matches, edits it silently when official info arrives, and commits the state. Nothing new → it posts nothing |
+| `test` | **check it with real data.** Every test fetches the live sources and posts what they really returned, labelled 🧪 TEST — so a wrong link, a wrong picture or a wrong timestamp is visible *before* a real announcement goes out |
 
 #### `mode = live`
 
 | Input | Effect |
 |---|---|
-| *(nothing)* | a normal pass: post what is new, silently edit what changed, commit the state |
-| `probe` | **debug ONE real schedule post**, e.g. `starrail:4.6`. It fetches it and prints: what the lookback window saw, what is stored for that version now, the program lookup tab by tab, the air time parsed out of the article text, **every image it found — ranked, with why the winner won** — and the card it would build (paste the JSON into [Discohook](https://discohook.app)). It replaces the normal run, and **nothing is posted or saved** |
+| `only` | everything / only `schedule` announcements / only `codes` |
+| `game` | one game key |
 | `repost` | post a version card again as a **new** message, e.g. `starrail:4.6`. Only versions the bot has already seen in an official post work, so an unannounced `genshin:7.2` can't be reposted yet. The summary says so, and lists the tracked versions |
-| `dry_run` | real run, logs the card JSON, never posts or commits |
 
-Reach for `probe` whenever a card looks wrong — a small or wrong picture, or a title that links to
-the Update Notice instead of the Special Program. It puts the link and the picture the card is
-using next to the ones the lookup found, so you can see which source won and why. Locally:
-`python -m gamexpress probe starrail:4.6`.
+Nothing is ever posted twice: each card is remembered in `state/state.json` by its key **and** by
+a hash of its payload, so a re-run can neither re-post nor rewrite an unchanged card. Code sources
+are fetched once per run and shared between games (`CodeSources` cache), and the fetcher caps
+concurrent requests, so a run costs a handful of HTTP calls.
 
 #### `mode = test`
 
-| `test` | What happens |
+| `test` | What you get — all real, all labelled 🧪 TEST, state never saved |
 |---|---|
 | `webhooks` | one small green "✅ connected" card per webhook, listing which game/feature cards that channel receives. Checks all 6 per-game codes secrets |
-| `sample-cards` | your 4 reference schedule cards + one codes card per game, labelled 🧪 TEST, sent to the real channels |
-| `live-dry-run` | a full real run: every source fetched, cards built and validated, shown in the log and summary. Nothing posted or saved |
-| `live-test-channel` | like `live-dry-run`, but posts the real current cards (labelled 🧪 TEST) to the `DISCORD_WEBHOOK_TEST` channel |
-| `offline-tests` | the CI test suite |
-| `full` | offline-tests → webhooks → sample-cards → live-dry-run |
+| `codes` | the **real codes that are on the live sources right now**, posted to each game's own codes channel. Games that are not out yet (HNA, ANANTA) have no real code to fetch, so they get example codes |
+| `schedule` | the **real schedule card** for the version that is out now: the announcement's own link and key art, the livestream date/time, the maintenance timestamps and the banners — exactly what a live run would post |
+| `all` | webhooks → codes → schedule |
 
-`ping` (off by default) adds your role ping to the test cards.
+`game` narrows any of them to one game; `ping` (off by default) adds your role ping.
+
+> A test posts to the **real** channels and never writes the state — so the live run still posts
+> the real thing later. Delete the test cards when you are done with them.
 
 **CLI** (local, VPS or bot host): `python -m gamexpress <command>`
 
@@ -404,8 +399,7 @@ using next to the ones the lookup found, so you can see which source won and why
 | `loop` | run forever every `LOOP_MINUTES` |
 | `bot` | slash commands + loop |
 | `check-webhooks [--kind …] [--game …]` | one "connected" card per unique webhook (no ping) |
-| `test-card [--kind …] [--game …] [--ping]` | post the sample cards, labelled 🧪 TEST (no ping unless `--ping`) |
-| `probe starrail:4.6` | debug ONE real schedule post: what the fetch found, which link and image won and why, and the card it would build. Read-only — never posts, never writes the state |
+| `test-card [--kind …] [--game …] [--ping] [--unlaunched]` | post the sample cards, labelled 🧪 TEST (no ping unless `--ping`). `--unlaunched` keeps only the games that are not out yet, which have nothing real to fetch |
 | `preview` | writes `previews/index.html` (a Discord-like preview of every card) + the JSON for [Discohook](https://discohook.app) |
 | `validate` | prints the resolved routing (which secret feeds which channel), pings and emojis, and checks every sample card against Discord's limits |
 
@@ -488,11 +482,9 @@ deploying to Oracle Cloud Always Free, Koyeb, Render, Railway, or Docker anywher
 **➡️ Full checklist: [docs/TESTING.md](docs/TESTING.md)**. It covers what to click, what you
 should see in Discord, and how to tell that the whole thing is working.
 
-- **Monitor test bench** (`monitor.yml`, `mode` = `test` — the separate `test.yml` was folded
-  into it in 1.4.0): webhooks, sample cards, live dry run, live cards to a test channel, or
-  everything at once (see [Manual controls](#-manual-controls)).
-- **`probe`** (`mode` = `live`) debugs ONE real schedule post — the fetch, the link, every image
-  and why the winner won — without posting anything.
+- **Monitor test bench** (`monitor.yml`, `mode` = `test`): webhooks, real codes, or the real
+  schedule card — every test fetches the live sources, so what you see in Discord is what a live
+  run would post (see [Manual controls](#-manual-controls)).
 - **CI** (`.github/workflows/ci.yml`) runs on every PR and every push to `main`: install,
   compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **67 offline tests
   with no network and no secrets**:
@@ -608,6 +600,23 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 ---
 
 ## 🗒 Changelog
+
+### 1.6.0 — 2026-09-26 · two modes, and the tests use real data
+- **The dialog is now just `mode` + what that mode needs.** `live` = the real monitor (`only`,
+  `game`, `repost`). `test` = `webhooks` / `codes` / `schedule` / `all`. Gone: the `dry_run`
+  input and the `probe` debug input (and the `gamexpress probe` command behind it).
+- **The tests no longer post sample cards — they post what the sources really returned.** The
+  `codes` test posts the real codes currently on the live sources to each game's own codes
+  channel; the `schedule` test posts the real schedule card (the announcement's own link and key
+  art, the livestream date/time, the maintenance timestamps and the banners). A sample card could
+  hide a broken source; these cannot.
+- Games that are not out yet (HNA, ANANTA) have no real code to fetch, so the codes test gives
+  them example codes — `test-card --kind codes --unlaunched`.
+- **A test posts to the real channels, labelled 🧪 TEST, and never writes the state**, so the
+  live run still posts the real thing later. `DISCORD_WEBHOOK_TEST` is no longer used (the
+  private-test-channel mode is gone); the secret can be deleted.
+- The live run is unchanged apart from losing `dry_run`: post what is new, edit silently when
+  official info arrives, commit the state, and never post twice (state keys + payload hashes).
 
 ### 1.5.0 — 2026-09-26 · the dispatch form says which of the two things you are doing
 - **`mode` = `live` or `test`.** Still one workflow, but the Run-workflow dialog now opens with

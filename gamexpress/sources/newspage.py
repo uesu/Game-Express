@@ -106,43 +106,24 @@ def _matches(game: Game, title: str, version: str | None) -> bool:
         bool(re.search(r"special\s+(?:program|broadcast)|livestream\s+preview", lead, re.I))
 
 
-async def fetch_program(fetcher, game: Game, version: str | None, now: int,
-                        trace: list[str] | None = None) -> dict | None:
+async def fetch_program(fetcher, game: Game, version: str | None, now: int) -> dict | None:
     """The official news page's entry for this version's program announcement.
-    -> {'url','title','images','youtube','source'} or None (page down / no such article).
-
-    `trace` (used by `probe`) collects a human-readable line per tab tried, so the debug report
-    shows the SAME lookup the monitor does instead of a second implementation of it."""
+    -> {'url','title','images','youtube','source'} or None (page down / no such article)."""
     base = (getattr(game, "news_url", "") or "").strip()
     if not base or fetcher is None:
-        if trace is not None:
-            trace.append("news_url is not configured for this game — the news page cannot be asked")
         return None
-
-    def say(line: str) -> None:
-        if trace is not None:
-            trace.append(line)
-
     for tab in TABS:
         html = await fetcher.get_text(base + tab, source="newspage", retries=1)
         if not html:
-            say(f"tab {tab or '(latest)'}: no answer from {base + tab}")
             continue
-        entries = parse_news_page(html, base)
-        hits = [e for e in entries if _matches(game, e["title"], version)]
-        say(f"tab {tab or '(latest)'}: {len(entries)} entries, {len(hits)} program match(es)")
-        for e in hits[:5]:
-            say(f"    · {e['title']}  {e['url']}")
-        if not hits:
+        entries = [e for e in parse_news_page(html, base) if _matches(game, e["title"], version)]
+        if not entries:
             continue
-        best = hits[0]
-        say(f"    → opening the article: {best['url']}")
+        best = entries[0]
         article = parse_article(await fetcher.get_text(best["url"], source="newspage", retries=1) or "")
         images = article["images"] or ([best["image"]] if best["image"] else [])
         if article.get("youtube"):
             images = [youtube_thumb(article["youtube"])] + images
-        say(f"    → {len(article['images'])} image(s) inside the article, "
-            f"embedded video: {article.get('youtube') or '—'}")
         log.info("[%s] official news page: %s (%s)", game.key, best["title"], best["url"])
         return {"url": best["url"], "title": best["title"], "images": images,
                 "text": article["text"], "youtube": article.get("youtube"), "ts": best["ts"],
