@@ -384,7 +384,7 @@ TEST_NOTE = "🧪 TEST CARD — sample / test data, not a real announcement"
 
 def mark_test(payload: dict, note: str = TEST_NOTE) -> dict:
     """Label a card as a test: a line at the top of the card + '🧪 [TEST]' on the header line.
-    Used by the Test workflow so nobody mistakes a test post for real news or real codes."""
+    Used by the monitor's test bench so nobody mistakes a test post for real news or real codes."""
     import copy
     p = copy.deepcopy(payload)
     comps = p.get("components") or []

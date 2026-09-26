@@ -807,11 +807,20 @@ def test_workflows_cron_job_org_and_test_bench():
     for key in ("GENSHIN", "STARRAIL", "HNA", "ZZZ", "WUWA", "ANANTA"):
         assert env[f"DISCORD_WEBHOOK_CODES_{key}"] == f"${{{{ secrets.DISCORD_WEBHOOK_CODES_{key} }}}}"
     assert mon["concurrency"]["cancel-in-progress"] is False
-    test = yaml.safe_load((wf / "test.yml").read_text(encoding="utf-8"))
-    opts = (test.get("on") or test.get(True))["workflow_dispatch"]["inputs"]["test"]["options"]
+    # v1.4.0: the manual test bench lives INSIDE the monitor workflow; test.yml is gone.
+    assert not (wf / "test.yml").exists()
+    inputs = on["workflow_dispatch"]["inputs"]
+    opts = inputs["test"]["options"]
     assert {"webhooks", "sample-cards", "live-dry-run", "live-test-channel", "offline-tests", "full"} <= set(opts)
-    assert test["permissions"] == {"contents": "read"}                           # the test bench never commits
-    for name in ("monitor.yml", "test.yml", "ci.yml"):
+    assert inputs["kind"]["options"] == ["all", "schedule", "codes"] and "ping" in inputs
+    job = mon["jobs"]["monitor"]
+    assert "|| inputs.test != ''" in str(job["if"])              # a test still runs on the dev repo
+    steps = {str(s.get("name", "")): s for s in job["steps"]}
+    run_step = next(s for n, s in steps.items() if n.startswith("Run monitor"))
+    assert run_step["if"] == "inputs.test == ''"                 # a test never does a real run
+    commit = next(s for n, s in steps.items() if n.startswith("Commit state"))
+    assert "inputs.test == ''" in commit["if"]                   # ...and never commits state
+    for name in ("monitor.yml", "ci.yml"):
         text = (wf / name).read_text(encoding="utf-8")
         assert "actions/checkout@v7" in text and "actions/setup-python@v7" in text, name
     am = yaml.safe_load((wf / "ci.yml").read_text(encoding="utf-8"))["jobs"]["automerge"]

@@ -1,7 +1,8 @@
 # Testing Game-Express: is everything working?
 
 Work through the steps in order. Every test runs from GitHub:
-**Actions → Game-Express Test → Run workflow**.
+**Actions → Game-Express Monitor → Run workflow → choose `test`** (the test bench has been built
+into the Monitor since v1.4.0 — there is no separate Test workflow).
 
 That workflow:
 
