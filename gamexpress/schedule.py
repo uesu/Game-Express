@@ -44,6 +44,13 @@ MAINT_RE = re.compile(
 PROGRAM_EXCLUDE = re.compile(
     r"\b(recap|replay|re-?watch|highlights?|vod|thank(?:s| you) for (?:watching|tuning)|has ended|"
     r"codes? (?:are|is) (?:now )?(?:live|available|here))\b", re.I)
+NOT_PROGRAM_TITLE = re.compile(
+    r"\b(?:(?:prize|sharing|fan[- ]?art|creation|community|login|check-?in|web|in-?game|"
+    r"time-?limited|lucky|anniversary|redeem(?:ption)?)\s+events?|event\s+prizes?|participate|"
+    r"winners?|giveaway|redemption\s+cod(?:e|es)|update\s+(?:details|and\s+maintenance)|"
+    r"maintenance\s+notice|version\s+update|hotfix|bug\s+fix(?:es)?|compensation\s+"
+    r"(?:notice|details)|merchandise|recap|replay|vod|survey|questionnaire|thank\s+you|"
+    r"collaboration)\b", re.I)
 DEFAULT_BANNER_RE = (r"event\s+wish|event\s+warp|signal\s+search|exclusive\s+channel|featured\s+resonator|"
                      r"resonator\s+convene|character\s+event|limited[-\s]time\s+(?:character|agent)")
 PRE_WORDS = re.compile(r"pre-?install|pre-?download|pre-?installation|pre-?load", re.I)
@@ -97,6 +104,7 @@ def classify(game: Game, item: Item) -> str | None:
     if MAINT_RE.search(item.title or "") or (item.source == "x" and MAINT_RE.search(lead)):
         return "maintenance"
     if _any(program_patterns(game), lead) and not PROGRAM_EXCLUDE.search(lead) \
+            and not NOT_PROGRAM_TITLE.search(item.title or "") \
             and not extract_codes_from_text(lead):      # a codes post is not an announcement
         return "program"
     banner_rx = "|".join([DEFAULT_BANNER_RE] + game.banner_patterns)
@@ -303,13 +311,14 @@ def _to_ts(value) -> int | None:
     return parse_iso(str(value))
 
 
-def _four_star_problem(game: Game, four: list[str], unsure: bool, existing: list[str] | None,
+def _four_star_problem(game: Game, four: list[str], existing: list[str] | None,
                        sticky: str | None) -> str | None:
-    """Why a 4★ list must NOT be shown (-> TBA), or None when it is trustworthy."""
+    """Why a 4★ list must NOT be shown (-> TBA), or None when it is trustworthy.
+
+    An incomplete list is not by itself a reason to print TBA; extract_banner already removes
+    implausible names. Wrong counts, overlap, disagreement and overrides still apply."""
     if sticky == "official sources disagree":
         return sticky
-    if unsure:
-        return "a name looked unreliable"
     if game.four_star_count and len(four) != game.four_star_count:
         return f"{len(four)} name(s) found, {game.four_star_count} expected"
     if existing and sorted(existing) != sorted(four):
@@ -407,6 +416,37 @@ def apply_program_media(data: dict, prov: dict, media: dict | None, now: int) ->
     return changed + ["title_url", "source_url"]
 
 
+def version_extracts(ctx, game: Game, log_missing: bool = False) -> dict[str, list[Extract]]:
+    """Group this run's official extracts by version. The monitor and program lookup share this
+    grouping so they can never disagree about which versions are current."""
+    live = (ctx.versions.get(game.key) or {}).get("live")
+    records = ctx.state.schedule_records(game.key)
+    extracts = [e for e in (extract(game, it) for it in ctx.items.get(game.key, [])) if e]
+    infer_versions(extracts, live, records)
+    by_version: dict[str, list[Extract]] = {}
+    for e in extracts:
+        if not e.version:
+            if log_missing:
+                log.info("[%s] %s item %s has no version yet — waiting for another source",
+                         game.key, e.kind, e.item.url)
+            continue
+        if live and version_key(e.version) < version_key(live):
+            continue
+        by_version.setdefault(e.version, []).append(e)
+    return by_version
+
+
+def needs_program_lookup(extracts: list[Extract], record: dict, now: int) -> bool:
+    """Whether this version still needs its archived announcement looked up."""
+    data = (record or {}).get("data") or {}
+    start = data.get("maint_start_ts")
+    if start and now > int(start) + 12 * 3600:
+        return False
+    if data.get("program_seen") or data.get("media_from"):
+        return False
+    return not any(e.kind == "program" for e in extracts)
+
+
 def needs_media(state, game_key: str, now: int) -> bool:
     """True when a tracked version still shows somebody else's announcement -> worth one page
     fetch to find the program article. Never for a version that is already live, and never
@@ -469,8 +509,7 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                 if ((four or f.get("banner_four_unsure"))
                         and prov.get(f"b_{key4}", [0])[0] < PRIORITY["override"]):
                     flag = f"b_{key4}_tba"
-                    problem = _four_star_problem(game, four, bool(f.get("banner_four_unsure")),
-                                                 banners.get(key4), prov.get(flag))
+                    problem = _four_star_problem(game, four, banners.get(key4), prov.get(flag))
                     prov[f"b_{key4}"] = [PRIORITY.get(src, 10), ts]
                     if problem:
                         banners[key4] = []                                # TBA
@@ -570,21 +609,9 @@ def repost_problem(repost: str, games: list, records_of) -> str | None:
 async def run(ctx) -> None:
     s = ctx.settings
     for game in ctx.games:
-        items: list[Item] = ctx.items.get(game.key, [])
         live_info = ctx.versions.get(game.key, {})
-        live = live_info.get("live")
         records = ctx.state.schedule_records(game.key)
-        extracts = [e for e in (extract(game, it) for it in items) if e]
-        infer_versions(extracts, live, records)
-        by_version: dict[str, list[Extract]] = {}
-        for e in extracts:
-            if not e.version:
-                log.info("[%s] %s item %s has no version yet — waiting for another source",
-                         game.key, e.kind, e.item.url)
-                continue
-            if live and version_key(e.version) < version_key(live):
-                continue                                   # old version — ignore
-            by_version.setdefault(e.version, []).append(e)
+        by_version = version_extracts(ctx, game, log_missing=True)
         overrides = ctx.overrides.get(game.key, {})
         for ver in overrides:
             if ver in records and ver not in by_version:

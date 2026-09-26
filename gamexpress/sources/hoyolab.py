@@ -19,6 +19,7 @@ from collections.abc import Callable
 from ..config import Game
 from ..http import Fetcher
 from ..models import Item
+from ..schedule import NOT_PROGRAM_TITLE
 from ..textutil import find_version, html_to_text, structured_to_text, youtube_video_url
 from ..timeparse import parse_iso
 
@@ -41,13 +42,33 @@ def _post_text(post: dict) -> tuple[str, list[str], list[str]]:
 
 
 def _images(wrapper: dict) -> list[str]:
-    urls = [c.get("url") for c in (wrapper.get("cover_list") or []) if c.get("url")]
-    urls += [c.get("url") for c in (wrapper.get("image_list") or []) if c.get("url")]
-    out = []
-    for u in urls:
-        if u not in out:
+    """Post pictures, dropping a smaller upload when two same-aspect-ratio entries are the same art."""
+    out: list[str] = []
+    dims: dict[str, tuple[int, int]] = {}
+    for group in ("cover_list", "image_list"):
+        for c in wrapper.get(group) or []:
+            u = c.get("url")
+            if not u or u.split("?")[0] in {o.split("?")[0] for o in out}:
+                continue
+            w, h = int(c.get("width") or 0), int(c.get("height") or 0)
+            if w and h:
+                dims[u] = (w, h)
             out.append(u)
-    return out
+
+    def ratio(u: str) -> float:
+        w, h = dims[u]
+        return round(w / h, 3)
+
+    drop = set()
+    for a in out:
+        for b in out:
+            if a == b or a not in dims or b not in dims or a in drop or b in drop:
+                continue
+            wa, ha = dims[a]
+            wb, hb = dims[b]
+            if ratio(a) == ratio(b) and wb >= wa and hb >= ha and (wb, hb) != (wa, ha):
+                drop.add(a)
+    return [u for u in out if u not in drop]
 
 
 async def _full_post(fetcher: Fetcher, gid: int, post_id: str) -> dict | None:
@@ -156,6 +177,8 @@ def pick_program(lists: list[dict], version: str | None, patterns: list[str]) ->
                 continue
             lead = subject.lower()
             if not (PROGRAM_TITLE.search(subject) or any(p in lead for p in pats)):
+                continue
+            if NOT_PROGRAM_TITLE.search(subject):
                 continue
             if version and find_version(subject) not in (version, None):
                 continue

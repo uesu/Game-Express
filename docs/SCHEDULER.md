@@ -64,7 +64,7 @@ The token lives **only inside cron-job.org**. Do not add it to the repo, a secre
    - **Timeout**: the default is fine, because GitHub answers in under a second.
 4. **Notifications** tab: turn on **"execution of the cronjob fails"** and **"the cronjob will be
    disabled because of too many failures"**. An expired token then emails you instead of
-   silently stopping the bot.
+   silently stopping the monitor.
 5. **Save**, open the job, and click **TEST RUN** (or *Perform test run*).
 
 **Expected result:** **`204 No Content`**. Within a few seconds, the instance repo's **Actions** tab

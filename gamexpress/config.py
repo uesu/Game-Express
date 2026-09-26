@@ -1,6 +1,6 @@
 """Settings (environment) + per-game config (config/games.json).
 
-Secrets (GitHub → Settings → Secrets):   webhook URLs, NITTER_RSS_TOKEN, DISCORD_BOT_TOKEN
+Secrets (GitHub → Settings → Secrets):   webhook URLs, NITTER_RSS_TOKEN
 Variables (GitHub → Settings → Variables): everything else — ping roles, emojis,
 feature switches, instance role. Nothing in a variable is sensitive, so they are
 visible/editable in one click (the "easy, intuitive" switches).
@@ -369,6 +369,7 @@ class Game:
     youtube: str = ""
     twitch: str = ""
     news_url: str = ""                 # official news page: archives every announcement + its key art
+    program_feeds: list[str] = field(default_factory=list)   # RSS/Atom mirrors of that news list
     card: CardStyle = field(default_factory=CardStyle)
     codes: dict = field(default_factory=dict)
     note: str = ""
@@ -414,6 +415,7 @@ def load_games(path: Path | None = None) -> dict[str, Game]:
             youtube=g.get("youtube", ""),
             twitch=g.get("twitch", ""),
             news_url=g.get("news_url", ""),
+            program_feeds=list(g.get("program_feeds") or []),
             card=card,
             codes=dict(g.get("codes") or {}),
             note=g.get("note", ""),

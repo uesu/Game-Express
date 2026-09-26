@@ -1,8 +1,6 @@
 """Command line entry point:  python -m gamexpress <command> [options]
 
   run             one monitor pass (GitHub Actions uses this)            [default]
-  loop            run forever every LOOP_MINUTES (VPS / Docker, no bot token needed)
-  bot             Discord bot with /codes /schedule /status + the monitor loop
   test-card       post the sample cards (your 4 reference cards + one codes card per game),
                   labelled 🧪 TEST; no ping unless --ping
   check-webhooks  send ONE small "✅ connected" card to every configured webhook, listing
@@ -224,26 +222,11 @@ async def cmd_run(_args) -> int:
     return 1 if ctx.errors else 0
 
 
-async def cmd_loop(args) -> int:
-    from .runner import run_once
-    from .web import STATUS, start_health_server
-    minutes = max(5, int(args.minutes or os.getenv("LOOP_MINUTES", "10")))
-    await start_health_server()
-    log.info("loop mode: running every %d min", minutes)
-    while True:
-        try:
-            ctx = await run_once(load_settings())
-            STATUS.update({"last_run": int(time.time()), "last_report": ctx.report[-10:]})
-        except Exception:  # keep the loop alive
-            log.exception("run failed")
-        await asyncio.sleep(minutes * 60)
-
-
 def main(argv: list[str] | None = None) -> int:
     _load_dotenv()
     p = argparse.ArgumentParser(prog="python -m gamexpress", description="Game-Express monitor")
     p.add_argument("command", nargs="?", default="run",
-                   choices=["run", "loop", "bot", "test-card", "check-webhooks", "preview", "validate"])
+                   choices=["run", "test-card", "check-webhooks", "preview", "validate"])
     p.add_argument("--dry-run", action="store_true", help="build + log cards, never post")
     p.add_argument("--only", choices=["schedule", "codes"], help="run one feature")
     p.add_argument("--game", default="", help="restrict to one game key (e.g. starrail)")
@@ -255,7 +238,6 @@ def main(argv: list[str] | None = None) -> int:
                    help="test-card: only the games that are not live yet — example data, because "
                         "there is no real announcement to fetch for them")
     p.add_argument("--out", default="previews", help="preview output folder")
-    p.add_argument("--minutes", default="", help="loop interval (default LOOP_MINUTES or 10)")
     args = p.parse_args(argv)
     if args.dry_run:
         os.environ["DRY_RUN"] = "1"
@@ -274,11 +256,6 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(cmd_test_card(args))
     if args.command == "check-webhooks":
         return asyncio.run(cmd_check_webhooks(args))
-    if args.command == "loop":
-        return asyncio.run(cmd_loop(args))
-    if args.command == "bot":
-        from .bot import run_bot
-        return run_bot()
     return asyncio.run(cmd_run(args))
 
 

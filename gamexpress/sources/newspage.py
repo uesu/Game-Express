@@ -21,14 +21,19 @@ template is a Next.js build and the markup around the entries is not a contract.
 
 from __future__ import annotations
 
+import asyncio
+import calendar
 import logging
 import re
 from html import unescape
 from urllib.parse import urljoin
 
+import feedparser
+
 from ..config import Game
-from ..media import upgrade, youtube_thumb
-from ..textutil import find_version
+from ..media import rank, upgrade, youtube_thumb
+from ..schedule import NOT_PROGRAM_TITLE
+from ..textutil import find_version, youtube_id
 from ..timeparse import find_datetimes
 
 log = logging.getLogger("gamexpress.newspage")
@@ -41,7 +46,9 @@ ANCHOR = re.compile(r'<a\b[^>]*href="(?P<href>[^"]*/news/(?:detail/)?(?P<id>\d{3
                     re.I | re.S)
 IMG = re.compile(r'(?:src|data-src|content)="(?P<u>https?://[^"\s>]+\.(?:jpg|jpeg|png|webp))"', re.I)
 DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
-YOUTUBE = re.compile(r"(?:youtube\.com/watch\?v=|youtu\.be/)([A-Za-z0-9_-]{11})")
+YOUTUBE = re.compile(
+    r"(?:youtube\.com/(?:watch\?(?:[^\s]*&)?v=|live/|shorts/|embed/)|youtu\.be/)"
+    r"([A-Za-z0-9_-]{11})")
 SCRIPT = re.compile(r"<(script|style|noscript)\b.*?</\1>", re.I | re.S)
 TAG = re.compile(r"<[^>]+>")
 # HoYoverse news titles: `Version 4.6 Trailer: "..." | Honkai: Star Rail` — the part before the
@@ -96,10 +103,52 @@ def parse_article(html: str) -> dict:
             "youtube": f"https://www.youtube.com/watch?v={yt.group(1)}" if yt else None}
 
 
+FEED_IMG = re.compile(r"<img\b[^>]*?src=[\"'](?P<u>https?://[^\"'>\s]+)[\"']", re.I)
+
+
+def parse_feed_entries(body: str) -> list[dict]:
+    """RSS/Atom entries -> title, link, plain text, timestamp and embedded images."""
+    out = []
+    for e in feedparser.parse(body).entries or []:
+        title = unescape(getattr(e, "title", "") or "").strip()
+        link = (getattr(e, "link", "") or "").strip()
+        if not title or not link:
+            continue
+        body_html = "".join(c.get("value") or "" for c in getattr(e, "content", None) or [])
+        body_html += getattr(e, "summary", "") or ""
+        when = getattr(e, "updated_parsed", None) or getattr(e, "published_parsed", None)
+        out.append({"title": title, "url": link, "ts": int(calendar.timegm(when)) if when else 0,
+                    "text": re.sub(r"\s+", " ", TAG.sub(" ", unescape(body_html))).strip(),
+                    "images": FEED_IMG.findall(body_html)})
+    return out
+
+
+async def fetch_program_feed(fetcher, game: Game, version: str | None, now: int) -> dict | None:
+    """Find a program announcement in a configured RSS/Atom news mirror."""
+    for url in getattr(game, "program_feeds", None) or []:
+        body = await fetcher.get_text(url, source="newspage", retries=1)
+        if not body:
+            continue
+        entries = [e for e in await asyncio.to_thread(parse_feed_entries, body)
+                   if _matches(game, e["title"], version)]
+        if not entries:
+            continue
+        best = max(entries, key=lambda e: e["ts"])
+        images = rank(best["images"])
+        vid = youtube_id(best["text"])
+        log.info("[%s] news feed: %s (%s)", game.key, best["title"], best["url"])
+        return {"url": best["url"], "title": best["title"], "images": images,
+                "text": best["text"], "youtube": f"https://www.youtube.com/watch?v={vid}" if vid else None,
+                "ts": best["ts"] or None, "source": "Official News Feed"}
+    return None
+
+
 def _matches(game: Game, title: str, version: str | None) -> bool:
     if not title:
         return False
     if version and find_version(title) not in (version, None):
+        return False
+    if NOT_PROGRAM_TITLE.search(title):
         return False
     lead = title.lower()
     return any(p.lower() in lead for p in game.program_patterns) or \

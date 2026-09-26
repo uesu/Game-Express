@@ -16,7 +16,6 @@ import json
 import os
 import sys
 import tempfile
-import time
 import traceback
 from pathlib import Path
 
@@ -506,67 +505,6 @@ def test_hoyolab_quirk_and_html():
     assert "Version 7.1" in t2 and "https://www.youtube.com/@GenshinImpact" in l2 and i2
 
 
-# =========================================================================== bot (offline)
-def test_bot_registers_commands_and_replies_v2():
-    try:
-        import discord
-        from discord import app_commands
-    except ImportError:
-        print("    (discord.py not installed — skipped)")
-        return
-    import gc
-    with tempfile.TemporaryDirectory() as tmp:
-        # the bot gets its OWN state file: the repo's state/state.json holds live data once the
-        # monitor has run (and codes count as active for 2 days), so it must never decide the result
-        state_file = Path(tmp) / "state.json"
-        captured = {}
-        original_run = discord.Client.run
-        discord.Client.run = lambda self, token, **kw: captured.update(client=self, token=token)
-        os.environ["DISCORD_BOT_TOKEN"] = "fake.token.value"
-        os.environ["STATE_PATH"] = str(state_file)
-        try:
-            from gamexpress import bot
-            assert bot.run_bot() == 0
-        finally:
-            discord.Client.run = original_run
-            os.environ.pop("DISCORD_BOT_TOKEN", None)
-            os.environ.pop("STATE_PATH", None)
-        client = captured["client"]
-        tree = next(o for o in gc.get_objects() if isinstance(o, app_commands.CommandTree) and o.client is client)
-        cmds = {c.name: c for c in tree.get_commands()}
-        assert sorted(cmds) == ["codes", "schedule", "status"]
-        sent = []
-
-        async def fake_request(route, **kw):
-            sent.append((route.path, kw.get("json")))
-        client.http.request = fake_request
-
-        class FakeInteraction:
-            id = 1234
-            token = "itok"
-        genshin = app_commands.Choice(name="Genshin Impact", value="genshin")
-
-        # 1) no codes known yet -> one notice card (a Container)
-        asyncio.run(cmds["codes"].callback(FakeInteraction(), genshin))
-        path, body = sent[-1]
-        assert path.endswith("/callback") and body["type"] == 4
-        assert body["data"]["flags"] == cards.IS_COMPONENTS_V2 and body["data"]["allowed_mentions"] == {"parse": []}
-        assert [c["type"] for c in body["data"]["components"]] == [17]
-
-        # 2) a code posted just now -> the codes card: title line (TextDisplay) + Container with the code
-        now = int(time.time())
-        state_file.write_text(json.dumps({"codes": {"genshin": {"GENSHINGIFT": {
-            "status": "posted", "first_seen": now, "last_seen": now, "sources": ["seria"],
-            "rewards": ["Primogem ×50"]}}}}), encoding="utf-8")
-        asyncio.run(cmds["codes"].callback(FakeInteraction(), genshin))
-        path, body = sent[-1]
-        assert path.endswith("/callback") and body["type"] == 4
-        assert body["data"]["flags"] == cards.IS_COMPONENTS_V2 and body["data"]["allowed_mentions"] == {"parse": []}
-        assert [c["type"] for c in body["data"]["components"]] == [10, 17]
-        assert "GENSHINGIFT" in json.dumps(body["data"]["components"][1])
-
-
-
 # =========================================================================== session 2 (v1.1)
 def test_per_game_codes_webhooks_and_aliases():
     hooks = {k: f"https://discord.com/api/webhooks/{i}/codes-{k}" for i, k in
@@ -628,7 +566,7 @@ def _banner_extract(names4, five="Pearl", ts=1, source="hoyolab", unsure=False, 
                             version="4.7", fields=f)
 
 
-def test_four_star_tba_when_unsure():
+def test_four_star_tba_when_the_list_is_incomplete():
     g = GAMES["starrail"]                                                       # 3 rate-up 4★ per phase
     rec, notes = {}, []
     d = schedule.merge(g, "4.7", [_banner_extract(["Gallagher", "Pela"])], rec, {}, {}, 1, notes)
@@ -650,6 +588,10 @@ def test_four_star_tba_when_unsure():
     assert d["banners"]["phase1_4"] == ["Gallagher", "Pela", "Lynx"]
     d = schedule.merge(g, "4.7", [_banner_extract([], unsure=True)], {}, {}, {}, 6, [])
     assert d["banners"]["phase1_4"] == []
+    notes = []
+    d = schedule.merge(g, "4.7", [_banner_extract(["Gallagher", "Pela", "Lynx"], unsure=True)],
+                       {}, {}, {}, 7, notes)
+    assert d["banners"]["phase1_4"] == ["Gallagher", "Pela", "Lynx"]
     card = json.dumps(cards.schedule_payload(g, {**d, "version": "4.7"}, settings(), settings().ping("schedule", "starrail")),
                       ensure_ascii=False)
     assert "4 Star Characters: TBA" in card
@@ -1311,6 +1253,142 @@ def test_sample_cards_are_only_for_the_games_with_nothing_real_to_fetch():
     assert names(unlaunched=True, game="ananta") == ["codes_ananta"]
     assert names(game="genshin") == ["codes_genshin"]          # one card per game, all its codes
 
+
+# ================================================== the 2026-09-26 schedule-card fixes
+def _it(source="hoyolab", game="zzz", title="", text="", url="https://x/y", ts=1790000000, imgs=None):
+    return Item(source=source, game=game, id="1", url=url, title=title, text=text,
+                published_ts=ts, images=list(imgs or []))
+
+
+def test_the_program_lookup_runs_on_a_first_run_when_the_state_is_empty():
+    now = 1790000000
+    assert schedule.needs_program_lookup([], {}, now)
+    seen = [schedule.Extract(_it(), "program", "3.2")]
+    assert not schedule.needs_program_lookup(seen, {}, now)
+    assert not schedule.needs_program_lookup([], {"data": {"program_seen": True}}, now)
+    assert not schedule.needs_program_lookup([], {"data": {"media_from": "Official News"}}, now)
+    assert not schedule.needs_program_lookup([], {"data": {"maint_start_ts": now - 13 * 3600}}, now)
+    assert callable(schedule.version_extracts)
+
+
+def test_an_event_post_is_never_mistaken_for_the_program_announcement():
+    prize = _it(title="[Prize Event] Participate in the event for a chance to obtain Master Tape x10!",
+                text="The Zenless Zone Zero Version 3.2 Special Program will air on August 28.")
+    assert schedule.classify(GAMES["zzz"], prize) != "program"
+    notice = _it(title="Version 4.6 Update and Maintenance Notice",
+                 text="The Honkai: Star Rail Version 4.6 Special Program aired on 2026-09-20.")
+    assert schedule.classify(GAMES["starrail"], notice) != "program"
+    for key, title in (("zzz", 'Zenless Zone Zero Version 3.2 "Their Secret Histories" Special Program Announcement'),
+                       ("starrail", 'Honkai: Star Rail Version 4.6 "Dance With the Beast Before Moonrise" Special Program'),
+                       ("genshin", "Genshin Impact Version 7.1 Special Program Preview"),
+                       ("wuwa", "Wuthering Waves Version 3.7 Preview Special Broadcast")):
+        assert schedule.classify(GAMES[key], _it(title=title, text=title)) == "program", key
+    assert not newspage._matches(GAMES["zzz"], "[Prize Event] Participate in the event", "3.2")
+    assert newspage._matches(GAMES["zzz"], "Version 3.2 Special Program Announcement", "3.2")
+    assert hoyolab.pick_program([{"retcode": 0, "data": {"list": [
+        {"post": {"post_id": "46814308", "subject": "Version 4.6 Update and Maintenance Notice", "created_at": 1790300000}},
+        {"post": {"post_id": "46691962", "subject": 'Honkai: Star Rail Version 4.6 "Dance With the Beast Before Moonrise" Special Program', "created_at": 1789100000}},
+    ]}}], "4.6", ["special program"])[0] == "46691962"
+
+
+def test_a_livestream_link_yields_a_real_thumbnail():
+    assert media.youtube_thumb("https://youtube.com/live/drFgtruoPe8") == \
+        "https://i.ytimg.com/vi/drFgtruoPe8/maxresdefault.jpg"
+    assert media.youtube_thumb("https://youtube.com/live/nMa_e5ChL6w?feature=share") == \
+        "https://i.ytimg.com/vi/nMa_e5ChL6w/maxresdefault.jpg"
+    assert media.youtube_thumb("ItNs39qvw_w") == "https://i.ytimg.com/vi/ItNs39qvw_w/maxresdefault.jpg"
+    assert media.youtube_thumb("not a video") == "" and media.youtube_thumb("") == ""
+    assert newspage.YOUTUBE.search("on youtube.com/live/drFgtruoPe8 tonight").group(1) == "drFgtruoPe8"
+
+
+def test_the_same_key_art_at_two_sizes_is_one_image():
+    small = "https://upload-os-bbs.hoyolab.com/upload/community/2026/08/28/e81786764983f1b06b437847ce9f1569.jpg"
+    big = "https://upload-os-bbs.hoyolab.com/upload/community/2026/08/28/d65d59264a6f377c0683cd3323c6b006.jpg"
+    got = hoyolab._images({"image_list": [{"url": small, "width": 1200, "height": 675},
+                                          {"url": big, "width": 1920, "height": 1080}]})
+    assert got == [big]
+    other = "https://upload-os-bbs.hoyolab.com/upload/community/2026/08/28/other.jpg"
+    assert hoyolab._images({"image_list": [{"url": big, "width": 1920, "height": 1080},
+                                           {"url": other, "width": 1080, "height": 1080}]}) == [big, other]
+    assert hoyolab._images({"image_list": [{"url": small}, {"url": big}]}) == [small, big]
+    assert media.rank([small + "?x-oss-process=image/resize,s_600", small]) == [small]
+
+
+def test_the_maintenance_block_has_no_blank_line_between_pre_install_and_maintenance():
+    d = {"preinstall_ts": 1790560800, "maint_start_ts": 1790712000, "maint_end_ts": 1790737200,
+         "compensation": "Astrite x300, Crystal Solvent x2"}
+    block = cards.maintenance_block(GAMES["wuwa"], d)
+    assert "✦ Pre-Install: <t:1790560800:F>\n✦ Maintenance: <t:1790712000:f> to <t:1790737200:t>" in block
+    assert "\n\n✦ Maintenance" not in block
+
+
+def test_a_news_feed_mirror_finds_the_announcement():
+    body = (FIX / "ww_articles_latest.xml").read_text(encoding="utf-8")
+    entries = newspage.parse_feed_entries(body)
+    assert [e["title"] for e in entries] == ["About Tiered Client Resource Downloads",
+                                             "Version 3.7 Update Maintenance Notice",
+                                             "Version 3.7 Preview Special Broadcast"]
+    assert GAMES["wuwa"].program_feeds[0].endswith("articles_latest.xml")
+
+    class Feed:
+        async def get_text(self, url, **k):
+            return body if url.endswith("articles_latest.xml") else ""
+
+    hit = asyncio.run(newspage.fetch_program_feed(Feed(), GAMES["wuwa"], "3.7", 1790000000))
+    assert hit["url"].endswith("/5441") and hit["title"] == "Version 3.7 Preview Special Broadcast"
+    assert hit["images"] == ["https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/images/1789182000000/broadcast-1789182000.jpeg"]
+    assert hit["youtube"] == "https://www.youtube.com/watch?v=nMa_e5ChL6w"
+
+
+def test_the_tweet_data_chain_tries_fxtwitter_then_fixupx_then_vxtwitter():
+    from gamexpress.sources.twitter import FX_SOURCES, VXTWITTER_URL, XClient
+    assert [n for n, _ in FX_SOURCES] == ["fxtwitter", "fixupx"]
+    assert VXTWITTER_URL == "https://api.vxtwitter.com/Twitter/status/{id}"
+    fx_body = {"tweet": {"id": "1", "text": "hello", "created_timestamp": 5,
+                          "media": {"photos": []}, "author": {"screen_name": "ZZZ_EN"},
+                          "url": "https://x.com/ZZZ_EN/status/1"}}
+    vx_body = {"tweetID": "1", "text": "hello", "date_epoch": 5, "mediaURLs": [],
+               "user_screen_name": "ZZZ_EN", "tweetURL": "https://x.com/ZZZ_EN/status/1"}
+    class F:
+        def __init__(self, ok): self.ok, self.calls = set(ok), []
+        async def get_json(self, url, source="", **k):
+            self.calls.append(source)
+            if source not in self.ok:
+                return None
+            return fx_body if source in ("fxtwitter", "fixupx") else vx_body
+    st = settings()
+    f = F(["fxtwitter"])
+    c = XClient(f, st)
+    assert asyncio.run(c.tweet("1"))["author"] == "ZZZ_EN" and f.calls == ["fxtwitter"]
+    f = F(["fixupx"])
+    c = XClient(f, st)
+    asyncio.run(c.tweet("1"))
+    assert f.calls == ["fxtwitter", "fixupx"] and c.source_used == {"fixupx": 1}
+    f = F(["vxtwitter"])
+    c = XClient(f, st)
+    asyncio.run(c.tweet("1"))
+    assert f.calls == ["fxtwitter", "fixupx", "vxtwitter"] and c.source_used == {"vxtwitter": 1}
+
+
+def test_the_program_lookup_runs_end_to_end_on_a_fresh_state():
+    from gamexpress import runner
+    class News:
+        async def get_text(self, url, **k):
+            if url.rstrip("/").rsplit("/", 1)[-1].isdigit():
+                return (FIX / "newspage_hsr_article.html").read_text(encoding="utf-8")
+            return (FIX / "newspage_hsr_news.html").read_text(encoding="utf-8")
+    notice = Item(source="hoyolab", game="starrail", id="46814308",
+                  url="https://www.hoyolab.com/article/46814308",
+                  title="Version 4.6 Update and Maintenance Notice",
+                  text="The Version 4.6 pre-installation will begin at 2026-09-24 14:00 (UTC+8). Version update maintenance on 2026-09-28 06:00 (UTC+8) for 5 hours.",
+                  published_ts=1790300000, images=[])
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", items={"starrail": [notice]}, now=1790400000)
+        ctx.fetcher = News()
+        asyncio.run(runner.gather_program_media(ctx))
+        hit = (ctx.media.get("starrail") or {}).get("4.6")
+        assert hit and hit["url"] == "https://hsr.hoyoverse.com/en-us/news/166100"
+        assert hit["images"][0] == "https://i.ytimg.com/vi/ItNs39qvw_w/maxresdefault.jpg"
 
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

@@ -2,7 +2,7 @@
 
 **Effective date:** September 25, 2026
 **Applies to:** *Game-Express*, the open-source game version-schedule announcer and redemption-code
-poster ("the Service"), in automation mode (GitHub Actions + webhooks) and optional bot mode.
+poster ("the Service"), running as a GitHub Actions workflow that posts through Discord webhooks.
 
 ---
 
@@ -31,7 +31,7 @@ Schedules, banners, maintenance times and codes come from official and community
 
 ## 5. Operator responsibilities
 If you run an instance, you are responsible for:
-- **Using webhooks, bots and tokens you own**, and keeping them secret.
+- **Using webhooks and tokens you own**, and keeping them secret.
 - **Following the rules of every service involved**: the [Discord Terms of Service](https://discord.com/terms), the [Discord Developer Policy](https://discord.com/developers/docs/policies-and-agreements/developer-policy), the X/Twitter terms, and the terms of the APIs the Service reads.
 - **Respecting sources**: keep the default low request rate (a run every ~10 minutes, with only a few requests per source) and do not use the Service to overload, scrape at high frequency, or resell data.
 - **Your server's content**: ping roles, channels, and who can see the posts.
@@ -54,8 +54,8 @@ missed announcements, incorrect data, expired codes, Discord or GitHub account a
 third-party service outages.
 
 ## 9. Termination
-Operators can stop the Service at any time by disabling the workflow, removing the bot, or
-revoking webhooks. Server admins can remove the bot or webhook from their server at any time.
+Operators can stop the Service at any time by disabling the workflow or revoking webhooks.
+Server admins can remove the webhook from their server at any time.
 
 ## 10. Changes
 These Terms may be updated. Changes are published in this file with a new effective date and

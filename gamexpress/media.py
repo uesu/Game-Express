@@ -19,6 +19,8 @@ from __future__ import annotations
 import re
 from urllib.parse import unquote
 
+from .textutil import youtube_id
+
 TWIMG = re.compile(r"^https?://(?:pbs\.twimg\.com|ton\.twimg\.com)/", re.I)
 NITTER_PIC = re.compile(r"/pic/(?:orig/)?(.+)$")
 YOUTUBE_IMG = re.compile(r"^https?://i\.ytimg\.com/vi/([^/]+)/", re.I)
@@ -48,12 +50,14 @@ def twimg_orig(url: str) -> str:
 
 
 def youtube_thumb(video_or_id: str) -> str:
-    """A watch URL, a youtu.be link, or a bare video id -> the 1280x720 thumbnail."""
-    if not video_or_id:
-        return ""
-    m = re.search(r"(?:v=|youtu\.be/|/embed/|/shorts/|^)([A-Za-z0-9_-]{11})", video_or_id)
-    vid = m.group(1) if m else video_or_id
-    return f"https://i.ytimg.com/vi/{vid}/maxresdefault.jpg"
+    """A watch URL, a /live/ URL, a youtu.be link, or a bare video id -> the 1280x720 thumbnail.
+
+    "" when no 11-character id can be found: a thumbnail URL with a whole URL inside it is
+    worse than no image at all, because Discord renders it as a broken embed instead of falling
+    back to the card's other art."""
+    text = (video_or_id or "").strip()
+    vid = youtube_id(text) or (text if re.fullmatch(r"[A-Za-z0-9_-]{11}", text) else None)
+    return f"https://i.ytimg.com/vi/{vid}/maxresdefault.jpg" if vid else ""
 
 
 def upgrade(url: str) -> str:
@@ -83,12 +87,27 @@ def _score(url: str) -> int:
     return 0
 
 
+def _same_file(url: str) -> str:
+    """The URL without its size hints, so alternate renditions of one upload compare equal."""
+    return url.split("?")[0].rstrip("/").lower()
+
+
+_SMALL_RENDITION = re.compile(r"resize|name=(?:small|thumb|medium)|/s_\d+|quality", re.I)
+
+
 def rank(images: list[str] | None, limit: int = 4) -> list[str]:
-    """Dedupe, upgrade, best rendition first. Stable inside a score band."""
-    out: list[str] = []
+    """Dedupe, upgrade, best rendition first. Keep one, full-size rendition per upload."""
+    best: dict[str, str] = {}
+    order: list[str] = []
     for u in images or []:
         big = upgrade(u)
-        if big and big not in out:
-            out.append(big)
+        if not big:
+            continue
+        key = _same_file(big)
+        if key not in best:
+            best[key], order = big, order + [key]
+        elif _SMALL_RENDITION.search(best[key]) and not _SMALL_RENDITION.search(big):
+            best[key] = big
+    out = [best[k] for k in order]
     out.sort(key=lambda u: -_score(u))
     return out[:limit]
