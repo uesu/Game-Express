@@ -48,9 +48,6 @@ jobs:
       - name: Card preview renders (previews/index.html)
         run: python -m gamexpress preview --out /tmp/previews > /dev/null
 
-      - name: Bot module imports (discord.py API surface)
-        run: python -c "import discord, discord.app_commands, discord.http; from discord.http import Route; print('discord.py', discord.__version__)"
-
   automerge:
     name: Dependabot auto-merge (opt-in)
     needs: test

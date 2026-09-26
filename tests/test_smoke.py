@@ -1384,11 +1384,19 @@ def test_the_program_lookup_runs_end_to_end_on_a_fresh_state():
                   published_ts=1790300000, images=[])
     with tempfile.TemporaryDirectory() as tmp:
         ctx = make_ctx(Path(tmp) / "state.json", items={"starrail": [notice]}, now=1790400000)
+        assert ctx.state.schedule_records("starrail") == {}            # a first run: nothing stored
         ctx.fetcher = News()
         asyncio.run(runner.gather_program_media(ctx))
         hit = (ctx.media.get("starrail") or {}).get("4.6")
-        assert hit and hit["url"] == "https://hsr.hoyoverse.com/en-us/news/166100"
+        assert hit, "the lookup did not run on a fresh state"
+        assert hit["url"] == "https://hsr.hoyoverse.com/en-us/news/166100"
+        assert "46814308" not in hit["url"]
         assert hit["images"][0] == "https://i.ytimg.com/vi/ItNs39qvw_w/maxresdefault.jpg"
+        d = schedule.merge(GAMES["starrail"], "4.6",
+                           schedule.version_extracts(ctx, GAMES["starrail"])["4.6"],
+                           {}, {}, {}, ctx.now, [], None, hit)
+        assert d["title_url"] == "https://www.youtube.com/watch?v=ItNs39qvw_w"
+        assert d["source_url"] == "https://hsr.hoyoverse.com/en-us/news/166100"
 
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
