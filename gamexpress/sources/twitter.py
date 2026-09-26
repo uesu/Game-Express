@@ -24,6 +24,34 @@ from ..textutil import find_urls, html_to_text
 log = logging.getLogger("gamexpress.x")
 
 TOKEN_GATED = {"https://nitter.miningtcup.me"}
+
+FX_SOURCES = (("fxtwitter", "https://api.fxtwitter.com/status/{id}"),
+              ("fixupx", "https://api.fixupx.com/status/{id}"))
+VXTWITTER_URL = "https://api.vxtwitter.com/Twitter/status/{id}"
+X_UA = "Game-Express/1.1"
+
+
+def _from_fx(t: dict, tweet_id: str) -> dict:
+    links = [f.get("replacement") for f in ((t.get("raw_text") or {}).get("facets") or [])
+             if f.get("type") == "url" and f.get("replacement")]
+    return {"id": str(t.get("id") or tweet_id), "text": t.get("text") or "",
+            "ts": int(t.get("created_timestamp") or 0),
+            "photos": [p.get("url") for p in ((t.get("media") or {}).get("photos") or []) if p.get("url")],
+            "links": links + [u for u in find_urls(t.get("text") or "") if u not in links],
+            "author": (t.get("author") or {}).get("screen_name") or "",
+            "avatar": (t.get("author") or {}).get("avatar_url") or "",
+            "url": t.get("url") or ""}
+
+
+def _from_vx(vx: dict, tweet_id: str) -> dict:
+    return {"id": str(vx.get("tweetID") or tweet_id), "text": vx.get("text") or "",
+            "ts": int(vx.get("date_epoch") or 0),
+            "photos": [u for u in (vx.get("mediaURLs") or []) if "video" not in u],
+            "links": find_urls(vx.get("text") or ""),
+            "author": vx.get("user_screen_name") or "",
+            "avatar": vx.get("user_profile_image_url") or "",
+            "url": vx.get("tweetURL") or ""}
+
 NITTER_BATCH = 4          # instances probed in parallel per round
 NITTER_TIMEOUT = 12       # seconds — a dead mirror must not stall the run
 STATUS_RE = re.compile(r"/status(?:es)?/(\d{8,25})")
@@ -49,6 +77,7 @@ class XClient:
         self._timelines: dict[str, list[dict] | None] = {}
         self._tweets: dict[str, dict | None] = {}
         self.avatars: dict[str, str] = {}     # account (lower) -> current avatar url
+        self.source_used: dict[str, int] = {}  # tweet-data service that answered, per run
         self.reachable: set[str] = set()      # accounts with >= 1 working instance this run
 
     async def _probe(self, inst: str, account: str) -> list | None:
@@ -114,35 +143,25 @@ class XClient:
     async def tweet(self, tweet_id: str) -> dict | None:
         if tweet_id in self._tweets:
             return self._tweets[tweet_id]
-        data = await self.fetcher.get_json(f"https://api.fxtwitter.com/status/{tweet_id}", source="fxtwitter",
-                                           headers={"User-Agent": "Game-Express/1.1"}, retries=1)
-        t = (data or {}).get("tweet") if isinstance(data, dict) else None
         result = None
-        if t:
-            links = [f.get("replacement") for f in ((t.get("raw_text") or {}).get("facets") or [])
-                     if f.get("type") == "url" and f.get("replacement")]
-            result = {
-                "id": str(t.get("id") or tweet_id), "text": t.get("text") or "",
-                "ts": int(t.get("created_timestamp") or 0),
-                "photos": [p.get("url") for p in ((t.get("media") or {}).get("photos") or []) if p.get("url")],
-                "links": links + [u for u in find_urls(t.get("text") or "") if u not in links],
-                "author": (t.get("author") or {}).get("screen_name") or "",
-                "avatar": (t.get("author") or {}).get("avatar_url") or "",
-                "url": t.get("url") or "",
-            }
-        else:
-            vx = await self.fetcher.get_json(f"https://api.vxtwitter.com/Twitter/status/{tweet_id}",
+        for name, url in FX_SOURCES:
+            data = await self.fetcher.get_json(url.format(id=tweet_id), source=name,
+                                               headers={"User-Agent": X_UA},
+                                               retries=1 if name == "fxtwitter" else 0)
+            t = (data or {}).get("tweet") if isinstance(data, dict) else None
+            if t:
+                result = _from_fx(t, tweet_id)
+                self.source_used[name] = self.source_used.get(name, 0) + 1
+                if name != "fxtwitter":
+                    log.info("[x] %s answered for %s (fxtwitter could not)", name, tweet_id)
+                break
+        if not result:
+            vx = await self.fetcher.get_json(VXTWITTER_URL.format(id=tweet_id),
                                              source="vxtwitter", retries=1)
             if isinstance(vx, dict) and vx.get("text") is not None:
-                result = {
-                    "id": str(vx.get("tweetID") or tweet_id), "text": vx.get("text") or "",
-                    "ts": int(vx.get("date_epoch") or 0),
-                    "photos": [u for u in (vx.get("mediaURLs") or []) if "video" not in u],
-                    "links": find_urls(vx.get("text") or ""),
-                    "author": vx.get("user_screen_name") or "",
-                    "avatar": vx.get("user_profile_image_url") or "",
-                    "url": vx.get("tweetURL") or "",
-                }
+                result = _from_vx(vx, tweet_id)
+                self.source_used["vxtwitter"] = self.source_used.get("vxtwitter", 0) + 1
+                log.info("[x] vxtwitter answered for %s (FxEmbed could not)", tweet_id)
         self._tweets[tweet_id] = result
         if result and result.get("author") and result.get("avatar"):
             self.avatars[result["author"].lower()] = result["avatar"]

@@ -1,3 +1,0 @@
-# Optional Discord bot mode (python -m gamexpress bot). Not needed for GitHub Actions.
--r requirements.txt
-discord.py>=2.7.1,<3

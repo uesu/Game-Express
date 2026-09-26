@@ -19,6 +19,7 @@ from .sources import countdown, hoyolab, kuro, launcher, newspage
 from .sources.codes import CodeSources
 from .sources.twitter import XClient
 from .state import State
+from .textutil import version_key
 
 log = logging.getLogger("gamexpress")
 
@@ -103,6 +104,8 @@ async def find_program(fetcher, g: Game, ver: str, now: int) -> dict | None:
 
     -> {'url','title','images','youtube','text','ts','program_ts','source'} or None."""
     hit = await newspage.fetch_program(fetcher, g, ver, now)
+    if not hit and getattr(g, "program_feeds", None):
+        hit = await newspage.fetch_program_feed(fetcher, g, ver, now)
     if not hit:
         hit = await hoyolab.find_program(fetcher, g, ver)
     if not hit:
@@ -120,25 +123,34 @@ async def find_program(fetcher, g: Game, ver: str, now: int) -> dict | None:
 
 
 async def gather_program_media(ctx: Ctx) -> None:
-    """Find the program announcement for any tracked version whose card still shows somebody
-    else's post. At most one lookup per game+version that still needs it, never for a version
-    that is already live, and PROGRAM_MEDIA=0 switches the whole thing off."""
+    """Find the program announcement for every current version whose card would otherwise show
+    somebody else's post. Versions come from this run as well as from state, so a first run and
+    every test run (whose state starts empty) still performs the lookup."""
     if "schedule" not in ctx.settings.features or not ctx.settings.program_media:
         return
+    jobs: list[tuple[Game, str]] = []
     for g in ctx.games:
-        if not schedule.needs_media(ctx.state, g.key, ctx.now):
-            continue
-        found: dict = {}
-        for ver, rec in (ctx.state.schedule_records(g.key) or {}).items():
-            d = rec.get("data") or {}
-            if d.get("program_seen") or d.get("media_from"):
-                continue                                   # already the right announcement
-            hit = await find_program(ctx.fetcher, g, ver, ctx.now)
-            if hit:
-                found[ver] = hit
+        records = ctx.state.schedule_records(g.key) or {}
+        by_version = schedule.version_extracts(ctx, g)
+        todo = [v for v in by_version
+                if schedule.needs_program_lookup(by_version[v], records.get(v, {}), ctx.now)]
+        for ver, rec in records.items():
+            if ver not in by_version and schedule.needs_program_lookup([], rec, ctx.now):
+                todo.append(ver)
+        jobs += [(g, v) for v in sorted(set(todo), key=version_key)]
+    if not jobs:
+        return
+    hits = await asyncio.gather(*(find_program(ctx.fetcher, g, ver, ctx.now) for g, ver in jobs))
+    for (g, ver), hit in zip(jobs, hits):
+        if hit:
+            ctx.media.setdefault(g.key, {})[ver] = hit
+    for key in {g.key for g, _ in jobs}:
+        found = ctx.media.get(key) or {}
         if found:
-            ctx.media[g.key] = found
-            log.info("[%s] program announcement recovered for %s", g.key, ", ".join(sorted(found)))
+            log.info("[%s] program announcement found for %s", key, ", ".join(sorted(found)))
+        else:
+            log.info("[%s] no program announcement found on the official news page, its feed "
+                     "mirror or HoYoLAB — the card keeps its current link", key)
 
 
 async def gather_items(ctx: Ctx) -> None:
@@ -198,8 +210,7 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
         if features and ctx.games:
             await gather_versions(ctx)
             await gather_items(ctx)
-            await gather_program_media(ctx)
-            await gather_estimates(ctx)
+            await asyncio.gather(gather_program_media(ctx), gather_estimates(ctx))
             for g in ctx.games:
                 if not ctx.reachable.get(g.key, True):
                     ctx.warnings.append(f"{g.short}: no announcement source answered this run — the next run "

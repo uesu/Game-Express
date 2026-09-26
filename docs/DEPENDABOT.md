@@ -11,7 +11,7 @@ Once a week (Monday), Dependabot checks two things. When there is something new,
 
 | Group | Watches | Example PR |
 |---|---|---|
-| `deps(python)` | `requirements.txt`, `requirements-bot.txt` | `aiohttp` 3.x → 4.0 |
+| `deps(python)` | `requirements.txt` | `aiohttp` 3.x → 4.0 |
 | `deps(actions)` | the actions used in `.github/workflows/*` | `actions/checkout` v7 → v8 |
 
 The **CI** workflow tests every Dependabot PR: install, compile, validate, and the 55 offline

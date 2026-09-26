@@ -10,8 +10,8 @@ Everything is posted as **Discord Components V2 cards**, with the **buttons insi
 the announcement image, **Discord timestamps** (every reader sees their own timezone),
 **STC / TBA** markers and an **optional role ping**. It runs free on **GitHub Actions** (public
 repos get unlimited minutes), triggered every 10 minutes by **[cron-job.org](https://cron-job.org)**,
-with no server and no bot token. An optional **Discord bot** mode (slash commands) can run on a
-free host.
+with no server, no bot token and nothing to host or redeploy — merging to `main` **is** the
+deploy, so every fix and improvement reaches the running poster on the next 10-minute run.
 
 > Same architecture and lessons as [News-Express](https://github.com/uesu/News-Express):
 > fallback chains for every source, dedup state committed to the repo, a queued (never
@@ -27,7 +27,6 @@ free host.
 - [How it decides to post (accuracy rules)](#-how-it-decides-to-post-accuracy-rules)
 - [Manual controls](#-manual-controls)
 - [Redundancy: fallback chains + two-instance fail-over](#-redundancy-fallback-chains--two-instance-fail-over)
-- [Discord bot + free hosting](#-discord-bot--free-hosting)
 - [Testing & previews](#-testing--previews)
 - [Troubleshooting](#-troubleshooting)
 - [Data sources](#-data-sources)
@@ -77,7 +76,7 @@ posts on a timer.
 
 **Maintenance times before the official notice (estimates).** The maintenance notice usually
 arrives days after the Special Program, so until then the card can only show `TBA`. Since
-**1.2.0** the bot fills those gaps from community countdown sites
+**1.2.0** the monitor fills those gaps from community countdown sites
 (`{game}-countdown.gengamer.in`, `gachacountdown.online`):
 
 - an estimate is used **only** for a time that no official source has given yet, and it is
@@ -90,7 +89,7 @@ arrives days after the Special Program, so until then the card can only show `TB
 **The announcement's own link and key art (since 1.3.0).** A run only sees posts inside its
 lookback window, so a version that is already a week old can end up with a card that links to the
 *Update and Maintenance Notice* — and shows that notice's cover — simply because the Special
-Program announcement had scrolled out. Since **1.3.0** the bot looks the announcement up:
+Program announcement had scrolled out. Since **1.3.0** the monitor looks the announcement up:
 
 - the **official news pages** (`genshin.hoyoverse.com/en/news`, `hsr.hoyoverse.com/en-us/news`,
   `zenless.hoyoverse.com/en-us/news`, `wutheringwaves.kurogames.com/en/main/news`) archive every
@@ -216,8 +215,7 @@ out. You can pin it in `config/overrides.json` (`"program_ts": "2026-09-20T19:30
 | `DISCORD_WEBHOOK_CODES` | optional: codes of any game without its own secret |
 | `DISCORD_WEBHOOK_URL` | optional catch-all fallback |
 | `DISCORD_WEBHOOK_SCHEDULE_<GAME>` | optional per-game schedule channel, e.g. `DISCORD_WEBHOOK_SCHEDULE_WUWA` |
-| `NITTER_RSS_TOKEN` | optional token for the token-gated nitter instance |
-| `DISCORD_BOT_TOKEN` | bot mode only |
+| `NITTER_RSS_TOKEN` | optional — the e-mailed token for the one token-gated nitter mirror, `https://nitter.miningtcup.me/` (same secret News-Express uses). Empty only skips that mirror |
 
 Webhook routing: `DISCORD_WEBHOOK_<FEATURE>_<GAME>` → `DISCORD_WEBHOOK_<FEATURE>` → `DISCORD_WEBHOOK_URL`.
 `<GAME>` is the game key or its short name: `GENSHIN`/`GI`, `STARRAIL`/`HSR`, `ZZZ`,
@@ -370,7 +368,7 @@ before the gate.
 |---|---|
 | `only` | everything / only `schedule` announcements / only `codes` |
 | `game` | one game key |
-| `repost` | post a version card again as a **new** message, e.g. `starrail:4.6`. Only versions the bot has already seen in an official post work, so an unannounced `genshin:7.2` can't be reposted yet. The summary says so, and lists the tracked versions |
+| `repost` | post a version card again as a **new** message, e.g. `starrail:4.6`. Only versions the monitor has already seen in an official post work, so an unannounced `genshin:7.2` can't be reposted yet. The summary says so, and lists the tracked versions |
 
 Nothing is ever posted twice: each card is remembered in `state/state.json` by its key **and** by
 a hash of its payload, so a re-run can neither re-post nor rewrite an unchanged card. Code sources
@@ -391,13 +389,11 @@ concurrent requests, so a run costs a handful of HTTP calls.
 > A test posts to the **real** channels and never writes the state — so the live run still posts
 > the real thing later. Delete the test cards when you are done with them.
 
-**CLI** (local, VPS or bot host): `python -m gamexpress <command>`
+**CLI** (local runs and debugging): `python -m gamexpress <command>`
 
 | Command | What it does |
 |---|---|
 | `run` | one pass (what GitHub Actions uses) |
-| `loop` | run forever every `LOOP_MINUTES` |
-| `bot` | slash commands + loop |
 | `check-webhooks [--kind …] [--game …]` | one "connected" card per unique webhook (no ping) |
 | `test-card [--kind …] [--game …] [--ping] [--unlaunched]` | post the sample cards, labelled 🧪 TEST (no ping unless `--ping`). `--unlaunched` keeps only the games that are not out yet, which have nothing real to fetch |
 | `preview` | writes `previews/index.html` (a Discord-like preview of every card) + the JSON for [Discohook](https://discohook.app) |
@@ -438,8 +434,6 @@ next run re-reads the last `LOOKBACK_HOURS` (72 h), so nothing is missed.
   the peer state can't be read. So a misconfiguration can't cause double posts.
 - When alpha comes back it imports bravo's posts and edits bravo's cards (same webhook), so
   nothing is posted twice.
-- The [bot mode](#-discord-bot--free-hosting) can be the standby too: it answers `/codes` and
-  `/schedule` from the imported state and takes over if Actions stops.
 
 **One repo or several.** One repo can be the code home and production at once: CI tests every
 PR before you merge, and merging deploys it. You can also follow the News-Express convention of
@@ -455,25 +449,6 @@ The concurrency queue plus the fresh branch checkout make an overlapping trigger
 the classic token, fail-over timing and the response codes: **[docs/SCHEDULER.md](docs/SCHEDULER.md)**.
 
 ---
-
-## 🤖 Discord bot + free hosting
-
-The GitHub Actions setup needs **no bot and no hosting**. For a 24/7 process with slash commands
-(`/codes`, `/schedule`, `/status`), run:
-
-```bash
-pip install -r requirements-bot.txt
-python -m gamexpress bot        # needs DISCORD_BOT_TOKEN
-```
-
-**➡️ Step-by-step guides in [docs/HOSTING.md](docs/HOSTING.md)** cover creating the bot, then
-deploying to Oracle Cloud Always Free, Koyeb, Render, Railway, or Docker anywhere. `Dockerfile`,
-`deploy/docker-compose.yml`, `deploy/game-express.service` (systemd), `render.yaml` and
-`Procfile` are included: drop in the repo and it's live.
-
-> Run **one poster per set of channels**. Either use Actions, or use the bot with
-> `INSTANCE_ROLE=standby` + `PEER_STATE_URL` (recommended), or set `ENABLED_FEATURES=none` on
-> one of them.
 
 ---
 
@@ -580,8 +555,7 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 
 ## 📄 Privacy · Terms · Credits
 
-- **[Privacy Policy](PRIVACY_POLICY.md)** and **[Terms of Service](TERMS_OF_SERVICE.md)**. You can
-  also use these as the URLs in the Discord Developer Portal for bot mode.
+- **[Privacy Policy](PRIVACY_POLICY.md)** and **[Terms of Service](TERMS_OF_SERVICE.md)**.
 - **Not affiliated** with HoYoverse, Kuro Games, NetEase or Discord. Game names and assets belong
   to their owners.
 - **Credits**:
@@ -600,6 +574,15 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 ---
 
 ## 🗒 Changelog
+
+### 1.7.0 — 2026-09-26 · the schedule card links the real announcement, and the Discord bot is gone
+
+- The announcement lookup now uses versions from the current run as well as state, so first runs and test runs recover the archived announcement and key art.
+- Event, update-details and maintenance-notice titles are excluded from program matching; livestream URLs in `/live/`, `/shorts/` and `/embed/` now produce real thumbnails.
+- Duplicate HoYoLAB artwork and alternate media renditions are collapsed, and incomplete banner lists no longer blank otherwise valid names.
+- Wuthering Waves can use configured RSS/Atom mirrors, and tweet data falls back from fxtwitter to fixupx to vxtwitter.
+- Program lookups run concurrently with each other and with countdown estimates.
+- The Discord bot and all 24/7 self-hosting commands and files were removed; GitHub Actions is the only runtime.
 
 ### 1.6.0 — 2026-09-26 · two modes, and the tests use real data
 - **The dialog is now just `mode` + what that mode needs.** `live` = the real monitor (`only`,

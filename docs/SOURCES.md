@@ -12,7 +12,7 @@ a dead source is logged and skipped, and the next one in the chain is used.
 | HoYoLAB post (official) | `…/getPostFull?gids={gid}&post_id={id}` | full body (`content` HTML, or `structured_content` when `content == "en-us"`) + images | ✅ HSR 46814308 (quirk), GI 46604275 |
 | c3kay JSON-Feed (mirror, fallback) | `https://feeds.c3kay.de/{genshin,starrail,zenless}.json` | JSON Feed 1.1 with full `content_html`, refreshed every 30 min | ✅ |
 | Official X accounts | nitter RSS fleet `https://<instance>/<account>/rss` (15 instances, from News-Express round 13/14) | timeline (first 2 working instances merged) | fleet taken from News-Express |
-| Tweet details | `https://api.fxtwitter.com/status/{id}` → `https://api.vxtwitter.com/Twitter/status/{id}` | full text with expanded links, photos, exact timestamp | ✅ all 4 reference tweets |
+| Tweet details | `https://api.fxtwitter.com/status/{id}` → `https://api.fixupx.com/status/{id}` → `https://api.vxtwitter.com/Twitter/status/{id}` | full text with expanded links, photos, exact timestamp; the winner is logged | ✅ all 4 reference tweets |
 | Kuro official site (WW) | `https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/json/G152/en/{ArticleMenu,MainMenu}.json` + `…/article/{id}.json` | official articles incl. *Featured Resonator/Weapon Convene* banner notices; times are UTC+8 | ✅ (English menus are homepage **subsets**, so X stays primary for WW) |
 | HoYoPlay launcher | `https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGameBranches?launcher_id=VYTpXlbWo8` | exact live version (`main.tag`) + pre-install availability (`pre_download`) | ✅ ZZZ `3.2.0` |
 | Kuro launcher (WW) | `https://prod-alicdn-gamestarter.kurogame.com/launcher/game/G153/50004_obOHXFrFanqsaIEOmuKroCcbZkQRBC7c/index.json` | live version (`default.version`) + `predownload` | structure from WW downloader configs |
@@ -23,6 +23,19 @@ wired for launch day).
 **Why `getGameBranches` and not `getGamePackages`:** the legacy package list is stale for games
 that moved to Sophon downloads. On 2026-09-24 it still reported GI 5.5.0 while the live game was
 7.1.
+
+## X (Twitter) fetching — no X API account
+
+Timelines come from the public nitter fleet, with `nitter.cf` and `xitter.cf` first. Four
+instances are probed in parallel and the first two that answer are merged; a mirror returning
+HTTP 200 with zero entries is treated as a bot check and skipped. The token-gated
+`https://nitter.miningtcup.me/` mirror alone needs `NITTER_RSS_TOKEN`.
+
+Tweet data uses the fallback chain **fxtwitter → fixupx → vxtwitter**. FxTwitter and fixupx are
+normalized to the same shape, while vxtwitter is the last fallback. `fixupx` intentionally uses
+zero retries because it is an optional public host and should fail over immediately when DNS is
+unavailable. Tweet responses are cached once per run, and `XClient.source_used` records which
+service answered.
 
 ## Redemption codes
 
@@ -53,6 +66,7 @@ trustworthy as any other official post, because that is what it is.
 | Genshin news page | https://genshin.hoyoverse.com/en/news | same template | ⏳ same template, not separately captured |
 | ZZZ news page | https://zenless.hoyoverse.com/en-us/news | same template | ⏳ same template, not separately captured |
 | WW news page | https://wutheringwaves.kurogames.com/en/main/news | Kuro's own template; the JSON article menus in `sources/kuro.py` remain the primary WW source | ⏳ client-rendered list — the menus cover it |
+| **WW news mirrors** *(v1.7.0)* | `raw.githubusercontent.com/TheLovinator1/wutheringwaves/…/articles_{latest,all}.xml` | RSS/Atom mirrors of the same news list; used when Kuro's client-rendered page cannot be scraped | ✅ parsed against the live `articles_latest.xml` (2026-09-26) |
 
 **Image renditions** (`gamexpress/media.py`) — every source hands back a small picture by default:
 
@@ -76,7 +90,7 @@ subreddit preview image is a re-upload, so it would be the first non-official pi
 The official maintenance notice arrives days after the Special Program, so until then the card
 would show `TBA`. These community sites extrapolate the patch cycle (42 days for HoYoverse,
 ~42 days for Kuro) and fill the gap. They are an **estimate**: `schedule.PRIORITY['countdown']`
-is the lowest priority in the bot, so an estimate is used only when no official source has
+is the lowest priority in the monitor, so an estimate is used only when no official source has
 given that time, and it is replaced — with the 🕒 line on the card — the moment the official
 notice is seen. `COUNTDOWN_ESTIMATES=0` switches the feature off.
 

@@ -107,6 +107,10 @@
       "program_patterns": ["special broadcast"],
       "banner_patterns": ["featured resonator", "resonator convene", "convene"],
       "news_url": "https://wutheringwaves.kurogames.com/en/main/news",
+      "program_feeds": [
+        "https://raw.githubusercontent.com/TheLovinator1/wutheringwaves/refs/heads/master/articles_latest.xml",
+        "https://raw.githubusercontent.com/TheLovinator1/wutheringwaves/refs/heads/master/articles_all.xml"
+      ],
       "youtube": "https://www.youtube.com/@WutheringWaves/streams",
       "twitch": "https://www.twitch.tv/wuthering_waves",
       "card": {

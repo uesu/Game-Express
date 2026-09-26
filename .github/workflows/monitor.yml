@@ -78,7 +78,7 @@ on:
         required: false
         default: ''
       repost:
-        description: '④ LIVE · optional: post a version card AGAIN as a new message, e.g. starrail:4.6 (only versions the bot has already seen; the summary lists them)'
+        description: '④ LIVE · optional: post a version card AGAIN as a new message, e.g. starrail:4.6 (only versions the monitor has already seen; the summary lists them)'
         required: false
         default: ''
       test:

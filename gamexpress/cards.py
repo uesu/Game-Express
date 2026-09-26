@@ -203,7 +203,6 @@ def maintenance_block(game: Game, d: dict) -> str:
     pre, start, end = d.get("preinstall_ts"), d.get("maint_start_ts"), d.get("maint_end_ts")
     if game.card.maintenance_style == "range":
         lines.append(f"✦ Pre-Install: {discord_ts(pre, 'F')}")
-        lines.append("")
         if start and end:
             lines.append(f"✦ Maintenance: {discord_ts(start, 'f')} to {discord_ts(end, 't')}")
         elif start:
