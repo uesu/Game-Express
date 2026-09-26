@@ -185,7 +185,7 @@ moves). ANANTA has no character gacha, so its card hides the banner section.
 4. **Add variables** (not secret) in *… → Variables*:
    - `PING_ROLE_ID` = `1296268365593186426` (**leave it unset for no ping**, or `NO_PING=1`)
    - the emojis already default to your animated ones
-5. **Test.** *Actions → **Game-Express Monitor** → Run workflow → pick a `test` mode*:
+5. **Test.** *Actions → **Game-Express Monitor** → Run workflow → `mode` = **test***:
    `webhooks` → `sample-cards` → `live-dry-run`. Each mode is explained in
    **[docs/TESTING.md](docs/TESTING.md)**. Nothing is committed and nobody is pinged by default.
 6. **Go live with cron-job.org.** Create one cron-job.org job per instance repo that calls the
@@ -358,8 +358,32 @@ before the gate.
 
 ## 🕹 Manual controls
 
-**Actions → Game-Express Monitor → Run workflow → `test` = …** (safe on production; a test never
-posts to the real channels and never commits):
+**Actions → Game-Express Monitor → Run workflow.** The first input, **`mode`**, says which of the
+two things you are doing; every other input in the dialog belongs to one of them:
+
+| `mode` | What it is |
+|---|---|
+| `live` *(default)* | **the real monitor.** This is what cron-job.org triggers — it sends no inputs at all, so the defaults are a plain pass |
+| `test` | **the manual test bench.** Never posts to the real channels and never commits, so it is safe on production and still works on a dev repo with `ENABLED_FEATURES=none` |
+
+Two inputs apply to **both**: `only` — the simplify switch (`all` / `schedule` / `codes`) — and
+`game`, one game key.
+
+#### `mode = live`
+
+| Input | Effect |
+|---|---|
+| *(nothing)* | a normal pass: post what is new, silently edit what changed, commit the state |
+| `probe` | **debug ONE real schedule post**, e.g. `starrail:4.6`. It fetches it and prints: what the lookback window saw, what is stored for that version now, the program lookup tab by tab, the air time parsed out of the article text, **every image it found — ranked, with why the winner won** — and the card it would build (paste the JSON into [Discohook](https://discohook.app)). It replaces the normal run, and **nothing is posted or saved** |
+| `repost` | post a version card again as a **new** message, e.g. `starrail:4.6`. Only versions the bot has already seen in an official post work, so an unannounced `genshin:7.2` can't be reposted yet. The summary says so, and lists the tracked versions |
+| `dry_run` | real run, logs the card JSON, never posts or commits |
+
+Reach for `probe` whenever a card looks wrong — a small or wrong picture, or a title that links to
+the Update Notice instead of the Special Program. It puts the link and the picture the card is
+using next to the ones the lookup found, so you can see which source won and why. Locally:
+`python -m gamexpress probe starrail:4.6`.
+
+#### `mode = test`
 
 | `test` | What happens |
 |---|---|
@@ -370,17 +394,7 @@ posts to the real channels and never commits):
 | `offline-tests` | the CI test suite |
 | `full` | offline-tests → webhooks → sample-cards → live-dry-run |
 
-Inputs `kind` (all / schedule / codes), `game` and `ping` (off by default) narrow it down.
-
-**Actions → Game-Express Monitor → Run workflow → `test` left empty** (the production run;
-cron-job.org calls it):
-
-| Input | Effect |
-|---|---|
-| `dry_run` | real run, logs the card JSON, never posts or commits |
-| `only` | `schedule` or `codes` |
-| `game` | one game key |
-| `repost` | post a version card again as a **new** message, e.g. `starrail:4.6`. Only versions the bot has already seen in an official post work, so an unannounced `genshin:7.2` can't be reposted yet. The summary says so, and lists the tracked versions |
+`ping` (off by default) adds your role ping to the test cards.
 
 **CLI** (local, VPS or bot host): `python -m gamexpress <command>`
 
@@ -391,6 +405,7 @@ cron-job.org calls it):
 | `bot` | slash commands + loop |
 | `check-webhooks [--kind …] [--game …]` | one "connected" card per unique webhook (no ping) |
 | `test-card [--kind …] [--game …] [--ping]` | post the sample cards, labelled 🧪 TEST (no ping unless `--ping`) |
+| `probe starrail:4.6` | debug ONE real schedule post: what the fetch found, which link and image won and why, and the card it would build. Read-only — never posts, never writes the state |
 | `preview` | writes `previews/index.html` (a Discord-like preview of every card) + the JSON for [Discohook](https://discohook.app) |
 | `validate` | prints the resolved routing (which secret feeds which channel), pings and emojis, and checks every sample card against Discord's limits |
 
@@ -473,11 +488,13 @@ deploying to Oracle Cloud Always Free, Koyeb, Render, Railway, or Docker anywher
 **➡️ Full checklist: [docs/TESTING.md](docs/TESTING.md)**. It covers what to click, what you
 should see in Discord, and how to tell that the whole thing is working.
 
-- **Monitor test bench** (`monitor.yml`, `test` input — the separate `test.yml` was folded into
-  it in 1.4.0): webhooks, sample cards, live dry run, live cards to a test channel, or everything
-  at once (see [Manual controls](#-manual-controls)).
+- **Monitor test bench** (`monitor.yml`, `mode` = `test` — the separate `test.yml` was folded
+  into it in 1.4.0): webhooks, sample cards, live dry run, live cards to a test channel, or
+  everything at once (see [Manual controls](#-manual-controls)).
+- **`probe`** (`mode` = `live`) debugs ONE real schedule post — the fetch, the link, every image
+  and why the winner won — without posting anything.
 - **CI** (`.github/workflows/ci.yml`) runs on every PR and every push to `main`: install,
-  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **60 offline tests
+  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **67 offline tests
   with no network and no secrets**:
   - real official posts captured on 2026-09-25, which must reproduce your reference cards'
     timestamps;
@@ -591,6 +608,22 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 ---
 
 ## 🗒 Changelog
+
+### 1.5.0 — 2026-09-26 · the dispatch form says which of the two things you are doing
+- **`mode` = `live` or `test`.** Still one workflow, but the Run-workflow dialog now opens with
+  the choice between the real monitor and the manual test bench, every input is labelled for the
+  mode it belongs to, and the steps are named `LIVE · …` / `TEST · …` so the log says which ran.
+- **`only` is now the single "simplify" switch** for both modes (`all` / `schedule` / `codes`);
+  the duplicate `kind` input is gone.
+- **New live input `probe`** — debug ONE real schedule post, e.g. `starrail:4.6`. It prints what
+  the lookback window saw, what is stored for that version, the program lookup tab by tab with
+  the air time parsed out of the article text, **every image it found (ranked, with why the
+  winner won)** and the card it would build. Read-only: nothing is posted or saved. Also on the
+  CLI as `python -m gamexpress probe starrail:4.6`.
+- The lookup is now one function (`runner.find_program`) shared by the monitor and the probe, so
+  the debug report can never drift from what a real run does.
+- cron-job.org is unaffected: it sends no inputs, so `mode` defaults to `live` and the pass is
+  exactly what it was.
 
 ### 1.4.0 — 2026-09-25 · the test bench moves into the Monitor
 - **`test.yml` is gone; the manual test bench is now a mode of the Monitor workflow.** In

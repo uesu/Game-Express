@@ -7,6 +7,8 @@
                   labelled 🧪 TEST; no ping unless --ping
   check-webhooks  send ONE small "✅ connected" card to every configured webhook, listing
                   which game/feature cards that channel will receive
+  probe           debug ONE real schedule post, e.g. `probe starrail:4.6`: what the fetch
+                  found (text, link, every image) and the card it would build. Read-only
   preview         write previews/index.html (Discord-like view of every sample card) + JSON
   validate        check config/games.json + env and print the resolved routing
 """
@@ -211,6 +213,11 @@ def cmd_validate(_args) -> int:
     return 0 if ok else 1
 
 
+async def cmd_probe(args) -> int:
+    from .probe import probe
+    return await probe(args.target or os.getenv("PROBE", ""))
+
+
 async def cmd_run(_args) -> int:
     from .runner import run_once
     ctx = await run_once(load_settings())
@@ -236,7 +243,10 @@ def main(argv: list[str] | None = None) -> int:
     _load_dotenv()
     p = argparse.ArgumentParser(prog="python -m gamexpress", description="Game-Express monitor")
     p.add_argument("command", nargs="?", default="run",
-                   choices=["run", "loop", "bot", "test-card", "check-webhooks", "preview", "validate"])
+                   choices=["run", "loop", "bot", "test-card", "check-webhooks", "probe",
+                            "preview", "validate"])
+    p.add_argument("target", nargs="?", default="",
+                   help="probe: the game:version to debug, e.g. starrail:4.6 (also env PROBE)")
     p.add_argument("--dry-run", action="store_true", help="build + log cards, never post")
     p.add_argument("--only", choices=["schedule", "codes"], help="run one feature")
     p.add_argument("--game", default="", help="restrict to one game key (e.g. starrail)")
@@ -264,6 +274,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(cmd_test_card(args))
     if args.command == "check-webhooks":
         return asyncio.run(cmd_check_webhooks(args))
+    if args.command == "probe":
+        return asyncio.run(cmd_probe(args))
     if args.command == "loop":
         return asyncio.run(cmd_loop(args))
     if args.command == "bot":

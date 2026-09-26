@@ -83,6 +83,16 @@ def _score(url: str) -> int:
     return 0
 
 
+_LABEL = {3: "livestream thumbnail (1280x720)", 2: "full-size tweet photo",
+          1: "official article cover", 0: "something else"}
+
+
+def why(url: str) -> str:
+    """Why rank() put this URL where it did. `probe` prints it next to every candidate so a
+    wrong picture is obvious at a glance instead of a mystery in a posted card."""
+    return _LABEL[_score(url)]
+
+
 def rank(images: list[str] | None, limit: int = 4) -> list[str]:
     """Dedupe, upgrade, best rendition first. Stable inside a score band."""
     out: list[str] = []
