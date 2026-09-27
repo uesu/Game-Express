@@ -1636,6 +1636,15 @@
     "starrail": {
       "4.6": {
         "data": {
+          "banners": {
+            "phase1": [
+              "Evanescia",
+              "Pearl"
+            ],
+            "phase2": [
+              "Mortenax Blade"
+            ]
+          },
           "compensation": "Stellar Jade ×300",
           "estimate_sources": [
             "hsr-countdown"
@@ -1644,22 +1653,28 @@
             "program_ts"
           ],
           "images": [
-            "https://upload-os-bbs.hoyolab.com/upload/community/2026/09/23/1ee62eca62a4d646b14004634c661188_3519077431557110128.png"
+            "https://pbs.twimg.com/media/HSK2Q2pXsAA4YJA.jpg?name=orig"
           ],
           "maint_end_ts": 1790564400,
           "maint_start_ts": 1790546400,
+          "media_from": "x",
           "preinstall_ts": 1790229600,
           "program_ts": 1790341813,
-          "source_label": "HoYoLAB",
+          "source_label": "x",
           "source_links": [
+            [
+              "x",
+              "https://x.com/honkaistarrail/status/2099440781115211916"
+            ],
             [
               "HoYoLAB",
               "https://www.hoyolab.com/article/46814308"
             ]
           ],
-          "source_url": "https://www.hoyolab.com/article/46814308",
-          "title_url": "https://www.hoyolab.com/article/46814308",
-          "version": "4.6"
+          "source_url": "https://x.com/honkaistarrail/status/2099440781115211916",
+          "title_url": "https://www.youtube.com/watch?v=drFgtruoPe8",
+          "version": "4.6",
+          "youtube_video": "https://www.youtube.com/watch?v=drFgtruoPe8"
         },
         "estimated_reported": [
           "program_ts"
@@ -1669,6 +1684,14 @@
         "payload_hash": "a669b2e546fb5570",
         "posted_at": 1790407412,
         "prov": {
+          "b_phase1": [
+            5,
+            1790479405
+          ],
+          "b_phase2": [
+            5,
+            1790479405
+          ],
           "compensation": [
             50,
             1790229608
