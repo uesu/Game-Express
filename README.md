@@ -60,8 +60,8 @@ posts on a timer.
 │ ✦ Pre-Install: <t:…:F>   ✦ Start: <t:…:F>   ✦ End: <t:…:F>   ✦ Compensation: Stellar Jade ×300
 │ [ announcement image ]
 │ ─────────────
-│ [ Youtube ] [ Twitch ] [ HoYoLAB / X Post ]                    ← buttons INSIDE the card
-│ -# STC — Subject to Change • TBA — To be Announced • Source: HoYoLAB
+│ [ Youtube ] [ Twitch ] [ HoYoLAB ]                             ← buttons INSIDE the card
+│ -# STC — Subject to Change • TBA — To be Announced
 └─────────────────────────────────────────────────────────────
 ```
 
@@ -240,6 +240,7 @@ any name below works without editing YAML.
 | `COMMUNITY_BUTTONS` | `[{"label":"Citlali News","url":"https://discord.gg/HyrVP9wRXu","emoji":"a:starward11:1439878792653832253"}]` | the bottom row of a **codes** card (`none` = no row). Youtube / Twitch / Redeem Page are not shown there — they belong to the livestream card |
 | `COUNTDOWN_ESTIMATES` | on | `0` = never fill program / maintenance times from countdown sites |
 | `PROGRAM_MEDIA` | on | `0` = never look the program announcement up on the official news page (the card then keeps whatever the run's own feed showed) |
+| `BANNER_FEED` | on | `0` = never fill banner lineups from hub.json |
 | `ENABLED_FEATURES` | `schedule,codes` | `schedule` · `codes` · `none` (paused / cold standby) |
 | `GAMES` | all enabled | allow-list, e.g. `genshin,starrail` |
 | `ENABLE_GAMES` | — | switch prepared games on, e.g. `hna` or `hna,ananta` |
@@ -574,6 +575,12 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 ---
 
 ## 🗒 Changelog
+
+### 1.3.0 — 2026-09-27 · card cleanup, banner lineups from a live feed, and proof the X lookup generalises
+
+- **Card cleanup:** removed redundant X button (the announcement tweet is already linked in the card title) while preserving buttons for non-X sources (HoYoLAB, official news page). Removed `🖼️ key art: …` and `Source: …` footer lines so the card footer stays clean.
+- **Banner lineups from live feed (`hub.json`):** rate-up 5★ characters are filled from `ertezy.github.io/Gacha-hub-info/hub.json` (rebuilt hourly, CC BY-SA 3.0) and phase-split around the version's release / maintenance timestamp. Sits at priority 5 (lowest in the monitor), only fills empty phases, refuses stale payloads (>14d), and can be disabled with `BANNER_FEED=0`.
+- **Verified X announcement recall across eras:** verified 7/7 positive match across all captured program announcements spanning multiple wording families (GI Luna II, ZZZ 2.5, HSR 4.5/4.6, GI 7.1, ZZZ 3.2, WW 3.7).
 
 ### 1.7.0 — 2026-09-26 · the schedule card links the real announcement, and the Discord bot is gone
 

@@ -15,7 +15,7 @@ from .config import Game, Settings, active_games, load_games, load_overrides
 from .discord import WebhookClient
 from .http import BOT_UA, Fetcher, Probe
 from .models import Item
-from .sources import countdown, hoyolab, kuro, launcher, newspage
+from .sources import bannerfeed, countdown, hoyolab, kuro, launcher, newspage
 from .sources.codes import CodeSources
 from .sources.twitter import XClient
 from .state import State
@@ -45,6 +45,7 @@ class Ctx:
     elapsed: float = 0.0
     estimates: dict = field(default_factory=dict)   # game key -> countdown-site estimate
     media: dict = field(default_factory=dict)       # game key -> version -> program announcement
+    banners: dict = field(default_factory=dict)     # game key -> list of 5★ rate-up banners
 
 
 async def gather_versions(ctx: Ctx) -> None:
@@ -95,6 +96,17 @@ async def gather_estimates(ctx: Ctx) -> None:
         if est:
             ctx.estimates[key] = est
             log.info("[%s] countdown estimate: %s", key, est)
+
+
+async def gather_banners(ctx: Ctx) -> None:
+    """Fetch the community banner feed (ertezy.github.io/Gacha-hub-info/hub.json) — one request
+    per run for all games. Refused when older than 14 days, and BANNER_FEED=0 switches it off."""
+    if "schedule" not in ctx.settings.features or not ctx.settings.banner_feed:
+        return
+    try:
+        ctx.banners = await bannerfeed.fetch_banners(ctx.fetcher, ctx.now)
+    except Exception as e:
+        log.warning("gather_banners failed: %s", e)
 
 
 async def find_program(ctx, g: Game, ver: str) -> dict | None:
@@ -235,7 +247,7 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
         if features and ctx.games:
             await gather_versions(ctx)
             await gather_items(ctx)
-            await asyncio.gather(gather_program_media(ctx), gather_estimates(ctx))
+            await asyncio.gather(gather_program_media(ctx), gather_estimates(ctx), gather_banners(ctx))
             for g in ctx.games:
                 if not ctx.reachable.get(g.key, True):
                     ctx.warnings.append(f"{g.short}: no announcement source answered this run — the next run "

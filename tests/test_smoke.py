@@ -1150,7 +1150,7 @@ def test_the_program_announcement_replaces_the_maintenance_notice_on_the_card():
         assert "hoyolab.com/article/46691962" in flat2                    # Source -> the announcement itself
         assert "pbs.twimg.com/media/HR70hTAaoAA8Dzz.jpg?name=orig" in flat2    # full-size key art
         assert "<t:1789860600:F>" in flat2 and "<t:1789860600:R>" in flat2     # the air time, user's format
-        assert "🖼️ key art: HoYoLAB — the official announcement" in flat2
+        assert "🖼️" not in flat2
         rec = ctx.state.schedule_records("starrail")["4.6"]
         assert rec["data"]["media_from"] == "HoYoLAB"
         assert "program_seen" not in rec["data"]                # the lookup never claims a real post
@@ -1541,6 +1541,115 @@ def test_a_timeline_scan_finds_a_new_announcement_and_seeds_it():
             shutil.copy2(backup, twitter.SEED_PATH)
             twitter._seeds = None
     assert twitter.program_seed("genshin", "9.9") == {}          # the seed file is back as it was
+
+
+# =========================================================================== 1.3.0 (card cleanup + banner feed)
+def test_no_x_button_and_no_key_art_or_source_line_on_the_schedule_card():
+    """Card cleanup:
+      * the 'x' button is gone (it only ever duplicated what's already in the card's title);
+      * the '🖼️ key art: ...' footer line is gone;
+      * the 'Source: ...' footer line is gone;
+      * the legend remains: STC — Subject to Change • TBA — To be Announced."""
+    s = settings()
+    d = dict(SCHEDULE_SAMPLES["starrail"])
+    d["source_url"] = "https://x.com/HonkaiStarRail/status/2099440781115211916"
+    d["source_label"] = "X Post"
+    d["media_from"] = "HoYoLAB"
+    p = cards.schedule_payload(GAMES["starrail"], d, s, s.ping("schedule", "starrail"))
+    flat = json.dumps(p, ensure_ascii=False)
+    assert "https://x.com/HonkaiStarRail/status/" not in flat
+    assert "🖼️" not in flat
+    assert "Source:" not in flat
+    assert "-# STC — Subject to Change • TBA — To be Announced" in flat
+
+
+def test_a_non_x_source_still_gets_its_own_button():
+    """Non-X sources (like HoYoLAB or the official news page) still get their own button when the
+    title points elsewhere (e.g. YouTube stream), because they carry genuine extra information."""
+    s = settings()
+    d = dict(SCHEDULE_SAMPLES["starrail"])
+    d["title_url"] = "https://www.youtube.com/watch?v=drFgtruoPe8"
+    d["source_url"] = "https://www.hoyolab.com/article/46814308"
+    d["source_label"] = "HoYoLAB"
+    p = cards.schedule_payload(GAMES["starrail"], d, s, s.ping("schedule", "starrail"))
+    btn_urls = [c["url"] for comp in p["components"][1]["components"] if comp["type"] == 1
+                for c in comp.get("components", [])]
+    assert "https://www.hoyolab.com/article/46814308" in btn_urls
+
+
+def test_the_banner_feed_fills_the_lineup_no_official_post_ever_listed():
+    """Banner feed (hub.json): fills empty 5★ phases at PRIORITY['bannerfeed'] = 5."""
+    from gamexpress.sources import bannerfeed
+    data = json.loads((FIX / "bannerfeed_hub_trimmed.json").read_text(encoding="utf-8"))
+    feed = bannerfeed.parse_hub(data, now=1790452566)
+    # HSR 4.6 (maint_end_ts: 1790564400)
+    hsr_lineup = bannerfeed.banner_feed_for(feed["starrail"], 1790564400)
+    assert set(hsr_lineup["phase1"]) == {"Evanescia", "Pearl"}
+    assert hsr_lineup["phase2"] == ["Mortenax Blade"]
+
+    # merge into HSR 4.6 card data
+    prov: dict = {}
+    record: dict = {"data": {"version": "4.6", "maint_end_ts": 1790564400}, "prov": prov}
+    merged = schedule.merge(GAMES["starrail"], "4.6", [], record, {}, {}, 1790452566,
+                            banner_feed=feed["starrail"])
+    banners = merged.get("banners") or {}
+    assert set(banners.get("phase1") or []) == {"Evanescia", "Pearl"}
+    assert banners.get("phase2") == ["Mortenax Blade"]
+    assert record["prov"]["b_phase1"][0] == 5
+    assert record["prov"]["b_phase2"][0] == 5
+
+    # Genshin 7.1 (maint_end_ts: 1790132400)
+    gi_lineup = bannerfeed.banner_feed_for(feed["genshin"], 1790132400)
+    assert set(gi_lineup["phase1"]) == {"Vodyanitsa", "Vesna"}
+    assert "phase2" not in gi_lineup
+
+
+def test_the_banner_feed_never_invents_a_lineup_for_the_wrong_version():
+    """If the version has no release/maintenance timestamp, or one that doesn't match the feed,
+    the banners stay empty / TBA."""
+    from gamexpress.sources import bannerfeed
+    data = json.loads((FIX / "bannerfeed_hub_trimmed.json").read_text(encoding="utf-8"))
+    feed = bannerfeed.parse_hub(data, now=1790452566)
+    lineup = bannerfeed.banner_feed_for(feed["starrail"], 1999999999)
+    assert lineup == {}
+
+    record: dict = {"data": {"version": "9.9", "maint_end_ts": 1999999999}, "prov": {}}
+    merged = schedule.merge(GAMES["starrail"], "9.9", [], record, {}, {}, 1790452566,
+                            banner_feed=feed["starrail"])
+    banners = merged.get("banners") or {}
+    assert not banners.get("phase1") and not banners.get("phase2")
+
+
+def test_a_stale_banner_feed_is_ignored_not_served():
+    """A feed payload older than 14 days is refused rather than serving last month's lineup."""
+    from gamexpress.sources import bannerfeed
+    data = json.loads((FIX / "bannerfeed_hub_trimmed.json").read_text(encoding="utf-8"))
+    stale = bannerfeed.parse_hub(data, now=1790452566 + 15 * 86400)
+    assert stale == {}
+
+
+def test_the_banner_feed_never_overrides_an_official_lineup():
+    """PRIORITY['bannerfeed'] = 5 (lowest). An official post (priority 40/50) or override (100)
+    beats the feed and is never overwritten."""
+    from gamexpress.sources import bannerfeed
+    data = json.loads((FIX / "bannerfeed_hub_trimmed.json").read_text(encoding="utf-8"))
+    feed = bannerfeed.parse_hub(data, now=1790452566)
+    prov = {"b_phase1": [50, 1790000000]}
+    record = {"data": {"version": "4.6", "maint_end_ts": 1790564400, "banners": {"phase1": ["OfficialHero"]}},
+              "prov": prov}
+    merged = schedule.merge(GAMES["starrail"], "4.6", [], record, {}, {}, 1790452566,
+                            banner_feed=feed["starrail"])
+    assert merged["banners"]["phase1"] == ["OfficialHero"]
+
+
+def test_banner_feed_can_be_switched_off():
+    """BANNER_FEED=0 switches the fill-in off entirely."""
+    s = settings(BANNER_FEED="0")
+    assert s.banner_feed is False
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        ctx = make_ctx(sp, BANNER_FEED=0)
+        assert ctx.settings.banner_feed is False
 
 
 def main() -> int:

@@ -120,9 +120,9 @@ subreddit preview image is a re-upload, so it would be the first non-official pi
 The official maintenance notice arrives days after the Special Program, so until then the card
 would show `TBA`. These community sites extrapolate the patch cycle (42 days for HoYoverse,
 ~42 days for Kuro) and fill the gap. They are an **estimate**: `schedule.PRIORITY['countdown']`
-is the lowest priority in the monitor, so an estimate is used only when no official source has
-given that time, and it is replaced — with the 🕒 line on the card — the moment the official
-notice is seen. `COUNTDOWN_ESTIMATES=0` switches the feature off.
+is low (10), so an estimate is used only when no official source has given that time, and it is
+replaced — with the 🕒 line on the card — the moment the official notice is seen.
+`COUNTDOWN_ESTIMATES=0` switches the feature off.
 
 | Source | URL | Parsed from | Status |
 |---|---|---|---|
@@ -136,6 +136,34 @@ notice is seen. `COUNTDOWN_ESTIMATES=0` switches the feature off.
 
 Prepared but empty: `hna` and `ananta` — no countdown site tracks a game before release. Fill
 `gamexpress/sources/countdown.py:SOURCES` when one appears.
+
+## Banner lineups — Gacha-hub-info (v1.3.0)
+
+When no official banner notice has been posted yet, rate-up character lineups are filled from
+`ertezy.github.io/Gacha-hub-info/hub.json`. It is rebuilt hourly by GitHub Actions from the fandom
+wikis (CC BY-SA 3.0), requires no key, and returns a single JSON file covering all four games
+(`genshin`, `hsr`, `zzz`, `wuthering` + `endfield`).
+
+Lineups are phase-split around the version's release / maintenance timestamp (`startsAt` around
+release = Phase 1, `startsAt` ~3 weeks later = Phase 2).
+
+**Accuracy & limits:**
+- Sits at `PRIORITY["bannerfeed"] = 5` — the lowest priority in the bot. It only fills an empty
+  phase, and any official notice or override replaces it immediately.
+- 4★ rate-ups and re-run flags are not present in the feed and remain `TBA`.
+- Stale payloads (>14 days) are refused rather than serving outdated lineups.
+- `BANNER_FEED=0` switches the fill-in off completely.
+
+### Banner sources evaluated
+
+| Source | Verdict |
+|---|---|
+| **`ertezy.github.io/Gacha-hub-info/hub.json`** | ✅ **used.** Rebuilt hourly by GitHub Actions, GitHub Pages, no key, one small file for all games. `banners[] = {gameId, title, featured[], rarity, startsAt, endsAt, url, image}`. Covers genshin / hsr / zzz / wuthering (+ endfield). Assembled from the fandom wikis → CC BY-SA 3.0 |
+| `torikushiii/hoyoverse-api` (`/mihoyo/{game}/calendar`) | ⚠️ good shape (`banners[].characters[].rarity`, `start_time`) but **no Wuthering Waves**, and no public instance was confirmed — not usable as the primary |
+| `DGCK81LNN/gi-gacha` `banners.json` | ⚠️ auto-updated and precise, but **Chinese names only** (`薇斯纳池`) — would need a name-mapping table |
+| `game-i.daa.jp` / `achenachena/gacha_revenue` | ❌ revenue estimates and banner *windows*, not lineups |
+| IGN · game8 · dotesports · pcgamer · timesaver.gg | ❌ editorial HTML, no API, every site a different layout — useful only to cross-check |
+| HoYoverse `getGachaLog` | ❌ needs a per-user `authkey`; that is a wish history, not a schedule |
 
 **Gate (v1.1):**
 

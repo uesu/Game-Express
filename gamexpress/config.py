@@ -182,6 +182,7 @@ class Settings:
     codes_mark_expired: bool = True    # edit posted code cards when every source lists the code as expired
     countdown_estimates: bool = True   # COUNTDOWN_ESTIMATES=0 -> never fill times from countdown sites
     program_media: bool = True         # PROGRAM_MEDIA=0 -> never look an announcement up on the news page
+    banner_feed: bool = True           # BANNER_FEED=0 -> never fill banner lineups from hub.json
 
     # -- routing ---------------------------------------------------------------
     def _game_slugs(self, game_key: str) -> list[str]:
@@ -306,6 +307,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         emoji=emoji,
         countdown_estimates=_bool(env, "COUNTDOWN_ESTIMATES", True),
         program_media=_bool(env, "PROGRAM_MEDIA", True),
+        banner_feed=_bool(env, "BANNER_FEED", True),
         show_legend=_bool(env, "SHOW_LEGEND", True),
         repost=_env(env, "REPOST").replace(" ", "").lower(),
         log_level=_env(env, "LOG_LEVEL", "INFO").upper(),

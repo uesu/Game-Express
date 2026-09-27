@@ -22,6 +22,7 @@ from .config import Game
 from .discord import webhook_fingerprint
 from .media import rank, youtube_thumb
 from .models import Item
+from .sources.bannerfeed import banner_feed_for
 from .sources.codes import extract_codes_from_text
 from .state import stable_hash
 from .textutil import (
@@ -107,9 +108,9 @@ QUOTED = re.compile(r"[\"“「『]([^\"”」』\n]{2,40})[\"”」』]")
 PHASE1 = re.compile(r"phase\s*(?:I|1)\b(?!I)|first\s+(?:half|phase)|1st\s+(?:half|phase)", re.I)
 PHASE2 = re.compile(r"phase\s*(?:II|2)\b|second\s+(?:half|phase)|2nd\s+(?:half|phase)", re.I)
 
-# precedence of sources for a field (higher wins). 'countdown' is the lowest: a countdown
-# site only ever fills a field no official source has given yet, and loses the moment one does.
-PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "news": 45, "x": 40, "launcher": 20, "countdown": 10}
+# precedence of sources for a field (higher wins). 'countdown' is low; 'bannerfeed' is the lowest (5):
+# the feed only ever fills an empty phase, and loses the moment any official post or override gives one.
+PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "news": 45, "x": 40, "launcher": 20, "countdown": 10, "bannerfeed": 5}
 ESTIMATED_KEYS = ("program_ts", "preinstall_ts", "maint_start_ts", "maint_end_ts")
 MAINT_HOURS_ESTIMATE = 5          # typical HoYoverse / Kuro maintenance window
 
@@ -420,6 +421,27 @@ def needs_estimate(state, game_key: str, now: int) -> bool:
     return False
 
 
+def data_release_ts(data: dict) -> int | None:
+    """The version's launch / maintenance-end timestamp, used to phase-split banner lineups."""
+    return data.get("maint_end_ts") or data.get("maint_start_ts")
+
+
+def apply_banner_feed(data: dict, prov: dict, feed: dict | None, now: int) -> None:
+    """Fill 5★ banner phases from the community banner feed (hub.json), but ONLY when that
+    phase is currently empty (PRIORITY['bannerfeed'] is 5, the lowest in the bot)."""
+    if not feed:
+        return
+    banners = dict(data.get("banners") or {})
+    changed = False
+    for key in ("phase1", "phase2"):
+        if feed.get(key) and not banners.get(key) and prov.get(f"b_{key}", [0])[0] <= PRIORITY["bannerfeed"]:
+            banners[key] = feed[key]
+            prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
+            changed = True
+    if changed:
+        data["banners"] = banners
+
+
 def apply_program_media(data: dict, prov: dict, media: dict | None, now: int) -> list[str]:
     """Give the card the ANNOUNCEMENT it should be showing: the program article's own link and
     its key art, instead of whatever the run happened to see.
@@ -505,7 +527,8 @@ def needs_media(state, game_key: str, now: int) -> bool:
 
 def merge(game: Game, version: str, extracts: list[Extract], record: dict, override: dict,
           launcher: dict, now: int, notes: list[str] | None = None,
-          estimates: dict | None = None, media: dict | None = None) -> dict:
+          estimates: dict | None = None, media: dict | None = None,
+          banner_feed: list[dict] | None = None) -> dict:
     """Return the merged card data (record['data'] is the previous state).
     4★ rule: no data or ANY doubt (wrong count, odd name, sources disagree) -> TBA;
     config/overrides.json is always trusted."""
@@ -605,6 +628,12 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
     # countdown sites: an ESTIMATE for every field no official source has given yet
     apply_estimates(data, prov, estimates, now)
 
+    # banner feed: fill empty banner phases from hub.json
+    if banner_feed:
+        rel_ts = data_release_ts(data)
+        lineup = banner_feed_for(banner_feed, rel_ts) if rel_ts else {}
+        apply_banner_feed(data, prov, lineup, now)
+
     # human overrides win over everything
     for key in ("program_ts", "preinstall_ts", "maint_start_ts", "maint_end_ts"):
         if key in override:
@@ -665,10 +694,11 @@ async def run(ctx) -> None:
         bootstrapped = ctx.state.is_bootstrapped("schedule", game.key)
         est = (ctx.estimates.get(game.key) or {}) if s.countdown_estimates else {}
         media = (ctx.media.get(game.key) or {}) if s.program_media else {}
+        feed_list = (ctx.banners.get(game.key) or []) if s.banner_feed else []
         for ver in sorted(by_version, key=version_key):
             version_est = est if (est.get("version") in (None, ver)) else {}
             await _handle_version(ctx, game, ver, by_version[ver], records, overrides.get(ver, {}),
-                                  live_info, bootstrapped, version_est, media.get(ver))
+                                  live_info, bootstrapped, version_est, media.get(ver), feed_list)
         if not bootstrapped and ctx.reachable.get(game.key, True):
             ctx.state.mark_bootstrapped("schedule", game.key)   # only after a source really answered
     problem = repost_problem(s.repost, ctx.games, ctx.state.schedule_records)   # after this run's records
@@ -678,11 +708,12 @@ async def run(ctx) -> None:
 
 async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], records: dict,
                           override: dict, live_info: dict, bootstrapped: bool,
-                          estimates: dict | None = None, media: dict | None = None) -> None:
+                          estimates: dict | None = None, media: dict | None = None,
+                          banner_feed: list[dict] | None = None) -> None:
     s, now = ctx.settings, ctx.now
     record = records.setdefault(ver, {"status": "new", "first_seen": now})
     notes: list[str] = []
-    data = merge(game, ver, extracts, record, override, live_info, now, notes, estimates, media)
+    data = merge(game, ver, extracts, record, override, live_info, now, notes, estimates, media, banner_feed)
     ctx.report.extend(notes)
     estimated = data.get("estimated") or []
     if estimated and estimated != record.get("estimated_reported"):
