@@ -2238,5 +2238,39 @@ def test_the_token_gated_instance_is_in_the_fleet():
         assert inst in DEFAULT_NITTER, inst
 
 
+# =========================================================================== nitter hot path
+# twitter.py probes NITTER_BATCH instances in parallel on EVERY run, for EVERY handle, whether
+# or not the ones ahead of them answered. A mirror in that first batch is therefore a cost on
+# every run -- which is why x.n0g.xyz was removed. These are the instances measured as unable
+# to answer GitHub's runners, each with the run that proved it; none of them may sit in the
+# hot path again, whatever a public uptime table claims.
+NITTER_CANNOT_ANSWER = {
+    "https://nitter.netbub.com": "HTTP 403 on all 4 handles (live run 36305123457)",
+    "https://nitter.meowing.monster": "HTTP 200 but 0 entries, bot check (live run 36305123457)",
+    "https://xcancel.com": "suspended 2026-09-14",
+    "https://x.yuuki.sh": "HTTP 403 to GitHub runners (2026-09-25)",
+    "https://x.n0g.xyz": "404 then 429 in runs 36296323488 / 36298632006 / 36299586254",
+}
+
+
+def test_the_first_nitter_batch_holds_only_instances_that_answer():
+    from gamexpress.config import DEFAULT_NITTER
+    from gamexpress.sources.twitter import NITTER_BATCH
+    hot = DEFAULT_NITTER[:NITTER_BATCH]
+    for inst, why in NITTER_CANNOT_ANSWER.items():
+        assert inst not in hot, f"{inst} is probed on every run but {why}"
+    assert hot[0] == "https://nitter.cf" and hot[1] == "https://xitter.cf"
+
+
+def test_a_demoted_instance_is_kept_as_a_fallback_rather_than_deleted():
+    """Demoting is cheap and reversible; deleting throws away a mirror that may work from a
+    VPS. Only x.n0g.xyz -- which answered nothing anywhere -- is actually gone."""
+    from gamexpress.config import DEFAULT_NITTER
+    for inst in ("https://nitter.netbub.com", "https://nitter.meowing.monster"):
+        assert inst in DEFAULT_NITTER, inst
+    assert "https://x.n0g.xyz" not in DEFAULT_NITTER
+    assert len(DEFAULT_NITTER) == len(set(DEFAULT_NITTER))
+
+
 if __name__ == "__main__":
     sys.exit(main())
