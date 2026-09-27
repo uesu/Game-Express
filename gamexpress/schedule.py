@@ -580,12 +580,31 @@ def apply_program_media(data: dict, prov: dict, media: dict | None, now: int) ->
     ts = media.get("program_ts")
     # A recovered announcement is OFFICIAL, so an air time that has already passed is kept (the
     # card renders it as "5 days ago") — unlike a countdown estimate, only absurd values go.
-    if not data.get("program_ts") and ts and now - 90 * 86400 <= int(ts) <= now + 120 * 86400:
+    #
+    # It must also DISPLACE a countdown estimate. `not data.get("program_ts")` alone made the
+    # estimate sticky forever: HSR 4.6 filled program_ts from hsr-countdown on an early run, and
+    # every later run that found the real announcement refused to overwrite it, so the card kept
+    # showing 1790341813 instead of the tweet's own 1789903800. Anything this code estimated is
+    # listed in data["estimated"] -- that is exactly the case an official source should replace.
+    est = set(data.get("estimated") or [])
+    if ts and now - 90 * 86400 <= int(ts) <= now + 120 * 86400 and \
+            (not data.get("program_ts") or "program_ts" in est):
         data["program_ts"] = int(ts)
         prov["program_ts"] = [PRIORITY["news"], now]
         changed.append("program_ts")
+        est.discard("program_ts")
+        if "estimated" in data:
+            data["estimated"] = [k for k in (data.get("estimated") or []) if k != "program_ts"]
+        if not est:
+            data.pop("estimated", None)
+            data.pop("estimate_sources", None)
     label = media.get("source") or "Official News"
-    data["title_url"] = media.get("youtube") or media["url"]
+    # The title links the ANNOUNCEMENT itself. `media["youtube"] or media["url"]` made the card
+    # headline link the YouTube stream instead of the post that announced it -- seen live on
+    # HSR 4.6 (2026-09-27), where the title pointed at youtube.com/watch?v=drFgtruoPe8 while the
+    # real source was x.com/honkaistarrail/status/2099440781115211916. The stream stays reachable
+    # through data["youtube_video"] and the Youtube button.
+    data["title_url"] = media["url"]
     data["source_url"] = media["url"]
     data["source_label"] = label
     if media.get("youtube"):
@@ -626,7 +645,12 @@ def needs_program_lookup(extracts: list[Extract], record: dict, now: int) -> boo
     start = data.get("maint_start_ts")
     if start and now > int(start) + 12 * 3600:
         return False
-    if data.get("program_seen") or data.get("media_from"):
+    # Having found the announcement once is normally enough -- but NOT while the air time is still
+    # only an estimate. Without this, a version whose program_ts came from a countdown site keeps
+    # that guess forever: media_from is set, so no lookup runs, so apply_program_media gets no
+    # media and can never displace it. HSR 4.6 was stuck on 1790341813 exactly this way.
+    if (data.get("program_seen") or data.get("media_from")) and \
+            "program_ts" not in (data.get("estimated") or []):
         return False
     return not any(e.kind == "program" for e in extracts)
 

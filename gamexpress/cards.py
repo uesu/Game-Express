@@ -281,8 +281,8 @@ def schedule_payload(game: Game, d: dict, settings: Settings, ping: Ping,
         foot.append(f"🕒 {what} estimated from {est_src} — the official notice replaces it automatically")
     if updated_ts:
         foot.append(f"Updated {discord_ts(updated_ts, 'R')}")
-    if foot:
-        children.append(text("-# " + " • ".join(foot)))
+    for part in foot:                      # one small-text line each, not one run-on line
+        children.append(text("-# " + part))
     return _payload(_top_line(ping, header_line(game, d)), container(children, game.color), ping)
 
 
