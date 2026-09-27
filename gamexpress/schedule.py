@@ -110,6 +110,17 @@ QUOTED = re.compile(r"[\"“「『]([^\"”」』\n]{2,40})[\"”」』]")
 PHASE1 = re.compile(r"phase\s*(?:I|1)\b(?!I)|first\s+(?:half|phase)|1st\s+(?:half|phase)", re.I)
 PHASE2 = re.compile(r"phase\s*(?:II|2)\b|second\s+(?:half|phase)|2nd\s+(?:half|phase)", re.I)
 
+# HoYoverse notices label their numbers with bracketed section headers and put the VALUE ON THE
+# NEXT LINE, so a sentence scanner sees "2026-09-09 06:00 (UTC+8) : We estimate this will take five
+# hours." with no "maintenance" anywhere in it and throws the time away. Read label+value as a pair.
+# Reference: ZZZ 3.2 (HoYoLAB 46604333) -- "[Version Update Time]" / "[Pre-Download Period]".
+LABELLED = re.compile(
+    r"[\[【〓]?\s*(pre-?download\s+period|pre-?install(?:ation)?\s+(?:period|time)|"
+    r"version\s+update\s+time|update\s+maintenance\s+(?:time|information)|maintenance\s+time)"
+    r"\s*[\]】〓]?\s*[:：]?\s*([^\n]{0,140})", re.I)
+# "[Pre-Installation Details]" is followed by storage sizes, not a clock -- never read those.
+LABEL_NO_TIME = re.compile(r"storage|space|GB|file\s+size|download\s+size", re.I)
+
 # precedence of sources for a field (higher wins). Derived values are below external countdown
 # estimates; the banner feed is the lowest (5). Any official source or override replaces both.
 PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "news": 45, "x": 40, "launcher": 20,
@@ -207,10 +218,37 @@ def extract_program(game: Game, item: Item) -> dict:
     return f
 
 
+def extract_labelled(text: str, ref: int | None) -> dict:
+    """Times that sit UNDER a bracketed section header instead of inside their own sentence.
+
+    ZZZ 3.2 (HoYoLAB 46604333) is the case that motivated this: its maintenance start and its
+    whole pre-download window are label/value pairs, so the sentence scanner saw neither and the
+    card showed TBA for both even though the official notice stated them plainly.
+    """
+    f: dict = {}
+    for m in LABELLED.finditer(text):
+        label, value = m.group(1).lower(), m.group(2)
+        if LABEL_NO_TIME.search(value):
+            continue
+        if label.startswith("pre-"):
+            rngs = find_time_ranges(value, ref)
+            if rngs:
+                f.setdefault("preinstall_ts", rngs[0][0])
+                continue
+            found = find_datetimes(value, ref)
+            if found:
+                f.setdefault("preinstall_ts", found[0].ts)
+        else:
+            found = find_datetimes(value, ref)
+            if found:
+                f.setdefault("maint_start_ts", found[0].ts)
+    return f
+
+
 def extract_maintenance(item: Item) -> dict:
     text = item.full
     ref = item.published_ts or None
-    f: dict = {}
+    f: dict = extract_labelled(text, ref)   # labelled values win; the loop only setdefaults
     for s in sentences(text):
         rngs = find_time_ranges(s, ref)
         if rngs and (MAINT_WORDS.search(s) or "maintenance" in s.lower()) and not MAINT_EXCLUDE.search(s):
@@ -232,7 +270,15 @@ def extract_maintenance(item: Item) -> dict:
         hours = find_duration_hours(text)
         if hours:
             f["maint_end_ts"] = int(f["maint_start_ts"] + hours * 3600)
-    if "preinstall_ts" not in f and PRE_WORDS.search(item.title or text[:200]) and \
+    # HoYoverse posts the maintenance PREVIEW at the moment pre-install opens, so when the body
+    # says "pre-installation ... is now available" the post's own timestamp IS the pre-install
+    # time. Verified on GI 7.1 (HoYoLAB 46771203): created_at 1789960208, exactly 608 s after the
+    # 11:00 UTC+8 open that game8 lists.
+    # NOTE the phrase must be searched in title AND body. `item.title or text[:200]` short-circuits
+    # to the TITLE ALONE whenever a title exists, and titles like "Version 7.1 Update Maintenance
+    # Preview" never contain "pre-install" -- that one `or` was the whole gap.
+    if "preinstall_ts" not in f and item.published_ts and \
+            PRE_WORDS.search(f"{item.title or ''}\n{text[:400]}") and \
             re.search(r"now\s+(?:available|open)|has\s+(?:begun|started)|is\s+now\s+live", text, re.I):
         f["preinstall_ts"] = int(item.published_ts)      # "Pre-installation is now available"
     m = COMP_RE.search(text)

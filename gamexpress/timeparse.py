@@ -218,13 +218,28 @@ _DURATION_RE = re.compile(
     re.I)
 
 
+_DUR_LEAD = (r"(?:take|last|lasts|lasting|duration(?:\s+is|:)?|estimated(?:\s+to\s+take)?|"
+             r"expected\s+to\s+take|approximately|about|around)")
+_DURATION_WORDS_RE = re.compile(
+    _DUR_LEAD + r"\s*(?:approximately|about|around|roughly)?\s*"
+    r"(?P<w>one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*(?:hours?|hrs?)\b",
+    re.I)
+# ZZZ spells the window out ("We estimate this will take five hours.", HoYoLAB 46604333) where
+# Genshin writes "estimated to take 5 hours" -- both are official notices, both must parse.
+_WORD_HOURS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+               "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
+
+
 def find_duration_hours(text: str) -> float | None:
-    """'The update will take approximately 5 hours.' -> 5.0"""
+    """'The update will take approximately 5 hours.' -> 5.0; '...take five hours.' -> 5.0"""
     m = _DURATION_RE.search(text or "")
-    if not m:
-        return None
-    n = float(m.group("n"))
-    return n if 0 < n <= 48 else None
+    if m:
+        n = float(m.group("n"))
+        return n if 0 < n <= 48 else None
+    w = _DURATION_WORDS_RE.search(text or "")
+    if w:
+        return float(_WORD_HOURS[w.group("w").lower()])
+    return None
 
 
 def discord_ts(ts: int | None, style: str = "F") -> str:

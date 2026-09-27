@@ -1823,6 +1823,75 @@ def test_observed_history_beats_the_shipped_default():
     assert "preinstall_ts" not in data
 
 
+# --------------------------------------------------------------------- real notices, parser gaps
+# Genshin 7.1 maintenance preview (HoYoLAB 46771203). The title never says "pre-install"; the body
+# does, and HoYoverse publishes the post at the moment pre-installation opens.
+GI_71_NOTICE = """Dear Travelers,
+
+In order to provide a better gaming experience, the Genshin Impact team will be carrying out
+Version 7.1 update maintenance, during which the game will be unavailable.
+
+Update maintenance will begin on 2026-09-23 06:00 (UTC+8) and is estimated to take 5 hours.
+
+At the same time, pre-installation for the Version 7.1 update is now available. Travelers on PC
+and mobile devices can open the game and follow the prompts to start pre-installing the update.
+
+Maintenance Compensation: Primogems ×300
+"""
+
+# ZZZ 3.2 update notice (HoYoLAB 46604333). Every number sits under a bracketed section header on
+# the following line, and the window is spelled out in words instead of digits.
+ZZZ_32_NOTICE = """Dear Proxies,
+
+[Version Update Time]
+2026-09-09 06:00 (UTC+8)
+We estimate this will take five hours. Thank you for your patience.
+
+[Pre-Download Period]
+2026-09-07 12:00 (UTC+8) – 2026-09-09 06:00 (UTC+8)
+
+[Pre-Installation Details]
+Please make sure you have at least 32 GB of available storage space on your device.
+"""
+
+
+def test_genshin_preinstall_is_read_from_the_body_not_the_title():
+    item = Item("hoyolab", "genshin", "46771203", "https://www.hoyolab.com/article/46771203",
+                "Version 7.1 Update Maintenance Preview", GI_71_NOTICE, 1789960208)
+    e = schedule.extract(GAMES["genshin"], item)
+    assert e and e.kind == "maintenance" and e.version == "7.1"
+    assert e.fields["maint_start_ts"] == 1790114400          # Wed 2026-09-23 06:00 (UTC+8)
+    assert e.fields["maint_end_ts"] == 1790132400            # +5 h, == the banner feed's phase-1 start
+    assert e.fields["preinstall_ts"] == 1789960208           # the post's own time: "is now available"
+
+
+def test_zzz_labelled_sections_carry_the_times_the_sentence_scanner_dropped():
+    item = Item("hoyolab", "zzz", "46604333", "https://www.hoyolab.com/article/46604333",
+                "Version 3.2 Update Maintenance Notice", ZZZ_32_NOTICE, 1788700000)
+    e = schedule.extract(GAMES["zzz"], item)
+    assert e and e.kind == "maintenance" and e.version == "3.2"
+    assert e.fields["maint_start_ts"] == 1788904800          # Wed 2026-09-09 06:00 (UTC+8)
+    assert e.fields["maint_end_ts"] == 1788922800            # "take five hours" -> 11:00
+    assert e.fields["preinstall_ts"] == 1788753600           # Mon 2026-09-07 12:00 (UTC+8)
+
+
+def test_spelled_out_maintenance_duration_parses():
+    assert find_duration_hours("We estimate this will take five hours.") == 5.0
+    assert find_duration_hours("The maintenance is expected to take about three hours.") == 3.0
+    assert find_duration_hours("is estimated to take 5 hours") == 5.0      # digits still win
+    assert find_duration_hours("five hours of new story content await") is None
+
+
+def test_the_storage_block_is_not_mistaken_for_a_preinstall_clock():
+    text = ("[Pre-Download Period]\n"
+            "Reserve at least 32 GB of storage space before 2026-09-01 00:00 (UTC+8).\n"
+            "[Version Update Time]\n"
+            "2026-09-09 06:00 (UTC+8)\n")
+    f = schedule.extract_labelled(text, 1788700000)
+    assert "preinstall_ts" not in f                            # a size line is not a schedule
+    assert f["maint_start_ts"] == 1788904800
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0
