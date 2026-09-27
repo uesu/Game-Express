@@ -95,6 +95,11 @@ def banner_feed_for(banners: list[dict], release_ts: int | None) -> dict[str, li
         res["phase1"] = p1
     if p2:
         res["phase2"] = p2
+    # Every banner NAME this game is running. The hub is the only source that tells a banner's
+    # title apart from the character featured on it, so callers use this as a reject-list.
+    titles = [str(b.get("title")) for b in banners if b.get("title")]
+    if titles:
+        res["titles"] = list(dict.fromkeys(titles))
     return res
 
 

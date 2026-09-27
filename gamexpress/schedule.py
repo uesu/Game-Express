@@ -110,6 +110,38 @@ QUOTED = re.compile(r"[\"“「『]([^\"”」』\n]{2,40})[\"”」』]")
 PHASE1 = re.compile(r"phase\s*(?:I|1)\b(?!I)|first\s+(?:half|phase)|1st\s+(?:half|phase)", re.I)
 PHASE2 = re.compile(r"phase\s*(?:II|2)\b|second\s+(?:half|phase)|2nd\s+(?:half|phase)", re.I)
 
+# HoYoverse notices name CHARACTERS bare and put WEAPONS in quotes:
+#     the limited 5-star character Pearl (Elation: Ice) and the limited 5-star Light Cone
+#     "Colors for Tomorrow (Elation)" will be boosted ...
+#     the 4-star characters Qingque (Erudition: Quantum), Xueyi (Destruction: Quantum), and
+#     Misha (Destruction: Ice), as well as the 4-star Light Cones "Post-Op Conversation ..."
+# Until 2026-09-27 extract_banner read ONLY the quoted names, so HSR 4.6 shipped with phase1 =
+# ["Celestial Invitation", "An Ocean in a Pearl", "The Demoiselle in Charge"] -- three banner
+# TITLES -- while the real 5-stars (Pearl, Evanescia) and every 4-star were dropped, and
+# phase1_4 held three 4-star LIGHT CONES. Source: HoYoLAB post 46851682, "Version 4.6 Event
+# Warp: Phase I". The plural matters: `light\s+cone\b` never matched "Light Cones", so the
+# guard that was supposed to cut the weapon clause off did not fire at all.
+TIER_STOP = re.compile(
+    r"\b(?:light\s+cones?|weapons?|w-engines?|as\s+well\s+as|will\s+(?:be|return|receive)|"
+    r"and\s+the\s+limited|drop[-\s]rates?)\b", re.I)
+NAME_SPLIT = re.compile(r",\s*(?:and\s+)?|\s+and\s+|\s*;\s*")
+# A star-tier phrase is often followed by an article before the name ("5-star character \"Pearl\"",
+# "…and the 4-star characters …"), and truncating at the NEXT tier leaves a dangling "the". Those
+# pass plausible_name(), so they have to be dropped here rather than trusted as a name.
+NAME_FILLER = {"the", "a", "an", "and", "as", "of", "for", "will", "is", "are", "its", "both"}
+QUOTED_FIRST = re.compile(r"\s*[\"“「『]")
+
+
+def bare_names(tail: str) -> list[str]:
+    """Character names written WITHOUT quotes after a star-tier phrase, in order."""
+    run = TIER_STOP.split(tail, maxsplit=1)[0]
+    out: list[str] = []
+    for piece in NAME_SPLIT.split(run):
+        n = _clean_name(piece)
+        if n and n.lower() not in NAME_FILLER and n not in out:
+            out.append(n)
+    return out
+
 # HoYoverse notices label their numbers with bracketed section headers and put the VALUE ON THE
 # NEXT LINE, so a sentence scanner sees "2026-09-09 06:00 (UTC+8) : We estimate this will take five
 # hours." with no "maintenance" anywhere in it and throws the time away. Read label+value as a pair.
@@ -340,9 +372,16 @@ def extract_banner(item: Item) -> dict:
             other = (FOUR_RE if rx is FIVE_RE else FIVE_RE).search(tail)
             if other:                                   # stop at the next star tier
                 tail = tail[: other.start()]
-            tail = re.split(r"\b(?:weapon|light\s+cone|w-engine|will\s+receive|drop[-\s]rate)\b", tail, flags=re.I)[0]
-            for q in QUOTED.findall(tail):
-                n = _clean_name(q)
+            # Which style is this notice? HoYoverse writes characters bare and quotes the
+            # weapons; other official posts quote the characters too. The first character after
+            # the star-tier phrase decides, so a quoted name is never read as a bare one.
+            quoted = [_clean_name(q)
+                      for q in QUOTED.findall(TIER_STOP.split(tail, maxsplit=1)[0])]
+            if QUOTED_FIRST.match(tail):
+                names = quoted
+            else:
+                names = [n for n in bare_names(tail) if plausible_name(n)] or quoted
+            for n in names:
                 if not n:
                     continue
                 if not plausible_name(n):
@@ -566,13 +605,28 @@ def data_release_ts(data: dict) -> int | None:
 
 def apply_banner_feed(data: dict, prov: dict, feed: dict | None, now: int) -> None:
     """Fill 5★ banner phases from the community banner feed (hub.json), but ONLY when that
-    phase is currently empty (PRIORITY['bannerfeed'] is 5, the lowest in the bot)."""
+    phase is currently empty (PRIORITY['bannerfeed'] is 5, the lowest in the bot).
+
+    One exception, and it is a cross-check rather than an override: the hub is the only source
+    that separates a banner's NAME from the character featured on it. If a phase is holding
+    something the hub knows as a banner title, the notice was mis-read -- the hub's own featured
+    list replaces it even though its priority is the lowest. That is what caught HSR 4.6 phase1
+    carrying "An Ocean in a Pearl" (a banner) instead of Pearl (the character).
+    """
     if not feed:
         return
     banners = dict(data.get("banners") or {})
+    titles = {str(t).lower() for t in feed.get("titles") or []}
     changed = False
     for key in ("phase1", "phase2"):
-        if feed.get(key) and not banners.get(key) and prov.get(f"b_{key}", [0])[0] <= PRIORITY["bannerfeed"]:
+        have = banners.get(key)
+        if have and titles and feed.get(key) and any(str(n).lower() in titles for n in have):
+            log.info("banner %s held a banner TITLE, not a character — replaced from the feed", key)
+            banners[key] = feed[key]
+            prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
+            changed = True
+            continue
+        if feed.get(key) and not have and prov.get(f"b_{key}", [0])[0] <= PRIORITY["bannerfeed"]:
             banners[key] = feed[key]
             prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
             changed = True

@@ -42,14 +42,26 @@ DEFAULT_COMMUNITY_BUTTONS = [
      "emoji": "a:starward11:1439878792653832253"},
 ]
 
-# round 13/14 nitter fleet from News-Express (live-probed there, 2026-09-20);
-# the chain stops at the first instances that answer with real entries.
-# x.yuuki.sh answers 403 to GitHub's runners (seen in the first live runs, 2026-09-25) — kept
-# last so it only costs a request when everything before it failed (it may work on a VPS).
+# nitter.cf / xitter.cf lead: they are the public pair this monitor is built against, and the
+# chain stops at the first two instances that answer with real entries.
+#
+# The rest is ordered by measured uptime from status.d420.de (2026-09-27). Dropped that day:
+#   * x.n0g.xyz   -- HTTP 404 then 429 on every handle in three consecutive live runs
+#                    (36296323488, 36298632006, 36299586254); the only recurring source failure.
+# x.yuuki.sh answers 403 to GitHub's runners (seen in the first live runs, 2026-09-25) and
+# xcancel.com was suspended on 2026-09-14, so both sit last: they only cost a request when
+# everything ahead of them failed, and either may work from a VPS.
+# nitter.miningtcup.me is the token-gated instance -- it is the one NITTER_RSS_TOKEN is for.
 DEFAULT_NITTER = [
-    "https://nitter.cf", "https://xitter.cf", "https://nitter.jaydenha.uk", "https://x.n0g.xyz",
-    "https://nitter.meowing.monster", "https://nitter.click", "https://nitter.xitter.cc",
-    "https://nitter.miningtcup.me", "https://nitter.netbub.com", "https://shitter.thepixora.com",
+    "https://nitter.cf", "https://xitter.cf",
+    "https://nitter.meowing.monster",    # 95%
+    "https://nitter.netbub.com",         # 93%
+    "https://nitter.miningtcup.me",      # 92% — token-gated (NITTER_RSS_TOKEN)
+    "https://nitter.jaydenha.uk",        # 91%
+    "https://nitter.click",              # 88%
+    "https://shitter.thepixora.com",     # 85%
+    "https://nitter.xitter.cc",          # 74%
+    "https://tw.eir-nya.gay",
     "https://nitter.perennialte.ch", "https://nitter.privacydev.net", "https://nitter.net",
     "https://xcancel.com", "https://x.yuuki.sh",
 ]

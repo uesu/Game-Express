@@ -1616,7 +1616,7 @@ def test_the_banner_feed_never_invents_a_lineup_for_the_wrong_version():
     data = json.loads((FIX / "bannerfeed_hub_trimmed.json").read_text(encoding="utf-8"))
     feed = bannerfeed.parse_hub(data, now=1790452566)
     lineup = bannerfeed.banner_feed_for(feed["starrail"], 1999999999)
-    assert lineup == {}
+    assert "phase1" not in lineup and "phase2" not in lineup   # titles may ride along
 
     record: dict = {"data": {"version": "9.9", "maint_end_ts": 1999999999}, "prov": {}}
     merged = schedule.merge(GAMES["starrail"], "9.9", [], record, {}, {}, 1790452566,
@@ -2099,6 +2099,95 @@ def test_program_settled_shares_the_window_with_the_announce_decision():
     assert schedule.program_settled({"program_ts": now - int(36 * 3600) + 60}, now) is False
     assert schedule.program_settled({"program_ts": now + 86400}, now) is False   # not aired yet
     assert schedule.program_settled({}, now) is False                            # air time unknown
+
+
+# =========================================================================== banner accuracy
+# Verbatim body of HoYoLAB post 46851682, "Version 4.6 Event Warp: Phase I" (created_at
+# 1790488804). This is the post that produced the wrong live card: extract_banner read only the
+# QUOTED names, and HoYoverse quotes light cones and banner titles -- never characters.
+HSR_46_WARP_PHASE1 = (
+    'Hello, Trailblazers! The drop rates for the limited 5-star character Pearl (Elation: Ice) '
+    'and the limited 5-star Light Cone "Colors for Tomorrow (Elation)" will be boosted for a '
+    'limited time. The drop rates for the 4-star characters Qingque (Erudition: Quantum), '
+    'Xueyi (Destruction: Quantum), and Misha (Destruction: Ice), as well as the 4-star Light '
+    'Cones "Post-Op Conversation (Abundance)," "Planetary Rendezvous (Harmony)," and '
+    '"Boundless Choreo (Nihility)" will be boosted for a limited time. The Warp period is from '
+    'after the Version 4.6 update on 2026-09-28 \u2013 2026-11-10 15:00 (server time). The limited '
+    '5-star character Evanescia (Elation: Physical) and the limited 5-star Light Cone "Until the '
+    'Flowers Bloom Again (Elation)" will return. The Warp period is from after the Version 4.6 '
+    'update on 2026-09-28 \u2013 2026-10-21 11:59 (server time). \u258c"An Ocean in a Pearl" and '
+    '"Brilliant Fixation: Colors for Tomorrow" Event Warps'
+)
+HSR_46_NOT_CHARACTERS = {
+    "Celestial Invitation", "An Ocean in a Pearl", "The Demoiselle in Charge",   # banner titles
+    "Post-Op Conversation", "Planetary Rendezvous", "Boundless Choreo",          # 4* light cones
+    "Colors for Tomorrow", "Until the Flowers Bloom Again",                      # 5* light cones
+}
+
+
+def test_the_real_warp_notice_yields_characters_not_light_cones():
+    item = Item("hoyolab", "starrail", "46851682", "https://www.hoyolab.com/article/46851682",
+                "Version 4.6 Event Warp: Phase I", HSR_46_WARP_PHASE1, 1790488804)
+    b = schedule.extract_banner(item)
+    assert b["banner_five"] == ["Pearl", "Evanescia"]
+    assert b["banner_four"] == ["Qingque", "Xueyi", "Misha"]
+    assert b["banner_four_unsure"] is False and b["banner_phase"] == 1
+    leaked = (set(b["banner_five"]) | set(b["banner_four"])) & HSR_46_NOT_CHARACTERS
+    assert not leaked, leaked
+
+
+def test_a_quoted_character_notice_still_reads_the_quotes():
+    """The other official style quotes its characters. Both must work."""
+    text = ('Event Wish "Ballad" Phase II: the event-exclusive 5-star character "Vodyanitsa (Hydro)" '
+            'and the 4-star characters "Bennett (Pyro)", "Xingqiu (Hydro)" and "Sucrose (Anemo)" '
+            'will get a huge drop-rate boost!')
+    b = schedule.extract_banner(Item("hoyolab", "genshin", "1", "u", "Event Wish", text, 1))
+    assert b["banner_five"] == ["Vodyanitsa"]
+    assert b["banner_four"] == ["Bennett", "Xingqiu", "Sucrose"]
+
+
+def test_a_dangling_article_is_never_read_as_a_character_name():
+    b = schedule.bare_names(' "Vodyanitsa (Hydro)" and the ')
+    assert "the" not in b and "The" not in b
+
+
+def test_the_banner_feed_replaces_a_phase_that_holds_a_banner_title():
+    """The hub is the only source that separates a banner's NAME from its featured character."""
+    data = {"banners": {"phase1": ["An Ocean in a Pearl", "The Demoiselle in Charge"]}}
+    prov = {"b_phase1": [50, 1790488804]}          # hoyolab -- higher priority than the feed
+    schedule.apply_banner_feed(data, prov,
+                               {"phase1": ["Evanescia", "Pearl"],
+                                "titles": ["An Ocean in a Pearl", "The Demoiselle in Charge",
+                                           "Now I Am Become Blade"]}, 1790500000)
+    assert data["banners"]["phase1"] == ["Evanescia", "Pearl"]
+    assert prov["b_phase1"][0] == 5                # now attributed to the feed
+
+
+def test_the_banner_feed_still_never_overwrites_real_characters():
+    data = {"banners": {"phase1": ["Evanescia", "Pearl"]}}
+    prov = {"b_phase1": [50, 1790488804]}
+    schedule.apply_banner_feed(data, prov,
+                               {"phase1": ["Evanescia", "Pearl"], "titles": ["An Ocean in a Pearl"]},
+                               1790500000)
+    assert data["banners"]["phase1"] == ["Evanescia", "Pearl"]
+    assert prov["b_phase1"][0] == 50               # untouched
+
+
+# =========================================================================== nitter fleet
+def test_the_nitter_fleet_leads_with_nitter_cf_and_drops_the_dead_mirror():
+    from gamexpress.config import DEFAULT_NITTER
+    assert DEFAULT_NITTER[0] == "https://nitter.cf"
+    assert DEFAULT_NITTER[1] == "https://xitter.cf"
+    # HTTP 404 then 429 on every handle in runs 36296323488 / 36298632006 / 36299586254
+    assert "https://x.n0g.xyz" not in DEFAULT_NITTER
+    assert len(DEFAULT_NITTER) == len(set(DEFAULT_NITTER))
+
+
+def test_the_token_gated_instance_is_in_the_fleet():
+    from gamexpress.config import DEFAULT_NITTER
+    from gamexpress.sources.twitter import TOKEN_GATED
+    for inst in TOKEN_GATED:
+        assert inst in DEFAULT_NITTER, inst
 
 
 if __name__ == "__main__":
