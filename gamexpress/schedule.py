@@ -801,7 +801,19 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                 if ((four or f.get("banner_four_unsure"))
                         and prov.get(f"b_{key4}", [0])[0] < PRIORITY["override"]):
                     flag = f"b_{key4}_tba"
-                    problem = _four_star_problem(game, four, banners.get(key4), prov.get(flag))
+                    # Re-reading the SAME post (same source, same timestamp) is not two official
+                    # sources disagreeing -- it is this bot parsing one notice better than it did
+                    # before. Comparing against the stored list there would latch the OLD, wrong
+                    # list into a permanent TBA: HSR 4.6 phase1_4 held three light cones written
+                    # by post 46851682, and the corrected reader re-reads that very post.
+                    # Disagreement only means something between DIFFERENT posts.
+                    same_post = prov.get(f"b_{key4}") == [PRIORITY.get(src, 10), ts]
+                    problem = _four_star_problem(
+                        game, four,
+                        None if same_post else banners.get(key4),
+                        None if same_post else prov.get(flag))
+                    if same_post:
+                        prov.pop(flag, None)
                     prov[f"b_{key4}"] = [PRIORITY.get(src, 10), ts]
                     if problem:
                         banners[key4] = []                                # TBA

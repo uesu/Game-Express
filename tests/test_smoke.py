@@ -2136,6 +2136,40 @@ def test_the_real_warp_notice_yields_characters_not_light_cones():
     assert not leaked, leaked
 
 
+def test_re_reading_the_same_post_heals_a_wrong_four_star_list():
+    """phase1_4 held three LIGHT CONES, written into the state by post 46851682 itself. The
+    corrected reader re-reads THAT VERY POST, so _four_star_problem() must not treat the stored
+    list as a second official source disagreeing -- doing so latches the wrong list into a
+    permanent TBA (the flag is sticky) and the 4-stars never come back."""
+    item = Item("hoyolab", "starrail", "46851682", "https://www.hoyolab.com/article/46851682",
+                "Version 4.6 Event Warp: Phase I", HSR_46_WARP_PHASE1, 1790488804)
+    ex = schedule.extract(GAMES["starrail"], item)
+    record = {"data": {"version": "4.6", "banners": {
+                  "phase1": ["Celestial Invitation", "An Ocean in a Pearl"],
+                  "phase1_4": ["Post-Op Conversation", "Planetary Rendezvous", "Boundless Choreo"]}},
+              "prov": {"b_phase1": [50, 1790488804], "b_phase1_4": [50, 1790488804]}}
+    for i in (1, 2):                                    # and it stays healed on every later run
+        data = schedule.merge(GAMES["starrail"], "4.6", [ex], record, {}, {}, 1790510400 + i * 600)
+        record["data"] = data
+        assert data["banners"]["phase1"] == ["Pearl", "Evanescia"]
+        assert data["banners"]["phase1_4"] == ["Qingque", "Xueyi", "Misha"]
+        assert "b_phase1_4_tba" not in record["prov"]
+
+
+def test_two_different_posts_that_disagree_still_fall_back_to_tba():
+    """The re-read exemption is narrow: a DIFFERENT post contradicting the stored 4-star list is
+    still a real disagreement and must still show TBA."""
+    item = Item("hoyolab", "starrail", "46851682", "u", "Version 4.6 Event Warp: Phase I",
+                HSR_46_WARP_PHASE1, 1790488804)
+    ex = schedule.extract(GAMES["starrail"], item)
+    record = {"data": {"version": "4.6",
+                       "banners": {"phase1_4": ["Hanya", "Sampo", "Natasha"]}},
+              "prov": {"b_phase1_4": [50, 1790400000]}}   # an EARLIER, different post
+    data = schedule.merge(GAMES["starrail"], "4.6", [ex], record, {}, {}, 1790510400)
+    assert data["banners"]["phase1_4"] == []
+    assert record["prov"]["b_phase1_4_tba"] == "official sources disagree"
+
+
 def test_a_quoted_character_notice_still_reads_the_quotes():
     """The other official style quotes its characters. Both must work."""
     text = ('Event Wish "Ballad" Phase II: the event-exclusive 5-star character "Vodyanitsa (Hydro)" '
