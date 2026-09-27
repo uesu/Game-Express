@@ -130,6 +130,25 @@ NAME_SPLIT = re.compile(r",\s*(?:and\s+)?|\s+and\s+|\s*;\s*")
 # pass plausible_name(), so they have to be dropped here rather than trusted as a name.
 NAME_FILLER = {"the", "a", "an", "and", "as", "of", "for", "will", "is", "are", "its", "both"}
 QUOTED_FIRST = re.compile(r"\s*[\"“「『]")
+OPEN_QUOTE = re.compile(r"[\"“「『]")
+# A name list follows the star-tier phrase IMMEDIATELY. When prose comes first, the quoted span
+# that follows belongs to a DIFFERENT clause -- and in a HoYoverse notice that clause names a
+# BANNER, not a character:
+#     ※ obtainable 5-star characters include the featured 5-star characters and the
+#       custom-selected characters from "Celestial Invitation."
+#     ※ the limited 5-star character Pearl (Elation: Ice) can only be obtained from the
+#       "An Ocean in a Pearl" Character Event Warp
+# Both sentences made extract_banner return banner TITLES as 5-stars on the real post 46851682
+# (verified 2026-09-27 against getPostFull: five = Pearl, Evanescia, Celestial Invitation,
+# An Ocean in a Pearl). Because the hub knows those strings as banner titles, the cross-check in
+# apply_banner_feed then replaced the whole phase on EVERY run -- so phase1 was carried by the
+# community feed at priority 5 instead of by the official notice at 50, and in the feed's order.
+# The quoted fallback is therefore only trusted when nothing but a name can sit between the
+# star-tier phrase and the opening quote.
+PROSE_BETWEEN = re.compile(
+    r"\b(?:can|could|will|would|shall|may|is|are|was|were|be|been|being|include[sd]?|including|"
+    r"obtain(?:s|ed|able)?|only|from|during|that|which|who|such|boosted|returns?|available|"
+    r"features?|featured|following|below|above)\b", re.I)
 
 
 # Every word of a real character name is capitalised or starts with a digit ("Ben Bigger",
@@ -392,7 +411,13 @@ def extract_banner(item: Item) -> dict:
             if QUOTED_FIRST.match(tail):
                 names = quoted
             else:
-                names = [n for n in bare_names(tail) if plausible_name(n)] or quoted
+                names = [n for n in bare_names(tail) if plausible_name(n)]
+                if not names and quoted:
+                    # Fallback for notices that quote their characters. Only when a NAME could
+                    # sit between the tier phrase and the quote -- prose there means the quote is
+                    # a banner title from another clause (see PROSE_BETWEEN).
+                    q = OPEN_QUOTE.search(tail)
+                    names = [] if PROSE_BETWEEN.search(tail[: q.start()]) else quoted
             for n in names:
                 if not n:
                     continue

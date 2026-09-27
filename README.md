@@ -242,7 +242,7 @@ any name below works without editing YAML.
 | `PING_ROLE_ID` | *(unset)* | role ID(s) to ping. **Unset = no ping.** Comma-separate for several; `everyone` / `here` allowed |
 | `PING_SCHEDULE` / `PING_CODES` | inherit | per-feature override; `none` = explicitly no ping |
 | `PING_<FEATURE>_<GAME>` | inherit | e.g. `PING_SCHEDULE_GENSHIN=111…` |
-| `NO_PING` | off | `1` = never ping, whatever the other ping variables say |
+| `NO_PING` | off | `1` = never ping, whatever the other ping variables say. `monitor.yml` sets it per run: `1` for a test started without ⑥, `0` otherwise (never blank — a blank value would be re-filled from a stale repo variable by the `GE_VARS_JSON` catch-all) |
 | `EMOJI_YOUTUBE` / `EMOJI_TWITCH` | your animated emojis | format `a:name:id` (animated), `name:id`, a unicode emoji, or `none` |
 | `EMOJI_SOURCE` / `EMOJI_REDEEM` | — / 🎁 | emojis for the Source and Redeem buttons |
 | `EXTRA_BUTTONS` | — | JSON list (max 3) of extra buttons on every card, e.g. a community invite |
@@ -397,7 +397,9 @@ concurrent requests, so a run costs a handful of HTTP calls.
 | `schedule` | the **real schedule card** for the version that is out now: the announcement's own link and key art, the livestream date/time, the maintenance timestamps and the banners — exactly what a live run would post |
 | `all` | webhooks → codes → schedule |
 
-`game` narrows any of them to one game; `ping` (off by default) adds your role ping.
+`game` narrows any of them to one game; `ping` (off by default) adds your role ping **to the test
+cards only**. A live run pings according to `PING_SCHEDULE` / `PING_ROLE_ID` whatever this switch
+says — ⑥ used to reach the live run too, which silently muted every real announcement.
 
 > A test posts to the **real** channels and never writes the state — so the live run still posts
 > the real thing later. Delete the test cards when you are done with them.

@@ -758,6 +758,12 @@ def test_workflows_cron_job_org_and_test_bench():
     # cron-job.org sends NO inputs at all, so the defaults must be a plain live run
     assert inputs["only"]["default"] == "all" and inputs["game"]["default"] == "" \
         and inputs["repost"]["default"] == ""
+    # ⑥ (ping) is documented as a TEST switch, but job-level env reaches the LIVE run too, and
+    # cron-job.org sends no inputs -- so an unscoped `!inputs.ping` made NO_PING=1 on every
+    # scheduled run: settings.ping() short-circuits on it, PING_SCHEDULE was dead weight, and a
+    # real version announcement posted without pinging the role (seen in the 2026-09-27 runs:
+    # live = "no ping", test+ping = "<@&1296268365593186426>").
+    assert env["NO_PING"] == "${{ inputs.mode != 'live' && !inputs.ping && '1' || '0' }}"
     assert inputs["test"]["options"] == ["webhooks", "codes", "schedule", "all"]
     job = mon["jobs"]["monitor"]
     assert "|| inputs.mode == 'test'" in str(job["if"])          # a test still runs on the dev repo
@@ -856,6 +862,75 @@ def test_aggregator_copies_count_as_their_upstream():
     assert [h.code for h in kept] == ["OMEGA"]                 # seria dropped it -> PromoGacha's copy is stale
     results["seria:hkrpg"] = None                               # seria down: the copy is the best we have
     assert [h.code for h in codeposter.drop_stale_copies(hub, results)] == ["MALSV2F247FP"]
+
+
+# =========================================================================== fandom code pages
+# The four community wikis the codes monitor reads, exactly as listed in the request. A rename or
+# a typo in config/games.json silently drops a whole source, so the mapping is asserted here.
+FANDOM_PAGES = {
+    "genshin": "fandom:genshin-impact/Promotional_Code",       # /wiki/Promotional_Code
+    "starrail": "fandom:honkai-star-rail/Redemption_Code",     # /wiki/Redemption_Code
+    "zzz": "fandom:zenless-zone-zero/Redemption_Code",         # /wiki/Redemption_Code
+    "wuwa": "fandom:wutheringwaves/Redemption_Code",           # /wiki/Redemption_Code
+}
+
+
+def test_every_game_watches_the_fandom_page_the_community_maintains():
+    for key, spec in FANDOM_PAGES.items():
+        assert spec in GAMES[key].codes.get("sources", []), (key, GAMES[key].codes["sources"])
+
+
+def test_the_live_genshin_fandom_page_yields_every_active_code_exactly_once():
+    """Verbatim 'Active Codes' section of genshin-impact.fandom.com/wiki/Promotional_Code,
+    captured 2026-09-27 (pageid 10893, revid 2183997, 2026-09-25T12:05:33Z). It carries every
+    awkwardness the GI table has: a four-code row, a mixed-case code, a |ref= field full of
+    URLs, and a China-only row that must not reach a global channel."""
+    hits = csrc.parse_fandom(fx("fandom_gi_live_active_codes.json"), LIVE_NOW)
+    codes = [h.code for h in hits]
+    assert codes == ["EPIC2026", "VESNAONPATROL",                       # mixed case -> upper
+                     "GS71XAVWDS", "GS71XDYGEO", "GS71XYNSYJ", "GS71XOXYLG",   # one row, 4 codes
+                     "Y6JYMKV6JKSL", "YOAL3V36XHS7", "DUGODWKRHAKDNJ", "BALLETCOLLAB",
+                     "2BJ64QRZ7RT8"]
+    assert len(codes) == len(set(codes)), "the same code twice from one page"
+    assert "YUANSHEN" not in codes                       # CN-only row
+    assert not [h for h in hits if h.expired]            # the whole section is under ==Active==
+    by_code = {h.code: h for h in hits}
+    assert by_code["EPIC2026"].rewards == "Primogem*40;Mora*20000;Hero's Wit*5"
+    assert by_code["GS71XOXYLG"].rewards == "Mora*30000;Hero's Wit*3;Mystic Enhancement Ore*5"
+
+
+def test_an_expired_heading_in_column_zero_still_expires_its_codes():
+    """The MediaWiki API returns a page from its first byte, so a wiki whose very first line is
+    '==Expired Codes==' has no newline in front of it. The marker regex was anchored on \n, so
+    that heading was invisible and every dead code on the page was posted as active."""
+    wikitext = ("==Expired Codes==\n"
+                "{{Code Row|DEADCODE1|G|Primogem*60|2026-01-01|unknown}}\n"
+                "==Active Codes==\n"
+                "{{Code Row|LIVECODE1|G|Primogem*60|2026-09-01|unknown}}\n")
+    data = {"query": {"pages": {"1": {"revisions": [{"slots": {"main": {"*": wikitext}}}]}}}}
+    hits = {h.code: h for h in csrc.parse_fandom(data, LIVE_NOW)}
+    assert hits["DEADCODE1"].expired is True
+    assert hits["LIVECODE1"].expired is False
+
+
+def test_an_aggregator_copy_is_never_a_second_independent_source():
+    """PromoGacha (codehub) copies other collectors and never deletes entries, so a copy counts
+    as its UPSTREAM -- including an Open Gacha Codes / api.ennead.cc copy, which is the same
+    backend as `ogc`. Otherwise one real source could satisfy a two-source gate all by itself."""
+    hub = {"codes": [{"game": "genshin", "code": "GS71XAVWDS", "source": {"name": "Open Gacha Codes"}},
+                     {"game": "genshin", "code": "EPIC2026", "source": {"name": "Fandom Wiki"}},
+                     {"game": "genshin", "code": "DUGODWKRHAKDNJ", "source": {"name": "hoyo-codes"}},
+                     {"game": "genshin", "code": "YOAL3V36XHS7", "source": {"name": "api.ennead.cc"}}]}
+    origins = {h.code: h.origin for h in csrc.parse_codehub(hub, "genshin")}
+    assert origins == {"GS71XAVWDS": "ennead", "EPIC2026": "fandom",
+                       "DUGODWKRHAKDNJ": "seria", "YOAL3V36XHS7": "ennead"}
+
+    # and the gate sees ONE family, not two, when ogc and its codehub copy are the only sources
+    hits = [CodeHit("GS71XAVWDS", "ogc", None),
+            next(h for h in csrc.parse_codehub(hub, "genshin") if h.code == "GS71XAVWDS")]
+    info = codeposter.group_hits(hits, LIVE_NOW)["GS71XAVWDS"]
+    assert info["families"] == {"ennead"}
+    assert codeposter.passes_gate(info, 2) is False
 
 
 def test_valid_until_date_beats_every_other_source():
@@ -2103,21 +2178,39 @@ def test_program_settled_shares_the_window_with_the_announce_decision():
 
 # =========================================================================== banner accuracy
 # Verbatim body of HoYoLAB post 46851682, "Version 4.6 Event Warp: Phase I" (created_at
-# 1790488804). This is the post that produced the wrong live card: extract_banner read only the
-# QUOTED names, and HoYoverse quotes light cones and banner titles -- never characters.
-HSR_46_WARP_PHASE1 = (
-    'Hello, Trailblazers! The drop rates for the limited 5-star character Pearl (Elation: Ice) '
-    'and the limited 5-star Light Cone "Colors for Tomorrow (Elation)" will be boosted for a '
-    'limited time. The drop rates for the 4-star characters Qingque (Erudition: Quantum), '
-    'Xueyi (Destruction: Quantum), and Misha (Destruction: Ice), as well as the 4-star Light '
-    'Cones "Post-Op Conversation (Abundance)," "Planetary Rendezvous (Harmony)," and '
-    '"Boundless Choreo (Nihility)" will be boosted for a limited time. The Warp period is from '
-    'after the Version 4.6 update on 2026-09-28 \u2013 2026-11-10 15:00 (server time). The limited '
-    '5-star character Evanescia (Elation: Physical) and the limited 5-star Light Cone "Until the '
-    'Flowers Bloom Again (Elation)" will return. The Warp period is from after the Version 4.6 '
-    'update on 2026-09-28 \u2013 2026-10-21 11:59 (server time). \u258c"An Ocean in a Pearl" and '
-    '"Brilliant Fixation: Colors for Tomorrow" Event Warps'
-)
+# 1790488804), fetched 2026-09-27 from
+#   bbs-api-os.hoyolab.com/community/post/wapi/getPostFull?post_id=46851682
+# This is the post that produced the wrong live card, and it must be the WHOLE body: the
+# first two paragraphs alone read correctly, and an earlier fixture stopped there -- which is
+# exactly why the two banner TITLES that leak out of the "※ Event Warp Details" section
+# ("Celestial Invitation", "An Ocean in a Pearl") survived into production. With them present
+# the reader has to prove it ignores a banner name in every clause of the notice.
+HSR_46_WARP_PHASE1 = """\
+Hello, Trailblazers!
+The drop rates for the limited 5-star character Pearl (Elation: Ice) and the limited 5-star Light Cone "Colors for Tomorrow (Elation)" will be boosted for a limited time. The drop rates for the 4-star characters Qingque (Erudition: Quantum), Xueyi (Destruction: Quantum), and Misha (Destruction: Ice), as well as the 4-star Light Cones "Post-Op Conversation (Abundance)," "Planetary Rendezvous (Harmony)," and "Boundless Choreo (Nihility)" will be boosted for a limited time. The Warp period is from after the Version 4.6 update on 2026-09-28 – 2026-11-10 15:00 (server time).
+The limited 5-star character Evanescia (Elation: Physical) and the limited 5-star Light Cone "Until the Flowers Bloom Again (Elation)" will return. The Warp period is from after the Version 4.6 update on 2026-09-28 – 2026-10-21 11:59 (server time).
+
+▌"An Ocean in a Pearl" and "Brilliant Fixation: Colors for Tomorrow" Event Warps
+● During the "An Ocean in a Pearl" Character Event Warp, the drop rates of the limited 5-star character Pearl (Elation: Ice) and 4-star characters Qingque (Erudition: Quantum), Xueyi (Destruction: Quantum), and Misha (Destruction: Ice) will be boosted for a limited time.
+● During the "Brilliant Fixation: Colors for Tomorrow" Light Cone Event Warp, the drop rates of the limited 5-star Light Cone "Colors for Tomorrow (Elation)" and the 4-star Light Cones "Post-Op Conversation (Abundance)," "Planetary Rendezvous (Harmony)," and "Boundless Choreo (Nihility)" will be boosted for a limited time.
+
+▌"The Demoiselle in Charge" and "Bygone Reminiscence: Until the Flowers Bloom Again" Event Warps
+● During "The Demoiselle in Charge" Character Event Warp, the drop rates of the limited 5-star character Evanescia (Elation: Physical) and 4-star characters Qingque (Erudition: Quantum), Xueyi (Destruction: Quantum), and Misha (Destruction: Ice) will be boosted for a limited time.
+● During the "Bygone Reminiscence: Until the Flowers Bloom Again" Light Cone Event Warp, the drop rates of the limited 5-star Light Cone "Until the Flowers Bloom Again (Elation)" and the 4-star Light Cones "Post-Op Conversation (Abundance)," "Planetary Rendezvous (Harmony)," and "Boundless Choreo (Nihility)" will be boosted for a limited time.
+
+▌ Event Warp Details
+※ Among the above characters and Light Cones, limited characters and limited Light Cones will not be available in the Stellar Warp event.
+※ In this phase of Warp, obtainable 5-star characters include the featured 5-star characters and the custom-selected characters from "Celestial Invitation."
+※ During the Event Warp period, the limited 5-star character Pearl (Elation: Ice) can only be obtained from the "An Ocean in a Pearl" Character Event Warp, and the limited 5-star character Evanescia (Elation: Physical) can only be obtained from the "The Demoiselle in Charge" Character Event Warp.
+※ During the Event Warp period, the limited 5-star Light Cone "Colors for Tomorrow (Elation)" can only be obtained from the "Brilliant Fixation: Colors for Tomorrow" Light Cone Event Warp, and the limited 5-star Light Cone "Until the Flowers Bloom Again (Elation)" can only be obtained from the "Bygone Reminiscence: Until the Flowers Bloom Again" Light Cone Event Warp.
+※ "An Ocean in a Pearl" and "The Demoiselle in Charge" are Character Event Warps that share the same guaranteed drop counter. The cumulative Warp count for a guaranteed 5-star character in any Character Event Warp will always be carried over to other Character Event Warps, but is independent of and unaffected by other types of Warps.
+※ "Brilliant Fixation: Colors for Tomorrow" and "Bygone Reminiscence: Until the Flowers Bloom Again" are considered Light Cone Event Warps, and share the same guaranteed drop counter. The cumulative Warp count for a guaranteed 5-star Light Cone in any Light Cone Event Warp will always be carried over to other Light Cone Event Warps, but is independent of and unaffected by other types of Warps.
+※ For more information, please head to the Warp screen.
+
+▌ "Aptitude Showcase" Character Trial Event
+● Requirement: Unlock Travel Log
+Event Details: After the Version 4.6 update on 2026-09-28 – 2026-11-10 15:00 (server time), you can experience the trial stages for characters Pearl (Elation: Ice), Qingque (Erudition: Quantum), Xueyi (Destruction: Quantum), and Misha (Destruction: Ice). After the Version 4.6 update on 2026-09-28 – 2026-10-21 11:59 (server time), you can experience the trial stage for the character Evanescia (Elation: Physical). Completing the challenges awards Stellar Jades, Adventure Logs, Universal Enhancement Materials, and Credits.
+"""
 HSR_46_NOT_CHARACTERS = {
     "Celestial Invitation", "An Ocean in a Pearl", "The Demoiselle in Charge",   # banner titles
     "Post-Op Conversation", "Planetary Rendezvous", "Boundless Choreo",          # 4* light cones
@@ -2304,6 +2397,70 @@ def test_a_demoted_tail_mirror_costs_no_request_while_the_fleet_answers():
     assert {e["id"] for e in tl} == {"3333333333"}
     assert not [u for u in calls if "n0g" in u], calls
 
+
+
+def test_the_notice_carries_phase_one_so_the_hub_cross_check_stays_quiet():
+    """Live HSR 4.6 held `prov.b_phase1 = [5, ...]` -- the community banner feed, the LOWEST
+    priority in the bot -- and the log said "banner phase1 held a banner TITLE, not a character
+    -- replaced from the feed" on every single run. The notice itself was the source of those
+    titles. Read correctly, phase1 belongs to the notice at priority 50, in the notice's own
+    order (Pearl is the new 5-star, Evanescia the rerun), and the cross-check has nothing left to
+    replace -- so the card no longer depends on hub.json being up to date."""
+    item = Item("hoyolab", "starrail", "46851682", "https://www.hoyolab.com/article/46851682",
+                "Version 4.6 Event Warp: Phase I", HSR_46_WARP_PHASE1, 1790488804)
+    ex = schedule.extract(GAMES["starrail"], item)
+    record = {"data": {"version": "4.6", "banners": {"phase1": ["Evanescia", "Pearl"]}},
+              "prov": {"b_phase1": [5, 1790504763]}}      # exactly what live state holds
+    data = schedule.merge(GAMES["starrail"], "4.6", [ex], record, {}, {}, 1790510400)
+    assert data["banners"]["phase1"] == ["Pearl", "Evanescia"]     # the notice's own order
+    assert record["prov"]["b_phase1"][0] == 50                     # official notice, not the feed
+
+    # With the notice carrying it, a feed that knows every banner TITLE has nothing to replace.
+    prov = dict(record["prov"])
+    schedule.apply_banner_feed(
+        data, prov,
+        {"phase1": ["Evanescia", "Pearl"],
+         "titles": ["An Ocean in a Pearl", "The Demoiselle in Charge", "Celestial Invitation"]},
+        1790510400)
+    assert data["banners"]["phase1"] == ["Pearl", "Evanescia"]
+    assert prov["b_phase1"][0] == 50
+
+
+def test_a_quoted_name_after_prose_is_a_banner_not_a_character():
+    """The two clauses that broke HSR 4.6 phase1, isolated: a quoted span is only a character
+    when a NAME can sit between the star-tier phrase and the quote."""
+    text = ('The drop rates for the limited 5-star character Pearl (Elation: Ice) will be '
+            'boosted for a limited time. In this phase of Warp, obtainable 5-star characters '
+            'include the featured 5-star characters and the custom-selected characters from '
+            '"Celestial Invitation." The limited 5-star character Evanescia (Elation: Physical) '
+            'can only be obtained from the "The Demoiselle in Charge" Character Event Warp.')
+    b = schedule.extract_banner(Item("hoyolab", "starrail", "1", "u",
+                                     "Version 4.6 Event Warp: Phase I", text, 1790488804))
+    # the name that FOLLOWS the tier phrase is a character; the two quoted spans that sit behind
+    # prose are banner names, and must not be read as 5-stars
+    assert b["banner_five"] == ["Pearl"], b
+
+
+def test_a_live_run_pings_even_with_a_stale_no_ping_variable():
+    """monitor.yml sets NO_PING for EVERY step, so the live branch has to emit a value that is
+    not blank. config._merge_json_blobs() only fills keys whose env value is empty, so
+    `NO_PING=''` leaves a hole: the day a NO_PING repo variable is added it arrives in
+    GE_VARS_JSON, re-fills the blank, and settings.ping() short-circuits again -- PING_SCHEDULE
+    back to dead weight. No such variable exists today (the 2026-09-27 run logs show
+    GE_VARS_JSON = {AUTO_MERGE_DEPENDABOT, PING_SCHEDULE}), so this is a guard, not a fix."""
+    role = "1296268365593186426"
+    stale = '{"NO_PING": "1", "PING_SCHEDULE": "'+ role + '"}'
+
+    live = settings(NO_PING="0", GE_VARS_JSON=stale)          # what a cron/live run now sends
+    assert live.no_ping is False
+    assert live.ping("schedule", "starrail").roles == [role]
+
+    blank = settings(NO_PING="", GE_VARS_JSON=stale)          # the bug '0' exists to avoid
+    assert blank.no_ping is True
+    assert not blank.ping("schedule", "starrail")
+
+    test_run = settings(NO_PING="1", PING_SCHEDULE=role)      # ⑥ off -> a test card never pings
+    assert not test_run.ping("schedule", "starrail")
 
 if __name__ == "__main__":
     sys.exit(main())

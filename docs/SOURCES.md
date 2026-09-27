@@ -54,9 +54,29 @@ service answered.
 | Open Gacha Codes *(v1.1)* | `https://api.ennead.cc/codes/{genshin,starrail,zenless,wuwa}` | community (**confirming only**: noisy, includes glued-together and stale codes, which are filtered) | ✅ incl. Wuthering Waves |
 | api.ennead.cc (legacy) | `https://api.ennead.cc/mihoyo/{genshin,starrail,zenless}/codes` (`active` → active, `inactive` → *expired* flag) | community, **same backend as Open Gacha Codes = counted as one source** | ✅ |
 | wuthering.gg *(v1.1)* | `https://wuthering.gg/codes` (HTML table: code · COPY/Expired · rewards · date) | community (WW), provides **expired** flags | ✅ (only WUTHERINGGIFT active on 2026-09-25) |
-| Fandom wikis (MediaWiki API) | `https://{wiki}.fandom.com/api.php?action=query&prop=revisions&titles={page}&rvprop=content&rvslots=main&format=json` | community. Expired rows and **passed *valid until* dates** give an *expired* flag; a passed date beats every other source *(v1.1.1)* | ✅ all three table formats re-checked 2026-09-25 (GI multi-code rows, HSR `{{Item List}}` rows, WW wikitable with `Valid until: … (PT)`) |
-| PromoGacha data | `https://raw.githubusercontent.com/gripcrip-blip/codehub/main/data/codes.json` → jsDelivr mirror | **aggregator**: every entry says where it was copied from (`hoyo-codes` = seria, `Fandom Wiki`), and entries are never removed. It counts as that upstream, and stale copies are ignored *(v1.1.1)* | ✅ |
+| Fandom wikis (MediaWiki API) | `https://{wiki}.fandom.com/api.php?action=query&prop=revisions&titles={page}&rvprop=content&rvslots=main&format=json` | community. Expired rows and **passed *valid until* dates** give an *expired* flag; a passed date beats every other source *(v1.1.1)* | ✅ **all four pages re-checked live 2026-09-27** — GI `Promotional_Code` (pageid 10893, revid 2183997, 2026-09-25T12:05:33Z, 4 891 B) · HSR `Redemption_Code` (2451, 470121, 2026-09-20T11:51:48Z, 44 109 B) · ZZZ `Redemption_Code` (15440, 184104, 2026-09-13T06:30:28Z, 3 357 B) · WW `Redemption_Code` (2513, 143093, 2026-09-19T12:03:08Z, 15 082 B). GI's live `Active Codes` section is now a fixture — 11 codes, none duplicated, the CN-only `YuanShen` row dropped, `VesnaOnPatrol` normalised to upper case |
+| PromoGacha data | `https://raw.githubusercontent.com/gripcrip-blip/codehub/main/data/codes.json` → jsDelivr mirror | **aggregator**: every entry says where it was copied from (`hoyo-codes` = seria, `Fandom Wiki` = fandom, `Open Gacha Codes` / `api.ennead.cc` = ennead), and entries are never removed. It counts as that upstream — never as an extra independent source — and stale copies are ignored *(v1.1.1)* | ✅ |
 | Official posts | X / HoYoLAB text that explicitly lists "Redemption Codes" | **official**: posts immediately | extraction tested on real tweets (no false positives) |
+
+### How one code stays one code (v1.20.0)
+
+Every hit is folded into a single record keyed by the **sanitised** code (`sanitize()` strips
+non-alphanumerics and upper-cases, so `VesnaOnPatrol` and `VESNAONPATROL` are the same code), and
+the gate counts **families**, not sources:
+
+| rule | effect |
+|---|---|
+| `SOURCE_FAMILY` maps `ogc` → `ennead` | one backend, one vote |
+| a codehub entry counts as its upstream (`seria` / `fandom` / `ennead`) | an aggregator copy is never a second source |
+| `drop_stale_copies()` | a codehub copy is ignored once its upstream answered and no longer lists the code |
+| `drop_concatenations()` | `AAAA…BBBB…` collector artifacts (two codes glued together) are dropped |
+| `CodeSources._once()` | each spec is fetched at most once per run, even with four games prefetching |
+| state is keyed by code | a code already `posted` is never posted twice |
+
+A wiki heading decides active vs expired, and the marker is anchored with `(?m)^`, **not** `\n`:
+the MediaWiki API returns a page from its first byte, so a wiki whose opening line is
+`==Expired Codes==` has no newline in front of it. The old anchor skipped that heading and read
+every dead code on the page as active.
 
 ## X (Twitter) is the PRIMARY schedule source (v1.8.0)
 
@@ -189,6 +209,19 @@ release = Phase 1, `startsAt` ~3 weeks later = Phase 2).
 - 4★ rate-ups and re-run flags are not present in the feed and remain `TBA`.
 - Stale payloads (>14 days) are refused rather than serving outdated lineups.
 - `BANNER_FEED=0` switches the fill-in off completely.
+- **Cross-check, not only a fill-in:** the hub is the one source that separates a banner's NAME
+  from the character featured on it, so a phase holding a string the hub knows as a banner title
+  means the notice was mis-read — the hub's own `featured` list replaces it. That is what caught
+  HSR 4.6 phase 1 carrying `An Ocean in a Pearl` (a banner) instead of `Pearl` (the character).
+- The notice reader no longer needs that rescue for the common case. A name list follows the
+  star-tier phrase **immediately**, so a quoted span sitting behind prose belongs to another
+  clause and names a banner, never a character:
+  `… obtainable 5-star characters include … the custom-selected characters from "Celestial
+  Invitation."` and `… the limited 5-star character Pearl … can only be obtained from the "An
+  Ocean in a Pearl" Character Event Warp` (both verbatim from HoYoLAB post `46851682`, checked
+  against `getPostFull` on 2026-09-27). Read as characters, those two titles made the cross-check
+  fire on **every** run, so phase 1 was carried by the feed at priority 5 — in the feed's order —
+  instead of by the official notice at 50 in the notice's own order.
 
 ### Banner sources evaluated
 
