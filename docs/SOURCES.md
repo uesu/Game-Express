@@ -31,6 +31,13 @@ instances are probed in parallel and the first two that answer are merged; a mir
 HTTP 200 with zero entries is treated as a bot check and skipped. The token-gated
 `https://nitter.miningtcup.me/` mirror alone needs `NITTER_RSS_TOKEN`.
 
+A mirror that stops answering is **demoted, never deleted**. `x.n0g.xyz` returned HTTP 404 then
+429 on every handle in three consecutive live runs, so it sits at the very end of the fleet as a
+backup instead of being cut — and because the loop above breaks once two instances have answered,
+a demoted mirror costs no requests at all until the mirrors ahead of it degrade. The same applies
+to `nitter.netbub.com`, `nitter.meowing.monster`, `xcancel.com` and `x.yuuki.sh`: a host may
+simply be blocking GitHub's runners while answering fine from a VPS.
+
 Tweet data uses the fallback chain **fxtwitter → fixupx → vxtwitter**. FxTwitter and fixupx are
 normalized to the same shape, while vxtwitter is the last fallback. `fixupx` intentionally uses
 zero retries because it is an optional public host and should fail over immediately when DNS is
