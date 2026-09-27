@@ -1638,8 +1638,14 @@
         "data": {
           "banners": {
             "phase1": [
-              "Evanescia",
-              "Pearl"
+              "Celestial Invitation",
+              "An Ocean in a Pearl",
+              "The Demoiselle in Charge"
+            ],
+            "phase1_4": [
+              "Post-Op Conversation",
+              "Planetary Rendezvous",
+              "Boundless Choreo"
             ],
             "phase2": [
               "Mortenax Blade"
@@ -1675,13 +1681,17 @@
         ],
         "first_seen": 1790323161,
         "message_id": "1553646802987913297",
-        "payload_hash": "f131e6369e6be9a3",
+        "payload_hash": "f3d14e8e11348630",
         "posted_at": 1790488654,
         "preinstall_offset_h": 88.0,
         "prov": {
           "b_phase1": [
-            5,
-            1790479405
+            50,
+            1790488804
+          ],
+          "b_phase1_4": [
+            50,
+            1790488804
           ],
           "b_phase2": [
             5,
@@ -1709,7 +1719,7 @@
           ]
         },
         "status": "posted",
-        "updated_at": 1790488654,
+        "updated_at": 1790489775,
         "webhook_fp": "19991534cf6d"
       }
     },
