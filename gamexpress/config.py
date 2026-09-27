@@ -43,27 +43,38 @@ DEFAULT_COMMUNITY_BUTTONS = [
 ]
 
 # nitter.cf / xitter.cf lead: they are the public pair this monitor is built against, and the
-# chain stops at the first two instances that answer with real entries.
+# chain stops at the first TWO instances that answer with real entries.
 #
-# The rest is ordered by measured uptime from status.d420.de (2026-09-27). Dropped that day:
-#   * x.n0g.xyz   -- HTTP 404 then 429 on every handle in three consecutive live runs
-#                    (36296323488, 36298632006, 36299586254); the only recurring source failure.
-# x.yuuki.sh answers 403 to GitHub's runners (seen in the first live runs, 2026-09-25) and
-# xcancel.com was suspended on 2026-09-14, so both sit last: they only cost a request when
-# everything ahead of them failed, and either may work from a VPS.
-# nitter.miningtcup.me is the token-gated instance -- it is the one NITTER_RSS_TOKEN is for.
+# SLOTS 1-4 ARE THE HOT PATH. twitter.py probes NITTER_BATCH (= 4) instances IN PARALLEL on
+# every run, for every handle, whether or not the ones ahead of them answered -- so a mirror
+# that cannot answer costs a request on every single run from slot 4 just as surely as slot 1.
+#
+# This list was ordered by published uptime from status.d420.de on 2026-09-27, which put
+# nitter.meowing.monster (95%) and nitter.netbub.com (93%) into slots 3 and 4. Live run
+# 36305123457 measured what GitHub's runners actually get from them:
+#   * nitter.meowing.monster -- HTTP 200 but 0 entries (bot check / stale), all 4 handles
+#   * nitter.netbub.com      -- HTTP 403, all 4 handles
+# 8 wasted requests per run -- the same failure x.n0g.xyz was removed for, twice over. A
+# published uptime figure is not a measurement of what THIS client gets, so the hot path is
+# now ordered by what the runners observed, and the two are demoted rather than deleted:
+# they answer for other clients, and they may work from a VPS.
+#
+# x.n0g.xyz stays gone: HTTP 404 then 429 on every handle in three consecutive live runs
+# (36296323488, 36298632006, 36299586254).
 DEFAULT_NITTER = [
-    "https://nitter.cf", "https://xitter.cf",
-    "https://nitter.meowing.monster",    # 95%
-    "https://nitter.netbub.com",         # 93%
-    "https://nitter.miningtcup.me",      # 92% — token-gated (NITTER_RSS_TOKEN)
-    "https://nitter.jaydenha.uk",        # 91%
-    "https://nitter.click",              # 88%
-    "https://shitter.thepixora.com",     # 85%
-    "https://nitter.xitter.cc",          # 74%
+    # ── hot path: probed on EVERY run (NITTER_BATCH = 4) — measured answerers only ──
+    "https://nitter.cf", "https://xitter.cf",   # the pair that answers (12 ok / 0 fail)
+    "https://nitter.miningtcup.me",             # token-gated — this is what NITTER_RSS_TOKEN is for
+    "https://nitter.jaydenha.uk",
+    # ── fallbacks: only reached when the hot path gave fewer than two working feeds ──
+    "https://nitter.click", "https://shitter.thepixora.com", "https://nitter.xitter.cc",
     "https://tw.eir-nya.gay",
     "https://nitter.perennialte.ch", "https://nitter.privacydev.net", "https://nitter.net",
-    "https://xcancel.com", "https://x.yuuki.sh",
+    "https://nitter.meowing.monster",   # demoted: 200 but 0 entries to GH runners (36305123457)
+    # ── last: known to refuse GitHub's runners; a request only when everything above failed ──
+    "https://nitter.netbub.com",        # demoted: HTTP 403 to GH runners (36305123457)
+    "https://xcancel.com",              # suspended 2026-09-14
+    "https://x.yuuki.sh",               # HTTP 403 to GH runners (2026-09-25)
 ]
 
 
