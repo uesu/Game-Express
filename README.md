@@ -86,6 +86,15 @@ arrives days after the Special Program, so until then the card can only show `TB
 - `COUNTDOWN_ESTIMATES=0` switches it off, and a countdown site is only asked for a game that
   is actually missing a time (no request is wasted on a version that is already out).
 
+**Pre-install time when the notice has not arrived (since 1.6.0).** If maintenance start is known
+but no official source has published pre-install yet, the monitor derives one labelled
+**estimated**. The fallback is not a fixed weekday rule: each real notice records its lead in
+hours (`maintenance start - pre-install`), and later versions use that game's median. The median
+handles shortened/extended patches and holiday moves without one bad parse dragging future
+cards. On a fresh installation the verified 2026 leads are used once (GI 43 h · HSR 88 h · ZZZ
+42 h · WW 42 h). A derived value never teaches the model, so a guess cannot confirm itself; an
+official HoYoLAB, X/Nitter, Kuro, launcher or override value replaces it automatically.
+
 **The announcement's own link and key art (since 1.3.0).** A run only sees posts inside its
 lookback window, so a version that is already a week old can end up with a card that links to the
 *Update and Maintenance Notice* — and shows that notice's cover — simply because the Special
@@ -314,19 +323,22 @@ Edit it straight on GitHub (✏️ button). An empty list shows `TBA`.
      `4 Star Characters: TBA` and the job summary says why. Once two official posts disagree,
      that phase stays TBA until you confirm the names in `config/overrides.json`.
 3. **Merge with provenance.** Priority is *overrides > official notice > official tweet >
-   launcher signal*.
-4. **Unknown values are TBA, and banners always carry (STC). Nothing is estimated or guessed.**
+   launcher signal > countdown estimate > learned pre-install fallback > banner feed*.
+4. **Unknown values are TBA, and banners always carry (STC).** Countdown and learned pre-install
+   values are explicitly labelled estimated; neither can overwrite an official value.
 5. **Post once** per game + version (`state/state.json`), then **edit silently** when data
-   changes. Announcements that are already stale (the program aired more than 36 h ago with no
-   pending maintenance) are recorded, not posted.
+   changes. If a moderator deleted the original Discord message, a `404 Unknown Message` causes
+   one fresh post whose new message id is adopted; every other edit failure remains an error and
+   never reposts. Announcements that are already stale (the program aired more than 36 h ago with
+   no pending maintenance) are recorded, not posted.
 
 **Verified against real posts.** The parsers reproduce the exact timestamps of your reference
 cards from the official posts:
 - GI 7.1 program: `1789214400`
-- GI 7.1 maintenance: `1790114400` → `1790132400`
-- HSR 4.6 pre-install: `1790229600`
-- HSR 4.6 maintenance: `1790546400` → `1790564400`
-- WW 3.7 broadcast: `1789815600`
+- GI 7.1 pre-install / maintenance start: `1789959600` / `1790114400` (43 h)
+- HSR 4.6 pre-install / maintenance: `1790229600` / `1790546400` → `1790564400` (88 h)
+- ZZZ 3.2 pre-install: `1788753600` (42 h before maintenance)
+- WW 3.7 pre-install / broadcast: `1790560800` / `1789815600` (42 h before maintenance)
 
 **Code gate.** A code is posted when **any one** of these is true:
 1. it comes from an **official** source: the HoYoLAB livestream module, or an official X /
@@ -575,6 +587,28 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 ---
 
 ## 🗒 Changelog
+
+### 1.6.0 — 2026-09-27 · the pre-install lead is learned, not hardcoded
+
+- A missing pre-install timestamp is derived as **hours before maintenance start**, which carries
+  both the day and clock time without brittle weekday arithmetic. Cold-start values reproduce the
+  real 2026 notices (GI 43 h · HSR 88 h · ZZZ 42 h · WW 42 h).
+- Every real pre-install/maintenance pair records its lead. Later versions use the per-game median;
+  malformed values and leads above 14 days are ignored, and even-sized histories average their
+  middle pair.
+- Derived pre-install times remain labelled estimated and are never fed back into the history, so
+  the fallback cannot validate itself. Official notices discovered through HoYoLAB, X/Nitter or
+  Kuro replace the estimate automatically.
+
+### 1.5.0 — 2026-09-27 · deleted Discord cards heal themselves
+
+- Discord `404 / 10008 Unknown Message` on a schedule-card edit now means the original message was
+  deleted: the current card is posted once and the replacement message id is adopted. The next run
+  edits that replacement instead of retrying a dead id forever.
+- Only a 404 takes that recovery path. A 400, 5xx or exhausted retry remains an error and never
+  reposts; if the recovery post itself fails, the stale id is retained so the next run retries.
+- The same production run established HSR 4.6's real pre-install lead as 88 hours (Thu 14:00 to
+  Mon 06:00 UTC+8), now represented by the learned-hours model above rather than a weekday rule.
 
 ### 1.3.0 — 2026-09-27 · card cleanup, banner lineups from a live feed, and proof the X lookup generalises
 

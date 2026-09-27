@@ -137,6 +137,35 @@ replaced — with the 🕒 line on the card — the moment the official notice i
 Prepared but empty: `hna` and `ananta` — no countdown site tracks a game before release. Fill
 `gamexpress/sources/countdown.py:SOURCES` when one appears.
 
+## Pre-install lead — learned from official notices (v1.6.0)
+
+A maintenance start does not imply one universal pre-install weekday. Patch lengths, holidays and
+schedule changes move the notice, so the fallback stores a single value per real version:
+
+```text
+preinstall_offset_h = (maintenance start - official pre-install time) / 3600
+```
+
+`observed_lead_h()` takes the median of that game's valid history (not the mean), ignores malformed
+entries and leads over 14 days, and passes it into `schedule.merge()` once for the current run.
+A timestamp derived by the fallback is listed in `data["estimated"]`; `_handle_version` therefore
+never records it as an observation. This prevents a guess from feeding back and confirming itself.
+An official value from any existing maintenance path replaces it — including X/Nitter, because
+`schedule.classify()` already accepts maintenance/pre-install text from `item.source == "x"`.
+
+Cold start uses one verified 2026 lead per released game:
+
+| Game | Cold-start lead | Real notice reproduced |
+|---|---:|---|
+| Genshin Impact | 43 h | 7.1: Mon 2026-09-21 11:00 → Wed 06:00 (UTC+8) |
+| Honkai: Star Rail | 88 h | 4.6: Thu 2026-09-24 14:00 → Mon 06:00 (UTC+8) |
+| Zenless Zone Zero | 42 h | 3.2: Mon 2026-09-07 12:00 → Wed 06:00 (UTC+8) |
+| Wuthering Waves | 42 h | 3.7: Mon 2026-09-28 10:00 → Wed 04:00 (UTC+8) |
+
+These are startup data, not permanent per-game rules. As soon as this installation observes a real
+notice, that game's median takes precedence. This still cannot predict an unprecedented shortened
+version before any source publishes it; the card stays honestly labelled estimated until one does.
+
 ## Banner lineups — Gacha-hub-info (v1.3.0)
 
 When no official banner notice has been posted yet, rate-up character lineups are filled from

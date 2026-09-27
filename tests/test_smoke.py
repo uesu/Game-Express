@@ -17,6 +17,7 @@ import os
 import sys
 import tempfile
 import traceback
+from dataclasses import replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -26,7 +27,7 @@ GOLDEN = FIX / "golden"
 
 from gamexpress import cards, codeposter, media, schedule  # noqa: E402
 from gamexpress.config import load_games, load_overrides, load_settings, parse_emoji, parse_ping  # noqa: E402
-from gamexpress.discord import WebhookClient, _split, webhook_fingerprint  # noqa: E402
+from gamexpress.discord import SendResult, WebhookClient, _split, webhook_fingerprint  # noqa: E402
 from gamexpress.models import CodeHit, Item  # noqa: E402
 from gamexpress.runner import Ctx, failover_check  # noqa: E402
 from gamexpress.samples import CODE_SAMPLES, SCHEDULE_SAMPLES  # noqa: E402
@@ -1034,7 +1035,8 @@ def test_estimated_maintenance_times_fill_only_what_official_misses():
         flat = json.dumps(posts[0]["payload"], ensure_ascii=False)
         assert "<t:1790712000:f>" in flat and "<t:1790730000:t>" in flat       # start + the 5 h estimate
         assert "estimated from Gacha Countdown" in flat
-        assert any(r.startswith("🕒 WW 3.7: maintenance start, maintenance end estimated") for r in ctx.report)
+        assert any(r.startswith("🕒 WW 3.7: pre-install, maintenance start, maintenance end estimated")
+                   for r in ctx.report)
         ctx.state.save()
         # the official maintenance notice arrives -> it wins and the 🕒 line disappears silently
         notice = Item("kuro", "wuwa", "9001", "https://wutheringwaves.kurogames.com/en/main/news/detail/9001",
@@ -1650,6 +1652,175 @@ def test_banner_feed_can_be_switched_off():
         sp = Path(tmp) / "state.json"
         ctx = make_ctx(sp, BANNER_FEED=0)
         assert ctx.settings.banner_feed is False
+
+
+# =========================================================================== 1.5/1.6 (deleted cards + learned pre-install lead)
+UNKNOWN_MESSAGE = '{"message": "Unknown Message", "code": 10008}'
+
+
+class ScriptedWebhook:
+    def __init__(self, edits: list[SendResult], sends: list[SendResult] | None = None):
+        self.edit_results = list(edits)
+        self.send_results = list(sends or [])
+        self.edits: list[tuple[str, dict]] = []
+        self.sends: list[dict] = []
+
+    async def edit(self, webhook: str, message_id: str, payload: dict) -> SendResult:
+        self.edits.append((message_id, payload))
+        return self.edit_results.pop(0)
+
+    async def send(self, webhook: str, payload: dict) -> SendResult:
+        self.sends.append(payload)
+        return self.send_results.pop(0)
+
+
+def _posted_hsr_record(message_id: str = "dead-message") -> dict:
+    return {"status": "posted", "first_seen": 1790400000,
+            "data": dict(SCHEDULE_SAMPLES["starrail"]), "prov": {},
+            "message_id": message_id, "webhook_fp": webhook_fingerprint(HOOK),
+            "payload_hash": "old-payload"}
+
+
+def test_a_deleted_card_is_reposted_and_adopts_the_new_id():
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790450000)
+        ctx.webhook = ScriptedWebhook(
+            [SendResult(False, 404, error=UNKNOWN_MESSAGE), SendResult(True, 200)],
+            [SendResult(True, 200, message_id="replacement-message")])
+        records = {"4.6": _posted_hsr_record()}
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {"compensation": "Stellar Jade ×301"}, {}, True))
+        assert ctx.errors == [] and len(ctx.webhook.sends) == 1
+        assert records["4.6"]["message_id"] == "replacement-message"
+        assert any("10008" in line for line in ctx.report)
+
+        # A later data change edits the adopted id; it does not PATCH the dead id forever or repost again.
+        ctx.now += 600
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {"compensation": "Stellar Jade ×302"}, {}, True))
+        assert [message_id for message_id, _ in ctx.webhook.edits] == [
+            "dead-message", "replacement-message"]
+        assert len(ctx.webhook.sends) == 1 and ctx.errors == []
+
+
+def test_a_deleted_card_whose_repost_fails_still_reports_an_error():
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790450000)
+        ctx.webhook = ScriptedWebhook(
+            [SendResult(False, 404, error=UNKNOWN_MESSAGE)],
+            [SendResult(False, 503, error="upstream unavailable")])
+        records = {"4.6": _posted_hsr_record()}
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {"compensation": "Stellar Jade ×301"}, {}, True))
+        assert len(ctx.webhook.sends) == 1 and len(ctx.errors) == 1
+        assert "repost failed (503)" in ctx.errors[0] and "10008" in ctx.errors[0]
+        assert records["4.6"]["message_id"] == "dead-message"   # retry recovery next run
+        assert records["4.6"]["payload_hash"] == "old-payload"
+
+
+def test_a_non_404_edit_failure_is_still_an_error_not_a_repost():
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790450000)
+        ctx.webhook = ScriptedWebhook([SendResult(False, 400, error="bad payload")])
+        records = {"4.6": _posted_hsr_record()}
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {"compensation": "Stellar Jade ×301"}, {}, True))
+        assert ctx.webhook.sends == [] and ctx.errors == ["HSR 4.6: edit failed (400) bad payload"]
+        assert records["4.6"]["message_id"] == "dead-message"
+
+
+def test_preinstall_cold_start_reproduces_four_real_notices():
+    cases = {
+        "genshin": (1790114400, 1789959600),
+        "starrail": (1790546400, 1790229600),
+        "zzz": (1788904800, 1788753600),
+        "wuwa": (1790712000, 1790560800),
+    }
+    for game_key, (maintenance, want) in cases.items():
+        record = {"data": {"maint_start_ts": maintenance},
+                  "prov": {"maint_start_ts": [schedule.PRIORITY["hoyolab"], maintenance]}}
+        got = schedule.merge(GAMES[game_key], "test", [], record, {}, {}, maintenance - 86400)
+        assert got["preinstall_ts"] == want, (game_key, got["preinstall_ts"], want)
+
+
+def test_preinstall_fallback_never_overwrites_a_real_time():
+    real = 1790200000
+    data = {"maint_start_ts": 1790546400, "preinstall_ts": real}
+    prov = {"maint_start_ts": [50, 1], "preinstall_ts": [50, 1]}
+    assert schedule.derive_preinstall(GAMES["starrail"], data, prov, 2, lead_h=12) is None
+    assert data["preinstall_ts"] == real and "estimated" not in data
+
+
+def test_preinstall_fallback_is_labelled_estimated():
+    data, prov = {"maint_start_ts": 1790546400}, {"maint_start_ts": [50, 1]}
+    assert schedule.derive_preinstall(GAMES["starrail"], data, prov, 2) == 1790229600
+    assert data["estimated"] == ["preinstall_ts"]
+    assert data["estimate_sources"] == ["version cadence"]
+    assert prov["preinstall_ts"][0] == schedule.PRIORITY["pattern"]
+
+
+def test_a_real_preinstall_replaces_the_fallback():
+    record = {"data": {"maint_start_ts": 1790546400},
+              "prov": {"maint_start_ts": [50, 1]}}
+    derived = schedule.merge(GAMES["starrail"], "4.6", [], record, {}, {}, 2)
+    assert "preinstall_ts" in derived.get("estimated", [])
+    record["data"] = derived
+    real = schedule.merge(GAMES["starrail"], "4.6", [], record,
+                          {"preinstall_ts": 1790229660}, {}, 3)
+    assert real["preinstall_ts"] == 1790229660 and "preinstall_ts" not in real.get("estimated", [])
+    assert record["prov"]["preinstall_ts"][0] == schedule.PRIORITY["override"]
+
+
+def test_a_real_notice_teaches_the_game_its_own_lead_time():
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1789900000)
+        item = Item("hoyolab", "genshin", "real-7.1", "https://www.hoyolab.com/article/real-7.1",
+                    "Version 7.1 Update Details", "official notice", 1789900000)
+        notice = schedule.Extract(item, "maintenance", "7.1", fields={
+            "preinstall_ts": 1789959600, "maint_start_ts": 1790114400,
+            "maint_end_ts": 1790132400})
+        records: dict = {}
+        asyncio.run(schedule._handle_version(ctx, GAMES["genshin"], "7.1", [notice], records,
+                                             {}, {}, True))
+        assert 42 <= records["7.1"]["preinstall_offset_h"] <= 44
+        assert "preinstall_ts" not in (records["7.1"]["data"].get("estimated") or [])
+
+
+def test_a_derived_preinstall_never_teaches_the_model():
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790000000)
+        item = Item("hoyolab", "starrail", "maint-4.7", "https://www.hoyolab.com/article/maint-4.7",
+                    "Version 4.7 Update Details", "official notice", 1790000000)
+        notice = schedule.Extract(item, "maintenance", "4.7", fields={
+            "maint_start_ts": 1791000000, "maint_end_ts": 1791018000})
+        records: dict = {}
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.7", [notice], records,
+                                             {}, {}, True))
+        record = records["4.7"]
+        assert "preinstall_ts" in record["data"]["estimated"]
+        assert "preinstall_offset_h" not in record
+
+
+def test_observed_history_beats_the_shipped_default():
+    records = {
+        "4.4": {"preinstall_offset_h": 42},
+        "4.5": {"preinstall_offset_h": 44},
+        "bad-number": {"preinstall_offset_h": "not a number"},
+        "bad-outlier": {"preinstall_offset_h": 700},
+        "missing": {},
+    }
+    assert schedule.observed_lead_h(records) == 43                # even count -> average middle pair
+    record = {"data": {"maint_start_ts": 2_000_000},
+              "prov": {"maint_start_ts": [50, 1]}}
+    got = schedule.merge(GAMES["starrail"], "4.6", [], record, {}, {}, 1,
+                         lead_h=schedule.observed_lead_h(records))
+    assert got["preinstall_ts"] == 2_000_000 - 43 * 3600         # not shipped HSR default (88 h)
+
+    assert schedule.observed_lead_h({"x": {"preinstall_offset_h": "junk"}}) is None
+    unknown = replace(GAMES["starrail"], key="unknown-game")
+    data, prov = {"maint_start_ts": 2_000_000}, {"maint_start_ts": [50, 1]}
+    assert schedule.derive_preinstall(unknown, data, prov, 1) is None
+    assert "preinstall_ts" not in data
 
 
 def main() -> int:
