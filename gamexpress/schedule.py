@@ -132,14 +132,26 @@ NAME_FILLER = {"the", "a", "an", "and", "as", "of", "for", "will", "is", "are", 
 QUOTED_FIRST = re.compile(r"\s*[\"“「『]")
 
 
+# Every word of a real character name is capitalised or starts with a digit ("Ben Bigger",
+# "Dan Heng • Imbibitor Lunae", "March 7th", "Topaz & Numby"). A bare run is raw prose, so a
+# trailing clause TIER_STOP does not know ("... character Pearl debuts soon.") would otherwise
+# pass plausible_name() and be posted as a 5-star -- a wrong name where the quoted-only reader
+# used to post nothing. Quoted names are exempt: the quotes are the author saying where the
+# name ends, so this rule is applied ONLY to bare runs.
+NAME_CAPPED = re.compile(r"[A-Z0-9]")
+
+
 def bare_names(tail: str) -> list[str]:
     """Character names written WITHOUT quotes after a star-tier phrase, in order."""
     run = TIER_STOP.split(tail, maxsplit=1)[0]
     out: list[str] = []
     for piece in NAME_SPLIT.split(run):
         n = _clean_name(piece)
-        if n and n.lower() not in NAME_FILLER and n not in out:
-            out.append(n)
+        if not n or n.lower() in NAME_FILLER or n in out:
+            continue
+        if not all(NAME_CAPPED.match(w) for w in re.split(r"[\s•·&:]+", n) if w):
+            continue                                # prose tail, not a name
+        out.append(n)
     return out
 
 # HoYoverse notices label their numbers with bracketed section headers and put the VALUE ON THE

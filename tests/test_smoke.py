@@ -2151,6 +2151,20 @@ def test_a_dangling_article_is_never_read_as_a_character_name():
     assert "the" not in b and "The" not in b
 
 
+def test_a_prose_tail_is_never_read_as_a_character_name():
+    """A bare run is raw prose. When the sentence ends with a clause TIER_STOP does not know,
+    the leftover must not be posted as a character -- the quoted-only reader posted NOTHING
+    here, so absorbing the tail would be a new way to be wrong."""
+    for tail in (" Pearl debuts soon.", " Pearl is here", " Pearl arrives in the new update"):
+        assert schedule.bare_names(tail) == [], tail
+    item = Item("hoyolab", "starrail", "2", "u", "Warp",
+                "The limited 5-star character Pearl debuts soon.", 1)
+    assert "Pearl debuts soon" not in (schedule.extract_banner(item).get("banner_five") or [])
+    # ...while real multi-word names, which look like prose to a word counter, still pass.
+    assert schedule.bare_names(" Dan Heng • Imbibitor Lunae, Topaz & Numby, and March 7th ") == [
+        "Dan Heng • Imbibitor Lunae", "Topaz & Numby", "March 7th"]
+
+
 def test_the_banner_feed_replaces_a_phase_that_holds_a_banner_title():
     """The hub is the only source that separates a banner's NAME from its featured character."""
     data = {"banners": {"phase1": ["An Ocean in a Pearl", "The Demoiselle in Charge"]}}
