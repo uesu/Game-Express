@@ -1646,12 +1646,6 @@
             ]
           },
           "compensation": "Stellar Jade ×300",
-          "estimate_sources": [
-            "hsr-countdown"
-          ],
-          "estimated": [
-            "program_ts"
-          ],
           "images": [
             "https://pbs.twimg.com/media/HSK2Q2pXsAA4YJA.jpg?name=orig"
           ],
@@ -1659,7 +1653,7 @@
           "maint_start_ts": 1790546400,
           "media_from": "x",
           "preinstall_ts": 1790229600,
-          "program_ts": 1790341813,
+          "program_ts": 1789903800,
           "source_label": "x",
           "source_links": [
             [
@@ -1672,7 +1666,7 @@
             ]
           ],
           "source_url": "https://x.com/honkaistarrail/status/2099440781115211916",
-          "title_url": "https://www.youtube.com/watch?v=drFgtruoPe8",
+          "title_url": "https://x.com/honkaistarrail/status/2099440781115211916",
           "version": "4.6",
           "youtube_video": "https://www.youtube.com/watch?v=drFgtruoPe8"
         },
@@ -1680,9 +1674,9 @@
           "program_ts"
         ],
         "first_seen": 1790323161,
-        "message_id": "1553625697765957634",
-        "payload_hash": "4261586f4ea7a6a1",
-        "posted_at": 1790483626,
+        "message_id": "1553646802987913297",
+        "payload_hash": "f131e6369e6be9a3",
+        "posted_at": 1790488654,
         "preinstall_offset_h": 88.0,
         "prov": {
           "b_phase1": [
@@ -1710,12 +1704,12 @@
             1790229608
           ],
           "program_ts": [
-            10,
-            1790341813
+            45,
+            1790488654
           ]
         },
         "status": "posted",
-        "updated_at": 1790483626,
+        "updated_at": 1790488654,
         "webhook_fp": "19991534cf6d"
       }
     },
