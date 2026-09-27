@@ -13,7 +13,7 @@ Layout (schedule card), converted 1:1 from the reference embed cards:
      [Media Gallery]  announcement image                                   <- embed image
      ───────────
      [Action Row]  Youtube · Twitch · Source (+ EXTRA_BUTTONS)             <- buttons INSIDE
-     -# STC — Subject to Change • TBA — To be Announced • Source …
+     -# STC — Subject to Change • TBA — To be Announced
 
 Hard limits enforced by validate_payload(): 40 components total (nested
 included), 4000 characters across all Text Displays, 5 buttons per row,
@@ -22,6 +22,7 @@ included), 4000 characters across all Text Displays, 5 buttons per row,
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import quote
 
@@ -74,6 +75,13 @@ def container(children: list[dict], color: int) -> dict:
 
 def _md_link_text(s: str) -> str:
     return s.replace("[", "(").replace("]", ")")
+
+
+def _is_x_url(url: str) -> bool:
+    """An x.com / twitter.com link — the announcement tweet itself, which the card already links
+    to in its title, so it never needs its own button."""
+    return bool(re.match(r"https?://(?:www\.|mobile\.)?(?:x|twitter|fxtwitter|vxtwitter|fixupx)\.com/",
+                         url or "", re.I))
 
 
 def names(values: list[str] | None) -> str:
@@ -253,7 +261,10 @@ def schedule_payload(game: Game, d: dict, settings: Settings, ping: Ping,
 
     extra: list[dict] = []
     src = d.get("source_url")
-    if src and src != url:
+    # No "x" button. The announcement tweet is already the card's title link whenever the version
+    # has no single YouTube video (GI/ZZZ), and when it does (HSR/WW) the title points there — so
+    # a third button labelled "x" only ever duplicated something already on the card.
+    if src and src != url and not _is_x_url(src):
         extra.append(link_button(d.get("source_label") or "Source", src, settings.emoji.get("source")))
     elif d.get("youtube_video") and d.get("youtube_video") != url:
         extra.append(link_button("Watch", d["youtube_video"], settings.emoji.get("youtube")))
@@ -266,12 +277,8 @@ def schedule_payload(game: Game, d: dict, settings: Settings, ping: Ping,
         foot.append(LEGEND)
     if d.get("estimated"):
         what = ", ".join(ESTIMATE_LABELS.get(k, k) for k in d["estimated"])
-        src = ", ".join((d.get("estimate_sources") or ["countdown sites"])[:2])
-        foot.append(f"🕒 {what} estimated from {src} — the official notice replaces it automatically")
-    if d.get("media_from"):
-        foot.append(f"🖼️ key art: {d['media_from']} — the official announcement")
-    if d.get("source_links"):
-        foot.append("Source: " + " · ".join(f"[{n}]({u})" for n, u in d["source_links"][:3]))
+        est_src = ", ".join((d.get("estimate_sources") or ["countdown sites"])[:2])
+        foot.append(f"🕒 {what} estimated from {est_src} — the official notice replaces it automatically")
     if updated_ts:
         foot.append(f"Updated {discord_ts(updated_ts, 'R')}")
     if foot:
