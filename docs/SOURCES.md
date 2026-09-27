@@ -51,7 +51,37 @@ service answered.
 | PromoGacha data | `https://raw.githubusercontent.com/gripcrip-blip/codehub/main/data/codes.json` → jsDelivr mirror | **aggregator**: every entry says where it was copied from (`hoyo-codes` = seria, `Fandom Wiki`), and entries are never removed. It counts as that upstream, and stale copies are ignored *(v1.1.1)* | ✅ |
 | Official posts | X / HoYoLAB text that explicitly lists "Redemption Codes" | **official**: posts immediately | extraction tested on real tweets (no false positives) |
 
+## X (Twitter) is the PRIMARY schedule source (v1.8.0)
+
+The 2026-09-27 run proved the old order wrong: all three HoYoverse games reported "no program
+announcement found" and WW linked a lore article whose title merely contains "Special Program" —
+while the same run's log showed the X client healthy (`fxtwitter 6ok · nitter 16ok / 0 fail`) and
+never asked. `runner.find_program` now runs X first; everything below it is a backup.
+
+| # | Stage | What it reaches | Why it is where it is |
+|---|---|---|---|
+| 1 | **X seed** — `config/program_announcements.json` → `api.fxtwitter.com/status/<id>` | a tweet of ANY age by id (the ZZZ 3.2 announcement from 2026-08-24 — 34 days old — resolved fine on 2026-09-27, full key art) | the card is re-rendered for the whole 6-week version, and `mode=test` starts from an empty state — the committed id is what makes both show the real link and the real `?name=orig` key art |
+| 2 | **X timeline** — nitter RSS fleet (`nitter.cf` first) | only the last few days (`nitter.cf` on 2026-09-27 stopped at 2026-09-23) | that is exactly when an announcement first appears — it is discovered here once and written back to the seed file by the monitor workflow |
+| 3 | **HoYoLAB** news list | official text + timestamps, paged back past the lookback window | its image list is often a small article cover, not the key art |
+| 4 | **Official news page** | archives every announcement | image can be a page rendition; Kuro's page is a JS build |
+| 5 | **Feed mirror** (WW) | RSS/Atom mirror of Kuro's news list | last resort for the one site the scraper cannot read |
+
+**Positive matching** (`schedule.is_program_announcement`): a post qualifies only when it carries
+the game's own livestream phrase AND a stated air time (`will premiere / is scheduled to air /
+will begin … on <date>`). A negative filter alone is what failed — the WW lore article's title
+genuinely contains "Special Program". Only the first 160 characters (the headline) are screened
+against the not-an-announcement patterns, because three of the four real announcements mention
+redemption codes or a giveaway in the body.
+
+**Shape check** (`media.sane_aspect`): an image whose aspect ratio exceeds 3.5:1 is never used as
+key art — the 2026-09-27 run put a 1440×29482 stitched article strip on the WW card.
+
+**No new secret.** Discovery uses the public nitter fleet, recall uses the public FxEmbed /
+BetterTwitFix APIs; `NITTER_RSS_TOKEN` remains the only Twitter-related secret.
+
 ## Official news pages + media (v1.3.0 — the announcement's own link and key art)
+
+> **v1.8.0:** these are now the *backups* behind X (see the section above).
 
 These are **official** sources: they carry the announcement itself, not an interpretation of it.
 They are used for *presentation* (which link and which picture the card shows) and, when no

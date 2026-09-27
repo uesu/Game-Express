@@ -1197,14 +1197,18 @@ def test_program_media_is_only_looked_up_when_it_is_missing():
 
 
  # =========================================================================== runner
-def test_the_program_lookup_tries_the_news_page_then_hoyolab():
-    """runner.find_program is the ONE lookup: the official news page first (it archives every
-    announcement and carries the key art), the HoYoLAB news list second."""
+def test_the_program_lookup_falls_back_past_x_to_hoyolab_then_the_news_page():
+    """runner.find_program is the ONE lookup, X first (v1.8.0). Without an X client the backups
+    run in their proven order: the HoYoLAB news list, then the official news page (which
+    archives every announcement and carries the key art), then the feed mirror."""
     from gamexpress.runner import find_program
 
     class News:
         def __init__(self, html):
             self.html, self.urls = html, []
+
+        async def get_json(self, url, **k):
+            return None                                    # HoYoLAB down -> the next backup runs
 
         async def get_text(self, url, **k):
             self.urls.append(url)
@@ -1212,14 +1216,20 @@ def test_the_program_lookup_tries_the_news_page_then_hoyolab():
             return ((FIX / "newspage_hsr_article.html").read_text(encoding="utf-8")
                     if last.isdigit() else self.html)
 
+    def ctx_of(fetcher, tmp):
+        ctx = make_ctx(Path(tmp) / "s.json", now=1790000000)   # make_ctx has no X client (x=None)
+        ctx.fetcher = fetcher
+        return ctx
+
     f = News((FIX / "newspage_hsr_news.html").read_text(encoding="utf-8"))
-    hit = asyncio.run(find_program(f, GAMES["starrail"], "4.6", 1790000000))
+    with tempfile.TemporaryDirectory() as tmp:
+        hit = asyncio.run(find_program(ctx_of(f, tmp), GAMES["starrail"], "4.6"))
     assert hit["url"] == "https://hsr.hoyoverse.com/en-us/news/166100"      # the Special Program…
     assert "46814308" not in hit["url"]                                     # …not the maintenance notice
     assert hit["images"][0] == "https://i.ytimg.com/vi/ItNs39qvw_w/maxresdefault.jpg"   # 1280x720
     assert hit["source"] == "Official News"
     assert f.urls[0].endswith("?type=notice") and len(f.urls) == 2          # first tab wins -> 2 fetches
-    # the news page finds nothing -> it falls back to the HoYoLAB list
+    # HoYoLAB answers -> it wins and the news page is never even fetched
     calls = []
 
     async def fake_list(fetcher, game, version, **k):
@@ -1231,12 +1241,14 @@ def test_the_program_lookup_tries_the_news_page_then_hoyolab():
     old = hoyolab.find_program
     hoyolab.find_program = fake_list
     try:
-        hit2 = asyncio.run(find_program(News("<html>nothing here</html>"), GAMES["starrail"],
-                                        "4.6", 1790000000))
+        f2 = News((FIX / "newspage_hsr_news.html").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as tmp:
+            hit2 = asyncio.run(find_program(ctx_of(f2, tmp), GAMES["starrail"], "4.6"))
     finally:
         hoyolab.find_program = old
     assert calls == ["4.6"] and hit2["url"].endswith("46691962")
     assert hit2["images"] == ["https://pbs.twimg.com/media/AAA.jpg"]
+    assert f2.urls == []                                    # the news page was never asked
 
 
 def test_sample_cards_are_only_for_the_games_with_nothing_real_to_fetch():
@@ -1371,32 +1383,165 @@ def test_the_tweet_data_chain_tries_fxtwitter_then_fixupx_then_vxtwitter():
 
 
 def test_the_program_lookup_runs_end_to_end_on_a_fresh_state():
+    """v1.8.0: on an empty state the card is built from the real announcement TWEET (seed file ->
+    fxtwitter by id), not from a page — the whole point of the X-first change."""
     from gamexpress import runner
-    class News:
-        async def get_text(self, url, **k):
-            if url.rstrip("/").rsplit("/", 1)[-1].isdigit():
-                return (FIX / "newspage_hsr_article.html").read_text(encoding="utf-8")
-            return (FIX / "newspage_hsr_news.html").read_text(encoding="utf-8")
     notice = Item(source="hoyolab", game="starrail", id="46814308",
                   url="https://www.hoyolab.com/article/46814308",
                   title="Version 4.6 Update and Maintenance Notice",
                   text="The Version 4.6 pre-installation will begin at 2026-09-24 14:00 (UTC+8). Version update maintenance on 2026-09-28 06:00 (UTC+8) for 5 hours.",
                   published_ts=1790300000, images=[])
     with tempfile.TemporaryDirectory() as tmp:
-        ctx = make_ctx(Path(tmp) / "state.json", items={"starrail": [notice]}, now=1790400000)
+        ctx, _f = _x_ctx(Path(tmp) / "state.json",
+                         {"2099440781115211916": "fx_starrail_4_6_program.json"}, now=1790400000)
+        ctx.items = {"starrail": [notice]}
         assert ctx.state.schedule_records("starrail") == {}            # a first run: nothing stored
-        ctx.fetcher = News()
         asyncio.run(runner.gather_program_media(ctx))
         hit = (ctx.media.get("starrail") or {}).get("4.6")
         assert hit, "the lookup did not run on a fresh state"
-        assert hit["url"] == "https://hsr.hoyoverse.com/en-us/news/166100"
+        assert hit["source"] == "x"
+        assert hit["url"] == "https://x.com/honkaistarrail/status/2099440781115211916"
         assert "46814308" not in hit["url"]
-        assert hit["images"][0] == "https://i.ytimg.com/vi/ItNs39qvw_w/maxresdefault.jpg"
+        assert "https://pbs.twimg.com/media/HSK2Q2pXsAA4YJA.jpg?name=orig" in hit["images"]
+        assert hit["program_ts"] == 1789903800
         d = schedule.merge(GAMES["starrail"], "4.6",
                            schedule.version_extracts(ctx, GAMES["starrail"])["4.6"],
                            {}, {}, {}, ctx.now, [], None, hit)
-        assert d["title_url"] == "https://www.youtube.com/watch?v=ItNs39qvw_w"
-        assert d["source_url"] == "https://hsr.hoyoverse.com/en-us/news/166100"
+        assert d["title_url"] == "https://www.youtube.com/watch?v=drFgtruoPe8"     # the livestream
+        assert d["source_url"] == "https://x.com/honkaistarrail/status/2099440781115211916"
+
+# --------------------------------------------------------------- X-first schedule (v1.8.0)
+# The 2026-09-27 run got all four games wrong: GI/HSR/ZZZ reported "no program announcement
+# found" and WW linked a lore article. X is now the primary lookup, so these run against the
+# four REAL api.fxtwitter.com responses captured on 2026-09-27, not example data.
+REAL_PROGRAMS = {
+    "genshin": ("7.1", "fx_genshin_7_1_program.json", "2096810691021689205",
+                "https://pbs.twimg.com/media/HRlONCqXcAUhgGD.jpg?name=orig", 1789214400),
+    "starrail": ("4.6", "fx_starrail_4_6_program.json", "2099440781115211916",
+                 "https://pbs.twimg.com/media/HSK2Q2pXsAA4YJA.jpg?name=orig", 1789903800),
+    "zzz": ("3.2", "fx_zzz_3_2_program.json", "2091737263398862915",
+            "https://pbs.twimg.com/media/HQZWs-3WAAEj32y.jpg?name=orig", 1787916600),
+    "wuwa": ("3.7", "fx_wuwa_3_7_broadcast.json", "2098607530780021002",
+             "https://pbs.twimg.com/media/HR70hTAaoAA8Dzz.jpg?name=orig", 1789815600),
+}
+
+
+class SeedFetcher:
+    """Serves api.fxtwitter.com/status/<id> from the captured fixtures, and records every other
+    source that gets asked — so a test can prove the backups were never reached."""
+
+    def __init__(self, ids):
+        self.bodies = {i: fx(f) for i, f in ids.items()}
+        self.asked: list[str] = []
+        self.health: dict = {}
+
+    async def get_json(self, url, source="", **kw):
+        self.asked.append(source or url)
+        import re as _re
+        m = _re.search(r"/status/(\d+)", url)
+        return self.bodies.get(m.group(1)) if m else None
+
+    async def get_text(self, url, source="", **kw):
+        self.asked.append(source or url)
+        return ""
+
+
+def _x_ctx(state_path, ids, now=1789300000):
+    from gamexpress.sources.twitter import XClient
+    f = SeedFetcher(ids)
+    ctx = make_ctx(state_path, now=now)
+    ctx.fetcher, ctx.x = f, XClient(f, ctx.settings)
+    return ctx, f
+
+
+def test_the_program_lookup_is_x_first_for_every_live_game():
+    """All four real 2026-09 announcements resolve to the tweet itself — its URL, its `?name=orig`
+    key art and its air time — and no backup source is consulted at all."""
+    from gamexpress.runner import find_program
+    ids = {tid: f for _, f, tid, _, _ in REAL_PROGRAMS.values()}
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx, f = _x_ctx(Path(tmp) / "s.json", ids)
+        for key, (ver, _, tid, img, ts) in REAL_PROGRAMS.items():
+            hit = asyncio.run(find_program(ctx, GAMES[key], ver))
+            assert hit, f"{key} {ver}: X-first lookup found nothing"
+            assert hit["source"] == "x", f"{key} {ver}: fell back to {hit.get('source')}"
+            assert hit["url"].endswith(f"/status/{tid}"), f"{key} {ver}: wrong link {hit['url']}"
+            assert img in hit["images"], f"{key} {ver}: key art missing from {hit['images']}"
+            assert hit["program_ts"] == ts, f"{key} {ver}: air time {hit['program_ts']} != {ts}"
+        assert not [a for a in f.asked if a in ("hoyolab", "newspage")], \
+            f"a backup source was asked: {f.asked}"
+
+
+def test_the_seeded_tweet_makes_a_fresh_test_run_show_real_data():
+    """`mode=test` starts from an empty state every run, and a nitter timeline only reaches back a
+    few days — so the announcement id lives in config/program_announcements.json. That is what
+    lets a test card show the real link and the real key art instead of TBA."""
+    from gamexpress.runner import find_program
+    from gamexpress.sources import twitter
+    for key, (ver, _, tid, img, _) in REAL_PROGRAMS.items():
+        seed = twitter.program_seed(key, ver)
+        assert seed.get("id") == tid, f"{key} {ver} is not seeded with {tid} (got {seed.get('id')})"
+        assert seed.get("url", "").endswith(f"/status/{tid}"), f"{key} {ver}: bad seeded url"
+        assert seed.get("image") == img, f"{key} {ver}: seeded art is not the ?name=orig one"
+    ids = {tid: f for _, f, tid, _, _ in REAL_PROGRAMS.values()}
+    with tempfile.TemporaryDirectory() as tmp:                 # an EMPTY state, as a test run has
+        ctx, _ = _x_ctx(Path(tmp) / "fresh.json", ids)
+        for key, (ver, _, _, _, _) in REAL_PROGRAMS.items():
+            hit = asyncio.run(find_program(ctx, GAMES[key], ver))
+            assert hit and hit["images"], f"{key} {ver}: a fresh run produced no image"
+
+
+def test_a_lore_article_is_never_the_program_announcement():
+    """The exact post that put the wrong link on the WW card on 2026-09-27: it contains the words
+    "Special Program" and is a story chapter. An announcement states WHEN it airs; this does not."""
+    lore = ("Insider Channel: Special Program | Signs of Imprisonment: Part Three\nQiuyuan once "
+            "investigated a medicinal-herb corruption case at Mingting's order during his service "
+            "as the senior agent of the Internal Security Agency.")
+    assert schedule.is_program_announcement(GAMES["wuwa"], lore) is False
+    assert schedule.NOT_PROGRAM_TITLE.search("Insider Channel: Special Program")
+    # ...while the real one still passes, giveaway clause and all
+    real = fx("fx_wuwa_3_7_broadcast.json")["tweet"]["text"]
+    assert schedule.is_program_announcement(GAMES["wuwa"], real) is True
+
+
+def test_a_giveaway_inside_the_announcement_does_not_veto_it():
+    """Three of the four real announcements mention codes or prizes in the BODY. Only the headline
+    is screened, or every one of them would be rejected."""
+    for key, (_, fixture, _, _, _) in REAL_PROGRAMS.items():
+        text = fx(fixture)["tweet"]["text"]
+        assert schedule.is_program_announcement(GAMES[key], text), f"{key}: real one rejected"
+
+
+def test_a_stitched_vertical_strip_is_not_key_art():
+    """The 2026-09-27 WW card carried a 1440x29482 image — a whole article as one vertical strip,
+    which Discord renders as an unreadable sliver."""
+    from gamexpress.media import sane_aspect
+    assert sane_aspect(1440, 29482) is False
+    assert sane_aspect(1920, 1080) is True          # HSR / ZZZ / WW key art
+    assert sane_aspect(1200, 675) is True           # GI key art
+    assert sane_aspect(None, None) is True          # most sources report no size at all
+
+
+def test_a_timeline_scan_finds_a_new_announcement_and_seeds_it():
+    """Discovery half: when the announcement is still new enough to be in the nitter timeline it is
+    matched there and written back to the seed file for the runs that come later."""
+    import shutil
+
+    from gamexpress.sources import twitter
+    entry = {"id": "9", "account": "GenshinImpact",
+             "url": "https://x.com/GenshinImpact/status/9", "posted_ts": 1, "image": "i"}
+    with tempfile.TemporaryDirectory() as tmp:
+        backup = Path(tmp) / "backup.json"
+        shutil.copy2(twitter.SEED_PATH, backup)
+        try:
+            assert twitter.save_program_seed("genshin", "9.9", entry) is True
+            assert twitter.program_seed("genshin", "9.9")["id"] == "9"
+            assert twitter.save_program_seed("genshin", "9.9", entry) is False   # idempotent
+        finally:
+            shutil.copy2(backup, twitter.SEED_PATH)
+            twitter._seeds = None
+    assert twitter.program_seed("genshin", "9.9") == {}          # the seed file is back as it was
+
 
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
