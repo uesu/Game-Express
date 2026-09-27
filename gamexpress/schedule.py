@@ -4,8 +4,8 @@ Posting only happens on a keyword/pattern match (special program / special broad
 livestream announcement, or an official update-maintenance notice) — never daily.
 
 Accuracy rules:
-  * every time on the card comes from an official post (HoYoLAB / official X / Kuro) or
-    from config/overrides.json (human-verified). Nothing is estimated.
+  * official posts (HoYoLAB / official X / Kuro) and config/overrides.json always win;
+    countdown and learned-cadence fallbacks are visibly labelled estimated.
   * unknown values render as TBA; banners always carry (STC).
   * one card per game+version; later official info (maintenance notice, pre-install,
     banner notice, overrides edits) EDITS the same message silently (no re-ping).
@@ -14,8 +14,10 @@ Accuracy rules:
 from __future__ import annotations
 
 import logging
+import math
 import re
 from dataclasses import dataclass, field
+from statistics import median
 
 from .cards import ESTIMATE_LABELS, mark_test, schedule_payload
 from .config import Game
@@ -108,11 +110,23 @@ QUOTED = re.compile(r"[\"“「『]([^\"”」』\n]{2,40})[\"”」』]")
 PHASE1 = re.compile(r"phase\s*(?:I|1)\b(?!I)|first\s+(?:half|phase)|1st\s+(?:half|phase)", re.I)
 PHASE2 = re.compile(r"phase\s*(?:II|2)\b|second\s+(?:half|phase)|2nd\s+(?:half|phase)", re.I)
 
-# precedence of sources for a field (higher wins). 'countdown' is low; 'bannerfeed' is the lowest (5):
-# the feed only ever fills an empty phase, and loses the moment any official post or override gives one.
-PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "news": 45, "x": 40, "launcher": 20, "countdown": 10, "bannerfeed": 5}
+# precedence of sources for a field (higher wins). Derived values are below external countdown
+# estimates; the banner feed is the lowest (5). Any official source or override replaces both.
+PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "news": 45, "x": 40, "launcher": 20,
+            "countdown": 10, "pattern": 9, "bannerfeed": 5}
 ESTIMATED_KEYS = ("program_ts", "preinstall_ts", "maint_start_ts", "maint_end_ts")
 MAINT_HOURS_ESTIMATE = 5          # typical HoYoverse / Kuro maintenance window
+
+# Cold-start pre-install leads, measured from maintenance START. Once this installation has seen
+# a real pre-install + maintenance pair for a game, observed_lead_h() supplies that game's median
+# instead. A derived value is never recorded as an observation, so the fallback cannot teach itself.
+PREINSTALL_LEAD_H = {
+    "genshin": 43,                 # GI 7.1: Mon 11:00 -> Wed 06:00 (UTC+8)
+    "starrail": 88,                # HSR 4.6: Thu 14:00 -> Mon 06:00 (UTC+8)
+    "zzz": 42,                     # ZZZ 3.2: Mon 12:00 -> Wed 06:00 (UTC+8)
+    "wuwa": 42,                    # WW 3.7: Mon 10:00 -> Wed 04:00 (UTC+8)
+}
+MAX_LEAD_H = 14 * 24               # reject corrupt/outlier observations (e.g. a mis-parsed 700 h)
 
 
 @dataclass
@@ -408,6 +422,67 @@ def apply_estimates(data: dict, prov: dict, estimates: dict | None, now: int) ->
     return added
 
 
+def observed_lead_h(records: dict) -> float | None:
+    """Return the median real pre-install lead learned from this game's version records.
+
+    State is long-lived and human-editable, so malformed values, non-finite numbers and implausible
+    outliers are ignored. ``statistics.median`` deliberately averages the two middle values for an
+    even-sized history; unlike a mean, one bad-but-still-plausible edge value cannot drag every
+    later version towards it.
+    """
+    values: list[float] = []
+    for record in (records or {}).values():
+        value = record.get("preinstall_offset_h")
+        try:
+            hours = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(hours) and 0 < hours <= MAX_LEAD_H:
+            values.append(hours)
+    return float(median(values)) if values else None
+
+
+def derive_preinstall(game: Game, data: dict, prov: dict, now: int,
+                      lead_h: float | None = None) -> int | None:
+    """Fill a missing pre-install time from maintenance start and mark it as estimated.
+
+    ``lead_h`` is the median learned from real notices for this game. With no history, the shipped
+    per-game value is only a cold-start fallback. A real/external pre-install value always wins;
+    only a value previously derived by this function may be recalculated as the learned median or
+    maintenance date changes.
+    """
+    start = data.get("maint_start_ts")
+    if not start:
+        return None
+    current = data.get("preinstall_ts")
+    own_estimate = ("preinstall_ts" in (data.get("estimated") or [])
+                    and prov.get("preinstall_ts", [0])[0] == PRIORITY["pattern"])
+    if current and not own_estimate:
+        return None
+
+    try:
+        hours = float(lead_h) if lead_h is not None else float(PREINSTALL_LEAD_H[game.key])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not math.isfinite(hours) or not 0 < hours <= MAX_LEAD_H:
+        return None
+
+    derived = int(round(int(start) - hours * 3600))
+    if derived <= 0:
+        return None
+    data["preinstall_ts"] = derived
+    prov["preinstall_ts"] = [PRIORITY["pattern"], now]
+    estimated = set(data.get("estimated") or [])
+    estimated.add("preinstall_ts")
+    data["estimated"] = sorted(estimated,
+                               key=lambda k: ESTIMATED_KEYS.index(k) if k in ESTIMATED_KEYS else 99)
+    sources = list(data.get("estimate_sources") or [])
+    if "version cadence" not in sources:
+        sources.append("version cadence")
+    data["estimate_sources"] = sources[:3]
+    return derived
+
+
 def needs_estimate(state, game_key: str, now: int) -> bool:
     """True when this game still misses a program / maintenance time -> worth asking a
     countdown site (otherwise the run doesn't spend a single request on it)."""
@@ -528,7 +603,7 @@ def needs_media(state, game_key: str, now: int) -> bool:
 def merge(game: Game, version: str, extracts: list[Extract], record: dict, override: dict,
           launcher: dict, now: int, notes: list[str] | None = None,
           estimates: dict | None = None, media: dict | None = None,
-          banner_feed: list[dict] | None = None) -> dict:
+          banner_feed: list[dict] | None = None, lead_h: float | None = None) -> dict:
     """Return the merged card data (record['data'] is the previous state).
     4★ rule: no data or ANY doubt (wrong count, odd name, sources disagree) -> TBA;
     config/overrides.json is always trusted."""
@@ -641,6 +716,7 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
             if ts:
                 data[key] = ts
                 prov[key] = [PRIORITY["override"], now]
+                _unmark_estimated(data, key)
     for key in ("program_name", "version_name", "title_url", "compensation"):
         if override.get(key):
             data[key] = override[key]
@@ -653,6 +729,11 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                 banners[k] = v
                 prov[f"b_{k}"] = [PRIORITY["override"], now]
         data["banners"] = banners
+
+    # Last, derive only what every external source and human override left empty. This can use a
+    # real maintenance start or an explicitly labelled countdown estimate; either way the derived
+    # pre-install value remains labelled estimated until an official notice replaces it.
+    derive_preinstall(game, data, prov, now, lead_h)
     record["prov"] = prov
     return data
 
@@ -713,7 +794,8 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     s, now = ctx.settings, ctx.now
     record = records.setdefault(ver, {"status": "new", "first_seen": now})
     notes: list[str] = []
-    data = merge(game, ver, extracts, record, override, live_info, now, notes, estimates, media, banner_feed)
+    data = merge(game, ver, extracts, record, override, live_info, now, notes, estimates, media,
+                 banner_feed, lead_h=observed_lead_h(records))
     ctx.report.extend(notes)
     estimated = data.get("estimated") or []
     if estimated and estimated != record.get("estimated_reported"):
@@ -722,6 +804,14 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
         ctx.report.append(f"🕒 {game.short} {ver}: {what} estimated from "
                           f"{', '.join(data.get('estimate_sources') or ['countdown sites'])} — "
                           "the official notice replaces it automatically")
+
+    # Teach later versions only from a real pair. In particular, the pre-install timestamp this
+    # code just derived is in `estimated`, so it can never confirm its own guess on the next run.
+    if data.get("preinstall_ts") and data.get("maint_start_ts") \
+            and not {"preinstall_ts", "maint_start_ts"}.intersection(estimated):
+        offset_h = (int(data["maint_start_ts"]) - int(data["preinstall_ts"])) / 3600
+        if 0 < offset_h <= MAX_LEAD_H:
+            record["preinstall_offset_h"] = round(offset_h, 3)
     record["data"] = data
     kinds = {e.kind for e in extracts}
     status = record.get("status")
@@ -750,6 +840,24 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
             record["payload_hash"] = h
             record["updated_at"] = now
             ctx.report.append(f"✏️ {game.short} {ver}: schedule card updated")
+        elif res.status == 404:
+            # Discord 10008 means this message is permanently gone. Repeating the PATCH would
+            # fail forever, so post the current card once and adopt its new id. No other edit
+            # failure is reposted: a malformed payload or transient outage must not create spam.
+            fresh = schedule_payload(game, data, s, ping)
+            if s.test_mode:
+                fresh = mark_test(fresh)
+            reposted = await ctx.webhook.send(webhook, fresh)
+            if reposted.ok:
+                record.update({"message_id": reposted.message_id, "posted_at": now,
+                               "updated_at": now, "webhook_fp": webhook_fingerprint(webhook),
+                               "payload_hash": stable_hash(fresh["components"])})
+                ctx.report.append(f"♻️ {game.short} {ver}: deleted schedule card reposted "
+                                  f"after edit returned 404 {res.error}")
+            else:
+                # Keep the dead id and old payload hash: the next run retries the same recovery.
+                ctx.errors.append(f"{game.short} {ver}: edit returned 404 {res.error}; repost failed "
+                                  f"({reposted.status}) {reposted.error}")
         else:
             ctx.errors.append(f"{game.short} {ver}: edit failed ({res.status}) {res.error}")
         return
