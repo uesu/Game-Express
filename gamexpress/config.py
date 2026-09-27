@@ -54,13 +54,18 @@ DEFAULT_COMMUNITY_BUTTONS = [
 # 36305123457 measured what GitHub's runners actually get from them:
 #   * nitter.meowing.monster -- HTTP 200 but 0 entries (bot check / stale), all 4 handles
 #   * nitter.netbub.com      -- HTTP 403, all 4 handles
-# 8 wasted requests per run -- the same failure x.n0g.xyz was removed for, twice over. A
+# 8 wasted requests per run -- the same failure x.n0g.xyz was demoted for, twice over. A
 # published uptime figure is not a measurement of what THIS client gets, so the hot path is
 # now ordered by what the runners observed, and the two are demoted rather than deleted:
 # they answer for other clients, and they may work from a VPS.
 #
-# x.n0g.xyz stays gone: HTTP 404 then 429 on every handle in three consecutive live runs
-# (36296323488, 36298632006, 36299586254).
+# NOTHING IN THIS FLEET IS DELETED -- MIRRORS ARE DEMOTED, NOT REMOVED. x.n0g.xyz answered
+# HTTP 404 then 429 on every handle in three consecutive live runs (36296323488, 36298632006,
+# 36299586254), so it sits dead last rather than being cut. That placement is free:
+# twitter.XClient.timeline() breaks out of its batch loop the moment TWO instances have
+# answered, so anything behind that point costs zero requests in a healthy run -- and is a
+# real backup again the run the fleet ahead of it degrades. Deleting a mirror throws away a
+# host that may simply be blocking GitHub's runners while answering fine from a VPS.
 DEFAULT_NITTER = [
     # ── hot path: probed on EVERY run (NITTER_BATCH = 4) — measured answerers only ──
     "https://nitter.cf", "https://xitter.cf",   # the pair that answers (12 ok / 0 fail)
@@ -75,6 +80,8 @@ DEFAULT_NITTER = [
     "https://nitter.netbub.com",        # demoted: HTTP 403 to GH runners (36305123457)
     "https://xcancel.com",              # suspended 2026-09-14
     "https://x.yuuki.sh",               # HTTP 403 to GH runners (2026-09-25)
+    "https://x.n0g.xyz",                # dead last, kept as a backup: 404 then 429 in runs
+                                        # 36296323488 / 36298632006 / 36299586254
 ]
 
 

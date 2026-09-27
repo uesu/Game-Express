@@ -2222,13 +2222,22 @@ def test_the_banner_feed_still_never_overwrites_real_characters():
 
 
 # =========================================================================== nitter fleet
-def test_the_nitter_fleet_leads_with_nitter_cf_and_drops_the_dead_mirror():
+def test_the_nitter_fleet_leads_with_nitter_cf_and_demotes_the_flaky_mirror():
+    """nitter.cf / xitter.cf lead. Nothing is deleted: x.n0g.xyz answered HTTP 404 then 429 on
+    every handle in runs 36296323488 / 36298632006 / 36299586254, so it is demoted to dead last
+    and kept as a backup rather than removed."""
     from gamexpress.config import DEFAULT_NITTER
+    from gamexpress.sources.twitter import NITTER_BATCH
     assert DEFAULT_NITTER[0] == "https://nitter.cf"
     assert DEFAULT_NITTER[1] == "https://xitter.cf"
-    # HTTP 404 then 429 on every handle in runs 36296323488 / 36298632006 / 36299586254
-    assert "https://x.n0g.xyz" not in DEFAULT_NITTER
     assert len(DEFAULT_NITTER) == len(set(DEFAULT_NITTER))
+
+    idx = DEFAULT_NITTER.index("https://x.n0g.xyz")
+    assert idx >= NITTER_BATCH, "a mirror that answers nothing must never sit in the hot path"
+    assert idx == len(DEFAULT_NITTER) - 1, "demoted means dead last"
+    for inst in ("https://nitter.cf", "https://xitter.cf", "https://nitter.miningtcup.me",
+                 "https://nitter.jaydenha.uk", "https://shitter.thepixora.com"):
+        assert DEFAULT_NITTER.index(inst) < idx, inst
 
 
 def test_the_token_gated_instance_is_in_the_fleet():
@@ -2241,9 +2250,9 @@ def test_the_token_gated_instance_is_in_the_fleet():
 # =========================================================================== nitter hot path
 # twitter.py probes NITTER_BATCH instances in parallel on EVERY run, for EVERY handle, whether
 # or not the ones ahead of them answered. A mirror in that first batch is therefore a cost on
-# every run -- which is why x.n0g.xyz was removed. These are the instances measured as unable
-# to answer GitHub's runners, each with the run that proved it; none of them may sit in the
-# hot path again, whatever a public uptime table claims.
+# every run -- which is why x.n0g.xyz was demoted out of it. These are the instances measured
+# as unable to answer GitHub's runners, each with the run that proved it; none of them may sit
+# in the hot path again, whatever a public uptime table claims. They all stay in the fleet.
 NITTER_CANNOT_ANSWER = {
     "https://nitter.netbub.com": "HTTP 403 on all 4 handles (live run 36305123457)",
     "https://nitter.meowing.monster": "HTTP 200 but 0 entries, bot check (live run 36305123457)",
@@ -2263,13 +2272,37 @@ def test_the_first_nitter_batch_holds_only_instances_that_answer():
 
 
 def test_a_demoted_instance_is_kept_as_a_fallback_rather_than_deleted():
-    """Demoting is cheap and reversible; deleting throws away a mirror that may work from a
-    VPS. Only x.n0g.xyz -- which answered nothing anywhere -- is actually gone."""
+    """Demoting is cheap and reversible; deleting throws away a mirror that may work from a VPS.
+    Nothing in the fleet is removed -- a mirror that stopped answering is pushed down instead."""
     from gamexpress.config import DEFAULT_NITTER
-    for inst in ("https://nitter.netbub.com", "https://nitter.meowing.monster"):
+    for inst in ("https://nitter.netbub.com", "https://nitter.meowing.monster",
+                 "https://x.n0g.xyz"):
         assert inst in DEFAULT_NITTER, inst
-    assert "https://x.n0g.xyz" not in DEFAULT_NITTER
     assert len(DEFAULT_NITTER) == len(set(DEFAULT_NITTER))
+
+
+def test_a_demoted_tail_mirror_costs_no_request_while_the_fleet_answers():
+    """The backup at the end of the fleet is free until it is needed: XClient.timeline() breaks
+    out of its batch loop the moment TWO instances have answered, so a demoted mirror behind
+    that point is never even requested -- and is a real backup again once the fleet degrades."""
+    from gamexpress.sources.twitter import XClient
+    calls = []
+
+    class F:
+        async def get_text(self, url, **k):
+            calls.append(url)
+            if "n0g" in url:
+                return None                        # the 404/429 the live runs recorded
+            if "nitter.cf" in url or "xitter.cf" in url:
+                return RSS.format(id="3333333333")
+            return None
+
+    fleet = ["https://nitter.cf", "https://xitter.cf", "https://nitter.miningtcup.me",
+             "https://nitter.jaydenha.uk", "https://x.n0g.xyz"]
+    x = XClient(F(), settings(NITTER_INSTANCES=",".join(fleet)))
+    tl = asyncio.run(x.timeline("Wuthering_Waves"))
+    assert {e["id"] for e in tl} == {"3333333333"}
+    assert not [u for u in calls if "n0g" in u], calls
 
 
 if __name__ == "__main__":
