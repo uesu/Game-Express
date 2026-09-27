@@ -75,6 +75,25 @@ def upgrade(url: str) -> str:
     return url
 
 
+def sane_aspect(width, height) -> bool:
+    """True unless the picture's shape says it is not key art.
+
+    Key art for a version announcement is 16:9 (all four 2026-09 announcements are: 1920x1080,
+    or 1200x675 for GI). The failure this guards against is a news page serving a whole article
+    as ONE stitched vertical strip — the 2026-09-27 run put a 1440x29482 image on the WW card,
+    which Discord renders as an unreadable sliver. A missing size is not a reason to reject: most
+    sources do not report dimensions at all.
+    """
+    try:
+        w, h = float(width or 0), float(height or 0)
+    except (TypeError, ValueError):
+        return True
+    if w <= 0 or h <= 0:
+        return True
+    ratio = max(w, h) / min(w, h)
+    return ratio <= 3.5
+
+
 def _score(url: str) -> int:
     """Program key art first: a livestream thumbnail, then a full-size tweet photo, then a cover."""
     u = url.lower()

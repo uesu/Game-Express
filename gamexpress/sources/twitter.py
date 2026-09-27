@@ -8,6 +8,7 @@ instances are merged so one stale-but-200 mirror can't hide a fresh tweet.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from calendar import timegm
@@ -16,14 +17,58 @@ from urllib.parse import quote, unquote
 
 import feedparser
 
-from ..config import Game, Settings
+from .. import schedule
+from ..config import CONFIG_DIR, Game, Settings
 from ..http import Fetcher
+from ..media import sane_aspect
 from ..models import Item
 from ..textutil import find_urls, html_to_text
 
 log = logging.getLogger("gamexpress.x")
 
 TOKEN_GATED = {"https://nitter.miningtcup.me"}
+
+# --------------------------------------------------------------------------- announcement seed
+SEED_PATH = CONFIG_DIR / "program_announcements.json"
+_seeds: dict | None = None
+
+
+def program_seed(game_key: str, version: str) -> dict:
+    """config/program_announcements.json -> the recorded X post for game+version ({} if none).
+
+    Committed to the repo and rewritten by the monitor workflow, so the knowledge survives the
+    throwaway state of a test run. Keys starting with '_' are comments and are ignored."""
+    global _seeds
+    if _seeds is None:
+        try:
+            _seeds = json.loads(SEED_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            _seeds = {}
+    per_game = (_seeds or {}).get(game_key)
+    if not isinstance(per_game, dict):
+        return {}
+    hit = per_game.get(version)
+    return hit if isinstance(hit, dict) else {}
+
+
+def save_program_seed(game_key: str, version: str, entry: dict) -> bool:
+    """Record a newly discovered announcement. Returns True when the file changed, which is what
+    tells the workflow there is something to commit back."""
+    global _seeds
+    data = json.loads(SEED_PATH.read_text(encoding="utf-8")) if SEED_PATH.exists() else {}
+    per_game = data.setdefault(game_key, {})
+    old = per_game.get(version)
+    if isinstance(old, dict) and old.get("id") == entry.get("id"):
+        return False
+    import time as _t
+    per_game[version] = {**entry, "found_at": int(_t.time())}
+    SEED_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+                         encoding="utf-8")
+    _seeds = None                                  # next read picks the new entry up
+    log.info("[x:%s] recorded the %s program announcement (%s) in %s",
+             game_key, version, entry.get("id"), SEED_PATH.name)
+    return True
+
 
 FX_SOURCES = (("fxtwitter", "https://api.fxtwitter.com/status/{id}"),
               ("fixupx", "https://api.fixupx.com/status/{id}"))
@@ -36,7 +81,8 @@ def _from_fx(t: dict, tweet_id: str) -> dict:
              if f.get("type") == "url" and f.get("replacement")]
     return {"id": str(t.get("id") or tweet_id), "text": t.get("text") or "",
             "ts": int(t.get("created_timestamp") or 0),
-            "photos": [p.get("url") for p in ((t.get("media") or {}).get("photos") or []) if p.get("url")],
+            "photos": [p.get("url") for p in ((t.get("media") or {}).get("photos") or [])
+                       if p.get("url") and sane_aspect(p.get("width"), p.get("height"))],
             "links": links + [u for u in find_urls(t.get("text") or "") if u not in links],
             "author": (t.get("author") or {}).get("screen_name") or "",
             "avatar": (t.get("author") or {}).get("avatar_url") or "",
@@ -166,6 +212,51 @@ class XClient:
         if result and result.get("author") and result.get("avatar"):
             self.avatars[result["author"].lower()] = result["avatar"]
         return result
+
+    async def program_tweet(self, game: Game, version: str) -> Item | None:
+        """THE schedule lookup, X first. Two stages, because the two halves of X age differently:
+
+        1. SEED — config/program_announcements.json maps game+version to a tweet id that a
+           previous run discovered. fxtwitter still serves a five-week-old tweet by id (verified:
+           the ZZZ 3.2 announcement from 2026-08-24 resolves fine on 2026-09-27), so this is the
+           stage that makes a `mode=test` run — whose state is always empty — show the real link
+           and the real key art.
+        2. TIMELINE — a nitter RSS feed only reaches back a few days (nitter.cf on 2026-09-27
+           stopped at 2026-09-23), so it can only ever find an announcement that is still new.
+           That is exactly when one first appears, which is when it gets discovered and seeded.
+        """
+        seed = program_seed(game.key, version)
+        if seed and seed.get("id"):
+            t = await self.tweet(str(seed["id"]))
+            if t and t.get("text"):
+                log.info("[x:%s] %s program announcement from the seed file: %s",
+                         game.key, version, t.get("url") or seed["id"])
+                return self._program_item(game, str(seed["id"]), seed.get("account") or "", t)
+            log.info("[x:%s] seed tweet %s did not resolve — falling back to the timeline",
+                     game.key, seed.get("id"))
+        for account in game.x_accounts:
+            for e in await self.timeline(account):
+                if not schedule.is_program_announcement(game, e["text"]):
+                    continue
+                if version and version not in e["text"]:
+                    continue                      # an announcement for some other version
+                t = await self.tweet(e["id"]) or e
+                log.info("[x:%s] %s program announcement found on the timeline: %s",
+                         game.key, version or "?", t.get("url") or e["id"])
+                item = self._program_item(game, e["id"], account, t)
+                save_program_seed(game.key, version or "?", {
+                    "id": e["id"], "account": account, "url": item.url,
+                    "posted_ts": item.published_ts, "image": (item.images or [""])[0],
+                })
+                return item
+        return None
+
+    def _program_item(self, game: Game, tid: str, account: str, t: dict) -> Item:
+        return Item(source="x", game=game.key, id=tid,
+                    url=t.get("url") or f"https://x.com/{account}/status/{tid}",
+                    title="", text=t.get("text") or "", published_ts=t.get("ts") or 0,
+                    images=t.get("photos") or [], links=t.get("links") or [],
+                    author=t.get("author") or account)
 
     async def items(self, game: Game, want: Callable[[str], bool], since_ts: int) -> list[Item]:
         if not self.settings.x_enabled:

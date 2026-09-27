@@ -50,9 +50,50 @@ NOT_PROGRAM_TITLE = re.compile(
     r"winners?|giveaway|redemption\s+cod(?:e|es)|update\s+(?:details|and\s+maintenance)|"
     r"maintenance\s+notice|version\s+update|hotfix|bug\s+fix(?:es)?|compensation\s+"
     r"(?:notice|details)|merchandise|recap|replay|vod|survey|questionnaire|thank\s+you|"
-    r"collaboration)\b", re.I)
+    r"collaboration|insider\s+channel|combat\s+intro|character\s+demo)\b", re.I)
 DEFAULT_BANNER_RE = (r"event\s+wish|event\s+warp|signal\s+search|exclusive\s+channel|featured\s+resonator|"
                      r"resonator\s+convene|character\s+event|limited[-\s]time\s+(?:character|agent)")
+
+# --------------------------------------------------------------------- X-first announcement test
+# X is the PRIMARY schedule source, so this test has to be tight. One positive requirement does
+# most of the work: an announcement says WHEN it airs. That is what separates a real announcement
+# from the posts that merely mention one —
+#   "Insider Channel: Special Program | Signs of Imprisonment: Part Three"  -> no air time (lore)
+#   "[Prize Event] ... the Version 3.2 Special Program will air on August 28" -> prize-event title
+#   "Follow @Wuthering_Waves and repost. 10 winners will be chosen..."        -> giveaway INSIDE the
+#        real 3.7 announcement, so the giveaway words must not be allowed to veto it
+PROGRAM_AIR = re.compile(
+    r"\b(?:will\s+(?:premiere|begin|air|release|start|go\s+live|be\s+broadcast|be\s+available)|"
+    r"is\s+scheduled\s+to\s+air|scheduled\s+for|airing\s+on|premieres?\s+on|"
+    r"livestream\s+starts?|tune\s+in\s+(?:on|at)|starts?\s+(?:on|at)\b)", re.I)
+AIR_DATE = re.compile(
+    r"\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2}|"
+    r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}", re.I)
+# Only the HEADLINE is screened for "this is some other kind of post". Every real announcement
+# quotes its own giveaways and redemption codes in the body, so screening the whole text would
+# reject all four of them (GI drops codes, WW runs a gift-card draw, ZZZ drops a code).
+HEADLINE_LEN = 160
+
+
+def is_program_announcement(game: Game, text: str, title: str = "") -> bool:
+    """Strict positive test for 'this post IS the version's Special Program announcement'.
+
+    Three things must all hold: the game's own phrase for its livestream, a stated air time, and
+    a headline that is not some other kind of post. Verified against the four real 2026-09
+    announcements (GI 7.1, HSR 4.6, ZZZ 3.2, WW 3.7) and against the three posts that used to
+    steal the card's link."""
+    body = text or ""
+    if not _any(program_patterns(game), f"{title}\n{body}"):
+        return False
+    if title and NOT_PROGRAM_TITLE.search(title):
+        return False
+    if NOT_PROGRAM_TITLE.search(body[:HEADLINE_LEN]):
+        return False
+    if PROGRAM_EXCLUDE.search(body):
+        return False
+    return bool(PROGRAM_AIR.search(body)) and bool(AIR_DATE.search(body))
+
+
 PRE_WORDS = re.compile(r"pre-?install|pre-?download|pre-?installation|pre-?load", re.I)
 MAINT_WORDS = re.compile(r"maintenance|update\s+time|update\s+schedule|^begins?\s+at|^starts?\s+at|downtime", re.I)
 MAINT_EXCLUDE = re.compile(

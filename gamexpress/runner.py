@@ -97,25 +97,48 @@ async def gather_estimates(ctx: Ctx) -> None:
             log.info("[%s] countdown estimate: %s", key, est)
 
 
-async def find_program(fetcher, g: Game, ver: str, now: int) -> dict | None:
-    """THE program lookup, in one place: the official news page first (it archives every
-    announcement and carries the key art), then the HoYoLAB news list, which is paged back past
-    the lookback window.
+async def find_program(ctx, g: Game, ver: str) -> dict | None:
+    """THE program lookup, in one place, X first.
+
+    X is the primary source because it is the only one that reliably carries BOTH halves of what
+    the card needs — the announcement's own URL and its key art at `?name=orig`. Every source
+    below it is a backup, in the order it proved itself:
+
+      1. X           config/program_announcements.json -> fxtwitter by id (a seeded id resolves
+                     weeks later), else the nitter timeline (nitter.cf first). This is what fixed
+                     the 2026-09-27 run, where all three HoYoverse games got "no program
+                     announcement found" and WW linked a lore article instead.
+      2. HoYoLAB     the official news list, paged back past the lookback window. Good text and
+                     timestamps; its image list is often a small article cover.
+      3. news page   the official site's news index, which archives every announcement.
+      4. feed mirror its RSS/Atom mirror (Kuro's site is a JS build the scraper cannot read).
 
     -> {'url','title','images','youtube','text','ts','program_ts','source'} or None."""
-    hit = await newspage.fetch_program(fetcher, g, ver, now)
-    if not hit and getattr(g, "program_feeds", None):
-        hit = await newspage.fetch_program_feed(fetcher, g, ver, now)
+    now = ctx.now
+    source_url = ""
+    item: Item | None = None
+    if getattr(ctx, "x", None) is not None and ctx.settings.x_enabled:
+        item = await ctx.x.program_tweet(g, ver)
+    hit: dict | None = None
+    if item:
+        source_url = item.url
+        hit = {"url": item.url, "title": "", "images": list(item.images or []),
+               "youtube": "", "text": item.text, "ts": item.published_ts or now, "source": "x"}
     if not hit:
-        hit = await hoyolab.find_program(fetcher, g, ver)
+        hit = await hoyolab.find_program(ctx.fetcher, g, ver)
+    if not hit:
+        hit = await newspage.fetch_program(ctx.fetcher, g, ver, now)
+    if not hit and getattr(g, "program_feeds", None):
+        hit = await newspage.fetch_program_feed(ctx.fetcher, g, ver, now)
     if not hit:
         return None
     # the air time comes from the article's own text, through the same extractor that
     # every other official post goes through — no separate date parsing here
-    item = Item(source="hoyolab", game=g.key, id=ver, url=hit["url"], title=hit.get("title") or "",
-                text=hit.get("text") or "", published_ts=hit.get("ts") or now,
-                images=list(hit.get("images") or []))
-    fields = schedule.extract_program(g, item)
+    found = Item(source=hit.get("source") or "hoyolab", game=g.key, id=ver,
+                 url=source_url or hit["url"], title=hit.get("title") or "",
+                 text=hit.get("text") or "", published_ts=hit.get("ts") or now,
+                 images=list(hit.get("images") or []))
+    fields = schedule.extract_program(g, found)
     hit["program_ts"] = fields.get("program_ts")
     hit["youtube"] = hit.get("youtube") or fields.get("youtube_video")
     hit["images"] = hit.get("images") or fields.get("images") or []
@@ -140,17 +163,19 @@ async def gather_program_media(ctx: Ctx) -> None:
         jobs += [(g, v) for v in sorted(set(todo), key=version_key)]
     if not jobs:
         return
-    hits = await asyncio.gather(*(find_program(ctx.fetcher, g, ver, ctx.now) for g, ver in jobs))
+    hits = await asyncio.gather(*(find_program(ctx, g, ver) for g, ver in jobs))
     for (g, ver), hit in zip(jobs, hits):
         if hit:
             ctx.media.setdefault(g.key, {})[ver] = hit
     for key in {g.key for g, _ in jobs}:
         found = ctx.media.get(key) or {}
         if found:
-            log.info("[%s] program announcement found for %s", key, ", ".join(sorted(found)))
+            log.info("[%s] program announcement found for %s (source: %s)", key,
+                     ", ".join(sorted(found)),
+                     ", ".join(sorted({(found[v].get("source") or "?") for v in found})))
         else:
-            log.info("[%s] no program announcement found on the official news page, its feed "
-                     "mirror or HoYoLAB — the card keeps its current link", key)
+            log.info("[%s] no program announcement found on X, HoYoLAB, the official news page "
+                     "or its feed mirror — the card keeps its current link", key)
 
 
 async def gather_items(ctx: Ctx) -> None:

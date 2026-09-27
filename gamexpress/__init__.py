@@ -5,4 +5,4 @@ HoYoverse games (Genshin Impact, Honkai: Star Rail, Zenless Zone Zero, Honkai:
 Nexus Anima), Wuthering Waves, and NetEase's ANANTA.
 """
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
