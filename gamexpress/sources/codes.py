@@ -315,8 +315,12 @@ def parse_fandom(data: dict, now: float | None = None) -> list[CodeHit]:
     markers = sorted(
         [(m.start(), "expired" not in m.group(0).lower()) for m in
          re.finditer(r"<!--[^>]*?(active|expired)[^>]*?-->", wikitext, re.I)]
+        # (?m)^ not \n: the API returns the page from its first byte, so a page whose very
+        # first line is "==Expired Codes==" has no newline in front of it -- the old anchor
+        # skipped it and every dead code on that page was read as ACTIVE.
         + [(m.start(), not re.search(r"expired|inactive|invalid", m.group(0), re.I)) for m in
-           re.finditer(r"\n=+[^=\n]*(?:active|expired|inactive|invalid)[^=\n]*=+", wikitext, re.I)])
+           re.finditer(r"(?m)^=+[^=\n]*(?:active|expired|inactive|invalid)[^=\n]*=+",
+                       wikitext, re.I)])
     active = True
     for pos, body in _templates(wikitext, r"(?:Redemption\s+)?Code\s+Row"):
         while markers and markers[0][0] < pos:
@@ -378,8 +382,13 @@ def parse_codehub(data: dict, slug: str) -> list[CodeHit]:
         if not code:
             continue
         upstream = str((c.get("source") or {}).get("name") or "").lower()
+        # Same rule for every known upstream, so a copy can never be counted as a SECOND
+        # independent source: hoyo-codes = seria, a wiki = fandom, Open Gacha Codes /
+        # api.ennead.cc = ennead (ogc and ennead are already one family).
         origin = "seria" if "hoyo-codes" in upstream or "seria" in upstream else (
-            "fandom" if "fandom" in upstream or "wiki" in upstream else "")
+            "fandom" if "fandom" in upstream or "wiki" in upstream else (
+                "ennead" if "ennead" in upstream or "open gacha" in upstream
+                or "ogc" in upstream else ""))
         hits.append(CodeHit(code, "codehub", c.get("reward") or None, origin=origin))
     return hits
 

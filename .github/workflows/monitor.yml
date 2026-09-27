@@ -124,7 +124,17 @@ jobs:
       GE_VARS_JSON: ${{ toJSON(vars) }}
       # ── the dispatch inputs, as env (shell steps read these) ──
       TEST: ${{ inputs.test }}
-      NO_PING: ${{ !inputs.ping && '1' || '' }}
+      # ⑥ is a TEST-ONLY switch and must not reach the live run: job-level env reaches every
+      # step, and cron-job.org sends NO inputs, so a bare `!inputs.ping` set NO_PING=1 on
+      # every scheduled run. settings.ping() short-circuits on it before PING_SCHEDULE is
+      # ever read, so a real version announcement posted without pinging the role.
+      #
+      # The live branch emits '0', NOT ''. An empty value is a hole: config._merge_json_blobs()
+      # fills any blank key from GE_VARS_JSON, so the day a NO_PING repo variable is added it
+      # would silently override this line and mute the live run again. '0' is explicit and
+      # _bool() reads it as off. (The 2026-09-27 run logs show GE_VARS_JSON holding only
+      # AUTO_MERGE_DEPENDABOT and PING_SCHEDULE -- no NO_PING variable exists today.)
+      NO_PING: ${{ inputs.mode != 'live' && !inputs.ping && '1' || '0' }}
       PING_FLAG: ${{ inputs.ping && '--ping' || '' }}
       GAME_ARG: ${{ inputs.game != 'all' && inputs.game || '' }}
     steps:
