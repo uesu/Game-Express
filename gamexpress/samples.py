@@ -10,7 +10,7 @@ from __future__ import annotations
 SCHEDULE_SAMPLES: dict[str, dict] = {
     "starrail": {
         "version": "4.6", "program_name": "Special Program", "program_ts": 1789903800,
-        "title_url": "https://www.youtube.com/watch?v=drFgtruoPe8",
+        "title_url": "https://x.com/honkaistarrail/status/2099440781115211916",
         "images": ["https://i.ytimg.com/vi/drFgtruoPe8/maxresdefault.jpg"],
         "preinstall_ts": 1790229600, "maint_start_ts": 1790546400, "maint_end_ts": 1790564400,
         "banners": {"reruns": [], "phase1": ["Pearl"], "phase1_4": [], "phase2": [], "phase2_4": []},

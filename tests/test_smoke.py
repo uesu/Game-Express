@@ -180,7 +180,7 @@ def test_reference_card_text_is_exact():
     top, box = p["components"]
     assert top["content"] == "<@&1296268365593186426> Honkai: Star Rail Version 4.6 Schedule! 📜"
     body = "\n".join(c["content"] for c in box["components"] if c["type"] == 10)
-    for line in ("## [Honkai: Star Rail Version 4.6 Special Program](https://www.youtube.com/watch?v=drFgtruoPe8)",
+    for line in ("## [Honkai: Star Rail Version 4.6 Special Program](https://x.com/honkaistarrail/status/2099440781115211916)",
                  "<t:1789903800:F> or <t:1789903800:R>", "**Version 4.6 Banners (STC)**",
                  "✦ First Half/Phase: Pearl", "- 4 Star Characters: TBA", "**Maintenance Details (STC)**",
                  "✦ Pre-Install: <t:1790229600:F>", "✦ Start: <t:1790546400:F>", "✦ End: <t:1790564400:F>"):
@@ -1148,8 +1148,9 @@ def test_the_program_announcement_replaces_the_maintenance_notice_on_the_card():
         asyncio.run(schedule.run(ctx))
         assert [x["method"] for x in ctx.webhook.sent] == ["PATCH"]       # same card, edited silently
         flat2 = json.dumps(ctx.webhook.sent[0]["payload"], ensure_ascii=False)
-        assert "youtube.com/watch?v=EXAMPLE1234" in flat2                 # title -> the announcement's stream
-        assert "hoyolab.com/article/46691962" in flat2                    # Source -> the announcement itself
+        # the title links the ANNOUNCEMENT, not the stream it happens to mention
+        assert "## [Honkai: Star Rail Version 4.6 Special Program](https://www.hoyolab.com/article/46691962)" in flat2, flat2
+        assert "youtube.com/watch?v=EXAMPLE1234" in flat2                 # the stream stays in source_links
         assert "pbs.twimg.com/media/HR70hTAaoAA8Dzz.jpg?name=orig" in flat2    # full-size key art
         assert "<t:1789860600:F>" in flat2 and "<t:1789860600:R>" in flat2     # the air time, user's format
         assert "🖼️" not in flat2
@@ -1409,8 +1410,10 @@ def test_the_program_lookup_runs_end_to_end_on_a_fresh_state():
         d = schedule.merge(GAMES["starrail"], "4.6",
                            schedule.version_extracts(ctx, GAMES["starrail"])["4.6"],
                            {}, {}, {}, ctx.now, [], None, hit)
-        assert d["title_url"] == "https://www.youtube.com/watch?v=drFgtruoPe8"     # the livestream
+        # the title links the ANNOUNCEMENT (the tweet), not the livestream it mentions
+        assert d["title_url"] == "https://x.com/honkaistarrail/status/2099440781115211916"
         assert d["source_url"] == "https://x.com/honkaistarrail/status/2099440781115211916"
+        assert d["youtube_video"] == "https://www.youtube.com/watch?v=drFgtruoPe8"
 
 # --------------------------------------------------------------- X-first schedule (v1.8.0)
 # The 2026-09-27 run got all four games wrong: GI/HSR/ZZZ reported "no program announcement
@@ -1890,6 +1893,106 @@ def test_the_storage_block_is_not_mistaken_for_a_preinstall_clock():
     f = schedule.extract_labelled(text, 1788700000)
     assert "preinstall_ts" not in f                            # a size line is not a schedule
     assert f["maint_start_ts"] == 1788904800
+
+
+def test_the_title_links_the_announcement_not_the_youtube_stream():
+    media = {
+        "url": "https://x.com/honkaistarrail/status/2099440781115211916",
+        "youtube": "https://www.youtube.com/watch?v=drFgtruoPe8",
+        "source": "X Post",
+    }
+    data, prov = {}, {}
+    schedule.apply_program_media(data, prov, media, 1790000000)
+    assert data["title_url"] == "https://x.com/honkaistarrail/status/2099440781115211916"
+    assert data["source_url"] == "https://x.com/honkaistarrail/status/2099440781115211916"
+    assert data["youtube_video"] == "https://www.youtube.com/watch?v=drFgtruoPe8"
+
+
+def test_an_official_announcement_replaces_a_countdown_estimate():
+    data = {
+        "program_ts": 1790341813,
+        "estimated": ["program_ts"],
+        "estimate_sources": ["hsr-countdown"],
+    }
+    prov = {"program_ts": [schedule.PRIORITY["countdown"], 1789000000]}
+    media = {
+        "url": "https://x.com/honkaistarrail/status/2099440781115211916",
+        "program_ts": 1789903800,
+    }
+    changed = schedule.apply_program_media(data, prov, media, 1790000000)
+    assert data["program_ts"] == 1789903800
+    assert "program_ts" in changed
+    assert "estimated" not in data
+    assert "estimate_sources" not in data
+    assert prov["program_ts"] == [schedule.PRIORITY["news"], 1790000000]
+
+    data2 = {
+        "program_ts": 1790341813,
+        "preinstall_ts": 1790229600,
+        "estimated": ["program_ts", "preinstall_ts"],
+        "estimate_sources": ["hsr-countdown"],
+    }
+    prov2 = {"program_ts": [schedule.PRIORITY["countdown"], 1789000000]}
+    schedule.apply_program_media(data2, prov2, media, 1790000000)
+    assert data2["program_ts"] == 1789903800
+    assert data2["estimated"] == ["preinstall_ts"]
+    assert data2["estimate_sources"] == ["hsr-countdown"]
+
+
+def test_a_real_official_air_time_is_never_replaced_by_media():
+    data = {"program_ts": 1789903800}
+    prov = {"program_ts": [schedule.PRIORITY["hoyolab"], 1789000000]}
+    media = {
+        "url": "https://x.com/honkaistarrail/status/2099440781115211916",
+        "program_ts": 1789999999,
+    }
+    changed = schedule.apply_program_media(data, prov, media, 1790000000)
+    assert data["program_ts"] == 1789903800
+    assert "program_ts" not in changed
+    assert prov["program_ts"] == [schedule.PRIORITY["hoyolab"], 1789000000]
+
+
+def test_the_footer_puts_each_note_on_its_own_small_text_line():
+    d = {
+        "version": "4.6",
+        "estimated": ["program_ts"],
+        "estimate_sources": ["hsr-countdown"],
+    }
+    p = cards.schedule_payload(GAMES["starrail"], d, settings(show_legend=True), cards.Ping(), None)
+    flat = json.dumps(p, ensure_ascii=False)
+    assert "• 🕒" not in flat
+    box = p["components"][-1]
+    foot_lines = [c["content"] for c in box["components"] if c["type"] == 10 and c["content"].startswith("-# ")]
+    assert len(foot_lines) == 2
+    assert foot_lines[0] == "-# STC — Subject to Change • TBA — To be Announced"
+    assert foot_lines[1] == "-# 🕒 program time estimated from hsr-countdown — the official notice replaces it automatically"
+
+
+def test_a_version_whose_air_time_is_only_an_estimate_is_looked_up_again():
+    now = 1790000000
+    # Gate reopens while air time is estimated
+    rec_est = {"data": {"media_from": "X", "estimated": ["program_ts"]}}
+    assert schedule.needs_program_lookup([], rec_est, now) is True
+
+    rec_seen_est = {"data": {"program_seen": True, "estimated": ["program_ts"]}}
+    assert schedule.needs_program_lookup([], rec_seen_est, now) is True
+
+    # Gate closes once settled (not in estimated)
+    rec_settled = {"data": {"media_from": "X"}}
+    assert schedule.needs_program_lookup([], rec_settled, now) is False
+
+    rec_seen_settled = {"data": {"program_seen": True}}
+    assert schedule.needs_program_lookup([], rec_seen_settled, now) is False
+
+    # Still respects the maintenance cutoff (+12 h)
+    rec_cutoff = {
+        "data": {
+            "media_from": "X",
+            "estimated": ["program_ts"],
+            "maint_start_ts": now - 13 * 3600,
+        }
+    }
+    assert schedule.needs_program_lookup([], rec_cutoff, now) is False
 
 
 def main() -> int:
