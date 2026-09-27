@@ -127,6 +127,7 @@ PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "news": 45, "x": 40, "la
             "countdown": 10, "pattern": 9, "bannerfeed": 5}
 ESTIMATED_KEYS = ("program_ts", "preinstall_ts", "maint_start_ts", "maint_end_ts")
 MAINT_HOURS_ESTIMATE = 5          # typical HoYoverse / Kuro maintenance window
+PROGRAM_FRESH_H = 36              # how long after the air time a program still counts as news
 
 # Cold-start pre-install leads, measured from maintenance START. Once this installation has seen
 # a real pre-install + maintenance pair for a game, observed_lead_h() supplies that game's median
@@ -529,6 +530,22 @@ def derive_preinstall(game: Game, data: dict, prov: dict, now: int,
     return derived
 
 
+def program_settled(data: dict, now: int, fresh_h: float = PROGRAM_FRESH_H) -> bool:
+    """True once this version's special program has aired and stopped being news.
+
+    The announcement already happened, so on a live run the version is historical: nothing about
+    it can surprise anyone, and posting -- or resurrecting -- a card for it is noise. Test runs
+    keep rendering it, because proving the fetch still resolves the real tweet is their purpose.
+
+    In-place edits of an already-posted card are deliberately NOT covered. A settled program does
+    not mean a finished version: HSR 4.6's program aired 2026-09-20 while its maintenance started
+    2026-09-28, and its banners kept arriving from HoYoLAB in between. Those corrections still
+    have to reach the card that is already sitting in the channel.
+    """
+    pts = data.get("program_ts")
+    return bool(pts and int(pts) < now - fresh_h * 3600)
+
+
 def needs_estimate(state, game_key: str, now: int) -> bool:
     """True when this game still misses a program / maintenance time -> worth asking a
     countdown site (otherwise the run doesn't spend a single request on it)."""
@@ -892,8 +909,9 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     maint_start = data.get("maint_start_ts")
     frozen = bool(maint_start and now > int(maint_start) + 45 * 86400)
 
+    settled = program_settled(data, now)
     if status in ("posted", "live") and not repost:
-        if frozen or not s.edit_on_update:
+        if record.get("card_retired") or frozen or not s.edit_on_update:
             return
         payload = schedule_payload(game, data, s, ping)
         h = stable_hash(payload["components"])
@@ -910,6 +928,16 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
             record["payload_hash"] = h
             record["updated_at"] = now
             ctx.report.append(f"✏️ {game.short} {ver}: schedule card updated")
+        elif res.status == 404 and settled and not s.test_mode:
+            # The program already aired, so this version is historical. Discord 10008 means the
+            # message is gone for good; reposting would resurrect a card the channel no longer
+            # needs -- and would keep doing it after every delete, forever. Drop the dead id so
+            # nothing retries. A test run still reposts: showing the real card is the whole point.
+            record["card_retired"] = now
+            record.pop("message_id", None)
+            ctx.report.append(
+                f"🗂 {game.short} {ver}: program already aired — the deleted card stays deleted "
+                f"(live runs never resurrect a settled version; repost with {game.key}:{ver})")
         elif res.status == 404:
             # Discord 10008 means this message is permanently gone. Repeating the PATCH would
             # fail forever, so post the current card once and adopt its new id. No other edit
@@ -935,7 +963,7 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     # decide whether this version deserves a NEW post
     pts, fresh_program = data.get("program_ts"), False
     if "program" in kinds and pts:
-        fresh_program = int(pts) > now - 36 * 3600
+        fresh_program = int(pts) > now - PROGRAM_FRESH_H * 3600
     fresh_maint = bool(s.post_on_maintenance and "maintenance" in kinds and maint_start
                        and int(maint_start) > now - 6 * 3600)
     if s.test_mode and (pts or maint_start):

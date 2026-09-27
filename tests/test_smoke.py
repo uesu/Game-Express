@@ -1677,9 +1677,17 @@ class ScriptedWebhook:
         return self.send_results.pop(0)
 
 
-def _posted_hsr_record(message_id: str = "dead-message") -> dict:
+# The real HSR 4.6 air time. At the now=1790450000 these tests use, that program aired six days
+# earlier, so 4.6 is a SETTLED version -- exactly the case a live run must leave alone.
+HSR_46_AIRED = 1789903800
+
+
+def _posted_hsr_record(message_id: str = "dead-message",
+                       program_ts: int = HSR_46_AIRED) -> dict:
+    data = dict(SCHEDULE_SAMPLES["starrail"])
+    data["program_ts"] = program_ts
     return {"status": "posted", "first_seen": 1790400000,
-            "data": dict(SCHEDULE_SAMPLES["starrail"]), "prov": {},
+            "data": data, "prov": {},
             "message_id": message_id, "webhook_fp": webhook_fingerprint(HOOK),
             "payload_hash": "old-payload"}
 
@@ -1690,7 +1698,8 @@ def test_a_deleted_card_is_reposted_and_adopts_the_new_id():
         ctx.webhook = ScriptedWebhook(
             [SendResult(False, 404, error=UNKNOWN_MESSAGE), SendResult(True, 200)],
             [SendResult(True, 200, message_id="replacement-message")])
-        records = {"4.6": _posted_hsr_record()}
+        # program still inside the 36 h news window -> recovery must still repost
+        records = {"4.6": _posted_hsr_record(program_ts=1790440000)}
         asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
                                              {"compensation": "Stellar Jade ×301"}, {}, True))
         assert ctx.errors == [] and len(ctx.webhook.sends) == 1
@@ -1712,7 +1721,7 @@ def test_a_deleted_card_whose_repost_fails_still_reports_an_error():
         ctx.webhook = ScriptedWebhook(
             [SendResult(False, 404, error=UNKNOWN_MESSAGE)],
             [SendResult(False, 503, error="upstream unavailable")])
-        records = {"4.6": _posted_hsr_record()}
+        records = {"4.6": _posted_hsr_record(program_ts=1790440000)}   # not settled yet
         asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
                                              {"compensation": "Stellar Jade ×301"}, {}, True))
         assert len(ctx.webhook.sends) == 1 and len(ctx.errors) == 1
@@ -2008,6 +2017,88 @@ def main() -> int:
             traceback.print_exc()
     print(f"\n{len(tests) - failed}/{len(tests)} passed")
     return 1 if failed else 0
+
+
+# =========================================================================== settled programs
+# HSR 4.6's special program aired 2026-09-20; the version itself went live 2026-09-28. A live run
+# must stop announcing it, while a test run must keep rendering it so the fetch stays observable.
+def test_a_settled_program_is_never_resurrected_on_a_live_run():
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790450000)
+        ctx.webhook = ScriptedWebhook([SendResult(False, 404, error=UNKNOWN_MESSAGE)],
+                                      [SendResult(True, 200, message_id="should-not-happen")])
+        records = {"4.6": _posted_hsr_record()}                 # air time 6 days ago
+        assert schedule.program_settled(records["4.6"]["data"], ctx.now)
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {"compensation": "Stellar Jade ×301"}, {}, True))
+        assert ctx.webhook.sends == [] and ctx.errors == []      # nothing reappears in the channel
+        assert records["4.6"].get("message_id") is None          # dead id dropped, no retry loop
+        assert records["4.6"]["card_retired"] == ctx.now
+        assert any("program already aired" in line for line in ctx.report)
+
+        # and it stays gone: the later data change adds no PATCH and no POST (the single edit
+        # above is the one that 404'd and triggered the retirement)
+        ctx.now += 600
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {"compensation": "Stellar Jade ×302"}, {}, True))
+        assert ctx.webhook.sends == [] and len(ctx.webhook.edits) == 1 and ctx.errors == []
+
+
+def test_a_test_run_still_reposts_a_settled_version():
+    """The whole point of a test run is to see the real card, however old the program is."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790450000, TEST_MODE="1")
+        ctx.webhook = ScriptedWebhook([SendResult(False, 404, error=UNKNOWN_MESSAGE)],
+                                      [SendResult(True, 200, message_id="test-card")])
+        records = {"4.6": _posted_hsr_record()}
+        assert schedule.program_settled(records["4.6"]["data"], ctx.now)
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {"compensation": "Stellar Jade ×301"}, {}, True))
+        assert len(ctx.webhook.sends) == 1 and ctx.errors == []
+        assert records["4.6"]["message_id"] == "test-card"
+        assert "card_retired" not in records["4.6"]
+
+
+def test_a_settled_program_does_not_freeze_the_card_that_is_already_posted():
+    """Settled program != finished version: HSR 4.6's banners and maintenance landed AFTER the
+    stream, so in-place edits must keep flowing. Only NEW messages are suppressed."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790450000)
+        ctx.webhook = ScriptedWebhook([SendResult(True, 200)])
+        records = {"4.6": _posted_hsr_record()}
+        assert schedule.program_settled(records["4.6"]["data"], ctx.now)
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {"compensation": "Stellar Jade ×301"}, {}, True))
+        assert len(ctx.webhook.edits) == 1 and ctx.webhook.sends == []
+        assert any("schedule card updated" in line for line in ctx.report)
+        assert records["4.6"]["message_id"] == "dead-message"
+
+
+def test_a_settled_version_is_never_announced_anew_on_a_live_run():
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790450000)
+        records = {"4.6": {"status": "new", "first_seen": ctx.now,
+                           "data": dict(SCHEDULE_SAMPLES["starrail"]), "prov": {}}}
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {}, {}, False))          # not bootstrapped
+        assert ctx.webhook.sent == [] and records["4.6"]["status"] == "tracked"
+        assert any("nothing to announce" in line for line in ctx.report)
+
+        # the same version on a test run IS rendered, from an empty state
+        ctx2 = make_ctx(Path(tmp) / "s2.json", now=1790450000, TEST_MODE="1")
+        records2 = {"4.6": {"status": "new", "first_seen": ctx2.now,
+                            "data": dict(SCHEDULE_SAMPLES["starrail"]), "prov": {}}}
+        asyncio.run(schedule._handle_version(ctx2, GAMES["starrail"], "4.6", [], records2,
+                                             {}, {}, True))
+        assert len(ctx2.webhook.sent) == 1
+
+
+def test_program_settled_shares_the_window_with_the_announce_decision():
+    now = 1790450000
+    assert schedule.program_settled({"program_ts": now - int(36 * 3600) - 1}, now) is True
+    assert schedule.program_settled({"program_ts": now - int(36 * 3600) + 60}, now) is False
+    assert schedule.program_settled({"program_ts": now + 86400}, now) is False   # not aired yet
+    assert schedule.program_settled({}, now) is False                            # air time unknown
 
 
 if __name__ == "__main__":
