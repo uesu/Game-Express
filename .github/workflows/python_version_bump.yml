@@ -52,7 +52,7 @@ jobs:
 
       - name: Open the PR (only when a newer stable series was found)
         if: steps.bump.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "chore(python): bump to Python ${{ steps.bump.outputs.new_version }}"
           title: "Bump Python ${{ steps.bump.outputs.old_version }} → ${{ steps.bump.outputs.new_version }}"

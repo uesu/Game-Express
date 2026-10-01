@@ -40,7 +40,7 @@ jobs:
           cache: 'pip'
 
       - name: Install uv (same packages pip would install, just a much faster resolver)
-        uses: astral-sh/setup-uv@v9
+        uses: astral-sh/setup-uv@v10.2.0   # astral-sh doesn't publish a floating major tag like v10
 
       - name: Install dependencies (a broken requirements.txt fails HERE, not in production)
         env:
