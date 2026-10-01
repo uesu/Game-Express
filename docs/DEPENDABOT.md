@@ -14,7 +14,7 @@ Once a week (Monday), Dependabot checks two things. When there is something new,
 | `deps(python)` | `requirements.txt` | `aiohttp` 3.x → 4.0 |
 | `deps(actions)` | the actions used in `.github/workflows/*` | `actions/checkout` v7 → v8 |
 
-The **CI** workflow tests every Dependabot PR: install, compile, validate, and the 55 offline
+The **CI** workflow tests every Dependabot PR: install, compile, validate, and the 131 offline
 tests. Nothing reaches `main` until you merge it, or until auto-merge does (see below).
 
 - **Python PRs are rare on purpose** (`versioning-strategy: increase-if-necessary`). The ranges
@@ -68,3 +68,7 @@ variable* → `AUTO_MERGE_DEPENDABOT` = `yes`. Delete the variable to turn it of
 
 **To turn Dependabot off completely:** delete `.github/dependabot.yml`. You can also turn off
 *Settings → Code security → Dependabot version updates*.
+
+**Note:** the Python interpreter version itself (`python-version: '3.14'`) is invisible to
+Dependabot — it's a plain string in workflow YAML, not a tracked ecosystem file. A separate,
+opt-in-to-merge workflow covers that one gap; see [docs/PYTHON_VERSION.md](PYTHON_VERSION.md).

@@ -146,13 +146,18 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: '3.14'
           cache: 'pip'
 
+      # This step runs every 10 minutes (cron-job.org), so its speed is the one that actually
+      # matters: uv installs the exact same packages pip would, just with a much faster resolver.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip --disable-pip-version-check -q
-          pip install -r requirements.txt --disable-pip-version-check -q
+        env:
+          UV_SYSTEM_PYTHON: '1'
+        run: uv pip install -r requirements.txt -q
 
       - name: Show resolved config (routing, pings, emojis)
         run: python -m gamexpress validate || true

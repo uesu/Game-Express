@@ -265,6 +265,7 @@ any name below works without editing YAML.
 | `X_ENABLED` / `NITTER_INSTANCES` | on / built-in fleet | X monitoring on/off, or a custom nitter list |
 | `INSTANCE_NAME` / `INSTANCE_ROLE` / `PEER_STATE_URL` / `HEARTBEAT_MINUTES` / `FAILOVER_AFTER_MINUTES` | alpha / primary / — / 1440 / 90 | [fail-over](#-redundancy-fallback-chains--two-instance-fail-over) |
 | `AUTO_MERGE_DEPENDABOT` | — | `yes` = merge green Dependabot PRs automatically (dev repo only; [docs/DEPENDABOT.md](docs/DEPENDABOT.md)) |
+| `AUTO_MERGE_PYTHON_BUMP` | — | `yes` = merge a green, automated Python-version-bump PR automatically ([docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md)) |
 
 ### `config/games.json` (per game)
 
@@ -476,7 +477,7 @@ should see in Discord, and how to tell that the whole thing is working.
   schedule card — every test fetches the live sources, so what you see in Discord is what a live
   run would post (see [Manual controls](#-manual-controls)).
 - **CI** (`.github/workflows/ci.yml`) runs on every PR and every push to `main`: install,
-  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **67 offline tests
+  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **131 offline tests
   with no network and no secrets**:
   - real official posts captured on 2026-09-25, which must reproduce your reference cards'
     timestamps;
@@ -589,6 +590,58 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 ---
 
 ## 🗒 Changelog
+
+### 1.7.0 — 2026-10-01 · Python 3.14
+
+- **The monitor now runs on Python 3.14** (`.github/workflows/ci.yml` and `monitor.yml` pin
+  `python-version: '3.14'`, matching [python.org's current stable release, 3.14.8](https://www.python.org/downloads/release/python-3148/)).
+  Pinning the *minor* version only (not `'3.14.8'`) means GitHub's runners keep picking the newest
+  3.14.x bugfix release on their own — no PR needed for a patch release, the same trick already
+  used for 3.11 before it. Python 3.11 reaches end of active support around October 2027; 3.14 is
+  supported into **October 2030**.
+  - Verified safe before merging: the three runtime dependencies (`aiohttp`, `feedparser`,
+    `python-dotenv`) already ship Python 3.14 wheels/classifiers, and a full repo scan found zero
+    uses of any stdlib API removed or deprecated between 3.9 and 3.14 (no `datetime.utcnow()`,
+    no `collections.Mapping`, no dead-battery modules, no old asyncio loop APIs, etc.).
+  - `ruff.toml`'s `target-version` is now `py314` to match; `ruff check .` is unchanged (0 issues)
+    under both the old and new target.
+  - **Dependabot cannot bump this for you** — `python-version` is a workflow input, not a tracked
+    package ecosystem, so the *next* Python feature release (3.15, ~October 2027) would have
+    needed the same one-line manual edit in both workflow files (and `ruff.toml`) by hand — see
+    **1.8.0** below, which automates exactly that.
+- No functional changes: all 131 offline tests, `ruff check .`, `python -m gamexpress validate`
+  and `python -m gamexpress preview` are unaffected.
+
+### 1.8.0 — 2026-10-01 · future Python bumps, faster installs, two advisory scans
+
+- **New: `.github/workflows/python_version_bump.yml`.** Weekly (and on demand), it compares the
+  pinned Python series against [`actions/python-versions`](https://github.com/actions/python-versions)'
+  own release manifest — the exact list `actions/setup-python` installs from — and opens a PR the
+  moment a newer *stable* series is actually available, instead of waiting for a human to notice.
+  It never merges blind: the PR only auto-merges when it carries the `python-bump` label, the full
+  131-test CI gate is green on that exact commit, **and** the repository variable
+  `AUTO_MERGE_PYTHON_BUMP=yes` is set — unset by default, so today this only ever opens the PR for
+  review. Full design, safety reasoning, and the one-time "allow Actions to open PRs" setting it
+  needs: [docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md).
+- **Faster installs in CI and in the 10-minutely monitor run**, both switched from `pip` to
+  [`astral-sh/setup-uv`](https://docs.astral.sh/uv/guides/integration/github/)'s `uv pip install`
+  (same `requirements.txt`, same resolved packages — just a much faster resolver/installer). The
+  monitor workflow runs every 10 minutes, so this is the install path where the speed actually
+  matters day to day.
+- **Two new informational-only checks**, added as a separate `advisory-checks` job in `ci.yml`
+  that can never block a merge (`continue-on-error: true` on both steps):
+  - [`pypa/gh-action-pip-audit`](https://github.com/pypa/gh-action-pip-audit) scans
+    `requirements.txt` against the PyPA known-vulnerability database on every PR;
+  - [`reviewdog/action-actionlint`](https://github.com/reviewdog/action-actionlint) statically
+    checks the workflow YAML itself (typos, bad expressions, shellcheck of `run:` blocks) —
+    actionlint has no first-party GitHub Action of its own, this reviewdog wrapper is the
+    documented way to run it in CI.
+- **Housekeeping:** removed `.dockerignore` (the repo has never had a `Dockerfile`) and the
+  `DISCORD_WEBHOOK_TEST=` line in `.env.example` (README already noted it's no longer used, since
+  the live-test-channel workflow was retired). Fixed three stale "N offline tests" mentions in
+  the docs that still said 55/67 instead of the current 131.
+- No functional changes to the monitor itself: all 131 offline tests, `ruff check .`,
+  `python -m gamexpress validate` and `python -m gamexpress preview` are unaffected.
 
 ### 1.6.0 — 2026-09-27 · the pre-install lead is learned, not hardcoded
 
