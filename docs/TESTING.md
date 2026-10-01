@@ -20,7 +20,7 @@ That workflow:
 
 ## 0. Before merging a PR
 
-The PR's **CI — compile + offline tests** check must be green. It runs 67 offline tests, which
+The PR's **CI — compile + offline tests** check must be green. It runs 131 offline tests, which
 cover:
 
 - the real official posts, which must reproduce your reference cards' timestamps;
@@ -136,7 +136,7 @@ If the title link or the picture is wrong:
 
 ```bash
 pip install -r requirements.txt pyyaml
-python tests/test_smoke.py                 # 67 offline tests
+python tests/test_smoke.py                 # 131 offline tests
 python -m gamexpress validate              # routing, pings, card limits
 python -m gamexpress preview               # previews/index.html = every card, Discord-style
 DRY_RUN=1 TEST_MODE=1 BOOTSTRAP_POST=1 STATE_PATH=/tmp/s.json python -m gamexpress run
