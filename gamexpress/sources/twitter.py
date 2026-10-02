@@ -11,16 +11,17 @@ import asyncio
 import json
 import logging
 import re
+import time
 from calendar import timegm
 from collections.abc import Callable
-from urllib.parse import quote, unquote
+from urllib.parse import quote
 
 import feedparser
 
 from .. import schedule
 from ..config import CONFIG_DIR, Game, Settings
 from ..http import Fetcher
-from ..media import sane_aspect
+from ..media import nitter_pic_to_twimg, sane_aspect
 from ..models import Item
 from ..textutil import find_urls, html_to_text
 
@@ -100,18 +101,9 @@ def _from_vx(vx: dict, tweet_id: str) -> dict:
 
 NITTER_BATCH = 4          # instances probed in parallel per round
 NITTER_TIMEOUT = 12       # seconds — a dead mirror must not stall the run
+NITTER_WORKING = 2        # merge this many instances, then stop waiting for the rest
+NITTER_GRACE = 1.5        # seconds a still-silent HIGHER-ranked mirror gets once that many answered
 STATUS_RE = re.compile(r"/status(?:es)?/(\d{8,25})")
-
-
-def nitter_pic_to_twimg(url: str) -> str:
-    """https://nitter.cf/pic/media%2FHR70hTAaoAA8Dzz.jpg -> https://pbs.twimg.com/media/HR70hTAaoAA8Dzz.jpg"""
-    m = re.search(r"/pic/(?:orig/)?(.+)$", url)
-    if not m:
-        return url
-    path = unquote(m.group(1)).split("?")[0]
-    if path.startswith(("media/", "ext_tw_video_thumb/", "tweet_video_thumb/", "amplify_video_thumb/")):
-        return f"https://pbs.twimg.com/{path}"
-    return url
 
 
 class XClient:
@@ -146,23 +138,77 @@ class XClient:
             return None
         return list(feed.entries)
 
+    async def _probe_batch(self, batch: list[str], account: str, needed: int) -> list[list]:
+        """Probe a whole batch at once and return the first `needed` answers, in fleet order.
+
+        The batch stops waiting as soon as the winners are decided instead of awaiting the
+        slowest member: asyncio.gather() used to sit out a dead mirror's whole 12 s
+        NITTER_TIMEOUT even when the mirrors the run needs had already replied — live run #217
+        (nitter.cf -> TimeoutError) took 16.2 s where #215/#216/#218 took 4.9-6 s. Cancelling
+        the stragglers also hands the Fetcher's global request slot straight back to the
+        HoYoLAB / Kuro / code requests queued behind it.
+
+        The *selection* is unchanged, so the merged timeline is the same as before: a mirror is
+        only dropped once `needed` HIGHER-ranked mirrors have answered, never just because it
+        was slower. The one exception is the NITTER_GRACE cap — a higher-ranked mirror that is
+        still silent `NITTER_GRACE` seconds after the batch already has enough answers is
+        treated as dead (a healthy mirror answers in well under that), which turns the worst
+        case from a full 12 s timeout into 1.5 s. Every instance in the batch is still
+        requested, in parallel, in fleet order.
+        """
+        tasks = {asyncio.ensure_future(self._probe(inst, account)): idx for idx, inst in enumerate(batch)}
+        answers: dict[int, list] = {}
+        pending = set(tasks)
+        grace_until: float | None = None
+        try:
+            while pending:
+                best = sorted(answers)[:needed]
+                if len(best) == needed and best[-1] < min(tasks[t] for t in pending):
+                    break                       # no pending mirror can outrank the winners
+                timeout = None
+                if grace_until is not None:
+                    timeout = grace_until - time.monotonic()
+                    if timeout <= 0:
+                        log.info("[x:%s] %s still silent after %.1fs — treated as dead", account,
+                                 ", ".join(batch[tasks[t]] for t in pending), NITTER_GRACE)
+                        break
+                done, pending = await asyncio.wait(pending, timeout=timeout,
+                                                   return_when=asyncio.FIRST_COMPLETED)
+                if not done:
+                    continue                    # grace expired — handled at the top of the loop
+                for task in done:
+                    try:
+                        feed_entries = task.result()
+                    except Exception as e:      # a parser blow-up must never kill the run
+                        log.warning("[x:%s] %s probe failed: %s", account, batch[tasks[task]], e)
+                        continue
+                    if feed_entries:
+                        answers[tasks[task]] = feed_entries
+                if len(answers) >= needed and grace_until is None:
+                    grace_until = time.monotonic() + NITTER_GRACE
+        finally:
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+        return [answers[i] for i in sorted(answers)][:needed]
+
     async def timeline(self, account: str) -> list[dict]:
-        """Instances are probed in parallel batches (a dead mirror costs one short timeout
-        for the whole batch instead of one per instance); the first TWO working instances
-        (in fleet order) are merged."""
+        """Instances are probed in parallel batches and the first TWO working ones are merged.
+
+        A dead mirror costs one short timeout for the whole batch instead of one per instance —
+        and nothing at all once two mirrors in the same batch have answered, because the batch
+        stops waiting there (see _probe_batch)."""
         if account in self._timelines:
             return self._timelines[account] or []
         entries: dict[str, dict] = {}
         working = 0
         fleet = list(self.settings.nitter_instances)
         for i in range(0, len(fleet), NITTER_BATCH):
-            if working >= 2:
+            if working >= NITTER_WORKING:
                 break
             batch = fleet[i:i + NITTER_BATCH]
-            results = await asyncio.gather(*(self._probe(inst, account) for inst in batch))
-            for feed_entries in results:
-                if working >= 2 or not feed_entries:
-                    continue
+            for feed_entries in await self._probe_batch(batch, account, NITTER_WORKING - working):
                 working += 1
                 for e in feed_entries:
                     m = STATUS_RE.search(e.get("link", ""))

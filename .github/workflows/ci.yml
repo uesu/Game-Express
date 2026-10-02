@@ -6,8 +6,9 @@ name: CI — compile + offline tests
 #
 # Jobs:
 #   test                      the real gate (always required)
-#   advisory-checks           pip-audit (known CVEs) + actionlint (workflow YAML) — informational
-#                              only, can NEVER fail this workflow (see the job for why)
+#   advisory-checks           pip-audit (known CVEs in requirements.txt) + actionlint (workflow
+#                              YAML) + zizmor (workflow security) + ruff (Python lint) —
+#                              informational only, can NEVER fail this workflow (see the job)
 #   automerge                 OPT-IN Dependabot auto-merge: only Dependabot PRs, only after
 #                              `test` passed, only when the repository VARIABLE
 #                              AUTO_MERGE_DEPENDABOT=yes exists. See docs/DEPENDABOT.md.
@@ -27,12 +28,22 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # A new commit on the same PR/branch makes the previous CI run pointless, so cancel it: the
+  # reviewer gets the answer for the newest commit sooner and no runner minute is spent proving
+  # something about a commit nobody will merge. Safe here and NOT in monitor.yml — this workflow
+  # only reads; it never posts to Discord and never writes state.
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false   # nothing here pushes; don't leave a token in .git/config
 
       - uses: actions/setup-python@v7
         with:
@@ -40,6 +51,8 @@ jobs:
 
       - name: Install uv (same packages pip would install, just a much faster resolver)
         uses: astral-sh/setup-uv@v10.2.0   # astral-sh doesn't publish a floating major tag like v10
+        with:
+          version: latest-known            # see monitor.yml for why this is not "latest"
 
       - name: Install dependencies (a broken requirements.txt fails HERE, not in production)
         env:
@@ -64,6 +77,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false   # read-only job
 
       - uses: actions/setup-python@v7
         with:
@@ -81,6 +96,20 @@ jobs:
         with:
           reporter: local
           fail_level: none
+
+      - name: Security review of the workflow YAML (zizmorcore/zizmor)
+        continue-on-error: true   # informational only, see above
+        uses: zizmorcore/zizmor-action@v0.6.4
+        with:
+          inputs: .github/workflows
+          advanced-security: false   # print the findings in the log; no code-scanning upload
+          persona: regular
+
+      - name: Lint the Python itself (astral-sh/ruff, reading the repo's own ruff.toml)
+        continue-on-error: true   # a brand-new ruff release must never block a hot-fix
+        uses: astral-sh/ruff-action@v4
+        with:
+          args: check --output-format=github   # ruff.toml (target-version, line-length, rules) is picked up automatically
 
   automerge:
     name: Dependabot auto-merge (opt-in)

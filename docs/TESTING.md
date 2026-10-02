@@ -20,13 +20,23 @@ That workflow:
 
 ## 0. Before merging a PR
 
-The PR's **CI — compile + offline tests** check must be green. It runs 131 offline tests, which
+The PR's **CI — compile + offline tests** check must be green. It runs 134 offline tests, which
 cover:
 
 - the real official posts, which must reproduce your reference cards' timestamps;
 - the golden cards, Discord limits, the code gate, 4★ TBA, fail-over, and the workflow files.
 
 CI needs no secrets and no network.
+
+A second job, **CI — advisory checks**, runs beside it and is **informational only** — it is
+allowed to fail and can never block a merge:
+
+| Check | What it looks at |
+|---|---|
+| [`pip-audit`](https://github.com/pypa/gh-action-pip-audit) | known CVEs in `requirements.txt` |
+| [`actionlint`](https://github.com/reviewdog/action-actionlint) | workflow YAML correctness |
+| [`zizmor`](https://github.com/zizmorcore/zizmor) | workflow *security* (credential persistence, injection, over-provisioned secrets). Policy and the three justified ignores live in `.github/zizmor.yml` and in inline `# zizmor: ignore[...]` comments |
+| [`ruff`](https://github.com/astral-sh/ruff-action) | the same `ruff.toml` lint you run locally, annotated inline on the PR diff |
 
 ## 1. Webhooks: are all channels connected?
 
@@ -136,9 +146,11 @@ If the title link or the picture is wrong:
 
 ```bash
 pip install -r requirements.txt pyyaml
-python tests/test_smoke.py                 # 131 offline tests
+python tests/test_smoke.py                 # 134 offline tests
 python -m gamexpress validate              # routing, pings, card limits
 python -m gamexpress preview               # previews/index.html = every card, Discord-style
+ruff check .                               # same ruff.toml the advisory job uses
+zizmor .github/workflows/                  # same config the advisory job uses (.github/zizmor.yml)
 DRY_RUN=1 TEST_MODE=1 BOOTSTRAP_POST=1 STATE_PATH=/tmp/s.json python -m gamexpress run
 ```
 

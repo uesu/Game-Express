@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 from dataclasses import dataclass, field
 
 import aiohttp
@@ -23,7 +22,6 @@ class SourceHealth:
     ok: int = 0
     fail: int = 0
     last_error: str = ""
-    last_ok_ts: int = 0
 
 
 @dataclass
@@ -43,7 +41,6 @@ class Fetcher:
         h = self.health.setdefault(source, SourceHealth())
         if ok:
             h.ok += 1
-            h.last_ok_ts = int(time.time())
         else:
             h.fail += 1
             h.last_error = err[:200]

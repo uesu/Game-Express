@@ -37,7 +37,6 @@
       "codes": {
         "sources": ["hoyolab:2", "seria:genshin", "humbao:GENSHIN", "ogc:genshin", "ennead:genshin", "fandom:genshin-impact/Promotional_Code", "codehub:genshin-impact", "x"],
         "redeem_url": "https://genshin.hoyoverse.com/en/gift?code={code}",
-        "redeem_page": "https://genshin.hoyoverse.com/en/gift",
         "redeem_hint": "Tap a code to open the official redemption page with it filled in, or redeem in-game: Paimon Menu → Settings → Account → Redeem Now."
       }
     },
@@ -63,7 +62,6 @@
       "codes": {
         "sources": ["hoyolab:6", "seria:hkrpg", "humbao:HSR", "ogc:starrail", "ennead:starrail", "fandom:honkai-star-rail/Redemption_Code", "codehub:honkai-star-rail", "x"],
         "redeem_url": "https://hsr.hoyoverse.com/gift?code={code}",
-        "redeem_page": "https://hsr.hoyoverse.com/gift",
         "redeem_hint": "Tap a code to open the official redemption page with it filled in (log in first)."
       }
     },
@@ -89,7 +87,6 @@
       "codes": {
         "sources": ["hoyolab:8", "seria:nap", "humbao:ZZZ", "ogc:zenless", "ennead:zenless", "fandom:zenless-zone-zero/Redemption_Code", "codehub:zenless-zone-zero", "x"],
         "redeem_url": "https://zenless.hoyoverse.com/redemption?code={code}",
-        "redeem_page": "https://zenless.hoyoverse.com/redemption",
         "redeem_hint": "Tap a code to open the official redemption page with it filled in (log in first)."
       }
     },

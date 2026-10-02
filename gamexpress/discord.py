@@ -14,6 +14,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
@@ -24,6 +25,7 @@ from .cards import validate_payload
 log = logging.getLogger("gamexpress.discord")
 
 WEBHOOK_RE = re.compile(r"^https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/api(?:/v\d+)?/webhooks/(\d+)/([\w-]+)")
+WEBHOOK_SPACING = 1.2   # seconds between two requests — well under the 5 req / 2 s webhook bucket
 
 
 @dataclass
@@ -53,6 +55,23 @@ class WebhookClient:
         self.session = session
         self.dry_run = dry_run
         self.sent: list[dict] = []   # dry-run / audit log
+        self._next_slot = 0.0        # monotonic time the next request is allowed to go out
+
+    async def _pace(self) -> None:
+        """Space requests out WITHOUT paying for the gap after the last one.
+
+        Discord's webhook bucket is 5 requests / 2 s, so posts have to be spaced. That used to
+        be an unconditional `sleep(WEBHOOK_SPACING)` *after* every successful send — including
+        after the final one, where there is nothing left to space against, so every posting run
+        ended with 1.2 s of dead time (and n posts cost n gaps instead of n-1). Waiting *before*
+        a request keeps exactly the same distance between two real requests and gives the rest
+        of the time back. Deliberately one global pacer, matching the old behaviour: it is also
+        correct when two games share a webhook.
+        """
+        now = time.monotonic()
+        if now < self._next_slot:
+            await asyncio.sleep(self._next_slot - now)
+        self._next_slot = time.monotonic() + WEBHOOK_SPACING
 
     async def _request(self, method: str, url: str, payload: dict) -> SendResult:
         problems = validate_payload(payload)
@@ -63,6 +82,7 @@ class WebhookClient:
             log.info("DRY RUN %s %s\n%s", method, re.sub(r"/webhooks/\d+/[\w-]+", "/webhooks/…", url),
                      json.dumps(payload, ensure_ascii=False)[:1500])
             return SendResult(True, 200, message_id="dry-run")
+        await self._pace()
         delay = 1.0
         for attempt in range(5):
             try:
@@ -100,17 +120,11 @@ class WebhookClient:
     async def send(self, webhook_url: str, payload: dict) -> SendResult:
         base, keep = _split(webhook_url)
         q = urlencode({"wait": "true", "with_components": "true", **keep})
-        res = await self._request("POST", f"{base}?{q}", payload)
-        if res.ok and not self.dry_run:
-            await asyncio.sleep(1.2)   # stay well under the 5 req / 2 s webhook bucket
-        return res
+        return await self._request("POST", f"{base}?{q}", payload)
 
     async def edit(self, webhook_url: str, message_id: str, payload: dict) -> SendResult:
         base, keep = _split(webhook_url)
         q = urlencode({"with_components": "true", **keep})
         body = {k: v for k, v in payload.items() if k in ("components", "flags", "allowed_mentions")}
         body["allowed_mentions"] = {"parse": []}   # edits never ping
-        res = await self._request("PATCH", f"{base}/messages/{message_id}?{q}", body)
-        if res.ok and not self.dry_run:
-            await asyncio.sleep(1.2)
-        return res
+        return await self._request("PATCH", f"{base}/messages/{message_id}?{q}", body)

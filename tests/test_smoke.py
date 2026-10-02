@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import traceback
 from dataclasses import replace
 from pathlib import Path
@@ -681,6 +682,50 @@ def test_missing_codes_webhook_names_the_secret():
         assert ctx.state.code_records("zzz")["ZZZNEW99"]["status"] == "pending"   # retried once a webhook exists
 
 
+def test_webhook_spacing_is_never_charged_after_the_last_post():
+    """n posts must cost n-1 gaps, not n: the old code slept 1.2s even after the final send."""
+    from gamexpress.discord import WEBHOOK_SPACING
+
+    class Resp:
+        status = 200
+        headers: dict = {}
+
+        async def text(self):
+            return '{"id": "1234567890"}'
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+    class Session:
+        def __init__(self):
+            self.n = 0
+
+        def request(self, method, url, **kw):
+            self.n += 1
+            return Resp()
+
+    st = settings()
+    payload = cards.schedule_payload(GAMES["genshin"], SCHEDULE_SAMPLES["genshin"], st,
+                                     st.ping("schedule", "genshin"), 1789815600)
+
+    async def post(times: int) -> float:
+        session = Session()
+        wh = WebhookClient(session)
+        t0 = time.monotonic()
+        for _ in range(times):
+            assert (await wh.send(HOOK, payload)).ok
+        assert session.n == times
+        return time.monotonic() - t0
+
+    one = asyncio.run(post(1))
+    assert one < WEBHOOK_SPACING / 2, one                      # single post: no trailing wait at all
+    two = asyncio.run(post(2))
+    assert WEBHOOK_SPACING <= two < 2 * WEBHOOK_SPACING, two   # exactly one gap, and still spaced
+
+
 def test_test_mode_posts_latest_card_marked_test():
     with tempfile.TemporaryDirectory() as tmp:
         ww = item_from_fx_json("wuwa", fx("fx_wuwa_3_7_broadcast.json"))
@@ -734,6 +779,64 @@ def test_nitter_fleet_probed_in_parallel_batches():
     tl = asyncio.run(x.timeline("Wuthering_Waves"))
     assert [e["id"] for e in tl] and {e["id"] for e in tl} == {"1111111111", "2222222222"}
     assert len(calls) == 8 and "wuthering_waves" in x.reachable                 # 2 batches of 4, then stop
+
+
+def _nitter_fleet_fetcher(ids: dict, hang: str, hung: asyncio.Event, calls: list):
+    """Fake Fetcher: every mirror answers with its own tweet id, except `hang`, which never does."""
+    class F:
+        async def get_text(self, url, **k):
+            calls.append(url)
+            host = url.split("/")[2]
+            if host == hang:
+                hung.set()
+                await asyncio.sleep(60)          # stands in for the 12 s the live mirror burned
+                return None
+            return RSS.format(id=ids[host])
+    return F()
+
+
+def test_a_hung_mirror_no_longer_holds_the_batch_once_two_answered():
+    """Live run #217 took 16.2 s where #215/#216/#218 took 4.9-6 s, for one reason: nitter.cf
+    timed out and asyncio.gather() waited out its whole 12 s NITTER_TIMEOUT even though two
+    higher-ranked mirrors in the same batch had already returned the timeline. The batch now
+    stops as soon as the winners are decided and cancels the rest, which also frees the
+    Fetcher's global request slot for the HoYoLAB / Kuro / code requests queued behind it."""
+    from gamexpress.sources.twitter import XClient
+    calls, hung = [], asyncio.Event()
+    ids = {"m1": "1111111111", "m2": "2222222222", "m3": "3333333333"}
+    fleet = ["https://m1", "https://m2", "https://m3", "https://dead"]
+    x = XClient(_nitter_fleet_fetcher(ids, "dead", hung, calls), settings(NITTER_INSTANCES=",".join(fleet)))
+
+    async def run():
+        started = time.monotonic()
+        tl = await asyncio.wait_for(x.timeline("Wuthering_Waves"), timeout=20)
+        return tl, time.monotonic() - started
+    tl, elapsed = asyncio.run(run())
+    assert {e["id"] for e in tl} == {"1111111111", "2222222222"}     # the top two, as before
+    assert len(calls) == 4 and hung.is_set()                        # all four were still asked
+    assert elapsed < 1, elapsed      # but nothing waited for the hang (old code: the full 60 s)
+
+
+def test_a_hung_top_ranked_mirror_only_costs_the_grace_window():
+    """A mirror ranked ABOVE the answers would have won the merge, so it still gets a grace
+    window — but NITTER_GRACE seconds, not the full 12 s timeout. Ranking beats speed: the two
+    highest-ranked answers are merged, never just the two fastest."""
+    from gamexpress.sources import twitter as tw
+    calls, hung = [], asyncio.Event()
+    ids = {"m2": "2222222222", "m3": "3333333333", "m4": "4444444444"}
+    fleet = ["https://dead", "https://m2", "https://m3", "https://m4"]
+    x = tw.XClient(_nitter_fleet_fetcher(ids, "dead", hung, calls), settings(NITTER_INSTANCES=",".join(fleet)))
+    grace, tw.NITTER_GRACE = tw.NITTER_GRACE, 0.3
+    try:
+        async def run():
+            started = time.monotonic()
+            tl = await asyncio.wait_for(x.timeline("Wuthering_Waves"), timeout=20)
+            return tl, time.monotonic() - started
+        tl, elapsed = asyncio.run(run())
+    finally:
+        tw.NITTER_GRACE = grace
+    assert {e["id"] for e in tl} == {"2222222222", "3333333333"}     # m2 + m3, never m4
+    assert 0.3 <= elapsed < 5, elapsed                               # the grace window, not 60 s
 
 
 def test_workflows_cron_job_org_and_test_bench():

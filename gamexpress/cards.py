@@ -127,7 +127,7 @@ def validate_payload(payload: dict) -> list[str]:
     def walk(cs: list[dict], parent: int | None) -> None:
         for c in cs:
             ty = c.get("type")
-            if ty == 2 and parent != 1 and c is not None:
+            if ty == 2 and parent != 1:
                 problems.append("button outside an action row")
             if ty == 1 and len(c.get("components", [])) > 5:
                 problems.append("more than 5 buttons in a row")
@@ -403,10 +403,3 @@ def mark_test(payload: dict, note: str = TEST_NOTE) -> dict:
             c["components"].insert(0, text(f"-# {note}"))
             break
     return p
-
-
-# --------------------------------------------------------------------------- notice card
-def notice_payload(title: str, body: str, color: int = 0x5865F2) -> dict:
-    """Plain V2 card used by `test-card` / diagnostics."""
-    return {"flags": IS_COMPONENTS_V2, "allowed_mentions": {"parse": []},
-            "components": [container([text(f"### {title}"), text(body)], color)]}

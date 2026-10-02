@@ -412,10 +412,6 @@ class Game:
     def redeem_url(self) -> str:
         return self.codes.get("redeem_url", "")
 
-    @property
-    def redeem_page(self) -> str:
-        return self.codes.get("redeem_page", "")
-
 
 def load_games(path: Path | None = None) -> dict[str, Game]:
     path = path or (CONFIG_DIR / "games.json")

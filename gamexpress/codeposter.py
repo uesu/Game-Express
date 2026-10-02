@@ -27,7 +27,7 @@ import asyncio
 import logging
 import time
 
-from .cards import codes_card, codes_payloads, mark_test
+from .cards import CODES_PER_CARD, codes_card, codes_payloads, mark_test
 from .config import Game
 from .discord import webhook_fingerprint
 from .models import CodeHit
@@ -223,9 +223,8 @@ async def _post(ctx, game: Game, codes: list[dict], records: dict) -> None:
         return
     ping = s.ping("codes", game.key)
     payloads = codes_payloads(game, codes, s, ping, ctx.now)
-    chunk_size = 10
     for i, payload in enumerate(payloads):
-        chunk = codes[i * chunk_size:(i + 1) * chunk_size]
+        chunk = codes[i * CODES_PER_CARD:(i + 1) * CODES_PER_CARD]
         if s.test_mode:
             payload = mark_test(payload)
         res = await ctx.webhook.send(webhook, payload)
