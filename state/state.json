@@ -37,8 +37,12 @@
           1
         ],
         "posted_at": 1790944228,
-        "rewards": null,
+        "rewards": [
+          "Primogem ×20",
+          "Geode of Replication ×160"
+        ],
         "sources": [
+          "ennead",
           "seria"
         ],
         "status": "posted",
@@ -290,9 +294,13 @@
           1
         ],
         "posted_at": 1790840103,
-        "rewards": null,
+        "rewards": [
+          "Primogem ×60",
+          "Adventurer's Experience ×5"
+        ],
         "sources": [
           "codehub",
+          "ennead",
           "seria"
         ],
         "status": "posted",
@@ -398,6 +406,22 @@
           "ogc"
         ],
         "status": "seeded"
+      },
+      "PLDXULN2L986": {
+        "first_seen": 1790944825,
+        "gate": "only ennead",
+        "last_seen": 1790944825,
+        "rewards": [
+          "Mora ×10000",
+          "Adventurer's Experience ×10",
+          "Fine Enhancement Ore ×5",
+          "Jueyun Chili Chicken ×5",
+          "Stir-Fried Fish Noodles ×5"
+        ],
+        "sources": [
+          "ennead"
+        ],
+        "status": "pending"
       },
       "PNKZ3WLNN8G6": {
         "first_seen": 1790332129,
