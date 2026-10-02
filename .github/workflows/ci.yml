@@ -107,7 +107,9 @@ jobs:
 
       - name: Lint the Python itself (astral-sh/ruff, reading the repo's own ruff.toml)
         continue-on-error: true   # a brand-new ruff release must never block a hot-fix
-        uses: astral-sh/ruff-action@v4
+        # full tag on purpose: ruff-action stopped publishing a floating `v4` tag (only v4.1.0,
+        # v4.0.0 exist), so `@v4` does not resolve. Dependabot bumps this line like any other.
+        uses: astral-sh/ruff-action@v4.1.0
         with:
           args: check --output-format=github   # ruff.toml (target-version, line-length, rules) is picked up automatically
 
