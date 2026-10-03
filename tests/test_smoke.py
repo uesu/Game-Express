@@ -785,7 +785,7 @@ def test_every_official_feed_a_game_declares_is_actually_requested():
     assert asked == {(gid, t) for gid in gids for t in (1, 2, 3)}, sorted(asked)
     assert set(hoyolab.NEWS_TYPES) == {1, 2, 3}
 
-    # every account, on the whole fleet — nitter.cf and xitter.cf are the first two mirrors
+    # every account, on the whole fleet — nitter.cf leads it and xitter.cf is still in it
     accounts = [a for g in live for a in g.x_accounts]
     assert accounts == ["GenshinImpact", "honkaistarrail", "ZZZ_EN", "Wuthering_Waves",
                         "HonkaiNA", "Ananta_EN"]
@@ -2718,13 +2718,12 @@ def test_the_banner_feed_still_never_overwrites_real_characters():
 
 # =========================================================================== nitter fleet
 def test_the_nitter_fleet_leads_with_nitter_cf_and_demotes_the_flaky_mirror():
-    """nitter.cf / xitter.cf lead. Nothing is deleted: x.n0g.xyz answered HTTP 404 then 429 on
-    every handle in runs 36296323488 / 36298632006 / 36299586254, so it is demoted to dead last
-    and kept as a backup rather than removed."""
+    """nitter.cf leads: it is the only mirror with live production evidence. Nothing is deleted:
+    x.n0g.xyz answered HTTP 404 then 429 on every handle in runs 36296323488 / 36298632006 /
+    36299586254, so it is demoted to dead last and kept as a backup rather than removed."""
     from gamexpress.config import DEFAULT_NITTER
     from gamexpress.sources.twitter import NITTER_BATCH
     assert DEFAULT_NITTER[0] == "https://nitter.cf"
-    assert DEFAULT_NITTER[1] == "https://xitter.cf"
     assert len(DEFAULT_NITTER) == len(set(DEFAULT_NITTER))
 
     idx = DEFAULT_NITTER.index("https://x.n0g.xyz")
@@ -2733,6 +2732,48 @@ def test_the_nitter_fleet_leads_with_nitter_cf_and_demotes_the_flaky_mirror():
     for inst in ("https://nitter.cf", "https://xitter.cf", "https://nitter.miningtcup.me",
                  "https://nitter.jaydenha.uk", "https://shitter.thepixora.com"):
         assert DEFAULT_NITTER.index(inst) < idx, inst
+
+
+# A mirror only earns a hot-path slot by serving a real RSS BODY, not by scoring well on a
+# status page that probes the homepage. Each of these was fetched by hand on 2026-10-03 and
+# answered with a parseable feed; each of the walled ones answered with an interstitial.
+NITTER_SERVES_REAL_RSS = (
+    "https://nitter.cf", "https://nitter.kareem.one", "https://tw.eir-nya.gay",
+    "https://shitter.thepixora.com", "https://nitter.meowing.monster",
+)
+NITTER_WALLED = {
+    "https://nitter.jaydenha.uk": '/rss serves a "click anywhere to enter" splash page',
+    "https://nitter.click": "browser check (__gandalf) in front of /rss",
+    "https://nitter.tiekoetter.com": "Anubis proof-of-work wall",
+    "https://nitter.xitter.cc": "Cloudflare 502 Bad gateway",
+    "https://nitter.netbub.com": "__goaway_challenge redirect, and HTTP 403 to GH runners",
+}
+
+
+def test_a_walled_mirror_never_sits_in_the_hot_path():
+    """The 2026-10-03 audit: three of the four hot-path slots were dead weight. Every mirror
+    that answers /rss with an interstitial instead of a feed is behind the hot path, and every
+    hot-path slot is a host whose feed body was read by hand."""
+    from gamexpress.config import DEFAULT_NITTER
+    from gamexpress.sources.twitter import NITTER_BATCH, TOKEN_GATED
+    hot = DEFAULT_NITTER[:NITTER_BATCH]
+    for inst, why in NITTER_WALLED.items():
+        assert inst in DEFAULT_NITTER, f"{inst} is demoted, not deleted"
+        assert inst not in hot, f"{inst} is probed every run but {why}"
+    for inst in hot:
+        assert inst in NITTER_SERVES_REAL_RSS or inst in TOKEN_GATED, inst
+
+
+def test_the_duplicate_domain_does_not_hold_a_hot_path_slot():
+    """xitter.cf answers, but every link in its feed points back at nitter.cf -- it is the same
+    backend behind a second domain. Two of four parallel probes spent on one server is not
+    redundancy, so it keeps a fallback slot and the slot it vacated went to a real mirror."""
+    from gamexpress.config import DEFAULT_NITTER
+    from gamexpress.sources.twitter import NITTER_BATCH
+    hot = DEFAULT_NITTER[:NITTER_BATCH]
+    assert "https://xitter.cf" in DEFAULT_NITTER and "https://xitter.cf" not in hot
+    assert "https://nitter.cf" in hot
+    assert len([i for i in hot if i in NITTER_SERVES_REAL_RSS]) >= 3
 
 
 def test_the_token_gated_instance_is_in_the_fleet():
@@ -2763,7 +2804,7 @@ def test_the_first_nitter_batch_holds_only_instances_that_answer():
     hot = DEFAULT_NITTER[:NITTER_BATCH]
     for inst, why in NITTER_CANNOT_ANSWER.items():
         assert inst not in hot, f"{inst} is probed on every run but {why}"
-    assert hot[0] == "https://nitter.cf" and hot[1] == "https://xitter.cf"
+    assert hot[0] == "https://nitter.cf"
 
 
 def test_a_demoted_instance_is_kept_as_a_fallback_rather_than_deleted():

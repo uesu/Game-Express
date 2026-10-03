@@ -42,10 +42,23 @@ that moved to Sophon downloads. On 2026-09-24 it still reported GI 5.5.0 while t
 
 ## X (Twitter) fetching — no X API account
 
-Timelines come from the public nitter fleet, with `nitter.cf` and `xitter.cf` first. Four
-instances are probed in parallel and the first two that answer are merged; a mirror returning
-HTTP 200 with zero entries is treated as a bot check and skipped. The token-gated
-`https://nitter.miningtcup.me/` mirror alone needs `NITTER_RSS_TOKEN`.
+Timelines come from the public nitter fleet, with `nitter.cf` first. Four instances are probed
+in parallel and the first two that answer are merged; a mirror returning HTTP 200 with zero
+entries is treated as a bot check and skipped. The token-gated `https://nitter.miningtcup.me/`
+mirror alone needs `NITTER_RSS_TOKEN`.
+
+The fleet is audited by **reading the feed body**, not by trusting a status page — public
+trackers probe the homepage, so they score a mirror as "RSS ✅" while `/rss` actually serves a
+browser check. The 2026-10-03 audit fetched every host by hand and found three of the four
+hot-path slots were dead weight: `xitter.cf` is the same backend as `nitter.cf` behind a second
+domain (every link in its feed points back at `nitter.cf`), and `nitter.jaydenha.uk` answers
+`/rss` with a "click anywhere to enter" splash. `nitter.kareem.one` and `tw.eir-nya.gay` —
+both verified to serve a real, current feed — took those slots. `tw.eir-nya.gay` is also the
+only mirror that keeps real expanded links instead of rewriting them to its own `/t.co/` proxy.
+
+Being polite about it matters: these are volunteer-run mirrors and `status.d420.de` asks
+outright that they not be scraped. The design already keeps the cost low — the loop stops at
+the first two answers, so a healthy run spends 2 requests per handle, not 16.
 
 A mirror that stops answering is **demoted, never deleted**. `x.n0g.xyz` returned HTTP 404 then
 429 on every handle in three consecutive live runs, so it sits at the very end of the fleet as a

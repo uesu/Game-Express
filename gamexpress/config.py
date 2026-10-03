@@ -42,8 +42,8 @@ DEFAULT_COMMUNITY_BUTTONS = [
      "emoji": "a:starward11:1439878792653832253"},
 ]
 
-# nitter.cf / xitter.cf lead: they are the public pair this monitor is built against, and the
-# chain stops at the first TWO instances that answer with real entries.
+# nitter.cf leads: it is the mirror this monitor is built against and the only one with live
+# production evidence. The chain stops at the first TWO instances that answer with real entries.
 #
 # SLOTS 1-4 ARE THE HOT PATH. twitter.py probes NITTER_BATCH (= 4) instances IN PARALLEL on
 # every run, for every handle, whether or not the ones ahead of them answered -- so a mirror
@@ -66,18 +66,36 @@ DEFAULT_COMMUNITY_BUTTONS = [
 # answered, so anything behind that point costs zero requests in a healthy run -- and is a
 # real backup again the run the fleet ahead of it degrades. Deleting a mirror throws away a
 # host that may simply be blocking GitHub's runners while answering fine from a VPS.
+#
+# 2026-10-03 AUDIT. Every host below was fetched by hand on /Wuthering_Waves/rss and the
+# BODY was read, not just the status code -- status.d420.de probes the homepage, which is why
+# it still scores two walled mirrors as "RSS ✅". Three of the four hot-path slots were dead
+# weight: xitter.cf is the SAME BACKEND as nitter.cf (every link in its feed points back at
+# nitter.cf -- a second domain, not a second mirror), and nitter.jaydenha.uk answers /rss with
+# a "click anywhere to enter" splash page. Two mirrors verified to serve clean RSS take their
+# places; both are new to the hot path and the next live run is what confirms them from
+# GitHub's runners, so nitter.cf -- the only host with production evidence -- still leads.
 DEFAULT_NITTER = [
     # ── hot path: probed on EVERY run (NITTER_BATCH = 4) — measured answerers only ──
-    "https://nitter.cf", "https://xitter.cf",   # the pair that answers (12 ok / 0 fail)
-    "https://nitter.miningtcup.me",             # token-gated — this is what NITTER_RSS_TOKEN is for
-    "https://nitter.jaydenha.uk",
+    "https://nitter.cf",                # the one proven in production (12 ok / 0 fail)
+    "https://nitter.kareem.one",        # NEW: clean RSS, newest fork (2026.10.01), 92% / 1180ms
+    "https://tw.eir-nya.gay",           # promoted: clean RSS, and the only mirror that keeps
+                                        # real expanded links instead of rewriting t.co
+    "https://nitter.miningtcup.me",     # token-gated — this is what NITTER_RSS_TOKEN is for
     # ── fallbacks: only reached when the hot path gave fewer than two working feeds ──
-    "https://nitter.click", "https://shitter.thepixora.com", "https://nitter.xitter.cc",
-    "https://tw.eir-nya.gay",
+    "https://shitter.thepixora.com",    # verified clean RSS 2026-10-03
+    "https://xitter.cf",                # demoted: answers, but it is nitter.cf behind a second
+                                        # domain — zero redundancy for a hot-path slot
+    "https://nitter.meowing.monster",   # 96% uptime and clean RSS off-runner; its "200 but 0
+                                        # entries" (36305123457) predates the truncation fix
+    "https://nitter.jaydenha.uk",       # demoted: /rss serves a "click anywhere to enter" splash
+    "https://nitter.click",             # browser check (__gandalf) in front of /rss
+    "https://nitter.tiekoetter.com",    # NEW, last-resort: Anubis proof-of-work wall
+    "https://nitter.xitter.cc",         # Cloudflare 502 Bad gateway
     "https://nitter.perennialte.ch", "https://nitter.privacydev.net", "https://nitter.net",
-    "https://nitter.meowing.monster",   # demoted: 200 but 0 entries to GH runners (36305123457)
     # ── last: known to refuse GitHub's runners; a request only when everything above failed ──
-    "https://nitter.netbub.com",        # demoted: HTTP 403 to GH runners (36305123457)
+    "https://nitter.netbub.com",        # HTTP 403 to GH runners (36305123457); off-runner it
+                                        # answers only behind a __goaway_challenge redirect
     "https://xcancel.com",              # suspended 2026-09-14
     "https://x.yuuki.sh",               # HTTP 403 to GH runners (2026-09-25)
     "https://x.n0g.xyz",                # dead last, kept as a backup: 404 then 429 in runs
