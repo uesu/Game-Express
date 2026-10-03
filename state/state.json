@@ -1,10 +1,13 @@
 {
   "bootstrapped": {
     "codes:genshin": 1790323434,
+    "codes:hna": 1790992409,
     "codes:starrail": 1790323434,
     "codes:wuwa": 1790323434,
     "codes:zzz": 1790323434,
+    "schedule:ananta": 1790992408,
     "schedule:genshin": 1790323164,
+    "schedule:hna": 1790992408,
     "schedule:starrail": 1790323164,
     "schedule:wuwa": 1790323164,
     "schedule:zzz": 1790323164
@@ -177,7 +180,7 @@
       },
       "GS70XRNWFB": {
         "first_seen": 1790323430,
-        "last_seen": 1790323430,
+        "last_seen": 1790992405,
         "rewards": "30000 Mora + 3 Hero's Wit + 5 Fine Enhancement Ore",
         "sources": [
           "codehub"
@@ -596,6 +599,7 @@
         "status": "seeded"
       }
     },
+    "hna": {},
     "starrail": {
       "2TKRKAR6YG2X": {
         "first_seen": 1790323430,
@@ -1754,6 +1758,7 @@
     "wuwa": "https://pbs.twimg.com/profile_images/2085696982958665728/qlgc729S_200x200.jpg"
   },
   "schedule": {
+    "ananta": {},
     "genshin": {
       "7.1": {
         "data": {
@@ -1796,6 +1801,7 @@
         "webhook_fp": "19991534cf6d"
       }
     },
+    "hna": {},
     "starrail": {
       "4.6": {
         "card_retired": 1790496362,
