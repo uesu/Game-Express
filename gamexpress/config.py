@@ -66,6 +66,7 @@ DEFAULT_COMMUNITY_BUTTONS = [
 # answered, so anything behind that point costs zero requests in a healthy run -- and is a
 # real backup again the run the fleet ahead of it degrades. Deleting a mirror throws away a
 # host that may simply be blocking GitHub's runners while answering fine from a VPS.
+#
 # 2026-10-03 AUDIT. Every host below was fetched by hand on /Wuthering_Waves/rss and the
 # BODY was read, not just the status code -- status.d420.de probes the homepage, which is why
 # it still scores two walled mirrors as "RSS ✅". Three of the four hot-path slots were dead
