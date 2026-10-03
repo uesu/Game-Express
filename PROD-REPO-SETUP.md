@@ -30,6 +30,66 @@ Nothing sensitive ends up in the public repo. Webhook URLs live in repository **
 
 ---
 
+## 0b. The dev repo has unmerged work — merge that first
+
+`main` on GitHub does **not** yet contain everything described here. Two stacks sat outside it,
+and they overlap in `gamexpress/config.py` and `tests/test_smoke.py`, so they could not be
+separated file-by-file:
+
+| stack | files |
+|---|---|
+| nitter source notes | `docs/SOURCES.md`, part of `gamexpress/config.py`, part of `tests/test_smoke.py` |
+| timestamp speculation | `config/games.json`, `gamexpress/schedule.py`, `gamexpress/__main__.py`, rest of `config.py`, rest of `test_smoke.py`, `docs/SCHEDULER.md`, `docs/TIMESTAMP-PATTERNS.md`, `README.md`, `docs/TESTING.md` |
+
+They ship together: **PR #26 on `uesu/Game-Express` is the superset of both stacks**, so merging
+that one PR completes `main` — nothing else needs applying. (Both stacks were also captured as
+`game-express-speculation.patch`, a scratch patch that is deliberately **not** committed; PR #26's
+diff is byte-identical to it, and the patch file exists only as a recovery path if a checkout
+ever loses the branch — the sandbox's git history reset twice during development. Use one route
+or the other, never both.)
+
+It was verified by checking out a pristine `origin/main` into a scratch worktree, applying the
+patch, and running the full gate on the result: compileall, `validate`, **161/161 tests**,
+preview render and `ruff` all pass. PR #26 carries exactly that tree and is green on the same
+gate plus GitHub's own CI.
+
+**Do the dev repo first, then prod.** Copying an unmerged working tree straight into prod means
+prod runs code that `main` has never seen, and the next dev→prod sync (§8) silently reverts it.
+
+### Step 1 — on Game-Express: merge PR #26
+
+One click on GitHub; no session is needed. `main` is then complete. If the PR ever had to be
+rebuilt from the patch instead, a new coding session pointed at `uesu/Game-Express` would get:
+
+> Apply `game-express-speculation.patch` from the repo root onto a fresh branch, run the full CI
+> gate (`python -m compileall -q gamexpress tests`, `python -m gamexpress validate`,
+> `python tests/test_smoke.py`, `python -m gamexpress preview --out /tmp/previews`,
+> `ruff check gamexpress/ tests/`), confirm 161/161 tests pass, then push the branch and open a
+> pull request.
+
+Either way, land **one** of them — the PR is the patch, so doing both double-applies.
+
+### Step 2 — a new session on the prod repo
+
+Create the empty public prod repo on GitHub first, then open a second session pointed at it with:
+
+> This repo is the production deployment of the public repo `uesu/Game-Express`. Clone
+> `https://github.com/uesu/Game-Express` into a temp folder, copy in ONLY the runtime manifest
+> from its `PROD-REPO-SETUP.md` §1 (the `gamexpress/` package, `config/games.json`,
+> `config/overrides.json`, `config/program_announcements.json`, `state/.gitkeep`,
+> `state/state.json`, `requirements.txt`, `.gitignore`, `.github/workflows/monitor.yml`,
+> `PRIVACY_POLICY.md`, `TERMS_OF_SERVICE.md`), write the 3-line prod README from §2, then open a
+> pull request. Do not copy `tests/`, `docs/`, `ci.yml`, `ruff.toml`, `AGENTS.md`, `README.md`,
+> or any `PR-*` / `*.patch` scratch file.
+
+That session can reach GitHub, so it can push and open the PR for you. **Nothing in this flow
+touches the Game-Express working tree** — step 2 only reads a clone of it.
+
+Then come back here for §3 (secrets), §4 (state), §6 (cutover order) and §9 (rollback), which are
+still manual: an agent cannot set your repository secrets or your cron-job.org schedule.
+
+---
+
 > **Nothing in this guide changed when the timestamp speculation feature landed.** It adds no
 > new file, no new secret and no new variable — the per-game rhythm lives inside
 > `config/games.json`, which is already on the copy list. The read-only
@@ -82,6 +142,8 @@ ruff.toml
 README.md                  write a 3-line prod README instead (see §2)
 .env.example
 PR-*.md  PR-*.txt  *.patch  PULL-REQUEST.md   scratch files
+game-express-speculation.patch     carried the feature into dev; prod never needs it
+AGENTS.md
 ```
 
 ### The copy command
