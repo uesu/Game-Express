@@ -2737,10 +2737,22 @@ def test_the_nitter_fleet_leads_with_nitter_cf_and_demotes_the_flaky_mirror():
 # A mirror only earns a hot-path slot by serving a real RSS BODY, not by scoring well on a
 # status page that probes the homepage. Each of these was fetched by hand on 2026-10-03 and
 # answered with a parseable feed; each of the walled ones answered with an interstitial.
+#
+# This is a NECESSARY condition, not a sufficient one -- serving a clean body to a VPS says
+# nothing about what an Actions runner gets. nitter.kareem.one is in this tuple and still
+# banned from the hot path, because run 2026-10-03 04:25 answered it with 403 six times out of
+# six. A hot-path slot requires BOTH gates: a verified body here, and no runner-measured
+# failure in NITTER_CANNOT_ANSWER.
 NITTER_SERVES_REAL_RSS = (
     "https://nitter.cf", "https://nitter.kareem.one", "https://tw.eir-nya.gay",
     "https://shitter.thepixora.com", "https://nitter.meowing.monster",
 )
+# Answers, is not blocked, and is still useless in a parallel slot: the batch resolves as soon
+# as two mirrors reply, and NITTER_GRACE kills whatever is still silent. tw.eir-nya.gay lost
+# that race on 4 of 6 handles in run 2026-10-03 04:25 and returned 0 entries on the other 2.
+NITTER_LOSES_THE_RACE = {
+    "https://tw.eir-nya.gay": "silent past NITTER_GRACE on 4/6 handles (2026-10-03 04:25)",
+}
 NITTER_WALLED = {
     "https://nitter.jaydenha.uk": '/rss serves a "click anywhere to enter" splash page',
     "https://nitter.click": "browser check (__gandalf) in front of /rss",
@@ -2762,6 +2774,26 @@ def test_a_walled_mirror_never_sits_in_the_hot_path():
         assert inst not in hot, f"{inst} is probed every run but {why}"
     for inst in hot:
         assert inst in NITTER_SERVES_REAL_RSS or inst in TOKEN_GATED, inst
+
+
+def test_a_hot_path_slot_needs_both_a_verified_body_and_a_clean_live_run():
+    """Rotation #2 (run 2026-10-03 04:25). A clean hand probe is necessary but NOT sufficient:
+    nitter.kareem.one served a perfect feed from a VPS and answered GitHub's runners with 403
+    six times out of six. A mirror that loses the NITTER_GRACE race is just as useless in a
+    parallel slot as one that is blocked, so it is kept out too."""
+    from gamexpress.config import DEFAULT_NITTER
+    from gamexpress.sources.twitter import NITTER_BATCH
+    hot = DEFAULT_NITTER[:NITTER_BATCH]
+    for inst, why in {**NITTER_CANNOT_ANSWER, **NITTER_LOSES_THE_RACE}.items():
+        assert inst in DEFAULT_NITTER, f"{inst} is demoted, not deleted"
+        assert inst not in hot, f"{inst} costs a request every run but {why}"
+
+    # The quorum is two answers, and both proven answerers are in the hot path, so the two
+    # trial slots can never cost an announcement -- only wasted requests.
+    proven = ("https://nitter.cf", "https://nitter.miningtcup.me")
+    for inst in proven:
+        assert inst in hot, f"{inst} answered 6/6 handles live and must stay in the hot path"
+    assert len(hot) - len(proven) == 2, "exactly two trial slots, no more"
 
 
 def test_the_duplicate_domain_does_not_hold_a_hot_path_slot():
@@ -2788,10 +2820,19 @@ def test_the_token_gated_instance_is_in_the_fleet():
 # or not the ones ahead of them answered. A mirror in that first batch is therefore a cost on
 # every run -- which is why x.n0g.xyz was demoted out of it. These are the instances measured
 # as unable to answer GitHub's runners, each with the run that proved it; none of them may sit
-# in the hot path again, whatever a public uptime table claims. They all stay in the fleet.
+# in the hot path again, whatever a public uptime table claims -- or whatever a hand probe from
+# somewhere else returns, which is how nitter.kareem.one earned its entry. They all stay in the
+# fleet.
+#
+# An entry leaves this dict ONLY when the measurement that created it has been invalidated, not
+# because a mirror looks healthy again. That has happened exactly once: nitter.meowing.monster
+# was listed for "HTTP 200 but 0 entries" in run 36305123457, which is the signature of the
+# response-truncation bug fixed later the same week -- the client was mis-reading a feed that
+# was being served correctly. The verdict was the client's fault, so it was withdrawn and the
+# mirror is back on trial in the hot path.
 NITTER_CANNOT_ANSWER = {
     "https://nitter.netbub.com": "HTTP 403 on all 4 handles (live run 36305123457)",
-    "https://nitter.meowing.monster": "HTTP 200 but 0 entries, bot check (live run 36305123457)",
+    "https://nitter.kareem.one": "HTTP 403 on all 6 handles (live run 2026-10-03 04:25)",
     "https://xcancel.com": "suspended 2026-09-14",
     "https://x.yuuki.sh": "HTTP 403 to GitHub runners (2026-09-25)",
     "https://x.n0g.xyz": "404 then 429 in runs 36296323488 / 36298632006 / 36299586254",

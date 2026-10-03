@@ -75,25 +75,43 @@ DEFAULT_COMMUNITY_BUTTONS = [
 # a "click anywhere to enter" splash page. Two mirrors verified to serve clean RSS take their
 # places; both are new to the hot path and the next live run is what confirms them from
 # GitHub's runners, so nitter.cf -- the only host with production evidence -- still leads.
+#
+# 2026-10-03 04:25 RUN -- BOTH OF THOSE PROMOTIONS FAILED, AND THAT IS THE POINT OF THE RULE:
+# a hand probe from a VPS does not predict what an Actions runner gets.
+#   * nitter.kareem.one -- HTTP 403 on all 6 handles, despite a clean feed off-runner and the
+#     best score on status.d420.de. Demoted to the runner-blocked tier.
+#   * tw.eir-nya.gay    -- not blocked, just SLOW: still silent when nitter.cf + miningtcup had
+#     already answered, so NITTER_GRACE killed it on 4/6 handles, and it returned 0 entries on
+#     the other 2. A mirror that cannot win the race is dead weight in a parallel slot, so it
+#     moves to the head of the fallbacks instead.
+# Slots 2 and 3 now carry the next two candidates, and the same rule applies to them: they are
+# TRIALS until a live run says otherwise. nitter.cf + nitter.miningtcup.me answered 6/6 handles
+# each, so the quorum never depends on a trial slot -- an experiment here costs wasted requests
+# at worst, never a missed announcement. Nothing is deleted, as always.
+#
+# Note the real ceiling this exposes: nitter.cf and xitter.cf are ONE machine, so the only
+# independent redundancy today is the token-gated mirror. Finding a second backend that answers
+# Actions IPs is what these two trial slots are for.
 DEFAULT_NITTER = [
     # ── hot path: probed on EVERY run (NITTER_BATCH = 4) — measured answerers only ──
-    "https://nitter.cf",                # the one proven in production (12 ok / 0 fail)
-    "https://nitter.kareem.one",        # NEW: clean RSS, newest fork (2026.10.01), 92% / 1180ms
-    "https://tw.eir-nya.gay",           # promoted: clean RSS, and the only mirror that keeps
-                                        # real expanded links instead of rewriting t.co
-    "https://nitter.miningtcup.me",     # token-gated — this is what NITTER_RSS_TOKEN is for
+    "https://nitter.cf",                # proven from the runners: 6/6 handles, every run
+    "https://shitter.thepixora.com",    # TRIAL: clean body off-runner, independent backend
+    "https://nitter.meowing.monster",   # TRIAL: clean body off-runner; its old "0 entries"
+                                        # verdict predates the truncation fix (see above)
+    "https://nitter.miningtcup.me",     # token-gated — proven from the runners: 6/6 handles
     # ── fallbacks: only reached when the hot path gave fewer than two working feeds ──
-    "https://shitter.thepixora.com",    # verified clean RSS 2026-10-03
-    "https://xitter.cf",                # demoted: answers, but it is nitter.cf behind a second
+    "https://tw.eir-nya.gay",           # not blocked, just slower than the quorum: lost the
+                                        # NITTER_GRACE race on 4/6 handles, 0 entries on 2
+    "https://xitter.cf",                # answers, but it is nitter.cf behind a second
                                         # domain — zero redundancy for a hot-path slot
-    "https://nitter.meowing.monster",   # 96% uptime and clean RSS off-runner; its "200 but 0
-                                        # entries" (36305123457) predates the truncation fix
     "https://nitter.jaydenha.uk",       # demoted: /rss serves a "click anywhere to enter" splash
     "https://nitter.click",             # browser check (__gandalf) in front of /rss
-    "https://nitter.tiekoetter.com",    # NEW, last-resort: Anubis proof-of-work wall
+    "https://nitter.tiekoetter.com",    # last-resort: Anubis proof-of-work wall
     "https://nitter.xitter.cc",         # Cloudflare 502 Bad gateway
     "https://nitter.perennialte.ch", "https://nitter.privacydev.net", "https://nitter.net",
     # ── last: known to refuse GitHub's runners; a request only when everything above failed ──
+    "https://nitter.kareem.one",        # HTTP 403 on all 6 handles (run 2026-10-03 04:25) even
+                                        # though it serves a clean feed off-runner
     "https://nitter.netbub.com",        # HTTP 403 to GH runners (36305123457); off-runner it
                                         # answers only behind a __goaway_challenge redirect
     "https://xcancel.com",              # suspended 2026-09-14

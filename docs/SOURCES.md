@@ -56,6 +56,22 @@ domain (every link in its feed points back at `nitter.cf`), and `nitter.jaydenha
 both verified to serve a real, current feed — took those slots. `tw.eir-nya.gay` is also the
 only mirror that keeps real expanded links instead of rewriting them to its own `/t.co/` proxy.
 
+**And both of those promotions then failed in production**, which is the rule the fleet is
+built on: a hand probe from anywhere else does not predict what a GitHub runner gets. In the
+run of 2026-10-03 04:25, `nitter.kareem.one` — the best-scoring mirror on the public tracker —
+answered **HTTP 403 on all six handles**, and `tw.eir-nya.gay` was not blocked but simply too
+slow, still silent when the quorum had already been met, so `NITTER_GRACE` discarded it on four
+handles and it returned zero entries on the other two. Both were demoted and two fresh
+candidates took the slots. A hot-path slot therefore needs **two** things, enforced by separate
+tests: a feed body read by hand, *and* no runner-measured failure.
+
+Only `nitter.cf` and the token-gated `nitter.miningtcup.me` have answered 6/6 handles live, and
+they hold slots 1 and 4 — so the quorum of two never depends on a trial slot, and an experiment
+costs wasted requests at worst, never a missed announcement. Worth knowing where that leaves
+the fleet: `nitter.cf` and `xitter.cf` are one machine, so the only *independent* redundancy
+today is the token-gated mirror. Finding a second backend that answers Actions IPs is exactly
+what the two trial slots are for.
+
 Being polite about it matters: these are volunteer-run mirrors and `status.d420.de` asks
 outright that they not be scraped. The design already keeps the cost low — the loop stops at
 the first two answers, so a healthy run spends 2 requests per handle, not 16.
