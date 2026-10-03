@@ -178,6 +178,65 @@ def cmd_preview(args) -> int:
     return 0
 
 
+def cmd_speculate(args) -> int:
+    """Show what the bot would predict for each game's next version, and why.
+
+    Read-only: it posts nothing, edits nothing and writes no state. It is the way to check a
+    prediction against reality before trusting it on a live card.
+    """
+    from datetime import datetime, timezone
+
+    from .schedule import observed_starts, predict_cycle
+    from .state import State
+    settings, games = load_settings(), load_games()
+    state = State.load(settings.state_path)
+    now = int(args.now) if getattr(args, "now", 0) else int(time.time())
+    conf_mark = {"high": "●●●", "medium": "●●○", "low": "●○○"}
+    rows = 0
+    print(f"Speculated cycles at {datetime.fromtimestamp(now, timezone.utc):%Y-%m-%d %H:%M} UTC — "
+          "estimates only, every one is replaced by the official notice.\n")
+    for g in games.values():
+        if args.game and g.key != args.game:
+            continue
+        if g.cadence is None:
+            continue
+        records = state.schedule_records(g.key)
+        guess = predict_cycle(g, records, now)
+        if not guess:
+            print(f"{g.short:5} {g.name:22} no prediction (no anchor, or the next cycle is "
+                  "outside the 120-day horizon)")
+            continue
+        rows += 1
+        tz = g.cadence.tz
+
+        def fmt(ts, tz=tz) -> str:
+            return datetime.fromtimestamp(ts, tz).strftime("%a %d %b %Y %H:%M") if ts else "—"
+
+        label = guess["version"] or "?"
+        if guess["version_alt"]:
+            label += f" (or {guess['version_alt']} if the major rolls over)"
+        learned = (f"learned from {guess['observed']} real notices"
+                   if guess["learned"] else
+                   f"shipped cold-start value ({guess['observed']} real notice(s) on file, "
+                   f"{2 - guess['observed']} more needed to learn)")
+        print(f"{g.short:5} {g.name} {label}")
+        print(f"      confidence {conf_mark.get(guess['confidence'], '?')} {guess['confidence']:6} "
+              f"| cadence {guess['cadence_days']:g}d, {learned}")
+        print(f"      anchored on the last real maintenance {fmt(guess['anchor_ts'])}")
+        print(f"      {g.program_label:17} {fmt(guess['program_ts'])}")
+        print(f"      {'Pre-install':17} {fmt(guess['preinstall_ts'])}")
+        print(f"      {'Maintenance':17} {fmt(guess['maint_start_ts'])} → "
+              f"{fmt(guess['maint_end_ts'])}  (all times UTC+8)")
+        if args.verbose:
+            starts = observed_starts(records)
+            seen = [datetime.fromtimestamp(ts, tz).strftime("%Y-%m-%d") for _v, ts in starts]
+            print(f"      real maintenance dates on file: {', '.join(seen) or 'none'}")
+        print()
+    if not rows:
+        print("Nothing to predict. Add a 'cadence' block to a game in config/games.json.")
+    return 0
+
+
 def cmd_validate(_args) -> int:
     settings = load_settings()
     games = load_games()
@@ -227,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
     _load_dotenv()
     p = argparse.ArgumentParser(prog="python -m gamexpress", description="Game-Express monitor")
     p.add_argument("command", nargs="?", default="run",
-                   choices=["run", "test-card", "check-webhooks", "preview", "validate"])
+                   choices=["run", "test-card", "check-webhooks", "preview", "speculate", "validate"])
     p.add_argument("--dry-run", action="store_true", help="build + log cards, never post")
     p.add_argument("--only", choices=["schedule", "codes"], help="run one feature")
     p.add_argument("--game", default="", help="restrict to one game key (e.g. starrail)")
@@ -239,6 +298,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="test-card: only the games that are not live yet — example data, because "
                         "there is no real announcement to fetch for them")
     p.add_argument("--out", default="previews", help="preview output folder")
+    p.add_argument("--verbose", action="store_true", help="speculate: also list the observed history")
+    p.add_argument("--now", type=int, default=0,
+                   help="speculate: pretend it is this unix time (for checking a past prediction)")
     args = p.parse_args(argv)
     if args.dry_run:
         os.environ["DRY_RUN"] = "1"
@@ -251,6 +313,8 @@ def main(argv: list[str] | None = None) -> int:
     _setup_logging(os.getenv("LOG_LEVEL", "INFO").upper())
     if args.command == "preview":
         return cmd_preview(args)
+    if args.command == "speculate":
+        return cmd_speculate(args)
     if args.command == "validate":
         return cmd_validate(args)
     if args.command == "test-card":

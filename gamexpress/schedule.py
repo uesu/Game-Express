@@ -17,6 +17,7 @@ import logging
 import math
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from statistics import median
 
 from .cards import ESTIMATE_LABELS, mark_test, schedule_payload
@@ -195,13 +196,21 @@ PROGRAM_FRESH_H = 36              # how long after the air time a program still 
 # Cold-start pre-install leads, measured from maintenance START. Once this installation has seen
 # a real pre-install + maintenance pair for a game, observed_lead_h() supplies that game's median
 # instead. A derived value is never recorded as an observation, so the fallback cannot teach itself.
+# Measured over 10-18 published versions per game, not over the single latest one: a lead taken
+# from one version happens to pick up that version's slip. Modal value, with the count that agreed.
 PREINSTALL_LEAD_H = {
-    "genshin": 43,                 # GI 7.1: Mon 11:00 -> Wed 06:00 (UTC+8)
-    "starrail": 88,                # HSR 4.6: Thu 14:00 -> Mon 06:00 (UTC+8)
-    "zzz": 42,                     # ZZZ 3.2: Mon 12:00 -> Wed 06:00 (UTC+8)
-    "wuwa": 42,                    # WW 3.7: Mon 10:00 -> Wed 04:00 (UTC+8)
+    "genshin": 43,                 # Mon 11:00 -> Wed 06:00 (UTC+8); 10 of 10 versions identical
+    "starrail": 40,                # Mon 14:00 -> Wed 06:00 (UTC+8);  8 of 11 (4.6 alone was 88 h)
+    "zzz": 42,                     # Mon 12:00 -> Wed 06:00 (UTC+8);  9 of 10
+    "wuwa": 42,                    # Tue 10:00 -> Thu 04:00 (UTC+8); 17 of 18
 }
 MAX_LEAD_H = 14 * 24               # reject corrupt/outlier observations (e.g. a mis-parsed 700 h)
+
+# Speculation guard rails. A predicted cycle is only believable near the present: anything already
+# past, or further out than one-and-a-bit cycles, is dropped rather than shown to readers.
+SPECULATE_MIN_HISTORY = 2          # real maintenance dates needed before the shipped cadence is replaced
+SPECULATE_MAX_AHEAD_D = 120        # same horizon apply_estimates() allows for countdown sites
+CADENCE_MIN_D, CADENCE_MAX_D = 14, 120   # plausible gap between two versions of a live service
 
 
 @dataclass
@@ -606,6 +615,202 @@ def derive_preinstall(game: Game, data: dict, prov: dict, now: int,
     return derived
 
 
+# --------------------------------------------------------------- native cycle speculation
+def _snap_weekday(when: datetime, weekday: int) -> datetime:
+    """Move `when` to the nearest given weekday, keeping its time of day.
+
+    Nearest, not next: a prediction that lands on Tuesday when the game always patches on
+    Wednesday is one day early, and shifting forward one day is right far more often than
+    shifting forward six. Ties beyond three days resolve backwards.
+    """
+    shift = (weekday - when.weekday()) % 7
+    if shift > 3:
+        shift -= 7
+    return when + timedelta(days=shift)
+
+
+def observed_starts(records: dict) -> list[tuple[str, int]]:
+    """Real (never speculated) maintenance starts for a game as (version, ts), oldest first.
+
+    Only timestamps an external source actually published are returned. A value this module
+    derived is listed in ``data["estimated"]``, so the cadence model can never be trained on its
+    own output — the same rule ``observed_lead_h`` follows for pre-install leads.
+    """
+    out: list[tuple[str, int]] = []
+    for version, record in (records or {}).items():
+        if not isinstance(record, dict):
+            continue
+        data = record.get("data")
+        if not isinstance(data, dict):
+            continue
+        start = data.get("maint_start_ts")
+        if not start or "maint_start_ts" in (data.get("estimated") or []):
+            continue
+        try:
+            value = int(start)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            out.append((str(version), value))
+    return sorted(out, key=lambda pair: pair[1])
+
+
+def observed_cadence_days(starts: list[tuple[str, int]]) -> float | None:
+    """Median gap, in days, between consecutive real maintenance starts.
+
+    The full history is used on purpose. A short trailing window tracks a holiday-shortened patch
+    and then mispredicts every later version; across four games the full-history median backtested
+    strictly better (ZZZ: 54% exact vs 9% for a 3-version window).
+    """
+    times = [ts for _v, ts in starts]
+    gaps = [(b - a) / 86400 for a, b in zip(times, times[1:])
+            if CADENCE_MIN_D <= (b - a) / 86400 <= CADENCE_MAX_D]
+    return round(float(median(gaps)), 3) if gaps else None
+
+
+def _modal_weekday(starts: list[tuple[str, int]], tz, fallback: int) -> int:
+    days = [datetime.fromtimestamp(ts, tz).weekday() for _v, ts in starts]
+    return max(set(days), key=days.count) if days else fallback
+
+
+def next_version(latest: str) -> tuple[str, str]:
+    """Guess the next version label: (most likely, alternative-if-the-major-rolls-over).
+
+    These series roll to a new major after .7 *or* .8 with no announced rule — Genshin went
+    4.8 -> 5.0 but also 6.7 -> 7.0, and Wuthering Waves jumped 1.4 -> 2.0. Past .6 the
+    alternative is reported rather than hidden. The predicted dates do not depend on which label
+    turns out to be right, because the cadence is measured in days, not in version numbers.
+    """
+    if not latest or version_key(latest) == (0, 0):
+        return "", ""
+    major, minor = version_key(latest)
+    return (bump_minor(latest), f"{major + 1}.0") if minor >= 7 else (bump_minor(latest), "")
+
+
+def predict_cycle(game: Game, records: dict, now: int,
+                  lead_h: float | None = None) -> dict | None:
+    """Speculate the next version's program / maintenance / pre-install times.
+
+    Everything is anchored on the last *real* maintenance start plus the cadence, because the
+    maintenance date is the one timestamp every publisher states precisely. Times of day are
+    reapplied as local wall clocks rather than added as durations: across 74 versions the hour of
+    the day never drifted, only the date did.
+
+    Returns None when the game declares no cadence, when there is nothing to anchor on, or when
+    the result falls outside the believable horizon.
+    """
+    cadence = getattr(game, "cadence", None)
+    if cadence is None:
+        return None
+    tz = cadence.tz
+    starts = observed_starts(records)
+    learned = observed_cadence_days(starts) if len(starts) >= SPECULATE_MIN_HISTORY else None
+    days = learned if learned is not None else float(cadence.days)
+    if not math.isfinite(days) or not CADENCE_MIN_D <= days <= CADENCE_MAX_D:
+        return None
+
+    anchor_version, anchor_ts = starts[-1] if starts else (cadence.anchor_version,
+                                                           int(cadence.anchor_ts or 0))
+    if anchor_ts <= 0:
+        return None
+    weekday = _modal_weekday(starts, tz, cadence.maint_weekday) if len(starts) >= SPECULATE_MIN_HISTORY \
+        else cadence.maint_weekday
+
+    start = datetime.fromtimestamp(anchor_ts, tz) + timedelta(days=days)
+    start = _snap_weekday(start, weekday).replace(hour=cadence.maint_time[0],
+                                                  minute=cadence.maint_time[1], second=0, microsecond=0)
+    # A stale state file can leave the anchor several cycles behind; roll forward to the first
+    # cycle that has not already happened instead of advertising a date in the past.
+    guard = 0
+    while start.timestamp() <= now and guard < 24:
+        start = _snap_weekday(start + timedelta(days=days), weekday).replace(
+            hour=cadence.maint_time[0], minute=cadence.maint_time[1], second=0, microsecond=0)
+        guard += 1
+    maint_start = int(start.timestamp())
+    if not now < maint_start <= now + SPECULATE_MAX_AHEAD_D * 86400:
+        return None
+
+    program = _snap_weekday(start - timedelta(days=cadence.program_lead_days), cadence.program_weekday)
+    program = program.replace(hour=cadence.program_time[0], minute=cadence.program_time[1],
+                              second=0, microsecond=0)
+    try:
+        hours = float(lead_h) if lead_h is not None else float(PREINSTALL_LEAD_H[game.key])
+    except (KeyError, TypeError, ValueError):
+        hours = None
+    if hours is not None and not (math.isfinite(hours) and 0 < hours <= MAX_LEAD_H):
+        hours = None
+
+    guess, alt = next_version(anchor_version)
+    return {
+        "version": guess,
+        "version_alt": alt,
+        "anchor_version": anchor_version,
+        "program_ts": int(program.timestamp()),
+        "preinstall_ts": int(maint_start - hours * 3600) if hours is not None else None,
+        "maint_start_ts": maint_start,
+        "maint_end_ts": int(maint_start + cadence.maint_hours * 3600),
+        "cadence_days": round(days, 3),
+        "confidence": cadence.confidence,
+        "observed": len(starts),
+        "anchor_ts": anchor_ts,
+        "learned": learned is not None,
+    }
+
+
+def derive_cycle(game: Game, version: str, data: dict, prov: dict, now: int, records: dict,
+                 lead_h: float | None = None) -> list[str]:
+    """Write speculated timestamps into a version that no live source has dated yet.
+
+    Only empty fields, or fields this function itself filled on an earlier run, are touched: the
+    guard is identical to derive_preinstall's, so an official notice always wins and is never
+    overwritten on a later run. Returns the keys written.
+    """
+    if not version or getattr(game, "cadence", None) is None:
+        return []
+    keys = ("program_ts", "maint_start_ts", "maint_end_ts")
+    estimated = set(data.get("estimated") or [])
+    writable = []
+    for key in keys:
+        own = key in estimated and prov.get(key, [0])[0] == PRIORITY["pattern"]
+        if not data.get(key) or own:
+            writable.append(key)
+    if "maint_start_ts" not in writable:      # a real maintenance date exists: nothing to speculate
+        return []
+
+    guess = predict_cycle(game, records, now, lead_h=lead_h)
+    if not guess:
+        return []
+    # Only speculate FORWARD. The prediction is "one cadence after the newest real maintenance",
+    # so it belongs to a version newer than that anchor. Without this check a card for the anchor
+    # version itself — announced by a livestream post, with its maintenance not yet published —
+    # would be stamped with its successor's dates. The anchor is read from the full history on
+    # purpose: hiding this version from the model would silently promote its predecessor.
+    anchor = guess.get("anchor_version") or ""
+    if not anchor or version_key(version) <= version_key(anchor):
+        return []
+
+    written: list[str] = []
+    for key in writable:
+        value = guess.get(key)
+        # Rewriting an unchanged value would re-stamp prov with the current time on every run and
+        # churn the committed state file for no reason. Touch only what actually moved.
+        if not value or data.get(key) == int(value):
+            continue
+        data[key] = int(value)
+        prov[key] = [PRIORITY["pattern"], now]
+        written.append(key)
+    newly_estimated = {k for k in writable if data.get(k)} - estimated
+    if not written and not newly_estimated:
+        return []
+    data["estimated"] = sorted(estimated | newly_estimated | set(written),
+                               key=lambda k: ESTIMATED_KEYS.index(k) if k in ESTIMATED_KEYS else 99)
+    sources = list(data.get("estimate_sources") or [])
+    if "version cadence" not in sources:
+        sources.append("version cadence")
+    data["estimate_sources"] = sources[:3]
+    return written
+
+
 def program_settled(data: dict, now: int, fresh_h: float = PROGRAM_FRESH_H) -> bool:
     """True once this version's special program has aired and stopped being news.
 
@@ -781,7 +986,8 @@ def needs_media(state, game_key: str, now: int) -> bool:
 def merge(game: Game, version: str, extracts: list[Extract], record: dict, override: dict,
           launcher: dict, now: int, notes: list[str] | None = None,
           estimates: dict | None = None, media: dict | None = None,
-          banner_feed: list[dict] | None = None, lead_h: float | None = None) -> dict:
+          banner_feed: list[dict] | None = None, lead_h: float | None = None,
+          records: dict | None = None) -> dict:
     """Return the merged card data (record['data'] is the previous state).
     4★ rule: no data or ANY doubt (wrong count, odd name, sources disagree) -> TBA;
     config/overrides.json is always trusted."""
@@ -923,6 +1129,10 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
     # Last, derive only what every external source and human override left empty. This can use a
     # real maintenance start or an explicitly labelled countdown estimate; either way the derived
     # pre-install value remains labelled estimated until an official notice replaces it.
+    #
+    # Order matters: derive_cycle may supply the maintenance start that derive_preinstall needs,
+    # so a version nobody has dated yet still gets a complete, visibly-estimated set of times.
+    derive_cycle(game, version, data, prov, now, records if records is not None else {}, lead_h)
     derive_preinstall(game, data, prov, now, lead_h)
     record["prov"] = prov
     return data
@@ -985,7 +1195,7 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     record = records.setdefault(ver, {"status": "new", "first_seen": now})
     notes: list[str] = []
     data = merge(game, ver, extracts, record, override, live_info, now, notes, estimates, media,
-                 banner_feed, lead_h=observed_lead_h(records))
+                 banner_feed, lead_h=observed_lead_h(records), records=records)
     ctx.report.extend(notes)
     estimated = data.get("estimated") or []
     if estimated and estimated != record.get("estimated_reported"):

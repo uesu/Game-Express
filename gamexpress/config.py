@@ -13,6 +13,8 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -417,6 +419,99 @@ class CardStyle:
     note: str = MAINTENANCE_NOTE
 
 
+WEEKDAYS = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+
+
+@lru_cache(maxsize=16)
+def _fixed_tz(offset_h: float) -> timezone:
+    """One shared tzinfo per offset — these are rebuilt on every card render otherwise."""
+    return timezone(timedelta(hours=offset_h))
+
+
+def _weekday(value, default: int | None = None) -> int | None:
+    """Accept 'Wed' / 'wednesday' / 2. Anything else -> default (never raises)."""
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value if 0 <= value <= 6 else default
+    if isinstance(value, str):
+        return WEEKDAYS.get(value.strip()[:3].lower(), default)
+    return default
+
+
+def _hhmm(value, default: tuple[int, int] | None = None) -> tuple[int, int] | None:
+    """Accept 'HH:MM' -> (hour, minute). Anything malformed -> default (never raises)."""
+    if not isinstance(value, str) or ":" not in value:
+        return default
+    hh, _, mm = value.strip().partition(":")
+    try:
+        h, m = int(hh), int(mm)
+    except ValueError:
+        return default
+    return (h, m) if 0 <= h <= 23 and 0 <= m <= 59 else default
+
+
+@dataclass(frozen=True)
+class Cadence:
+    """Per-game release rhythm, used ONLY to speculate when no live source has spoken yet.
+
+    Every field is a cold-start fallback measured from that game's published history. Once this
+    installation has seen two or more real maintenance notices, the observed median gap and the
+    observed modal weekday replace `days` and `maint_weekday` (see schedule.predict_cycle). A
+    speculated timestamp is always written at PRIORITY["pattern"], the lowest tier, so any real
+    source replaces it on the next run.
+    """
+    days: float = 42.0                      # median gap between maintenance starts
+    maint_weekday: int = 2                  # 0=Mon .. 6=Sun; the day maintenance usually starts
+    maint_time: tuple[int, int] = (6, 0)    # local wall clock of the maintenance start
+    maint_hours: float = 5.0                # typical downtime
+    program_weekday: int = 4                # special program / livestream day
+    program_time: tuple[int, int] = (20, 0)
+    program_lead_days: int = 12             # days before maintenance, before snapping to the weekday
+    tz_offset_h: float = 8.0                # publisher clock; UTC+8 for HoYoverse and Kuro
+    confidence: str = "low"                 # high | medium | low — how often the backtest was exact
+    anchor_version: str = ""                # last known real cycle, used when state has no history
+    anchor_ts: int = 0
+
+    @property
+    def tz(self) -> timezone:
+        return _fixed_tz(self.tz_offset_h)
+
+
+def _cadence(raw) -> Cadence | None:
+    """Build a Cadence from games.json. Returns None when the game declares no rhythm."""
+    if not isinstance(raw, dict) or not raw:
+        return None
+    base = Cadence()
+    try:
+        days = float(raw.get("days", base.days))
+        hours = float(raw.get("maint_hours", base.maint_hours))
+        lead = int(raw.get("program_lead_days", base.program_lead_days))
+        tz_h = float(raw.get("tz_offset_h", base.tz_offset_h))
+    except (TypeError, ValueError):
+        return None
+    if not 1 <= days <= 365 or not 0 < hours <= 72 or not 0 <= lead <= 90 or not -14 <= tz_h <= 14:
+        return None
+    anchor = raw.get("anchor_ts") or 0
+    try:
+        anchor = int(anchor)
+    except (TypeError, ValueError):
+        anchor = 0
+    return Cadence(
+        days=days,
+        maint_weekday=_weekday(raw.get("maint_weekday"), base.maint_weekday),
+        maint_time=_hhmm(raw.get("maint_time"), base.maint_time),
+        maint_hours=hours,
+        program_weekday=_weekday(raw.get("program_weekday"), base.program_weekday),
+        program_time=_hhmm(raw.get("program_time"), base.program_time),
+        program_lead_days=lead,
+        tz_offset_h=tz_h,
+        confidence=str(raw.get("confidence") or base.confidence).lower(),
+        anchor_version=str(raw.get("anchor_version") or ""),
+        anchor_ts=anchor if anchor > 0 else 0,
+    )
+
+
 @dataclass
 class Game:
     key: str
@@ -447,6 +542,7 @@ class Game:
     note: str = ""
     four_star_count: int | None = None   # rate-up 4★ per banner phase (GI/HSR/WW 3, ZZZ 2); other counts -> TBA
     auto_enable_on: str = ""             # YYYY-MM-DD: a prepared game switches itself on at launch
+    cadence: Cadence | None = None       # release rhythm; None = never speculate for this game
 
     @property
     def redeem_url(self) -> str:
@@ -490,6 +586,7 @@ def load_games(path: Path | None = None) -> dict[str, Game]:
             note=g.get("note", ""),
             four_star_count=(int(g["four_star_count"]) if g.get("four_star_count") else None),
             auto_enable_on=str(g.get("auto_enable_on") or ""),
+            cadence=_cadence(g.get("cadence")),
         )
     return games
 
