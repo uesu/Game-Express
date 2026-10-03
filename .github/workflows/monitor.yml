@@ -152,7 +152,7 @@ jobs:
         with:
           python-version: '3.14'
 
-      # This step runs every 10 minutes (cron-job.org), so its speed is the one that actually
+      # This step runs every 5 minutes (cron-job.org), so its speed is the one that actually
       # matters: uv installs the exact same packages pip would, just with a much faster resolver.
       - name: Install uv
         uses: astral-sh/setup-uv@v10.2.0   # astral-sh doesn't publish a floating major tag like v10

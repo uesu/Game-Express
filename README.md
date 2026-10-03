@@ -9,7 +9,7 @@ Automated **version-schedule announcements** and a **redemption-code poster** fo
 Everything is posted as **Discord Components V2 cards**, with the **buttons inside the card**,
 the announcement image, **Discord timestamps** (every reader sees their own timezone),
 **STC / TBA** markers and an **optional role ping**. It runs free on **GitHub Actions** (public
-repos get unlimited minutes), triggered every 10 minutes by **[cron-job.org](https://cron-job.org)**,
+repos get unlimited minutes), triggered every 5 minutes by **[cron-job.org](https://cron-job.org)**,
 with no server, no bot token and nothing to host or redeploy — merging to `main` **is** the
 deploy, so every fix and improvement reaches the running poster on the next 10-minute run.
 
@@ -33,6 +33,10 @@ deploy, so every fix and improvement reaches the running poster on the next 10-m
 - [Community databases & resources](#-community-databases--resources)
 - [Privacy · Terms · Credits](#-privacy--terms--credits)
 - [Changelog](#-changelog)
+
+> **Working on the code (human or AI)?** Start with **[AGENTS.md](AGENTS.md)** — the maintainer's
+> mental model: invariants that must not be "fixed", the exact verification commands, and the
+> traps that have already broken a run.
 
 ---
 
@@ -155,13 +159,22 @@ Each game posts to **its own codes channel** (`DISCORD_WEBHOOK_CODES_GENSHIN`, `
 | Honkai: Star Rail | ✅ on | HoYoLAB API (gid 6) → c3kay · X `@honkaistarrail` · HoYoPlay | same set |
 | Zenless Zone Zero | ✅ on | HoYoLAB API (gid 8) → c3kay · X `@ZZZ_EN` · HoYoPlay | same set |
 | Wuthering Waves | ✅ on | X `@Wuthering_Waves` · Kuro official site · Kuro launcher | official X posts · wuthering.gg (active/expired) · Open Gacha Codes · fandom · PromoGacha |
-| Honkai: Nexus Anima | 💤 prepared (no release date yet) | HoYoLAB API (gid 9) · X `@HonkaiNA` | HoYoLAB livestream module (gid 9) · X |
-| ANANTA (NetEase) | 💤 prepared · **turns on by itself on 2027‑01‑15** | X `@Ananta_EN` | X |
+| Honkai: Nexus Anima | ✅ on · ⏳ not released yet | HoYoLAB API (gid 9) · X `@HonkaiNA` | HoYoLAB livestream module (gid 9) · X |
+| ANANTA (NetEase) | ✅ on · ⏳ releases 2027‑01‑15 | X `@Ananta_EN` | X |
 
-**Turning a prepared game on** needs no code change: set the variable `ENABLE_GAMES=hna` (or
-`hna,ananta`), or set `"enabled": true` in `config/games.json`. ANANTA switches itself on at its
-announced global launch date (`auto_enable_on` in `games.json`; delete that line if the date
-moves). ANANTA has no character gacha, so its card hides the banner section.
+**All six games are monitored**, including the two that are not out yet (switched on 2026‑10‑02),
+so a pre-release Special Program or livestream is caught the moment it is announced. Enabling a
+game is never retroactive: its **first run seeds silently**, so nothing old is posted.
+
+- `"enabled"` = *do we watch it*. `"released"` = *is the game out*. They are separate on purpose:
+  an unreleased game is watched, but it has no real codes to fetch, so the test bench checks its
+  card with sample data (`test-card --kind codes --unlaunched`).
+- To switch a game **off** again, set `"enabled": false` in `config/games.json` (or run only a
+  subset with the `GAMES` variable). ANANTA also keeps `auto_enable_on: 2027-01-15` as a safety
+  net, so it would come back on by itself at launch; `ENABLE_GAMES=hna,ananta` is the no-merge
+  way to switch prepared games on from the repo's Variables page.
+- Neither pre-release game has a Twitch channel yet, so their cards simply have no Twitch button.
+  ANANTA has no character gacha, so its card also hides the banner section.
 
 ---
 
@@ -171,7 +184,7 @@ moves). ANANTA has no character gacha, so its card hides the banner section.
    A second instance repo for fail-over is optional (see
    [Redundancy](#-redundancy-fallback-chains--two-instance-fail-over)). Public repos get
    unlimited free Actions minutes. A private repo works too, but it should run every 30 minutes
-   instead of every 10 ([why](docs/SCHEDULER.md#minutes-and-private-repositories)).
+   instead of every 5 ([why](docs/SCHEDULER.md#minutes-and-private-repositories)).
 2. **Create webhooks.** In Discord: *Channel → Edit Channel → Integrations → Webhooks → New
    Webhook → Copy Webhook URL*. One for the schedule channel, and one per game codes channel.
 3. **Add the secrets** in *Settings → Secrets and variables → Actions → Secrets → New repository
@@ -197,7 +210,7 @@ moves). ANANTA has no character gacha, so its card hides the banner section.
    **[docs/TESTING.md](docs/TESTING.md)**. They post real data labelled 🧪 TEST, never write the
    state, and nobody is pinged by default.
 6. **Go live with cron-job.org.** Create one cron-job.org job per instance repo that calls the
-   `workflow_dispatch` API every 10 minutes, using a GitHub **classic token** with the `repo`
+   `workflow_dispatch` API every 5 minutes, using a GitHub **classic token** with the `repo`
    scope. Step by step: **[docs/SCHEDULER.md](docs/SCHEDULER.md)**. GitHub's own `schedule:` is
    disabled in `monitor.yml`, so the two schedulers can never race.
 
@@ -411,7 +424,7 @@ says — ⑥ used to reach the live run too, which silently muted every real ann
 |---|---|
 | `run` | one pass (what GitHub Actions uses) |
 | `check-webhooks [--kind …] [--game …]` | one "connected" card per unique webhook (no ping) |
-| `test-card [--kind …] [--game …] [--ping] [--unlaunched]` | post the sample cards, labelled 🧪 TEST (no ping unless `--ping`). `--unlaunched` keeps only the games that are not out yet, which have nothing real to fetch |
+| `test-card [--kind …] [--game …] [--ping] [--unlaunched]` | post the sample cards, labelled 🧪 TEST (no ping unless `--ping`). `--unlaunched` keeps only the games with `"released": false`, which have nothing real to fetch yet |
 | `preview` | writes `previews/index.html` (a Discord-like preview of every card) + the JSON for [Discohook](https://discohook.app) |
 | `validate` | prints the resolved routing (which secret feeds which channel), pings and emojis, and checks every sample card against Discord's limits |
 
@@ -460,7 +473,7 @@ repo that posts.
 
 **Scheduler: cron-job.org, one job per instance repo.** GitHub's native `schedule:` is
 disabled (commented out) in `monitor.yml`, exactly like News-Express, because two schedulers
-on one repo race each other. cron-job.org calls the `workflow_dispatch` API every 10 minutes.
+on one repo race each other. cron-job.org calls the `workflow_dispatch` API every 5 minutes.
 The concurrency queue plus the fresh branch checkout make an overlapping trigger safe. Setup,
 the classic token, fail-over timing and the response codes: **[docs/SCHEDULER.md](docs/SCHEDULER.md)**.
 
@@ -638,6 +651,23 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
   `media.nitter_pic_to_twimg`, which also handles the `ext_twvideo_thumb/` prefix the copy missed.
   `codeposter._post` now chunks with `cards.CODES_PER_CARD` instead of a hardcoded `10`, so the
   card size and the chunk size can never drift apart.
+- **Honkai: Nexus Anima and ANANTA are switched on** (2026-10-02), months before release, so a
+  pre-release Special Program, livestream or code is caught the moment it is announced — the
+  first run for a newly enabled game seeds silently, so nothing old is posted. Their official
+  YouTube channels (`@HonkaiNA`, `@Ananta_Game`) are wired up; neither has a Twitch channel, so
+  their cards simply have no Twitch button, and ANANTA still hides the banner section.
+  - New `"released"` flag in `games.json`, separate from `"enabled"`: *watched* and *out* are
+    different facts. `test-card --unlaunched` now selects "not released" instead of "not enabled",
+    so the sample-card test bench keeps working for games that are monitored but unreleased.
+- **The recommended poll interval is now 5 minutes, not 10** — halving the average time-to-post
+  with no code change. `docs/SCHEDULER.md` gains a measured *How fast can it poll?* section: runs
+  take 19–36 s (≈8 % of a 5-minute slot), overlap is impossible by construction, GitHub is free
+  for public repos, and the real limit is politeness toward volunteer-run upstreams. 3 minutes is
+  the floor worth defending; 1 minute is not recommended.
+- **[AGENTS.md](AGENTS.md)** — a maintainer/AI orientation guide: repo map, the invariants that
+  must not be "fixed", exact verification commands, measured performance numbers, and the traps
+  that have already broken a run (astral-sh tag pins, zizmor suppression placement, the hung
+  mirror, the pip cache).
 - **Docs caught up with the code:** the privacy policy no longer mentions slash commands or a
   self-hosted runtime (the Discord bot was removed in 1.7.0 — GitHub Actions is the only runtime),
   and the terms no longer claim the Service "never estimates" when a labelled countdown/banner-feed
@@ -682,7 +712,7 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 - **Faster installs in CI and in the 10-minutely monitor run**, both switched from `pip` to
   [`astral-sh/setup-uv`](https://docs.astral.sh/uv/guides/integration/github/)'s `uv pip install`
   (same `requirements.txt`, same resolved packages — just a much faster resolver/installer). The
-  monitor workflow runs every 10 minutes, so this is the install path where the speed actually
+  monitor workflow runs every 5 minutes, so this is the install path where the speed actually
   matters day to day.
 - **Two new informational-only checks**, added as a separate `advisory-checks` job in `ci.yml`
   that can never block a merge (`continue-on-error: true` on both steps):
@@ -746,7 +776,7 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
   art, the livestream date/time, the maintenance timestamps and the banners). A sample card could
   hide a broken source; these cannot.
 - Games that are not out yet (HNA, ANANTA) have no real code to fetch, so the codes test gives
-  them example codes — `test-card --kind codes --unlaunched`.
+  them example codes — `test-card --kind codes --unlaunched` (the games with `"released": false`).
 - **A test posts to the real channels, labelled 🧪 TEST, and never writes the state**, so the
   live run still posts the real thing later. `DISCORD_WEBHOOK_TEST` is no longer used (the
   private-test-channel mode is gone); the secret can be deleted.

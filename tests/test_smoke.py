@@ -268,11 +268,23 @@ def test_games_config_is_valid():
     assert set(GAMES) >= {"genshin", "starrail", "zzz", "wuwa", "hna", "ananta"}
     for g in GAMES.values():
         if g.enabled:
-            assert g.youtube and g.twitch and g.x_accounts and g.codes.get("sources"), g.key
+            # YouTube is where every one of these games streams its program, so an enabled game
+            # must have it. Twitch is NOT universal: HoYoverse has announced no Twitch channel for
+            # Nexus Anima and NetEase lists none for ANANTA, and cards.py only adds the button
+            # when the field is filled, so an empty twitch is a fact about the game, not a gap.
+            assert g.youtube and g.x_accounts and g.codes.get("sources"), g.key
+            assert g.youtube.startswith("https://www.youtube.com/@"), g.key
+            assert not g.twitch or g.twitch.startswith("https://www.twitch.tv/"), g.key
         cards.program_title(g, {"version": "1.0"})
         cards.header_line(g, {"version": "1.0"})
-    assert not GAMES["hna"].enabled and GAMES["hna"].hoyolab_gid == 9
-    assert not GAMES["ananta"].enabled and not GAMES["ananta"].card.show_banners
+    # both pre-release games are switched ON (2026-10-02) so nothing is missed before launch
+    assert GAMES["hna"].enabled and GAMES["hna"].hoyolab_gid == 9
+    assert GAMES["ananta"].enabled and not GAMES["ananta"].card.show_banners
+    assert GAMES["ananta"].auto_enable_on == "2027-01-15"        # kept as a safety net
+    # ...but neither is RELEASED, which is a separate fact: it is what the test bench uses to
+    # decide a game has no real codes to fetch yet (--unlaunched), not whether it is monitored.
+    assert not GAMES["hna"].released and not GAMES["ananta"].released
+    assert all(GAMES[k].released for k in ("genshin", "starrail", "zzz", "wuwa"))
     assert isinstance(load_overrides(), dict)
 
 
@@ -542,13 +554,21 @@ def test_no_ping_and_test_marker():
 
 
 def test_prepared_games_switch_on():
+    """All six games ship ON now, but the prepared-game machinery must keep working: it is what
+    an operator uses to run a subset, and what ANANTA's auto_enable_on date falls back to."""
     from gamexpress.config import active_games
-    keys = lambda s, now=None: [g.key for g in active_games(GAMES, s, now)]  # noqa: E731
-    assert keys(settings(), now=1790000000) == ["genshin", "starrail", "zzz", "wuwa"]
-    assert "hna" in keys(settings(ENABLE_GAMES="hna"), now=1790000000)
+    keys = lambda g, s, now=None: [x.key for x in active_games(g, s, now)]  # noqa: E731
+    assert keys(GAMES, settings(), now=1790000000) == ["genshin", "starrail", "zzz", "wuwa", "hna", "ananta"]
+    # a copy with both pre-release games switched back off -> the three switch-on paths still work
+    off = dict(GAMES)
+    off["hna"] = replace(GAMES["hna"], enabled=False)
+    off["ananta"] = replace(GAMES["ananta"], enabled=False)
+    assert keys(off, settings(), now=1790000000) == ["genshin", "starrail", "zzz", "wuwa"]
+    assert "hna" in keys(off, settings(ENABLE_GAMES="hna"), now=1790000000)     # 1. ENABLE_GAMES
     jan15 = 1800000000                                                          # 2027-01-15 08:00 UTC
-    assert "ananta" in keys(settings(), now=jan15) and "ananta" not in keys(settings(), now=jan15 - 86400)
-    assert keys(settings(GAMES="ananta"), now=1790000000) == ["ananta"]        # explicit test of a prepared game
+    assert "ananta" in keys(off, settings(), now=jan15) \
+        and "ananta" not in keys(off, settings(), now=jan15 - 86400)            # 2. auto_enable_on
+    assert keys(off, settings(GAMES="ananta"), now=1790000000) == ["ananta"]    # 3. explicit GAMES=
 
 
 def test_four_star_names_rules():
@@ -1458,7 +1478,7 @@ def test_sample_cards_are_only_for_the_games_with_nothing_real_to_fetch():
 
     assert set(names()) >= {"codes_genshin", "codes_starrail", "codes_zzz", "codes_wuwa",
                             "codes_hna", "codes_ananta"}
-    assert names(unlaunched=True) == ["codes_hna", "codes_ananta"]       # the prepared games only
+    assert names(unlaunched=True) == ["codes_hna", "codes_ananta"]       # the unreleased games only
     assert names(unlaunched=True, game="ananta") == ["codes_ananta"]
     assert names(game="genshin") == ["codes_genshin"]          # one card per game, all its codes
 

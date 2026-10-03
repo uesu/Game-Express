@@ -70,7 +70,7 @@ the gate counts **families**, not sources:
 | a codehub entry counts as its upstream (`seria` / `fandom` / `ennead`) | an aggregator copy is never a second source |
 | `drop_stale_copies()` | a codehub copy is ignored once its upstream answered and no longer lists the code |
 | `drop_concatenations()` | `AAAA…BBBB…` collector artifacts (two codes glued together) are dropped |
-| `CodeSources._once()` | each spec is fetched at most once per run, even with four games prefetching |
+| `CodeSources._once()` | each spec is fetched at most once per run, even with all six games prefetching |
 | state is keyed by code | a code already `posted` is never posted twice |
 
 A wiki heading decides active vs expired, and the marker is anchored with `(?m)^`, **not** `\n`:
@@ -197,7 +197,7 @@ version before any source publishes it; the card stays honestly labelled estimat
 
 When no official banner notice has been posted yet, rate-up character lineups are filled from
 `ertezy.github.io/Gacha-hub-info/hub.json`. It is rebuilt hourly by GitHub Actions from the fandom
-wikis (CC BY-SA 3.0), requires no key, and returns a single JSON file covering all four games
+wikis (CC BY-SA 3.0), requires no key, and returns a single JSON file covering the four released games
 (`genshin`, `hsr`, `zzz`, `wuthering` + `endfield`).
 
 Lineups are phase-split around the version's release / maintenance timestamp (`startsAt` around

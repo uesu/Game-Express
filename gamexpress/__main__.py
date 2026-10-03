@@ -45,9 +45,10 @@ def sample_payloads(kind: str = "all", game: str = "", *, mark: bool = False,
                     ping: bool = True, unlaunched: bool = False) -> list[tuple[str, str, dict]]:
     """[(feature, name, payload)] for every sample card. mark=True labels them 🧪 TEST;
     ping=False strips the role ping (test posts should not notify a whole role);
-    unlaunched=True keeps ONLY the games that are not live yet (ENABLE_GAMES off) — a game with
-    no announcement of its own has no real code to fetch, so its card and its channel can only
-    be checked with example data."""
+    unlaunched=True keeps ONLY the games that are not RELEASED yet ("released": false in
+    games.json) — a game that is not out has no real code to fetch, so its card and its channel
+    can only be checked with example data. Note this is independent of `enabled`: a pre-release
+    game is still monitored for its announcements, it just has nothing real to redeem yet."""
     settings = load_settings()
     games = load_games()
     out = []
@@ -64,7 +65,7 @@ def sample_payloads(kind: str = "all", game: str = "", *, mark: bool = False,
         for key, codes in CODE_SAMPLES.items():
             if key not in games or (game and game != key):
                 continue
-            if unlaunched and games[key].enabled:
+            if unlaunched and games[key].released:
                 continue                     # live games get their REAL codes from the real run
             for i, p in enumerate(codes_payloads(games[key], codes, settings,
                                                  _ping("codes", key), int(time.time()))):

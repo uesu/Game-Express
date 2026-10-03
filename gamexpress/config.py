@@ -388,6 +388,10 @@ class Game:
     short: str
     enabled: bool
     color: int
+    # False = announced but not out yet. Separate from `enabled`: a pre-release game is still
+    # monitored for announcements, it just has no real codes to fetch, so the test bench checks
+    # its card with sample data (`test-card --unlaunched`, see __main__.sample_payloads).
+    released: bool = True
     publisher: str = ""
     icon: str = ""
     hoyolab_gid: int | None = None
@@ -429,6 +433,7 @@ def load_games(path: Path | None = None) -> dict[str, Game]:
             name=g["name"],
             short=g.get("short", key.upper()),
             enabled=bool(g.get("enabled", True)),
+            released=bool(g.get("released", True)),
             color=int(g.get("color", defaults.get("color", DEFAULT_COLOR))),
             publisher=g.get("publisher", ""),
             icon=g.get("icon", ""),

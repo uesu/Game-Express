@@ -46,7 +46,7 @@ Run **`test: webhooks`**.
 |---|---|
 | **one green "✅ Game-Express webhook check" card per webhook**, listing what that channel receives. For example, your GI codes channel lists *Codes · Genshin Impact* | no card → the secret is missing or wrong. The **Show resolved config** step in the log shows `✓ DISCORD_WEBHOOK_CODES_GENSHIN` or `— none` for every game |
 | log line `[DISCORD_WEBHOOK_…] 1 route(s): OK 200` | `FAILED 401/404` → the webhook was deleted; make a new one and update the secret |
-| HNA / ANANTA marked *prepared (off)* | normal until launch; the secrets are still tested |
+| HNA / ANANTA listed like any other game | both are switched **on** since 2026-10-02 even though they are not released; their code channels are checked with sample cards (`--unlaunched`) because there is nothing real to fetch yet |
 
 ## 2. Codes: do the real sources return the real codes?
 
@@ -122,8 +122,8 @@ If the title link or the picture is wrong:
 
 ## 5. Healthy-system checklist (check weekly, or when in doubt)
 
-- [ ] cron-job.org **History**: `204` every 10 minutes (per instance).
-- [ ] **Actions**: green *Game-Express Monitor* runs every 10 minutes. Red = open it; the summary
+- [ ] cron-job.org **History**: `204` every 5 minutes (per instance).
+- [ ] **Actions**: green *Game-Express Monitor* runs every 5 minutes. Red = open it; the summary
       says why.
 - [ ] **alpha commits a heartbeat** (`auto: update state`) at least once an hour
       (`HEARTBEAT_MINUTES=60`).
@@ -166,6 +166,5 @@ without posting. Locally the two are the equivalent of the workflow's test modes
 | **4★ / banner names from official notices only** (current) → fill gaps with `config/overrides.json` | HoYoverse often shows banners only as images; overrides are the reliable fix, and the card is edited silently | 1 min per version |
 | Add **HNA / ANANTA code sources** at launch (seria / Open Gacha Codes add new games quickly) | only official posts and X feed them today | small (`games.json` only) |
 | Add a free uptime check (e.g. healthchecks.io) pinged at the end of each run | a second alarm besides cron-job.org emails | small |
-| A **LICENSE** file (e.g. MIT) | makes reuse and forking clear | trivial |
 | Re-check the nitter fleet every few months (as in News-Express) | nitter instances come and go; X is the main WW source | small |
 | More games supported by Open Gacha Codes (Arknights: Endfield, Neverness to Everness) | the code API already has them | small (`games.json`) |
