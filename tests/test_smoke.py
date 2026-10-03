@@ -553,6 +553,71 @@ def test_no_ping_and_test_marker():
     assert set(CODE_SAMPLES) == {"genshin", "starrail", "zzz", "wuwa", "hna", "ananta"}
 
 
+def test_every_official_feed_a_game_declares_is_actually_requested():
+    """Coverage guard for the real source list, so a refactor cannot silently drop a feed.
+
+    HoYoLAB's web UI splits a game's official circle into three tabs — notices / events / news
+    (`page_sort=`) — which are `type=1 / 2 / 3` of the same `getNewsList` API. All three must be
+    read for EVERY game that has a gid, or an announcement posted in the "wrong" tab is missed:
+
+        https://www.hoyolab.com/circles/<gid>/<page_type>/official?page_sort=notices|events|news
+
+    and every enabled game's X account must be probed across the nitter fleet.
+    """
+    import asyncio
+
+    from gamexpress.config import active_games
+    from gamexpress.sources import hoyolab
+    from gamexpress.sources.twitter import XClient
+
+    class Rec:
+        health: dict = {}
+
+        def __init__(self):
+            self.calls = []
+
+        async def get_json(self, url, **kw):
+            self.calls.append((url, kw.get("params") or {}))
+            return None
+
+        async def get_text(self, url, **kw):
+            self.calls.append((url, kw.get("params") or {}))
+            return None
+
+    st = settings()
+    live = active_games(GAMES, st)
+    assert [g.key for g in live] == ["genshin", "starrail", "zzz", "wuwa", "hna", "ananta"]
+
+    rec = Rec()
+    gids = {g.hoyolab_gid for g in live if g.hoyolab_gid}
+    assert gids == {2, 6, 8, 9}, gids                      # GI, HSR, ZZZ, HNA (WW/ANANTA aren't on HoYoLAB)
+
+    async def pull_official():
+        for g in live:
+            if g.hoyolab_gid:
+                await hoyolab.official_items(rec, g, lambda _t: True, 0)
+    asyncio.run(pull_official())
+    asked = {(p["gids"], p["type"]) for u, p in rec.calls if "getNewsList" in u and "type" in p}
+    assert asked == {(gid, t) for gid in gids for t in (1, 2, 3)}, sorted(asked)
+    assert set(hoyolab.NEWS_TYPES) == {1, 2, 3}
+
+    # every account, on the whole fleet — nitter.cf and xitter.cf are the first two mirrors
+    accounts = [a for g in live for a in g.x_accounts]
+    assert accounts == ["GenshinImpact", "honkaistarrail", "ZZZ_EN", "Wuthering_Waves",
+                        "HonkaiNA", "Ananta_EN"]
+    rec2 = Rec()
+    x = XClient(rec2, st)
+
+    async def pull_timelines():
+        for a in accounts:
+            await x.timeline(a)
+    asyncio.run(pull_timelines())
+    urls = {u for u, _p in rec2.calls}
+    for a in accounts:
+        assert f"https://nitter.cf/{a}/rss" in urls, a
+        assert f"https://xitter.cf/{a}/rss" in urls, a
+
+
 def test_prepared_games_switch_on():
     """All six games ship ON now, but the prepared-game machinery must keep working: it is what
     an operator uses to run a subset, and what ANANTA's auto_enable_on date falls back to."""

@@ -43,7 +43,7 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 | `gamexpress/sources/*` | one module per upstream: `twitter` (nitter fleet + FxEmbed), `hoyolab`, `kuro`, `codes`, `launcher`, `bannerfeed`, `countdown`, `newspage` |
 | `gamexpress/{media,textutil,timeparse,samples,preview_html}.py` | image URL normalisation, HTML→text, date/time parsing, sample cards, local preview |
 | `config/games.json` | per-game config (see §4) · `config/overrides.json` human corrections · `config/program_announcements.json` discovered tweet ids |
-| `tests/test_smoke.py` | **the** test suite: 135 offline tests, no network, no secrets |
+| `tests/test_smoke.py` | **the** test suite: 136 offline tests, no network, no secrets |
 | `.github/workflows/` | `monitor.yml` (production), `ci.yml` (tests + advisory job), `python_version_bump.yml` |
 
 ---
@@ -103,7 +103,7 @@ so a newly added variable works without touching the workflow.
 uv venv --python 3.11 && uv pip install -r requirements.txt pyyaml ruff pytest vulture
 .venv/bin/python -m compileall -q gamexpress tests .github/scripts
 .venv/bin/ruff check .                      # ruff.toml is authoritative
-.venv/bin/python tests/test_smoke.py        # 135/135 — the plain runner is what CI uses
+.venv/bin/python tests/test_smoke.py        # 136/136 — the plain runner is what CI uses
 .venv/bin/python -m pytest -q tests         # pytest must also pass
 .venv/bin/python -m gamexpress validate     # routing, pings, card limits -> "config OK"
 .venv/bin/python -m gamexpress preview --out /tmp/previews

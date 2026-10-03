@@ -9,6 +9,22 @@ a dead source is logged and skipped, and the next one in the chain is used.
 | Source | Endpoint | Gives | Status |
 |---|---|---|---|
 | HoYoLAB news list (official) | `https://bbs-api-os.hoyolab.com/community/post/wapi/getNewsList?gids={2,6,8,9}&page_size=15&type={1,2,3}` | titles + truncated text of Notices (1) / Events (2) / Info (3) | ✅ found "Version 4.6 Update and Maintenance Notice" |
+
+**All three official tabs are read, for every game that has a HoYoLAB circle.** What the website
+shows as `page_sort=notices | events | news` is `type=1 | 2 | 3` of the same API call, so the
+monitor sees exactly the pages below — an announcement cannot hide in the "wrong" tab
+(`test_every_official_feed_a_game_declares_is_actually_requested` pins this):
+
+| Game | gid | Official circle the monitor reads (all three sorts) |
+|---|---|---|
+| Genshin Impact | 2 | `hoyolab.com/circles/2/27/official?page_type=27&page_sort={notices,events,news}` |
+| Honkai: Star Rail | 6 | `hoyolab.com/circles/6/39/official?page_type=39&page_sort={notices,events,news}` |
+| Zenless Zone Zero | 8 | `hoyolab.com/circles/8/47/official?page_type=47&page_sort={notices,events,news}` |
+| Honkai: Nexus Anima | 9 | `hoyolab.com/circles/9/90002/official?page_type=90002&page_sort={notices,events,news}` |
+
+Wuthering Waves (Kuro) and ANANTA (NetEase) have no HoYoLAB circle — they are covered by the Kuro
+official site / launcher and by X respectively. The API is used rather than the web pages because
+it returns the same posts as structured JSON, with no HTML or JavaScript to scrape.
 | HoYoLAB post (official) | `…/getPostFull?gids={gid}&post_id={id}` | full body (`content` HTML, or `structured_content` when `content == "en-us"`) + images | ✅ HSR 46814308 (quirk), GI 46604275 |
 | c3kay JSON-Feed (mirror, fallback) | `https://feeds.c3kay.de/{genshin,starrail,zenless}.json` | JSON Feed 1.1 with full `content_html`, refreshed every 30 min | ✅ |
 | Official X accounts | nitter RSS fleet `https://<instance>/<account>/rss` (15 instances, from News-Express round 13/14) | timeline (first 2 working instances merged) | fleet taken from News-Express |

@@ -490,7 +490,7 @@ should see in Discord, and how to tell that the whole thing is working.
   schedule card — every test fetches the live sources, so what you see in Discord is what a live
   run would post (see [Manual controls](#-manual-controls)).
 - **CI** (`.github/workflows/ci.yml`) runs on every PR and every push to `main`: install,
-  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **135 offline tests
+  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **136 offline tests
   with no network and no secrets**:
   - real official posts captured on 2026-09-25, which must reproduce your reference cards'
     timestamps;
@@ -659,6 +659,11 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
   - New `"released"` flag in `games.json`, separate from `"enabled"`: *watched* and *out* are
     different facts. `test-card --unlaunched` now selects "not released" instead of "not enabled",
     so the sample-card test bench keeps working for games that are monitored but unreleased.
+- **Source-coverage guard:** a new test asserts that every game with a HoYoLAB circle is read on
+  **all three official tabs** (`page_sort=notices|events|news` = `type=1|2|3`, so 12 requests per
+  run across GI/HSR/ZZZ/HNA) and that every enabled game's X account is probed across the nitter
+  fleet, `nitter.cf` and `xitter.cf` first — including the two new accounts `@HonkaiNA` and
+  `@Ananta_EN`. Dropping a sort or a gid now fails CI instead of quietly missing announcements.
 - **The recommended poll interval is now 5 minutes, not 10** — halving the average time-to-post
   with no code change. `docs/SCHEDULER.md` gains a measured *How fast can it poll?* section: runs
   take 19–36 s (≈8 % of a 5-minute slot), overlap is impossible by construction, GitHub is free
@@ -672,7 +677,7 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
   self-hosted runtime (the Discord bot was removed in 1.7.0 — GitHub Actions is the only runtime),
   and the terms no longer claim the Service "never estimates" when a labelled countdown/banner-feed
   estimate is exactly what a card shows before the official notice lands.
-- 135 offline tests (new regression tests pin the stop-waiting behaviour, the webhook spacing,
+- 136 offline tests (new regression tests pin the stop-waiting behaviour, the webhook spacing,
   and full-version pinning for `astral-sh/*` actions, which publish no floating major tag),
   `ruff check .`,
   `python -m gamexpress validate` and `python -m gamexpress preview` all green.
