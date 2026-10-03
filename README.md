@@ -611,7 +611,7 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
   - [RSSHub](https://github.com/DIYgod/RSSHub) (Kuro endpoints)
   - [wuthering.gg](https://wuthering.gg/codes)
   - The **Fandom wikis** read directly for redemption codes — [Genshin Impact](https://genshin-impact.fandom.com/), [Honkai: Star Rail](https://honkai-star-rail.fandom.com/), [Zenless Zone Zero](https://zenless-zone-zero.fandom.com/) and [Wuthering Waves](https://wutheringwaves.fandom.com/) — and their editors. Wiki text is CC BY-SA 3.0.
-  - [nitter](https://github.com/zedeus/nitter), [xcancel](https://xcancel.com/) and **every operator who keeps a public instance online** — they are the reason an announcement is seen minutes after it is tweeted
+  - [nitter](https://github.com/zedeus/nitter) (and forks / instances: [git.kareem.one/shaquille/nitter](https://git.kareem.one/shaquille/nitter), [tw.eir-nya.gay](https://tw.eir-nya.gay/), [Cynosphere/nitter](https://gitlab.com/Cynosphere/nitter)), [xcancel](https://xcancel.com/) and **every operator who keeps a public instance online** — they are the reason an announcement is seen minutes after it is tweeted
   - [FxTwitter / FixTweet](https://github.com/FixTweet/FxTwitter) (the fallback that resolves a tweet when no mirror answers)
 
   **Built with**
@@ -695,7 +695,7 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 - **Source-coverage guard:** a new test asserts that every game with a HoYoLAB circle is read on
   **all three official tabs** (`page_sort=notices|events|news` = `type=1|2|3`, so 12 requests per
   run across GI/HSR/ZZZ/HNA) and that every enabled game's X account is probed across the nitter
-  fleet, `nitter.cf` and `xitter.cf` first — including the two new accounts `@HonkaiNA` and
+  fleet, `nitter.cf` first — including the two new accounts `@HonkaiNA` and
   `@Ananta_EN`. Dropping a sort or a gid now fails CI instead of quietly missing announcements.
 - **The recommended poll interval is now 5 minutes, not 10** — halving the average time-to-post
   with no code change. `docs/SCHEDULER.md` gains a measured *How fast can it poll?* section: runs
