@@ -99,7 +99,7 @@ async def gather_estimates(ctx: Ctx) -> None:
 
 
 async def gather_banners(ctx: Ctx) -> None:
-    """Fetch the community banner feed (ertezy.github.io/Gacha-hub-info/hub.json) — one request
+    """Fetch the community banner feed (ertezy.github.io/Kitsudock-data/hub.json) — one request
     per run for all games. Refused when older than 14 days, and BANNER_FEED=0 switches it off."""
     if "schedule" not in ctx.settings.features or not ctx.settings.banner_feed:
         return

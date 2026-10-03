@@ -1,4 +1,4 @@
-"""Community banner feed — 5★ rate-up lineups from ertezy.github.io/Gacha-hub-info/hub.json.
+"""Community banner feed — 5★ rate-up lineups from ertezy.github.io/Kitsudock-data/hub.json.
 
 Rebuilt hourly by GitHub Actions from the fandom wikis (CC BY-SA 3.0), no key required,
 one small JSON file for all games (genshin, hsr, zzz, wuthering + endfield).
@@ -20,7 +20,7 @@ from ..http import Fetcher
 
 log = logging.getLogger("gamexpress.sources.bannerfeed")
 
-HUB_URL = "https://ertezy.github.io/Gacha-hub-info/hub.json"
+HUB_URL = "https://ertezy.github.io/Kitsudock-data/hub.json"
 MAX_AGE_SECONDS = 14 * 86400  # 14 days
 
 GAME_MAP: dict[str, str] = {
