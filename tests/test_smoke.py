@@ -2864,6 +2864,7 @@ def test_a_live_run_pings_even_with_a_stale_no_ping_variable():
     test_run = settings(NO_PING="1", PING_SCHEDULE=role)      # ⑥ off -> a test card never pings
     assert not test_run.ping("schedule", "starrail")
 
+
 def test_a_body_that_arrives_in_several_chunks_is_read_whole():
     """A real feed is answered over several TCP reads. `content.read(n)` returns only what is
     buffered at that instant, so the body used to come back TRUNCATED and a perfectly valid
