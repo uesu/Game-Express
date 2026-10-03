@@ -13,6 +13,8 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -75,25 +77,43 @@ DEFAULT_COMMUNITY_BUTTONS = [
 # a "click anywhere to enter" splash page. Two mirrors verified to serve clean RSS take their
 # places; both are new to the hot path and the next live run is what confirms them from
 # GitHub's runners, so nitter.cf -- the only host with production evidence -- still leads.
+#
+# 2026-10-03 04:25 RUN -- BOTH OF THOSE PROMOTIONS FAILED, AND THAT IS THE POINT OF THE RULE:
+# a hand probe from a VPS does not predict what an Actions runner gets.
+#   * nitter.kareem.one -- HTTP 403 on all 6 handles, despite a clean feed off-runner and the
+#     best score on status.d420.de. Demoted to the runner-blocked tier.
+#   * tw.eir-nya.gay    -- not blocked, just SLOW: still silent when nitter.cf + miningtcup had
+#     already answered, so NITTER_GRACE killed it on 4/6 handles, and it returned 0 entries on
+#     the other 2. A mirror that cannot win the race is dead weight in a parallel slot, so it
+#     moves to the head of the fallbacks instead.
+# Slots 2 and 3 now carry the next two candidates, and the same rule applies to them: they are
+# TRIALS until a live run says otherwise. nitter.cf + nitter.miningtcup.me answered 6/6 handles
+# each, so the quorum never depends on a trial slot -- an experiment here costs wasted requests
+# at worst, never a missed announcement. Nothing is deleted, as always.
+#
+# Note the real ceiling this exposes: nitter.cf and xitter.cf are ONE machine, so the only
+# independent redundancy today is the token-gated mirror. Finding a second backend that answers
+# Actions IPs is what these two trial slots are for.
 DEFAULT_NITTER = [
     # ── hot path: probed on EVERY run (NITTER_BATCH = 4) — measured answerers only ──
-    "https://nitter.cf",                # the one proven in production (12 ok / 0 fail)
-    "https://nitter.kareem.one",        # NEW: clean RSS, newest fork (2026.10.01), 92% / 1180ms
-    "https://tw.eir-nya.gay",           # promoted: clean RSS, and the only mirror that keeps
-                                        # real expanded links instead of rewriting t.co
-    "https://nitter.miningtcup.me",     # token-gated — this is what NITTER_RSS_TOKEN is for
+    "https://nitter.cf",                # proven from the runners: 6/6 handles, every run
+    "https://shitter.thepixora.com",    # TRIAL: clean body off-runner, independent backend
+    "https://nitter.meowing.monster",   # TRIAL: clean body off-runner; its old "0 entries"
+                                        # verdict predates the truncation fix (see above)
+    "https://nitter.miningtcup.me",     # token-gated — proven from the runners: 6/6 handles
     # ── fallbacks: only reached when the hot path gave fewer than two working feeds ──
-    "https://shitter.thepixora.com",    # verified clean RSS 2026-10-03
-    "https://xitter.cf",                # demoted: answers, but it is nitter.cf behind a second
+    "https://tw.eir-nya.gay",           # not blocked, just slower than the quorum: lost the
+                                        # NITTER_GRACE race on 4/6 handles, 0 entries on 2
+    "https://xitter.cf",                # answers, but it is nitter.cf behind a second
                                         # domain — zero redundancy for a hot-path slot
-    "https://nitter.meowing.monster",   # 96% uptime and clean RSS off-runner; its "200 but 0
-                                        # entries" (36305123457) predates the truncation fix
     "https://nitter.jaydenha.uk",       # demoted: /rss serves a "click anywhere to enter" splash
     "https://nitter.click",             # browser check (__gandalf) in front of /rss
-    "https://nitter.tiekoetter.com",    # NEW, last-resort: Anubis proof-of-work wall
+    "https://nitter.tiekoetter.com",    # last-resort: Anubis proof-of-work wall
     "https://nitter.xitter.cc",         # Cloudflare 502 Bad gateway
     "https://nitter.perennialte.ch", "https://nitter.privacydev.net", "https://nitter.net",
     # ── last: known to refuse GitHub's runners; a request only when everything above failed ──
+    "https://nitter.kareem.one",        # HTTP 403 on all 6 handles (run 2026-10-03 04:25) even
+                                        # though it serves a clean feed off-runner
     "https://nitter.netbub.com",        # HTTP 403 to GH runners (36305123457); off-runner it
                                         # answers only behind a __goaway_challenge redirect
     "https://xcancel.com",              # suspended 2026-09-14
@@ -399,6 +419,99 @@ class CardStyle:
     note: str = MAINTENANCE_NOTE
 
 
+WEEKDAYS = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+
+
+@lru_cache(maxsize=16)
+def _fixed_tz(offset_h: float) -> timezone:
+    """One shared tzinfo per offset — these are rebuilt on every card render otherwise."""
+    return timezone(timedelta(hours=offset_h))
+
+
+def _weekday(value, default: int | None = None) -> int | None:
+    """Accept 'Wed' / 'wednesday' / 2. Anything else -> default (never raises)."""
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value if 0 <= value <= 6 else default
+    if isinstance(value, str):
+        return WEEKDAYS.get(value.strip()[:3].lower(), default)
+    return default
+
+
+def _hhmm(value, default: tuple[int, int] | None = None) -> tuple[int, int] | None:
+    """Accept 'HH:MM' -> (hour, minute). Anything malformed -> default (never raises)."""
+    if not isinstance(value, str) or ":" not in value:
+        return default
+    hh, _, mm = value.strip().partition(":")
+    try:
+        h, m = int(hh), int(mm)
+    except ValueError:
+        return default
+    return (h, m) if 0 <= h <= 23 and 0 <= m <= 59 else default
+
+
+@dataclass(frozen=True)
+class Cadence:
+    """Per-game release rhythm, used ONLY to speculate when no live source has spoken yet.
+
+    Every field is a cold-start fallback measured from that game's published history. Once this
+    installation has seen two or more real maintenance notices, the observed median gap and the
+    observed modal weekday replace `days` and `maint_weekday` (see schedule.predict_cycle). A
+    speculated timestamp is always written at PRIORITY["pattern"], the lowest tier, so any real
+    source replaces it on the next run.
+    """
+    days: float = 42.0                      # median gap between maintenance starts
+    maint_weekday: int = 2                  # 0=Mon .. 6=Sun; the day maintenance usually starts
+    maint_time: tuple[int, int] = (6, 0)    # local wall clock of the maintenance start
+    maint_hours: float = 5.0                # typical downtime
+    program_weekday: int = 4                # special program / livestream day
+    program_time: tuple[int, int] = (20, 0)
+    program_lead_days: int = 12             # days before maintenance, before snapping to the weekday
+    tz_offset_h: float = 8.0                # publisher clock; UTC+8 for HoYoverse and Kuro
+    confidence: str = "low"                 # high | medium | low — how often the backtest was exact
+    anchor_version: str = ""                # last known real cycle, used when state has no history
+    anchor_ts: int = 0
+
+    @property
+    def tz(self) -> timezone:
+        return _fixed_tz(self.tz_offset_h)
+
+
+def _cadence(raw) -> Cadence | None:
+    """Build a Cadence from games.json. Returns None when the game declares no rhythm."""
+    if not isinstance(raw, dict) or not raw:
+        return None
+    base = Cadence()
+    try:
+        days = float(raw.get("days", base.days))
+        hours = float(raw.get("maint_hours", base.maint_hours))
+        lead = int(raw.get("program_lead_days", base.program_lead_days))
+        tz_h = float(raw.get("tz_offset_h", base.tz_offset_h))
+    except (TypeError, ValueError):
+        return None
+    if not 1 <= days <= 365 or not 0 < hours <= 72 or not 0 <= lead <= 90 or not -14 <= tz_h <= 14:
+        return None
+    anchor = raw.get("anchor_ts") or 0
+    try:
+        anchor = int(anchor)
+    except (TypeError, ValueError):
+        anchor = 0
+    return Cadence(
+        days=days,
+        maint_weekday=_weekday(raw.get("maint_weekday"), base.maint_weekday),
+        maint_time=_hhmm(raw.get("maint_time"), base.maint_time),
+        maint_hours=hours,
+        program_weekday=_weekday(raw.get("program_weekday"), base.program_weekday),
+        program_time=_hhmm(raw.get("program_time"), base.program_time),
+        program_lead_days=lead,
+        tz_offset_h=tz_h,
+        confidence=str(raw.get("confidence") or base.confidence).lower(),
+        anchor_version=str(raw.get("anchor_version") or ""),
+        anchor_ts=anchor if anchor > 0 else 0,
+    )
+
+
 @dataclass
 class Game:
     key: str
@@ -429,6 +542,7 @@ class Game:
     note: str = ""
     four_star_count: int | None = None   # rate-up 4★ per banner phase (GI/HSR/WW 3, ZZZ 2); other counts -> TBA
     auto_enable_on: str = ""             # YYYY-MM-DD: a prepared game switches itself on at launch
+    cadence: Cadence | None = None       # release rhythm; None = never speculate for this game
 
     @property
     def redeem_url(self) -> str:
@@ -472,6 +586,7 @@ def load_games(path: Path | None = None) -> dict[str, Game]:
             note=g.get("note", ""),
             four_star_count=(int(g["four_star_count"]) if g.get("four_star_count") else None),
             auto_enable_on=str(g.get("auto_enable_on") or ""),
+            cadence=_cadence(g.get("cadence")),
         )
     return games
 

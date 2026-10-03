@@ -27,6 +27,11 @@
       "program_label": "Special Program",
       "program_patterns": ["special program"],
       "banner_patterns": ["event wish"],
+      "cadence": {
+        "days": 42, "maint_weekday": "Wed", "maint_time": "06:00", "maint_hours": 5,
+        "program_weekday": "Fri", "program_time": "20:00", "program_lead_days": 12,
+        "confidence": "high", "anchor_version": "7.1", "anchor_ts": 1790114400
+      },
       "news_url": "https://genshin.hoyoverse.com/en/news",
       "youtube": "https://www.youtube.com/@GenshinImpact/videos",
       "twitch": "https://www.twitch.tv/genshinimpactofficial",
@@ -53,6 +58,11 @@
       "program_label": "Special Program",
       "program_patterns": ["special program"],
       "banner_patterns": ["event warp"],
+      "cadence": {
+        "days": 42, "maint_weekday": "Wed", "maint_time": "06:00", "maint_hours": 5,
+        "program_weekday": "Fri", "program_time": "19:30", "program_lead_days": 12,
+        "confidence": "medium", "anchor_version": "4.6", "anchor_ts": 1790546400
+      },
       "news_url": "https://hsr.hoyoverse.com/en-us/news",
       "youtube": "https://www.youtube.com/@HonkaiStarRail/streams",
       "twitch": "https://www.twitch.tv/honkaistarrail",
@@ -78,6 +88,11 @@
       "program_label": "Special Program",
       "program_patterns": ["special program"],
       "banner_patterns": ["exclusive channel", "signal search"],
+      "cadence": {
+        "days": 42, "maint_weekday": "Wed", "maint_time": "06:00", "maint_hours": 5,
+        "program_weekday": "Fri", "program_time": "19:30", "program_lead_days": 12,
+        "confidence": "low", "anchor_version": "3.2", "anchor_ts": 1788904800
+      },
       "news_url": "https://zenless.hoyoverse.com/en-us/news",
       "youtube": "https://www.youtube.com/@ZZZ_Official/videos",
       "twitch": "https://www.twitch.tv/zenlesszonezero",
@@ -103,6 +118,11 @@
       "program_label": "Special Broadcast",
       "program_patterns": ["special broadcast"],
       "banner_patterns": ["featured resonator", "resonator convene", "convene"],
+      "cadence": {
+        "days": 42, "maint_weekday": "Thu", "maint_time": "04:00", "maint_hours": 7,
+        "program_weekday": "Fri", "program_time": "19:00", "program_lead_days": 12,
+        "confidence": "medium", "anchor_version": "3.7", "anchor_ts": 1790712000
+      },
       "news_url": "https://wutheringwaves.kurogames.com/en/main/news",
       "program_feeds": [
         "https://raw.githubusercontent.com/TheLovinator1/wutheringwaves/refs/heads/master/articles_latest.xml",

@@ -12,6 +12,8 @@ the exact timestamps of the user's four reference cards.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import io
 import json
 import os
 import sys
@@ -19,6 +21,7 @@ import tempfile
 import time
 import traceback
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -26,7 +29,9 @@ sys.path.insert(0, str(ROOT))
 FIX = ROOT / "tests" / "fixtures"
 GOLDEN = FIX / "golden"
 
+from gamexpress import __main__ as gxmain  # noqa: E402
 from gamexpress import cards, codeposter, media, schedule  # noqa: E402
+from gamexpress import config as gconfig  # noqa: E402
 from gamexpress.config import load_games, load_overrides, load_settings, parse_emoji, parse_ping  # noqa: E402
 from gamexpress.discord import SendResult, WebhookClient, _split, webhook_fingerprint  # noqa: E402
 from gamexpress.models import CodeHit, Item  # noqa: E402
@@ -39,7 +44,7 @@ from gamexpress.sources.kuro import parse_launcher_index  # noqa: E402
 from gamexpress.sources.launcher import parse_branches  # noqa: E402
 from gamexpress.sources.twitter import item_from_fx_json, nitter_pic_to_twimg  # noqa: E402
 from gamexpress.state import State  # noqa: E402
-from gamexpress.timeparse import find_datetimes, find_duration_hours, find_time_ranges  # noqa: E402
+from gamexpress.timeparse import discord_ts, find_datetimes, find_duration_hours, find_time_ranges  # noqa: E402
 
 GAMES = load_games()
 HOOK = "https://discord.com/api/webhooks/123456789012345678/tok_en-ABC"
@@ -2219,11 +2224,18 @@ def test_a_non_404_edit_failure_is_still_an_error_not_a_repost():
 
 
 def test_preinstall_cold_start_reproduces_four_real_notices():
+    """Each shipped lead must reproduce a TYPICAL published notice, not the latest one.
+
+    HSR is deliberately checked against 4.5 (Mon 14:00 -> Wed 06:00 = 40 h, the value 8 of its
+    last 11 versions used) and not against 4.6, whose maintenance alone slipped to a Monday and
+    stretched the lead to 88 h. Calibrating a default on a single outlier makes every cold start
+    wrong by two days.
+    """
     cases = {
-        "genshin": (1790114400, 1789959600),
-        "starrail": (1790546400, 1790229600),
-        "zzz": (1788904800, 1788753600),
-        "wuwa": (1790712000, 1790560800),
+        "genshin": (1790114400, 1789959600),       # 7.1: Mon 11:00 -> Wed 06:00 (43 h)
+        "starrail": (1787695200, 1787551200),      # 4.5: Mon 14:00 -> Wed 06:00 (40 h)
+        "zzz": (1788904800, 1788753600),           # 3.2: Mon 12:00 -> Wed 06:00 (42 h)
+        "wuwa": (1790712000, 1790560800),          # 3.7: Tue 10:00 -> Thu 04:00 (42 h)
     }
     for game_key, (maintenance, want) in cases.items():
         record = {"data": {"maint_start_ts": maintenance},
@@ -2242,7 +2254,7 @@ def test_preinstall_fallback_never_overwrites_a_real_time():
 
 def test_preinstall_fallback_is_labelled_estimated():
     data, prov = {"maint_start_ts": 1790546400}, {"maint_start_ts": [50, 1]}
-    assert schedule.derive_preinstall(GAMES["starrail"], data, prov, 2) == 1790229600
+    assert schedule.derive_preinstall(GAMES["starrail"], data, prov, 2) == 1790402400
     assert data["estimated"] == ["preinstall_ts"]
     assert data["estimate_sources"] == ["version cadence"]
     assert prov["preinstall_ts"][0] == schedule.PRIORITY["pattern"]
@@ -2303,7 +2315,7 @@ def test_observed_history_beats_the_shipped_default():
               "prov": {"maint_start_ts": [50, 1]}}
     got = schedule.merge(GAMES["starrail"], "4.6", [], record, {}, {}, 1,
                          lead_h=schedule.observed_lead_h(records))
-    assert got["preinstall_ts"] == 2_000_000 - 43 * 3600         # not shipped HSR default (88 h)
+    assert got["preinstall_ts"] == 2_000_000 - 43 * 3600         # not shipped HSR default (40 h)
 
     assert schedule.observed_lead_h({"x": {"preinstall_offset_h": "junk"}}) is None
     unknown = replace(GAMES["starrail"], key="unknown-game")
@@ -2737,10 +2749,22 @@ def test_the_nitter_fleet_leads_with_nitter_cf_and_demotes_the_flaky_mirror():
 # A mirror only earns a hot-path slot by serving a real RSS BODY, not by scoring well on a
 # status page that probes the homepage. Each of these was fetched by hand on 2026-10-03 and
 # answered with a parseable feed; each of the walled ones answered with an interstitial.
+#
+# This is a NECESSARY condition, not a sufficient one -- serving a clean body to a VPS says
+# nothing about what an Actions runner gets. nitter.kareem.one is in this tuple and still
+# banned from the hot path, because run 2026-10-03 04:25 answered it with 403 six times out of
+# six. A hot-path slot requires BOTH gates: a verified body here, and no runner-measured
+# failure in NITTER_CANNOT_ANSWER.
 NITTER_SERVES_REAL_RSS = (
     "https://nitter.cf", "https://nitter.kareem.one", "https://tw.eir-nya.gay",
     "https://shitter.thepixora.com", "https://nitter.meowing.monster",
 )
+# Answers, is not blocked, and is still useless in a parallel slot: the batch resolves as soon
+# as two mirrors reply, and NITTER_GRACE kills whatever is still silent. tw.eir-nya.gay lost
+# that race on 4 of 6 handles in run 2026-10-03 04:25 and returned 0 entries on the other 2.
+NITTER_LOSES_THE_RACE = {
+    "https://tw.eir-nya.gay": "silent past NITTER_GRACE on 4/6 handles (2026-10-03 04:25)",
+}
 NITTER_WALLED = {
     "https://nitter.jaydenha.uk": '/rss serves a "click anywhere to enter" splash page',
     "https://nitter.click": "browser check (__gandalf) in front of /rss",
@@ -2762,6 +2786,26 @@ def test_a_walled_mirror_never_sits_in_the_hot_path():
         assert inst not in hot, f"{inst} is probed every run but {why}"
     for inst in hot:
         assert inst in NITTER_SERVES_REAL_RSS or inst in TOKEN_GATED, inst
+
+
+def test_a_hot_path_slot_needs_both_a_verified_body_and_a_clean_live_run():
+    """Rotation #2 (run 2026-10-03 04:25). A clean hand probe is necessary but NOT sufficient:
+    nitter.kareem.one served a perfect feed from a VPS and answered GitHub's runners with 403
+    six times out of six. A mirror that loses the NITTER_GRACE race is just as useless in a
+    parallel slot as one that is blocked, so it is kept out too."""
+    from gamexpress.config import DEFAULT_NITTER
+    from gamexpress.sources.twitter import NITTER_BATCH
+    hot = DEFAULT_NITTER[:NITTER_BATCH]
+    for inst, why in {**NITTER_CANNOT_ANSWER, **NITTER_LOSES_THE_RACE}.items():
+        assert inst in DEFAULT_NITTER, f"{inst} is demoted, not deleted"
+        assert inst not in hot, f"{inst} costs a request every run but {why}"
+
+    # The quorum is two answers, and both proven answerers are in the hot path, so the two
+    # trial slots can never cost an announcement -- only wasted requests.
+    proven = ("https://nitter.cf", "https://nitter.miningtcup.me")
+    for inst in proven:
+        assert inst in hot, f"{inst} answered 6/6 handles live and must stay in the hot path"
+    assert len(hot) - len(proven) == 2, "exactly two trial slots, no more"
 
 
 def test_the_duplicate_domain_does_not_hold_a_hot_path_slot():
@@ -2788,10 +2832,19 @@ def test_the_token_gated_instance_is_in_the_fleet():
 # or not the ones ahead of them answered. A mirror in that first batch is therefore a cost on
 # every run -- which is why x.n0g.xyz was demoted out of it. These are the instances measured
 # as unable to answer GitHub's runners, each with the run that proved it; none of them may sit
-# in the hot path again, whatever a public uptime table claims. They all stay in the fleet.
+# in the hot path again, whatever a public uptime table claims -- or whatever a hand probe from
+# somewhere else returns, which is how nitter.kareem.one earned its entry. They all stay in the
+# fleet.
+#
+# An entry leaves this dict ONLY when the measurement that created it has been invalidated, not
+# because a mirror looks healthy again. That has happened exactly once: nitter.meowing.monster
+# was listed for "HTTP 200 but 0 entries" in run 36305123457, which is the signature of the
+# response-truncation bug fixed later the same week -- the client was mis-reading a feed that
+# was being served correctly. The verdict was the client's fault, so it was withdrawn and the
+# mirror is back on trial in the hot path.
 NITTER_CANNOT_ANSWER = {
     "https://nitter.netbub.com": "HTTP 403 on all 4 handles (live run 36305123457)",
-    "https://nitter.meowing.monster": "HTTP 200 but 0 entries, bot check (live run 36305123457)",
+    "https://nitter.kareem.one": "HTTP 403 on all 6 handles (live run 2026-10-03 04:25)",
     "https://xcancel.com": "suspended 2026-09-14",
     "https://x.yuuki.sh": "HTTP 403 to GitHub runners (2026-09-25)",
     "https://x.n0g.xyz": "404 then 429 in runs 36296323488 / 36298632006 / 36299586254",
@@ -2966,6 +3019,449 @@ def test_a_body_that_arrives_in_several_chunks_is_read_whole():
     assert refused is None, "a body over MAX_BYTES must be refused, not truncated and parsed"
     assert "larger than" in health["capped"].last_error
 
+
+
+# ===================================================================== native cycle speculation
+# The bot predicts a version's livestream / maintenance / pre-install times from the published
+# rhythm when no live source has spoken yet, labels them estimated, and lets any real source
+# overwrite them. These tests pin the maths against the real history of all four games.
+TZ8 = timezone(timedelta(hours=8))
+
+
+def at8(text: str) -> int:
+    """'2026-11-04 06:00' in the publisher's clock (UTC+8) -> unix seconds."""
+    return int(datetime.strptime(text, "%Y-%m-%d %H:%M").replace(tzinfo=TZ8).timestamp())
+
+
+# Real maintenance start dates as published by HoYoverse and Kuro, oldest first.
+PUBLISHED_MAINTENANCE = {
+    "genshin": ["2024-07-17", "2024-08-28", "2024-10-09", "2024-11-20", "2025-01-01", "2025-02-12",
+                "2025-03-26", "2025-05-07", "2025-06-18", "2025-07-30", "2025-09-10", "2025-10-22",
+                "2025-12-03", "2026-01-14", "2026-02-25", "2026-04-08", "2026-05-20", "2026-07-01",
+                "2026-08-12", "2026-09-23"],
+    "starrail": ["2024-06-19", "2024-07-31", "2024-09-10", "2024-10-23", "2024-12-04", "2025-01-15",
+                 "2025-02-26", "2025-04-09", "2025-05-21", "2025-07-02", "2025-08-13", "2025-09-24",
+                 "2025-11-05", "2025-12-17", "2026-02-13", "2026-03-25", "2026-04-22", "2026-06-01",
+                 "2026-07-15", "2026-08-26", "2026-09-28"],
+    "zzz": ["2025-01-22", "2025-03-12", "2025-04-23", "2025-06-06", "2025-07-16", "2025-09-04",
+            "2025-10-15", "2025-11-26", "2025-12-30", "2026-02-06", "2026-03-24", "2026-05-06",
+            "2026-06-17", "2026-07-29", "2026-09-09"],
+    "wuwa": ["2024-11-14", "2025-01-02", "2025-02-13", "2025-03-27", "2025-04-29", "2025-06-12",
+             "2025-07-24", "2025-08-28", "2025-10-09", "2025-11-20", "2025-12-25", "2026-02-05",
+             "2026-03-19", "2026-04-30", "2026-06-08", "2026-07-10", "2026-08-20", "2026-09-30"],
+}
+
+
+def _history_records(game_key: str, count: int) -> dict:
+    """The first `count` published maintenance dates as real (non-estimated) version records."""
+    hhmm = "04:00" if game_key == "wuwa" else "06:00"
+    records = {}
+    for i, day in enumerate(PUBLISHED_MAINTENANCE[game_key][:count]):
+        records[f"0.{i}"] = {"data": {"maint_start_ts": at8(f"{day} {hhmm}")},
+                             "prov": {"maint_start_ts": [schedule.PRIORITY["hoyolab"], 1]}}
+    return records
+
+
+def test_discord_timestamp_tags_decode_to_the_published_wall_clock():
+    """<t:EPOCH:F> carries plain unix seconds; the suffix only picks a rendering."""
+    cases = [
+        (1716552000, "Fri 2024-05-24 20:00"),      # GI 4.7 Special Program
+        (1717759800, "Fri 2024-06-07 19:30"),      # HSR 2.3 Special Program
+        (1718748000, "Wed 2024-06-19 06:00"),      # HSR 2.3 maintenance start
+        (1718766000, "Wed 2024-06-19 11:00"),      # HSR 2.3 maintenance end
+        (1721167200, "Wed 2024-07-17 06:00"),      # GI 4.8 maintenance start
+        (1790114400, "Wed 2026-09-23 06:00"),      # GI 7.1 maintenance start
+    ]
+    for epoch, want in cases:
+        assert datetime.fromtimestamp(epoch, TZ8).strftime("%a %Y-%m-%d %H:%M") == want
+        for style in ("F", "R", "d", "t"):         # the style never changes the instant
+            assert discord_ts(epoch, style) == f"<t:{epoch}:{style}>"
+
+
+def test_snap_weekday_moves_to_the_nearest_matching_day():
+    wed = datetime(2026, 11, 4, 6, 0, tzinfo=TZ8)
+    assert wed.weekday() == 2
+    assert schedule._snap_weekday(wed, 2) == wed                       # already right -> untouched
+    assert schedule._snap_weekday(wed, 3).day == 5                     # Thu: forward one
+    assert schedule._snap_weekday(wed, 1).day == 3                     # Tue: back one
+    assert schedule._snap_weekday(wed, 5).day == 7                     # Sat: forward three
+    assert schedule._snap_weekday(wed, 6).day == 1                     # Sun: back three, not +4
+    assert schedule._snap_weekday(wed, 2).hour == 6                    # time of day preserved
+
+
+def test_observed_starts_never_learns_from_its_own_guess():
+    older, newer = at8("2026-08-12 06:00"), at8("2026-09-23 06:00")
+    records = {
+        "1.0": {"data": {"maint_start_ts": newer}, "prov": {}},
+        "1.1": {"data": {"maint_start_ts": at8("2026-11-04 06:00"),
+                         "estimated": ["maint_start_ts"]}},            # speculated -> ignored
+        "1.2": {"data": {"maint_start_ts": "junk"}},
+        "1.3": {"data": {"maint_start_ts": 0}},
+        "1.4": {"data": None},
+        "1.5": "not a record",
+        "1.6": {"data": {"maint_start_ts": older}},
+        "1.7": {"data": {"maint_start_ts": 1000}},                     # before TS_MIN -> ignored
+    }
+    assert schedule.observed_starts(records) == [("1.6", older), ("1.0", newer)]
+    assert schedule.observed_starts({}) == [] and schedule.observed_starts(None) == []
+
+
+def test_observed_cadence_prefers_full_history_over_a_short_window():
+    starts = [("v", at8(f"{d} 06:00")) for d in PUBLISHED_MAINTENANCE["starrail"]]
+    # HSR's recent run is 58, 40, 28, 40, 44, 42, 33 days; the full history still reads 42.
+    assert schedule.observed_cadence_days(starts) == 42
+    assert schedule.observed_cadence_days(starts[-3:]) == 37.5      # a short window is distracted
+    # implausible gaps are discarded rather than averaged in
+    assert schedule.observed_cadence_days([("a", 0), ("b", 10 ** 9)]) is None
+    assert schedule.observed_cadence_days([("a", 0)]) is None
+    assert schedule.observed_cadence_days([]) is None
+
+
+def test_next_version_flags_the_major_rollover():
+    assert schedule.next_version("7.1") == ("7.2", "")
+    assert schedule.next_version("3.2") == ("3.3", "")
+    # past .6 the series has rolled at both .7 (GI 6.7 -> 7.0) and .8 (GI 4.8 -> 5.0)
+    assert schedule.next_version("3.7") == ("3.8", "4.0")
+    assert schedule.next_version("4.8") == ("4.9", "5.0")
+    assert schedule.next_version("") == ("", "")
+    assert schedule.next_version("not-a-version") == ("", "")
+
+
+def test_predict_cycle_backtests_the_published_history():
+    """Replay every game: predict version N knowing only versions before it.
+
+    The floors are the accuracy actually measured over this corpus. Genshin has never missed a
+    42-day beat in 20 versions and must be predicted to the minute every single time.
+    """
+    # Measured over this corpus: GI 18/18 exact, HSR 14/19, ZZZ 6/13, WW 9/16. The floors sit
+    # just below so a real regression fails while a harmless tie-break change does not.
+    floors = {"genshin": (1.00, 1.00), "starrail": (0.70, 0.80),
+              "zzz": (0.45, 0.50), "wuwa": (0.55, 0.65)}          # (exact, within 3 days)
+    for game_key, (exact_floor, near_floor) in floors.items():
+        days = PUBLISHED_MAINTENANCE[game_key]
+        hhmm = "04:00" if game_key == "wuwa" else "06:00"
+        exact = near = total = 0
+        for i in range(schedule.SPECULATE_MIN_HISTORY, len(days)):
+            records = _history_records(game_key, i)
+            truth = at8(f"{days[i]} {hhmm}")
+            now = records[f"0.{i - 1}"]["data"]["maint_start_ts"] + 86400
+            guess = schedule.predict_cycle(GAMES[game_key], records, now)
+            assert guess, (game_key, days[i])
+            off = abs(guess["maint_start_ts"] - truth)
+            total += 1
+            exact += off == 0
+            near += off <= 3 * 86400
+        assert exact / total >= exact_floor, f"{game_key}: {exact}/{total} exact"
+        assert near / total >= near_floor, f"{game_key}: {near}/{total} within 3 days"
+
+
+def test_predict_cycle_matches_the_documented_forecast():
+    """The four headline predictions in docs/TIMESTAMP-PATTERNS.md, from a cold start."""
+    now = at8("2026-10-03 12:00")
+    want = {
+        "genshin": ("7.2", "", "2026-10-23 20:00", "2026-11-02 11:00", "2026-11-04 06:00", "2026-11-04 11:00"),
+        "starrail": ("4.7", "", "2026-10-30 19:30", "2026-11-09 14:00", "2026-11-11 06:00", "2026-11-11 11:00"),
+        "zzz": ("3.3", "", "2026-10-09 19:30", "2026-10-19 12:00", "2026-10-21 06:00", "2026-10-21 11:00"),
+        "wuwa": ("3.8", "4.0", "2026-10-30 19:00", "2026-11-10 10:00", "2026-11-12 04:00", "2026-11-12 11:00"),
+    }
+    for game_key, (ver, alt, program, pre, start, end) in want.items():
+        got = schedule.predict_cycle(GAMES[game_key], {}, now)       # no history -> shipped anchor
+        assert got, game_key
+        assert (got["version"], got["version_alt"]) == (ver, alt), game_key
+        assert got["program_ts"] == at8(program), (game_key, "program")
+        assert got["preinstall_ts"] == at8(pre), (game_key, "pre-install")
+        assert got["maint_start_ts"] == at8(start), (game_key, "maintenance start")
+        assert got["maint_end_ts"] == at8(end), (game_key, "maintenance end")
+        assert got["learned"] is False and got["observed"] == 0
+
+
+def test_speculation_never_outranks_or_overwrites_a_real_source():
+    records = _history_records("genshin", 4)
+    now = at8("2026-10-03 12:00")
+    real_start, real_program = at8("2026-11-05 06:00"), at8("2026-10-24 20:00")
+    data = {"maint_start_ts": real_start, "program_ts": real_program}
+    prov = {"maint_start_ts": [schedule.PRIORITY["hoyolab"], 1],
+            "program_ts": [schedule.PRIORITY["news"], 1]}
+    assert schedule.derive_cycle(GAMES["genshin"], "7.2", data, prov, now, records) == []
+    assert data["maint_start_ts"] == real_start and data["program_ts"] == real_program
+    assert "estimated" not in data
+    assert schedule.PRIORITY["pattern"] < min(schedule.PRIORITY[k] for k in
+                                              ("countdown", "launcher", "x", "news", "hoyolab",
+                                               "kuro", "override"))
+
+
+def test_speculation_is_labelled_estimated_and_shown_as_such_on_the_card():
+    records = _history_records("genshin", 4)
+    now = at8("2026-10-03 12:00")
+    data, prov = {"version": "7.2"}, {}
+    written = schedule.derive_cycle(GAMES["genshin"], "7.2", data, prov, now, records)
+    assert set(written) == {"program_ts", "maint_start_ts", "maint_end_ts"}
+    assert data["estimated"] == ["program_ts", "maint_start_ts", "maint_end_ts"]
+    assert data["estimate_sources"] == ["version cadence"]
+    for key in written:
+        assert prov[key][0] == schedule.PRIORITY["pattern"]
+    # merge() also chains the pre-install derivation onto the speculated maintenance date
+    record = {"data": {}, "prov": {}}
+    merged = schedule.merge(GAMES["genshin"], "7.2", [], record, {}, {}, now, records=records)
+    assert merged["maint_start_ts"] == at8("2026-11-04 06:00")
+    assert merged["preinstall_ts"] == at8("2026-11-02 11:00")
+    assert "preinstall_ts" in merged["estimated"]
+    rendered = json.dumps(cards.schedule_payload(GAMES["genshin"], merged, settings(),
+                                                 cards.Ping(), now), ensure_ascii=False)
+    assert "estimated from version cadence" in rendered
+    assert "the official notice replaces it automatically" in rendered
+
+
+def test_speculation_never_dates_the_anchor_version_itself():
+    """A livestream post for the newest version must not inherit its successor's dates."""
+    records = _history_records("genshin", 4)
+    anchor = max(records, key=lambda v: records[v]["data"]["maint_start_ts"])
+    now = at8("2026-10-03 12:00")
+    data, prov = {"version": anchor}, {}
+    assert schedule.derive_cycle(GAMES["genshin"], anchor, data, prov, now, records) == []
+    assert data == {"version": anchor} and prov == {}
+    assert schedule.derive_cycle(GAMES["genshin"], "0.1", data, prov, now, records) == []
+
+
+def test_a_corrupt_timestamp_in_state_can_never_abort_the_run():
+    """state.json is long-lived and hand-editable, so it can hold anything.
+
+    datetime.fromtimestamp() raises ValueError past year 9999, and predict_cycle runs inside
+    merge() -- an exception here would abort the whole schedule run and post nothing at all.
+    Implausible values are therefore dropped, exactly as observed_lead_h already drops them.
+    """
+    now = at8("2026-10-03 12:00")
+    hostile = [
+        None, {}, {"x": None}, {"x": "not a record"},
+        {"1.0": {"data": {"maint_start_ts": -5}}},
+        {"1.0": {"data": {"maint_start_ts": -(10 ** 15)}}},
+        {"1.0": {"data": {"maint_start_ts": 10 ** 15}}},        # year 31690708 -> ValueError
+        {"1.0": {"data": {"maint_start_ts": 10 ** 18}}},
+        {"1.0": {"data": {"maint_start_ts": float("nan")}}},
+        {"1.0": {"data": {"maint_start_ts": float("inf")}}},
+        {"1.0": {"data": {"maint_start_ts": True}}},
+        {"1.0": {"data": {"maint_start_ts": 1790114400, "estimated": "not a list"}}},
+    ]
+    for records in hostile:
+        schedule.predict_cycle(GAMES["genshin"], records, now)       # must not raise
+        schedule.derive_cycle(GAMES["genshin"], "7.2", {}, {}, now, records or {})
+        schedule.observed_starts(records)
+    # out-of-range values are dropped, not clamped into the history
+    assert schedule.observed_starts({"1.0": {"data": {"maint_start_ts": 10 ** 15}},
+                                     "1.1": {"data": {"maint_start_ts": 1790114400}}}) \
+        == [("1.1", 1790114400)]
+    # a hand-edited games.json anchor is bounded the same way
+    broken = replace(GAMES["genshin"],
+                     cadence=replace(GAMES["genshin"].cadence, anchor_ts=10 ** 15))
+    assert schedule.predict_cycle(broken, {}, now) is None
+
+
+def test_speculation_is_refused_outside_the_believable_horizon():
+    records = _history_records("genshin", 4)
+    far_past = at8("2020-01-01 00:00")
+    # an anchor many cycles stale still yields a FUTURE date, never one already behind us
+    guess = schedule.predict_cycle(GAMES["genshin"], records, at8("2026-10-03 12:00"))
+    assert guess["maint_start_ts"] > at8("2026-10-03 12:00")
+    # nothing to anchor on, and a game that declares no cadence at all
+    assert schedule.predict_cycle(GAMES["hna"], {}, far_past) is None
+    no_cadence = replace(GAMES["genshin"], cadence=None)
+    assert schedule.predict_cycle(no_cadence, records, far_past) is None
+    assert schedule.derive_cycle(no_cadence, "7.2", {}, {}, far_past, records) == []
+    assert schedule.derive_cycle(GAMES["genshin"], "", {}, {}, far_past, records) == []
+    # An anchor so old that the roll-forward gives up: the loop advances at most 24 cycles
+    # (~2.8 years at 42 days), so a 2002 anchor never reaches the present and no date is shown.
+    # Plausible timestamps, so they survive the TS_MIN/TS_MAX filter and really exercise the loop.
+    stale = {"0.0": {"data": {"maint_start_ts": at8("2002-01-02 06:00")}, "prov": {}},
+             "0.1": {"data": {"maint_start_ts": at8("2002-02-13 06:00")}, "prov": {}}}
+    assert schedule.observed_starts(stale), "these must survive the plausibility filter"
+    assert schedule.predict_cycle(GAMES["genshin"], stale, at8("2026-10-03 12:00")) is None
+
+
+def test_cadence_config_survives_malformed_values():
+    assert gconfig._cadence(None) is None and gconfig._cadence({}) is None
+    assert gconfig._cadence({"days": "soon"}) is None
+    assert gconfig._cadence({"days": 0}) is None and gconfig._cadence({"days": 9999}) is None
+    assert gconfig._cadence({"maint_hours": 0}) is None
+    assert gconfig._cadence({"tz_offset_h": 99}) is None
+    loose = gconfig._cadence({"days": 42, "maint_weekday": "garbage", "maint_time": "99:99",
+                              "program_weekday": 11, "program_time": "no", "anchor_ts": "soon"})
+    assert loose.maint_weekday == 2 and loose.maint_time == (6, 0)    # defaults, never a crash
+    assert loose.program_weekday == 4 and loose.program_time == (20, 0) and loose.anchor_ts == 0
+    assert gconfig._cadence({"days": 42, "maint_weekday": "thursday"}).maint_weekday == 3
+    assert gconfig._cadence({"days": 42, "maint_weekday": 6}).maint_weekday == 6
+    for g in GAMES.values():                                          # shipped config is valid
+        if g.cadence is not None:
+            assert 0 <= g.cadence.maint_weekday <= 6
+            assert g.cadence.confidence in ("high", "medium", "low")
+            assert g.cadence.anchor_ts > 0 and g.cadence.anchor_version
+
+
+def test_a_real_notice_replaces_the_speculation_and_edits_the_card():
+    """Speculate -> post, then the official notice lands on a different day -> ONE silent edit."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        now = at8("2026-10-03 12:00")
+        records = _history_records("genshin", 4)
+        for rec in records.values():                     # history only, never posted
+            rec["status"] = "posted"
+            rec["card_retired"] = True
+
+        ctx = make_ctx(sp, now=now)
+        ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, message_id="card-1")])
+        item = Item("hoyolab", "genshin", "teaser-7.2", "https://www.hoyolab.com/article/teaser-7.2",
+                    "Version 7.2 Special Program announcement", "coming soon", now)
+        teaser = schedule.Extract(item, "program", "7.2", fields={})
+        asyncio.run(schedule._handle_version(ctx, GAMES["genshin"], "7.2", [teaser], records,
+                                             {}, {}, True))
+        posted = records["7.2"]
+        assert posted["data"]["maint_start_ts"] == at8("2026-11-04 06:00")
+        assert "maint_start_ts" in posted["data"]["estimated"]
+        assert posted["message_id"] == "card-1"
+        first_hash = posted["payload_hash"]
+
+        # the official notice says the 5th, not the 4th
+        real_start, real_end = at8("2026-11-05 06:00"), at8("2026-11-05 11:00")
+        notice_item = Item("hoyolab", "genshin", "notice-7.2",
+                           "https://www.hoyolab.com/article/notice-7.2",
+                           "Version 7.2 Update Details", "official notice", now + 3600)
+        notice = schedule.Extract(notice_item, "maintenance", "7.2",
+                                  fields={"maint_start_ts": real_start, "maint_end_ts": real_end})
+        ctx2 = make_ctx(sp, now=now + 3600)
+        ctx2.webhook = ScriptedWebhook([SendResult(True, 200, message_id="card-1")])
+        asyncio.run(schedule._handle_version(ctx2, GAMES["genshin"], "7.2", [notice], records,
+                                             {}, {}, True))
+        updated = records["7.2"]
+        assert updated["data"]["maint_start_ts"] == real_start
+        assert "maint_start_ts" not in (updated["data"].get("estimated") or [])
+        assert updated["prov"]["maint_start_ts"][0] == schedule.PRIORITY["hoyolab"]
+        assert updated["payload_hash"] != first_hash
+        assert updated["message_id"] == "card-1", "the same card must be edited, not reposted"
+        assert len(ctx2.webhook.edits) == 1 and ctx2.webhook.sends == []
+
+
+def test_a_correct_speculation_moves_nothing_but_the_estimated_caveat():
+    """When the official notice confirms the guess, no timestamp on the card may move.
+
+    The card is still edited exactly once, because it must stop telling readers the times are
+    estimated — but that one edit is silent, changes no date, and is the ONLY difference. A
+    further run with the same notice costs nothing at all.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        now = at8("2026-10-03 12:00")
+        records = _history_records("genshin", 4)
+        for rec in records.values():
+            rec["status"] = "posted"
+            rec["card_retired"] = True
+
+        ctx = make_ctx(sp, now=now)
+        ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, message_id="card-1")])
+        item = Item("hoyolab", "genshin", "teaser-7.2", "https://www.hoyolab.com/article/teaser-7.2",
+                    "Version 7.2 Special Program announcement", "coming soon", now)
+        asyncio.run(schedule._handle_version(ctx, GAMES["genshin"], "7.2",
+                                             [schedule.Extract(item, "program", "7.2", fields={})],
+                                             records, {}, {}, True))
+        guessed = dict(records["7.2"]["data"])
+        speculated_card = json.dumps(ctx.webhook.sends[0], ensure_ascii=False)
+        assert "estimated from version cadence" in speculated_card
+
+        # the official notice confirms exactly what was predicted
+        notice_item = Item("hoyolab", "genshin", "notice-7.2",
+                           "https://www.hoyolab.com/article/notice-7.2",
+                           "Version 7.2 Update Details", "official notice", now + 3600)
+        fields = {k: guessed[k] for k in ("maint_start_ts", "maint_end_ts", "preinstall_ts",
+                                          "program_ts")}
+        # a maintenance notice never announces the livestream, so the air time arrives on the
+        # program post — both are confirming exactly what was already predicted
+        notice = schedule.Extract(notice_item, "maintenance", "7.2",
+                                  fields={k: v for k, v in fields.items() if k != "program_ts"})
+        announce = schedule.Extract(item, "program", "7.2",
+                                    fields={"program_ts": fields["program_ts"]})
+        ctx2 = make_ctx(sp, now=now + 3600)
+        ctx2.webhook = ScriptedWebhook([SendResult(True, 200, message_id="card-1")])
+        asyncio.run(schedule._handle_version(ctx2, GAMES["genshin"], "7.2", [notice, announce],
+                                             records, {}, {}, True))
+        after = records["7.2"]
+        assert ctx2.webhook.sends == [], "a confirmed prediction must never be re-posted or re-pinged"
+        assert len(ctx2.webhook.edits) == 1, "exactly one silent edit"
+        # not one timestamp moved, and the card no longer calls them estimates
+        for key, value in fields.items():
+            assert after["data"][key] == value, key
+        assert not after["data"].get("estimated")
+        confirmed_card = json.dumps(ctx2.webhook.edits[0][1], ensure_ascii=False)
+        assert "estimated from version cadence" not in confirmed_card
+        for stamp in fields.values():                       # the same <t:...> tags, untouched
+            assert f"<t:{stamp}:" in speculated_card and f"<t:{stamp}:" in confirmed_card
+
+        # third run, same notice, nothing new to say -> zero Discord calls
+        ctx3 = make_ctx(sp, now=now + 7200)
+        ctx3.webhook = ScriptedWebhook([])
+        asyncio.run(schedule._handle_version(ctx3, GAMES["genshin"], "7.2", [notice, announce],
+                                             records, {}, {}, True))
+        assert ctx3.webhook.edits == [] and ctx3.webhook.sends == []
+
+
+def test_speculation_does_not_churn_the_state_file():
+    """Re-running with no new information must not re-stamp provenance with the new clock."""
+    records = _history_records("genshin", 4)
+    data, prov = {"version": "7.2"}, {}
+    first = schedule.derive_cycle(GAMES["genshin"], "7.2", data, prov, at8("2026-10-03 12:00"), records)
+    assert first
+    snapshot, prov_snapshot = dict(data), {k: list(v) for k, v in prov.items()}
+    again = schedule.derive_cycle(GAMES["genshin"], "7.2", data, prov, at8("2026-10-04 12:00"), records)
+    assert again == [], "an unchanged prediction must rewrite nothing"
+    assert data == snapshot and {k: list(v) for k, v in prov.items()} == prov_snapshot
+
+
+def _speculate(*argv) -> tuple[int, str]:
+    """Run the CLI against an EMPTY state file, never the repo's committed one.
+
+    state/state.json is rewritten by the monitor workflow on every live run. A test that reads
+    it asserts on data that changes under it: the moment a real 7.2 notice lands, the anchor
+    becomes 7.2, the prediction becomes 7.3, and CI fails on a pull request that touched none of
+    this. Pinning STATE_PATH to an empty temp file makes the cold-start path deterministic.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        previous = os.environ.get("STATE_PATH")
+        os.environ["STATE_PATH"] = str(Path(tmp) / "state.json")
+        try:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = gxmain.main(list(argv))
+            return rc, out.getvalue()
+        finally:
+            if previous is None:
+                os.environ.pop("STATE_PATH", None)
+            else:
+                os.environ["STATE_PATH"] = previous
+
+
+def test_speculate_command_reports_every_game_without_posting():
+    rc, text = _speculate("speculate", "--now", str(at8("2026-10-03 12:00")), "--verbose")
+    assert rc == 0
+    for short in ("GI", "HSR", "ZZZ", "WW"):
+        assert f"\n{short:5}" in f"\n{text}", short
+    assert "Genshin Impact 7.2" in text
+    assert "Wuthering Waves 3.8 (or 4.0 if the major rolls over)" in text
+    assert "estimates only" in text
+    assert "real maintenance dates on file: none" in text       # --verbose, empty state
+    # a cold start must say so rather than claiming it learned anything
+    assert "shipped cold-start value" in text and "learned from" not in text
+
+    rc, one = _speculate("speculate", "--game", "zzz")
+    assert rc == 0 and "Zenless" in one and "Genshin" not in one
+
+
+def test_speculate_command_survives_the_real_state_file():
+    """Same command against whatever state/state.json currently holds: must never crash.
+
+    Deliberately asserts nothing about the predicted versions -- that file is rewritten by the
+    monitor on every run and is not a fixture.
+    """
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert gxmain.main(["speculate"]) == 0
+    assert "estimates only" in out.getvalue()
 
 if __name__ == "__main__":
     sys.exit(main())

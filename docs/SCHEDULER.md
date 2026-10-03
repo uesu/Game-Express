@@ -180,3 +180,53 @@ at least one full minute, although a Game-Express run takes only about 20–60 s
 So a private repo should run **every 30 minutes**. Livestream codes usually stay valid for about
 a day, so that is still fast enough. The classic token's `repo` scope already covers private
 repos. Your account's **Billing** page shows the minutes used.
+
+## Speculated timestamps (version cadence)
+
+When a version has been named but nobody has published its dates yet, the bot fills the gaps from
+that game's own release rhythm instead of showing four `TBA` lines. Those values are written at
+`PRIORITY["pattern"]` — below *every* real source — so an official notice replaces them the moment
+it appears, and the card says so in its footer:
+
+> 🕒 program time, pre-install, maintenance start, maintenance end estimated from version cadence —
+> the official notice replaces it automatically
+
+The rhythm lives in `config/games.json` under each game's `cadence` block. Nothing is hard-coded:
+
+```json
+"cadence": {
+  "days": 42,                 // median gap between maintenance starts
+  "maint_weekday": "Wed",     // the day maintenance usually begins
+  "maint_time": "06:00",      // publisher local time (UTC+8)
+  "maint_hours": 5,           // typical downtime (Kuro runs 7)
+  "program_weekday": "Fri",   // livestream / special program day
+  "program_time": "20:00",
+  "program_lead_days": 12,    // how far before maintenance the program airs
+  "confidence": "high",       // high | medium | low — see docs/TIMESTAMP-PATTERNS.md
+  "anchor_version": "7.1",    // cold-start anchor, used only until state has 2 real dates
+  "anchor_ts": 1790114400
+}
+```
+
+Delete the block and that game is never speculated about. A malformed value falls back to the
+documented default rather than raising.
+
+**Once the installation has seen two real maintenance notices** it stops using `days` and
+`maint_weekday` and uses its own observed median gap and modal weekday instead — the same way
+pre-install leads are already learned. Speculated values are excluded from that history, so a
+guess can never become its own evidence.
+
+**Shortened and holiday-shifted patches** are the known weak spot. Genshin has not missed a
+42-day beat in 20 versions and is predicted to the minute; Star Rail, ZZZ and Wuthering Waves
+compress and stretch around Chinese New Year (HSR went 58 days, then 28) and land exactly right
+between 46 % and 74 % of the time. That is what the `confidence` field is for. The full
+measurement, the backtest and the forecast for each game are in
+[docs/TIMESTAMP-PATTERNS.md](TIMESTAMP-PATTERNS.md).
+
+To see what would be posted without posting anything:
+
+```bash
+python -m gamexpress speculate            # every game
+python -m gamexpress speculate --verbose  # plus the real dates it is anchored on
+python -m gamexpress speculate --game genshin --now 1791000000
+```
