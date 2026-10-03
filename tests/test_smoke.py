@@ -703,6 +703,14 @@ def test_an_endless_response_body_is_cut_off_instead_of_eating_the_runner():
         async def read(self, n):
             return b"a" * min(n, self._size)
 
+        async def iter_chunked(self, n):
+            """The hostile host answers forever — in chunks, like a real one."""
+            left = self._size
+            while left > 0:
+                take = min(n, left)
+                left -= take
+                yield b"a" * take
+
         async def __aenter__(self):
             return self
 
@@ -2855,6 +2863,68 @@ def test_a_live_run_pings_even_with_a_stale_no_ping_variable():
 
     test_run = settings(NO_PING="1", PING_SCHEDULE=role)      # ⑥ off -> a test card never pings
     assert not test_run.ping("schedule", "starrail")
+
+
+def test_a_body_that_arrives_in_several_chunks_is_read_whole():
+    """A real feed is answered over several TCP reads. `content.read(n)` returns only what is
+    buffered at that instant, so the body used to come back TRUNCATED and a perfectly valid
+    feed failed as 'invalid JSON' (c3kay, kuro, fandom, raw.githubusercontent — all of them
+    HTTP 200 in the 2026-10-03 run). get_text must loop until EOF, and must still refuse a
+    body over the cap. Loopback only — no internet.
+    """
+    import aiohttp
+    from aiohttp import web
+
+    from gamexpress import http as ghttp
+
+    payload = json.dumps({"items": [{"id": i, "pad": "x" * 200} for i in range(8000)]})
+    assert len(payload) > 1_500_000, "the point of this test is a body bigger than one read"
+
+    async def handler(request):
+        resp = web.StreamResponse(headers={"Content-Type": "application/json"})
+        await resp.prepare(request)
+        data = payload.encode()
+        for i in range(0, len(data), 50_000):
+            await resp.write(data[i:i + 50_000])
+            await asyncio.sleep(0)        # hand control back: several separate feeds, like the wire
+        await resp.write_eof()
+        return resp
+
+    async def run():
+        app = web.Application()
+        app.router.add_get("/feed.json", handler)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        port = site._server.sockets[0].getsockname()[1]
+        url = f"http://127.0.0.1:{port}/feed.json"
+        try:
+            async with aiohttp.ClientSession() as session:
+                f = ghttp.Fetcher(session, timeout=15)
+                body = await f.get_text(url, source="chunked", retries=0)
+                got = await f.get_json(url, source="chunked", retries=0)
+
+                cap = ghttp.MAX_BYTES
+                ghttp.MAX_BYTES = 100_000          # same body, now over the cap
+                try:
+                    refused = await f.get_text(url, source="capped", retries=0)
+                finally:
+                    ghttp.MAX_BYTES = cap
+                return body, got, refused, f.health
+        finally:
+            await runner.cleanup()
+
+    body, got, refused, health = asyncio.run(run())
+
+    assert body is not None and len(body) == len(payload), \
+        f"truncated: got {0 if body is None else len(body)} of {len(payload)} chars"
+    assert isinstance(got, dict) and len(got["items"]) == 8000
+    assert health["chunked"].fail == 0, health["chunked"].last_error
+
+    assert refused is None, "a body over MAX_BYTES must be refused, not truncated and parsed"
+    assert "larger than" in health["capped"].last_error
+
 
 if __name__ == "__main__":
     sys.exit(main())
