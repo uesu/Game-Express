@@ -211,6 +211,10 @@ MAX_LEAD_H = 14 * 24               # reject corrupt/outlier observations (e.g. a
 SPECULATE_MIN_HISTORY = 2          # real maintenance dates needed before the shipped cadence is replaced
 SPECULATE_MAX_AHEAD_D = 120        # same horizon apply_estimates() allows for countdown sites
 CADENCE_MIN_D, CADENCE_MAX_D = 14, 120   # plausible gap between two versions of a live service
+# State is long-lived and hand-editable, so a stored timestamp can be anything. Values outside a
+# plausible calendar window are ignored rather than fed to datetime.fromtimestamp(), which raises
+# ValueError past year 9999 -- and an exception here would abort the whole schedule run.
+TS_MIN, TS_MAX = 1_000_000_000, 4_102_444_800        # 2001-09-09 .. 2100-01-01
 
 
 @dataclass
@@ -648,9 +652,9 @@ def observed_starts(records: dict) -> list[tuple[str, int]]:
             continue
         try:
             value = int(start)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
-        if value > 0:
+        if TS_MIN <= value <= TS_MAX:
             out.append((str(version), value))
     return sorted(out, key=lambda pair: pair[1])
 
@@ -711,7 +715,7 @@ def predict_cycle(game: Game, records: dict, now: int,
 
     anchor_version, anchor_ts = starts[-1] if starts else (cadence.anchor_version,
                                                            int(cadence.anchor_ts or 0))
-    if anchor_ts <= 0:
+    if not TS_MIN <= anchor_ts <= TS_MAX:        # also covers a hand-edited games.json anchor
         return None
     weekday = _modal_weekday(starts, tz, cadence.maint_weekday) if len(starts) >= SPECULATE_MIN_HISTORY \
         else cadence.maint_weekday

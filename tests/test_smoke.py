@@ -3090,16 +3090,19 @@ def test_snap_weekday_moves_to_the_nearest_matching_day():
 
 
 def test_observed_starts_never_learns_from_its_own_guess():
+    older, newer = at8("2026-08-12 06:00"), at8("2026-09-23 06:00")
     records = {
-        "1.0": {"data": {"maint_start_ts": 1000}, "prov": {}},
-        "1.1": {"data": {"maint_start_ts": 2000, "estimated": ["maint_start_ts"]}},   # speculated
+        "1.0": {"data": {"maint_start_ts": newer}, "prov": {}},
+        "1.1": {"data": {"maint_start_ts": at8("2026-11-04 06:00"),
+                         "estimated": ["maint_start_ts"]}},            # speculated -> ignored
         "1.2": {"data": {"maint_start_ts": "junk"}},
         "1.3": {"data": {"maint_start_ts": 0}},
         "1.4": {"data": None},
         "1.5": "not a record",
-        "1.6": {"data": {"maint_start_ts": 500}},
+        "1.6": {"data": {"maint_start_ts": older}},
+        "1.7": {"data": {"maint_start_ts": 1000}},                     # before TS_MIN -> ignored
     }
-    assert schedule.observed_starts(records) == [("1.6", 500), ("1.0", 1000)]
+    assert schedule.observed_starts(records) == [("1.6", older), ("1.0", newer)]
     assert schedule.observed_starts({}) == [] and schedule.observed_starts(None) == []
 
 
@@ -3220,6 +3223,39 @@ def test_speculation_never_dates_the_anchor_version_itself():
     assert schedule.derive_cycle(GAMES["genshin"], "0.1", data, prov, now, records) == []
 
 
+def test_a_corrupt_timestamp_in_state_can_never_abort_the_run():
+    """state.json is long-lived and hand-editable, so it can hold anything.
+
+    datetime.fromtimestamp() raises ValueError past year 9999, and predict_cycle runs inside
+    merge() -- an exception here would abort the whole schedule run and post nothing at all.
+    Implausible values are therefore dropped, exactly as observed_lead_h already drops them.
+    """
+    now = at8("2026-10-03 12:00")
+    hostile = [
+        None, {}, {"x": None}, {"x": "not a record"},
+        {"1.0": {"data": {"maint_start_ts": -5}}},
+        {"1.0": {"data": {"maint_start_ts": -(10 ** 15)}}},
+        {"1.0": {"data": {"maint_start_ts": 10 ** 15}}},        # year 31690708 -> ValueError
+        {"1.0": {"data": {"maint_start_ts": 10 ** 18}}},
+        {"1.0": {"data": {"maint_start_ts": float("nan")}}},
+        {"1.0": {"data": {"maint_start_ts": float("inf")}}},
+        {"1.0": {"data": {"maint_start_ts": True}}},
+        {"1.0": {"data": {"maint_start_ts": 1790114400, "estimated": "not a list"}}},
+    ]
+    for records in hostile:
+        schedule.predict_cycle(GAMES["genshin"], records, now)       # must not raise
+        schedule.derive_cycle(GAMES["genshin"], "7.2", {}, {}, now, records or {})
+        schedule.observed_starts(records)
+    # out-of-range values are dropped, not clamped into the history
+    assert schedule.observed_starts({"1.0": {"data": {"maint_start_ts": 10 ** 15}},
+                                     "1.1": {"data": {"maint_start_ts": 1790114400}}}) \
+        == [("1.1", 1790114400)]
+    # a hand-edited games.json anchor is bounded the same way
+    broken = replace(GAMES["genshin"],
+                     cadence=replace(GAMES["genshin"].cadence, anchor_ts=10 ** 15))
+    assert schedule.predict_cycle(broken, {}, now) is None
+
+
 def test_speculation_is_refused_outside_the_believable_horizon():
     records = _history_records("genshin", 4)
     far_past = at8("2020-01-01 00:00")
@@ -3232,9 +3268,12 @@ def test_speculation_is_refused_outside_the_believable_horizon():
     assert schedule.predict_cycle(no_cadence, records, far_past) is None
     assert schedule.derive_cycle(no_cadence, "7.2", {}, {}, far_past, records) == []
     assert schedule.derive_cycle(GAMES["genshin"], "", {}, {}, far_past, records) == []
-    # an anchor so old that rolling it forward would overshoot the horizon
-    stale = {"0.0": {"data": {"maint_start_ts": 1}, "prov": {}},
-             "0.1": {"data": {"maint_start_ts": 1 + 42 * 86400}, "prov": {}}}
+    # An anchor so old that the roll-forward gives up: the loop advances at most 24 cycles
+    # (~2.8 years at 42 days), so a 2002 anchor never reaches the present and no date is shown.
+    # Plausible timestamps, so they survive the TS_MIN/TS_MAX filter and really exercise the loop.
+    stale = {"0.0": {"data": {"maint_start_ts": at8("2002-01-02 06:00")}, "prov": {}},
+             "0.1": {"data": {"maint_start_ts": at8("2002-02-13 06:00")}, "prov": {}}}
+    assert schedule.observed_starts(stale), "these must survive the plausibility filter"
     assert schedule.predict_cycle(GAMES["genshin"], stale, at8("2026-10-03 12:00")) is None
 
 
@@ -3374,20 +3413,55 @@ def test_speculation_does_not_churn_the_state_file():
     assert data == snapshot and {k: list(v) for k, v in prov.items()} == prov_snapshot
 
 
+def _speculate(*argv) -> tuple[int, str]:
+    """Run the CLI against an EMPTY state file, never the repo's committed one.
+
+    state/state.json is rewritten by the monitor workflow on every live run. A test that reads
+    it asserts on data that changes under it: the moment a real 7.2 notice lands, the anchor
+    becomes 7.2, the prediction becomes 7.3, and CI fails on a pull request that touched none of
+    this. Pinning STATE_PATH to an empty temp file makes the cold-start path deterministic.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        previous = os.environ.get("STATE_PATH")
+        os.environ["STATE_PATH"] = str(Path(tmp) / "state.json")
+        try:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = gxmain.main(list(argv))
+            return rc, out.getvalue()
+        finally:
+            if previous is None:
+                os.environ.pop("STATE_PATH", None)
+            else:
+                os.environ["STATE_PATH"] = previous
+
+
 def test_speculate_command_reports_every_game_without_posting():
-    out = io.StringIO()
-    with contextlib.redirect_stdout(out):
-        rc = gxmain.main(["speculate", "--now", str(at8("2026-10-03 12:00")), "--verbose"])
-    text = out.getvalue()
+    rc, text = _speculate("speculate", "--now", str(at8("2026-10-03 12:00")), "--verbose")
     assert rc == 0
     for short in ("GI", "HSR", "ZZZ", "WW"):
-        assert f"\n{short:5}" in f"\n{text}" or text.startswith(short), short
+        assert f"\n{short:5}" in f"\n{text}", short
     assert "Genshin Impact 7.2" in text
     assert "Wuthering Waves 3.8 (or 4.0 if the major rolls over)" in text
     assert "estimates only" in text
-    with contextlib.redirect_stdout(io.StringIO()) as one:
-        assert gxmain.main(["speculate", "--game", "zzz"]) == 0
-    assert "Zenless" in one.getvalue() and "Genshin" not in one.getvalue()
+    assert "real maintenance dates on file: none" in text       # --verbose, empty state
+    # a cold start must say so rather than claiming it learned anything
+    assert "shipped cold-start value" in text and "learned from" not in text
+
+    rc, one = _speculate("speculate", "--game", "zzz")
+    assert rc == 0 and "Zenless" in one and "Genshin" not in one
+
+
+def test_speculate_command_survives_the_real_state_file():
+    """Same command against whatever state/state.json currently holds: must never crash.
+
+    Deliberately asserts nothing about the predicted versions -- that file is rewritten by the
+    monitor on every run and is not a fixture.
+    """
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert gxmain.main(["speculate"]) == 0
+    assert "estimates only" in out.getvalue()
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -49,7 +49,7 @@ ever loses the branch — the sandbox's git history reset twice during developme
 or the other, never both.)
 
 It was verified by checking out a pristine `origin/main` into a scratch worktree, applying the
-patch, and running the full gate on the result: compileall, `validate`, **161/161 tests**,
+patch, and running the full gate on the result: compileall, `validate`, **163/163 tests**,
 preview render and `ruff` all pass. PR #26 carries exactly that tree and is green on the same
 gate plus GitHub's own CI.
 
@@ -64,7 +64,7 @@ rebuilt from the patch instead, a new coding session pointed at `uesu/Game-Expre
 > Apply `game-express-speculation.patch` from the repo root onto a fresh branch, run the full CI
 > gate (`python -m compileall -q gamexpress tests`, `python -m gamexpress validate`,
 > `python tests/test_smoke.py`, `python -m gamexpress preview --out /tmp/previews`,
-> `ruff check gamexpress/ tests/`), confirm 161/161 tests pass, then push the branch and open a
+> `ruff check gamexpress/ tests/`), confirm 163/163 tests pass, then push the branch and open a
 > pull request.
 
 Either way, land **one** of them — the PR is the patch, so doing both double-applies.
@@ -75,7 +75,7 @@ Create the empty public prod repo on GitHub first, then open a second session po
 
 > This repo is the production deployment of the public repo `uesu/Game-Express`. Clone
 > `https://github.com/uesu/Game-Express` into a temp folder, copy in ONLY the runtime manifest
-> from its `PROD-REPO-SETUP.md` §1 (the `gamexpress/` package, `config/games.json`,
+> from its `docs/PROD-REPO-SETUP.md` §1 (the `gamexpress/` package, `config/games.json`,
 > `config/overrides.json`, `config/program_announcements.json`, `state/.gitkeep`,
 > `state/state.json`, `requirements.txt`, `.gitignore`, `.github/workflows/monitor.yml`,
 > `PRIVACY_POLICY.md`, `TERMS_OF_SERVICE.md`), write the 3-line prod README from §2, then open a
@@ -131,9 +131,11 @@ Discord portal, or publish them somewhere else (Gist, site). Don't leave them da
 ### Leave behind (dev only)
 
 ```
-tests/                     38 files — 161 tests, fixtures, golden cards
+tests/                     38 files — 163 tests, fixtures, golden cards
 docs/                      SOURCES, SCHEDULER, TESTING, SECURITY, DEPENDABOT,
-                           PYTHON_VERSION, TIMESTAMP-PATTERNS
+                           PYTHON_VERSION, TIMESTAMP-PATTERNS, PROD-REPO-SETUP
+                           (this guide lives in docs/ too — it describes the move,
+                            it is not part of what gets moved)
 .github/workflows/ci.yml           PRs happen in dev
 .github/workflows/python_version_bump.yml
 .github/scripts/python_version_bump.py

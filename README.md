@@ -491,7 +491,7 @@ should see in Discord, and how to tell that the whole thing is working.
   schedule card — every test fetches the live sources, so what you see in Discord is what a live
   run would post (see [Manual controls](#-manual-controls)).
 - **CI** (`.github/workflows/ci.yml`) runs on every PR and every push to `main`: install,
-  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **161 offline tests
+  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **163 offline tests
   with no network and no secrets**:
   - real official posts captured on 2026-09-25, which must reproduce your reference cards'
     timestamps;
@@ -711,7 +711,7 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
   self-hosted runtime (the Discord bot was removed in 1.7.0 — GitHub Actions is the only runtime),
   and the terms no longer claim the Service "never estimates" when a labelled countdown/banner-feed
   estimate is exactly what a card shows before the official notice lands.
-- 161 offline tests (new regression tests pin the stop-waiting behaviour, the webhook spacing,
+- 163 offline tests (new regression tests pin the stop-waiting behaviour, the webhook spacing,
   SHA pinning for every action, the three-tab HoYoLAB coverage, hostile-source handling, and
   that an unsorted feed full of old announcements still posts only the newest one),
   `ruff check .`,
