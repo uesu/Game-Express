@@ -43,6 +43,14 @@ percent-encoded. That blocks the two concrete attacks:
   nobody here wrote — a phishing line inside a card readers trust *because* it came from this
   bot. Encoded parens (or a dropped link) make that impossible.
 
+**Invisible characters.** `textutil.strip_invisible()` removes C0/C1 controls, zero-width
+spaces and joiners, the BOM, and the bidi overrides `U+202A–202E` / `U+2066–2069` — the ones
+that make a line *display* differently from what it says (a right-to-left override can render
+`NEWS` as `SWEN`, or hide where a line really ends). It runs inside `clean_text()`, which every
+scraped source already passes through, and again inside `cards.text()` as a last chokepoint, so
+a field arriving by any other route is cleaned too. Test:
+`test_invisible_and_bidi_characters_are_stripped_from_scraped_text`.
+
 **Text.** Mentions can never be injected: `Ping.allowed_mentions` sends `{"parse": []}` unless a
 role/@everyone was explicitly configured, and edits always send `{"parse": []}`. Scraped titles
 are bracket-escaped by `_md_link_text()`. Code strings must match `^[A-Z0-9]{5,20}$`.
@@ -90,9 +98,20 @@ thing to revisit if a third-party step is ever added to that job. zizmor's
   elevated token.
 * Dependabot watches both `pip` and `github-actions` weekly; `pip-audit` runs in CI; `zizmor`
   audits the workflows; `actionlint` validates them.
-* Actions are pinned to release tags (`@v7`, `@v4.1.0`), not SHAs. Accepted trade-off: tags let
-  security patches arrive without a PR, and all of them are first-party (`actions/*`,
-  `astral-sh/*`) or widely used. Pin to SHAs if this repo ever stops being personal.
+* **Every action is pinned to a full commit SHA**, with the human-readable version in a
+  trailing comment (`uses: actions/checkout@3d3c42e…  # v7`). This is the direct lesson of
+  March 2025: an attacker with a stolen bot token repointed *every* tag of
+  `tj-actions/changed-files` (v1 … v45.0.7) at one malicious commit that dumped runner memory —
+  secrets included — into the logs of roughly 23 000 repositories (CVE-2025-30066). Days
+  earlier `reviewdog/action-setup` was compromised the same way (CVE-2025-30154), and this
+  repository uses a reviewdog action. A tag can be moved; a SHA cannot. Repos pinned by SHA
+  were unaffected.
+* Pinning by SHA does **not** freeze the actions: Dependabot's `github-actions` ecosystem
+  updates SHA pins weekly and rewrites the version comment with them, so patches still arrive
+  as a reviewable PR — and because a floating major tag hides patch/minor movement, SHA pins
+  actually give Dependabot *more* to report, not less.
+  `test_every_action_is_pinned_to_a_commit_sha_with_a_readable_version_comment` fails CI if any
+  `uses:` ever goes back to a tag.
 
 ## 6. Integrity of state (T5)
 

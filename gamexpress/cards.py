@@ -28,7 +28,7 @@ from typing import Any
 from urllib.parse import quote
 
 from .config import Game, Ping, Settings
-from .textutil import truncate
+from .textutil import strip_invisible, truncate
 from .timeparse import discord_ts
 
 log = logging.getLogger("gamexpress.cards")
@@ -42,7 +42,11 @@ LEGEND = "STC — Subject to Change • TBA — To be Announced"
 
 # --------------------------------------------------------------------------- primitives
 def text(content: str) -> dict:
-    return {"type": 10, "content": content}
+    # Last chokepoint before Discord. Scraped text is already cleaned at the source, but a
+    # field can also arrive through an override or a sample, and an invisible character (bidi
+    # override, zero-width space) on a card is never intentional - it only ever makes a card
+    # display something other than what it says.
+    return {"type": 10, "content": strip_invisible(content)}
 
 
 def sep(divider: bool = True, spacing: int = 1) -> dict:

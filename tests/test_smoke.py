@@ -553,6 +553,47 @@ def test_no_ping_and_test_marker():
     assert set(CODE_SAMPLES) == {"genshin", "starrail", "zzz", "wuwa", "hna", "ananta"}
 
 
+def test_a_feed_full_of_old_announcements_still_posts_only_the_newest():
+    """A real timeline is not sorted and is mostly history: the 3.5 and 3.6 broadcasts are
+    still sitting there when 3.7 is announced. Whatever order a mirror hands them over in, the
+    run must post the current version once and leave the older ones alone."""
+    now = 1789300000
+    newest = item_from_fx_json("wuwa", fx("fx_wuwa_3_7_broadcast.json"))
+
+    def older(version, days):
+        old = item_from_fx_json("wuwa", fx("fx_wuwa_3_7_broadcast.json"))
+        old.id = f"old{version.replace('.', '')}"
+        old.url = old.url.replace("status/", f"status/{version.replace('.', '')}")
+        old.title = old.title.replace("3.7", version)
+        old.text = old.text.replace("3.7", version)
+        old.published_ts = newest.published_ts - days * 86400
+        return old
+
+    history = [older("3.5", 84), older("3.6", 42)]
+
+    for order in (history + [newest],                 # oldest -> newest
+                  [newest] + history,                 # newest -> oldest
+                  [history[1], newest, history[0]]):  # shuffled, like a real mirror
+        with tempfile.TemporaryDirectory() as tmp:
+            sp = Path(tmp) / "state.json"
+            ctx = make_ctx(sp)                        # seed run: nothing is posted
+            asyncio.run(schedule.run(ctx))
+            ctx.state.save()
+
+            ctx = make_ctx(sp, items={"wuwa": list(order)}, now=now)
+            asyncio.run(schedule.run(ctx))
+            posts = [x for x in ctx.webhook.sent if x["method"] == "POST"]
+            assert len(posts) == 1, (len(posts), [i.title for i in order])
+            blob = json.dumps(posts[0]["payload"], ensure_ascii=False)
+            assert "3.7" in blob and "3.5" not in blob and "3.6" not in blob
+
+            # and a second run over the same feed repeats nothing
+            ctx.state.save()
+            ctx2 = make_ctx(sp, items={"wuwa": list(order)}, now=now + 600)
+            asyncio.run(schedule.run(ctx2))
+            assert [x for x in ctx2.webhook.sent if x["method"] == "POST"] == []
+
+
 def test_a_source_dumping_hundreds_of_codes_cannot_flood_the_channel():
     """Insurance against a broken or tampered-with source: a run posts at most
     MAX_CARDS_PER_RUN cards per game and the leftovers go out on the next run, instead of
@@ -582,6 +623,27 @@ def test_a_source_dumping_hundreds_of_codes_cannot_flood_the_channel():
         ctx.games = [GAMES["zzz"]]
         asyncio.run(codeposter.run(ctx))
         assert len(ctx.webhook.sent) == codeposter.MAX_CARDS_PER_RUN
+
+
+def test_invisible_and_bidi_characters_are_stripped_from_scraped_text():
+    """Text is scraped, so it can carry characters that are not text: zero-width spaces that
+    break a code in half, and bidi overrides that make a line *display* differently from what
+    it says. clean_text() is the chokepoint every source goes through."""
+    from gamexpress.textutil import clean_text, strip_invisible
+
+    assert clean_text("Version\u200b 4.6\u202e Update\ufeff") == "Version 4.6 Update"
+    assert clean_text("GENSHIN\u2066GIFT") == "GENSHINGIFT"
+    assert strip_invisible("a\u0007b\u009fc\u2063d") == "abcd"
+    assert clean_text("line one\nline two\n\n\n\nline three") == "line one\nline two\n\nline three"
+    assert clean_text("real\u00a0space") == "real space"      # nbsp stays a space, not removed
+
+    # and the whole way through a card: an invisible character cannot hide inside a title
+    s_ = settings()
+    d = dict(SCHEDULE_SAMPLES["starrail"])
+    d["program_name"] = "Special\u202e Program"
+    blob = json.dumps(cards.schedule_payload(GAMES["starrail"], d, s_,
+                                             s_.ping("schedule", "starrail")), ensure_ascii=False)
+    assert "\u202e" not in blob and "\u200b" not in blob
 
 
 def test_a_hostile_source_cannot_inject_links_or_kill_a_card():
@@ -1093,7 +1155,7 @@ def test_workflows_cron_job_org_and_test_bench():
     assert "--unlaunched" in unl["run"] and "--kind codes" in unl["run"]
     for name in ("monitor.yml", "ci.yml"):
         text = (wf / name).read_text(encoding="utf-8")
-        assert "actions/checkout@v7" in text and "actions/setup-python@v7" in text, name
+        assert "uses: actions/checkout@" in text and "uses: actions/setup-python@" in text, name
     am = yaml.safe_load((wf / "ci.yml").read_text(encoding="utf-8"))["jobs"]["automerge"]
     assert am["needs"] == "test" and "vars.AUTO_MERGE_DEPENDABOT == 'yes'" in am["if"]   # only after green tests
     assert "dependabot[bot]" in am["if"] and am["permissions"] == {"contents": "write", "pull-requests": "write"}
@@ -1104,20 +1166,34 @@ def test_workflows_cron_job_org_and_test_bench():
     assert dep["updates"][0]["versioning-strategy"] == "increase-if-necessary"
 
 
-def test_astral_actions_are_pinned_to_a_full_version_tag():
-    """astral-sh publishes NO floating major tag (no `v10` for setup-uv, no `v4` for
-    ruff-action — only `v10.2.0`, `v4.1.0`). A `uses: astral-sh/x@vN` therefore cannot be
-    resolved, and GitHub resolves every `uses:` during *Set up job*, BEFORE any step runs —
-    so `continue-on-error` cannot save the job either. That exact mistake has already failed
-    a run twice (setup-uv@v9, ruff-action@v4), so it gets a test."""
+def test_every_action_is_pinned_to_a_commit_sha_with_a_readable_version_comment():
+    """A tag is mutable. In March 2025 an attacker with a stolen bot token repointed every
+    tag of tj-actions/changed-files (v1 … v45.0.7) at one malicious commit that dumped runner
+    memory - including secrets - into the logs of ~23 000 repositories (CVE-2025-30066); the
+    same week reviewdog/action-setup was compromised the same way (CVE-2025-30154), and this
+    repo uses a reviewdog action. A 40-character commit SHA cannot be repointed, so every
+    `uses:` here is a SHA plus a `# vX.Y.Z` comment (Dependabot updates both).
+
+    The comment also keeps the older astral-sh rule readable: astral-sh publishes no floating
+    major tag (no `v10` for setup-uv, no `v4` for ruff-action), and an unresolvable `uses:`
+    fails during *Set up job* before `continue-on-error` can rescue anything.
+    """
     import re
     wf = ROOT / ".github" / "workflows"
     seen = []
     for path in sorted(wf.glob("*.yml")):
-        for ref in re.findall(r"uses:\s*(astral-sh/[\w.-]+@\S+)", path.read_text(encoding="utf-8")):
-            seen.append(ref)
-            assert re.fullmatch(r"astral-sh/[\w.-]+@v\d+\.\d+\.\d+", ref), f"{path.name}: {ref}"
-    assert len(seen) >= 3, seen          # 2x setup-uv (ci + monitor) + ruff-action
+        for line in path.read_text(encoding="utf-8").splitlines():
+            m = re.search(r"uses:\s*([\w.-]+/[\w.-]+)@(\S+)", line)
+            if not m:
+                continue
+            repo, ref = m.group(1), m.group(2)
+            seen.append(f"{repo}@{ref}")
+            assert re.fullmatch(r"[0-9a-f]{40}", ref), f"{path.name}: {repo}@{ref} is not a SHA"
+            ver = re.search(r"#\s*(v[\w.-]+)", line)
+            assert ver, f"{path.name}: {repo} pinned without a version comment"
+            if repo.startswith("astral-sh/"):
+                assert re.fullmatch(r"v\d+\.\d+\.\d+", ver.group(1)), f"{path.name}: {ver.group(1)}"
+    assert len(seen) >= 9, seen
 
 
 def test_preview_html_renders_cards():

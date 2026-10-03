@@ -41,16 +41,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           persist-credentials: false   # nothing here pushes; don't leave a token in .git/config
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
         with:
           python-version: '3.14'
 
       - name: Install uv (same packages pip would install, just a much faster resolver)
-        uses: astral-sh/setup-uv@v10.2.0   # astral-sh doesn't publish a floating major tag like v10
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0 # astral-sh doesn't publish a floating major tag like v10
         with:
           version: latest-known            # see monitor.yml for why this is not "latest"
 
@@ -76,30 +76,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           persist-credentials: false   # read-only job
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
         with:
           python-version: '3.14'
 
       - name: Known-vulnerability scan of requirements.txt (pypa/pip-audit)
         continue-on-error: true   # informational: a new advisory must never block a hot-fix
-        uses: pypa/gh-action-pip-audit@v1.1.0
+        uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266  # v1.1.0
         with:
           inputs: requirements.txt
 
       - name: Static check of the workflow YAML itself (rhysd/actionlint via reviewdog)
         continue-on-error: true   # informational only, see above
-        uses: reviewdog/action-actionlint@v1
+        uses: reviewdog/action-actionlint@13465d022aa41c282f730be17574b5ce692d0186  # v1
         with:
           reporter: local
           fail_level: none
 
       - name: Security review of the workflow YAML (zizmorcore/zizmor)
         continue-on-error: true   # informational only, see above
-        uses: zizmorcore/zizmor-action@v0.6.4
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482  # v0.6.4
         with:
           inputs: .github/workflows
           advanced-security: false   # print the findings in the log; no code-scanning upload
@@ -109,7 +109,7 @@ jobs:
         continue-on-error: true   # a brand-new ruff release must never block a hot-fix
         # full tag on purpose: ruff-action stopped publishing a floating `v4` tag (only v4.1.0,
         # v4.0.0 exist), so `@v4` does not resolve. Dependabot bumps this line like any other.
-        uses: astral-sh/ruff-action@v4.1.0
+        uses: astral-sh/ruff-action@278981a28ce3188b1e39527901f38254bf3aac89  # v4.1.0
         with:
           args: check --output-format=github   # ruff.toml (target-version, line-length, rules) is picked up automatically
 
@@ -129,7 +129,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Merge the tested commit
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -166,7 +166,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Merge the tested commit
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         with:
           script: |
             const { owner, repo } = context.repo;

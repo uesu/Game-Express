@@ -490,7 +490,7 @@ should see in Discord, and how to tell that the whole thing is working.
   schedule card — every test fetches the live sources, so what you see in Discord is what a live
   run would post (see [Manual controls](#-manual-controls)).
 - **CI** (`.github/workflows/ci.yml`) runs on every PR and every push to `main`: install,
-  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **139 offline tests
+  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **141 offline tests
   with no network and no secrets**:
   - real official posts captured on 2026-09-25, which must reproduce your reference cards'
     timestamps;
@@ -665,6 +665,15 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
   - New `"released"` flag in `games.json`, separate from `"enabled"`: *watched* and *out* are
     different facts. `test-card --unlaunched` now selects "not released" instead of "not enabled",
     so the sample-card test bench keeps working for games that are monitored but unreleased.
+- **Every GitHub Action is now pinned to a commit SHA** (`@3d3c42e…  # v7`) instead of a
+  movable tag — the `tj-actions/changed-files` compromise of March 2025 (CVE-2025-30066)
+  repointed every tag of a popular action at code that dumped secrets into ~23 000 repos' logs,
+  and the related `reviewdog/action-setup` compromise (CVE-2025-30154) hit the org whose
+  actionlint action runs in this CI. Dependabot updates SHA pins and their version comments, so
+  patches still arrive as PRs.
+- **Invisible-character sanitising:** `strip_invisible()` drops C0/C1 controls, zero-width
+  characters and bidi overrides in `clean_text()` and again in `cards.text()`, so scraped text
+  cannot render as something other than what it says.
 - **Hardening against a hostile source** (`docs/SECURITY.md`, new): every scraped URL now goes
   through `cards.safe_url()` — http(s) only, no control characters, parentheses encoded — so a
   taken-over mirror can neither smuggle an extra `[FREE CODES](…)` link into a card nor kill a
@@ -689,8 +698,9 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
   self-hosted runtime (the Discord bot was removed in 1.7.0 — GitHub Actions is the only runtime),
   and the terms no longer claim the Service "never estimates" when a labelled countdown/banner-feed
   estimate is exactly what a card shows before the official notice lands.
-- 139 offline tests (new regression tests pin the stop-waiting behaviour, the webhook spacing,
-  and full-version pinning for `astral-sh/*` actions, which publish no floating major tag),
+- 141 offline tests (new regression tests pin the stop-waiting behaviour, the webhook spacing,
+  SHA pinning for every action, the three-tab HoYoLAB coverage, hostile-source handling, and
+  that an unsorted feed full of old announcements still posts only the newest one),
   `ruff check .`,
   `python -m gamexpress validate` and `python -m gamexpress preview` all green.
 

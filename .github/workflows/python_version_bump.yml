@@ -11,7 +11,7 @@ name: Python version bump (auto)
 #
 # It never merges on its own. The merge-only-if-green gate lives in ci.yml (job
 # `automerge-python-bump`), reusing the exact same pattern as the opt-in Dependabot auto-merge:
-# it only fires for a PR labelled `python-bump`, only once the full test job (139 offline tests +
+# it only fires for a PR labelled `python-bump`, only once the full test job (141 offline tests +
 # compile + validate + preview) is green on that exact commit, and only when the repository
 # VARIABLE AUTO_MERGE_PYTHON_BUMP=yes exists. Leave the variable unset to always review these by
 # hand — recommended for at least the first bump (Python 3.15, expected ~October 2027), since a
@@ -37,9 +37,9 @@ jobs:
     steps:
       # peter-evans/create-pull-request pushes the bump branch with these credentials, so they
       # have to persist. Nothing in this job is uploaded as an artifact.
-      - uses: actions/checkout@v7  # zizmor: ignore[artipacked]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7 # zizmor: ignore[artipacked]
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
         with:
           python-version: '3.14'
 
@@ -54,7 +54,7 @@ jobs:
 
       - name: Open the PR (only when a newer stable series was found)
         if: steps.bump.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1  # v8
         with:
           commit-message: "chore(python): bump to Python ${{ steps.bump.outputs.new_version }}"
           title: "Bump Python ${{ steps.bump.outputs.old_version }} → ${{ steps.bump.outputs.new_version }}"

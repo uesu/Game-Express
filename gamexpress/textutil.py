@@ -86,9 +86,24 @@ def structured_to_text(structured: str) -> tuple[str, list[str], list[str]]:
     return clean_text("".join(parts)), dedupe(links), dedupe(images)
 
 
+# Characters that must never reach a Discord card. Scraped text passes through here, and these
+# are invisible or layout-controlling: C0/C1 controls, zero-width joiners/spaces, the bidi
+# overrides (U+202A-202E, U+2066-2069) that can display "NEWS" as "SWEN" or hide a URL's real
+# host inside a line of text, and the BOM. Stripping them keeps a card honest about what it
+# says. \n and \t are kept - they are real formatting.
+_INVISIBLE = re.compile(
+    "[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f"
+    "\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]"
+)
+
+
+def strip_invisible(text: str) -> str:
+    return _INVISIBLE.sub("", text or "")
+
+
 def clean_text(text: str) -> str:
     text = html.unescape(text or "").replace("\r", "")
-    text = text.replace("\u00a0", " ").replace("\u200b", "")
+    text = strip_invisible(text).replace("\u00a0", " ")
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r" *\n *", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
