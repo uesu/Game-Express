@@ -14,7 +14,7 @@ Once a week (Monday), Dependabot checks two things. When there is something new,
 | `deps(python)` | `requirements.txt` | `aiohttp` 3.x → 4.0 |
 | `deps(actions)` | the actions used in `.github/workflows/*` | `actions/checkout` v7 → v8 |
 
-The **CI** workflow tests every Dependabot PR: install, compile, validate, and the 131 offline
+The **CI** workflow tests every Dependabot PR: install, compile, validate, and the 141 offline
 tests. Nothing reaches `main` until you merge it, or until auto-merge does (see below).
 
 - **Python PRs are rare on purpose** (`versioning-strategy: increase-if-necessary`). The ranges
@@ -30,7 +30,11 @@ tests. Nothing reaches `main` until you merge it, or until auto-merge does (see 
 - **Python packages** are version *ranges* (`aiohttp>=3.9,<4`). Every run already installs the
   newest compatible bug-fix release, with no PR needed. Dependabot only matters when a new
   *major* version comes out.
-- **GitHub Actions** are pinned to major versions (`@v7`). They keep working for a long time;
+- **GitHub Actions** are pinned to full commit SHAs with a `# v7` style comment — a tag can be
+  repointed at malicious code (that is exactly what happened to `tj-actions/changed-files` in
+  March 2025, CVE-2025-30066), a SHA cannot. Dependabot updates the SHA *and* the comment, so
+  this costs nothing in maintenance and gains patch-level visibility that a floating major tag
+  hides. They keep working for a long time;
   GitHub announces deprecations months in advance. A Dependabot PR is simply the easiest way to
   follow them.
 

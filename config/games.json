@@ -37,7 +37,6 @@
       "codes": {
         "sources": ["hoyolab:2", "seria:genshin", "humbao:GENSHIN", "ogc:genshin", "ennead:genshin", "fandom:genshin-impact/Promotional_Code", "codehub:genshin-impact", "x"],
         "redeem_url": "https://genshin.hoyoverse.com/en/gift?code={code}",
-        "redeem_page": "https://genshin.hoyoverse.com/en/gift",
         "redeem_hint": "Tap a code to open the official redemption page with it filled in, or redeem in-game: Paimon Menu → Settings → Account → Redeem Now."
       }
     },
@@ -63,7 +62,6 @@
       "codes": {
         "sources": ["hoyolab:6", "seria:hkrpg", "humbao:HSR", "ogc:starrail", "ennead:starrail", "fandom:honkai-star-rail/Redemption_Code", "codehub:honkai-star-rail", "x"],
         "redeem_url": "https://hsr.hoyoverse.com/gift?code={code}",
-        "redeem_page": "https://hsr.hoyoverse.com/gift",
         "redeem_hint": "Tap a code to open the official redemption page with it filled in (log in first)."
       }
     },
@@ -89,7 +87,6 @@
       "codes": {
         "sources": ["hoyolab:8", "seria:nap", "humbao:ZZZ", "ogc:zenless", "ennead:zenless", "fandom:zenless-zone-zero/Redemption_Code", "codehub:zenless-zone-zero", "x"],
         "redeem_url": "https://zenless.hoyoverse.com/redemption?code={code}",
-        "redeem_page": "https://zenless.hoyoverse.com/redemption",
         "redeem_hint": "Tap a code to open the official redemption page with it filled in (log in first)."
       }
     },
@@ -129,15 +126,16 @@
       "name": "Honkai: Nexus Anima",
       "short": "HNA",
       "publisher": "HoYoverse",
-      "enabled": false,
+      "enabled": true,
+      "released": false,
       "aliases": ["NEXUSANIMA"],
-      "note": "Pre-release (no release date announced as of 2026-09). HoYoLAB game id 9 is already wired, X = @HonkaiNA. Switch on with ENABLE_GAMES=hna (or enabled=true); at launch add the HoYoPlay launcher game_id + YouTube/Twitch + code sources (seria/ogc once they list it).",
+      "note": "Switched ON 2026-10-02, before launch, so pre-release Special Programs and codes are caught the moment they appear (a newly enabled game seeds its state silently on the first run, so nothing old is posted). No release date announced as of 2026-10. HoYoLAB gid 9 and X @HonkaiNA are wired; official YouTube @HonkaiNA (hoyolab.com/article/41196864). HoYoverse has announced no Twitch channel for it, so the card simply has no Twitch button. At launch: add the HoYoPlay launcher game_id, Twitch, and code sources (seria/ogc once they list it).",
       "hoyolab": {"gid": 9},
       "launcher": {},
       "x_accounts": ["HonkaiNA"],
       "program_label": "Special Program",
       "program_patterns": ["special program", "livestream", "special broadcast"],
-      "youtube": "",
+      "youtube": "https://www.youtube.com/@HonkaiNA",
       "twitch": "",
       "codes": {"sources": ["hoyolab:9", "x"]}
     },
@@ -145,13 +143,14 @@
       "name": "ANANTA",
       "short": "ANANTA",
       "publisher": "NetEase",
-      "enabled": false,
+      "enabled": true,
+      "released": false,
       "auto_enable_on": "2027-01-15",
-      "note": "Global launch 2027-01-15 (confirmed at gamescom ONL 2026; NetEase / Naked Rain) -> switches itself on that day (set ENABLE_GAMES=ananta to start earlier, e.g. for launch livestreams). No gacha character unlocking -> banner section hidden. At launch: add YouTube/Twitch + more code sources.",
+      "note": "Switched ON 2026-10-02, ahead of the 2027-01-15 global launch (confirmed at gamescom ONL 2026; NetEase / Naked Rain), so pre-launch livestreams and codes are caught; auto_enable_on is kept as a safety net in case this flag is ever set back to false. A newly enabled game seeds its state silently on the first run. Official YouTube @Ananta_Game (neteasegames.com press releases); NetEase lists no Twitch channel, so the card has no Twitch button. No gacha character unlocking -> banner section hidden. At launch: set four_star_count if that ever changes and add more code sources.",
       "x_accounts": ["Ananta_EN"],
       "program_label": "Livestream",
       "program_patterns": ["livestream", "special program", "special broadcast", "showcase"],
-      "youtube": "",
+      "youtube": "https://www.youtube.com/@Ananta_Game",
       "twitch": "",
       "card": {"show_banners": false},
       "codes": {"sources": ["x"]}

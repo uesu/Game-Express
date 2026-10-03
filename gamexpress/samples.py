@@ -70,7 +70,8 @@ CODE_SAMPLES: dict[str, list[dict]] = {
         {"code": "WAKINGMOON", "rewards": "100 Astrite + 20 Premium Tuner + 5 Advanced Sealed Tube",
          "sources": ["fandom", "codehub"]},
     ],
-    # prepared games: obviously fake sample codes (test cards are labelled 🧪 TEST anyway)
+    # pre-release games ("released": false): obviously fake sample codes, because there is
+    # nothing real to fetch yet — test cards are labelled 🧪 TEST anyway
     "hna": [
         {"code": "HNASAMPLE01", "rewards": ["Sample reward ×1"], "sources": ["x"]},
     ],

@@ -1,14 +1,13 @@
 # Terms of Service
 
-**Effective date:** September 25, 2026
+**Effective date:** October 2, 2026
 **Applies to:** *Game-Express*, the open-source game version-schedule announcer and redemption-code
 poster ("the Service"), running as a GitHub Actions workflow that posts through Discord webhooks.
 
 ---
 
 ## 1. Acceptance
-By deploying, running, modifying, or inviting an instance of the Service, you agree to these
-Terms. If you do not agree, do not use it.
+By deploying, running or modifying an instance of the Service, you agree to these Terms. If you do not agree, do not use it.
 
 ## 2. What the Service is
 A set of open-source Python scripts that read **public official announcements** (HoYoLAB,
@@ -25,8 +24,11 @@ and trademarks belong to their respective owners and are shown for informational
 Schedules, banners, maintenance times and codes come from official and community sources and
 **can change** without notice:
 - **STC = Subject to Change**, and **TBA = To be Announced**.
-- The Service uses official times only and never estimates, but it provides **no guarantee**
-  that any date, banner, reward or code is correct, valid in your region, or still active.
+- Official sources always win. When no official time has been published yet, the card may show a
+  community **estimate** (countdown sites, the community banner feed) — always labelled as such
+  on the card itself, and replaced automatically the moment the official notice appears.
+- The Service provides **no guarantee** that any date, banner, reward or code is correct, valid
+  in your region, or still active.
 - Always confirm in-game or through official channels.
 
 ## 5. Operator responsibilities

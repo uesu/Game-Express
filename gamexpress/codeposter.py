@@ -27,13 +27,15 @@ import asyncio
 import logging
 import time
 
-from .cards import codes_card, codes_payloads, mark_test
+from .cards import CODES_PER_CARD, codes_card, codes_payloads, mark_test
 from .config import Game
 from .discord import webhook_fingerprint
 from .models import CodeHit
 from .sources.codes import VALIDATORS, extract_codes_from_text, family
 
 log = logging.getLogger("gamexpress.codes")
+
+MAX_CARDS_PER_RUN = 5     # per game: 50 codes in one run is a broken source, not a real drop
 
 REWARD_PREFERENCE = ("seria", "ennead", "ogc", "hoyolab", "codehub", "wuthering.gg", "fandom", "humbao",
                      "x", "kuro")
@@ -223,9 +225,16 @@ async def _post(ctx, game: Game, codes: list[dict], records: dict) -> None:
         return
     ping = s.ping("codes", game.key)
     payloads = codes_payloads(game, codes, s, ping, ctx.now)
-    chunk_size = 10
+    if len(payloads) > MAX_CARDS_PER_RUN:
+        # Safety valve. A real drop is 1-6 codes; dozens at once means a source is broken or
+        # has been tampered with, and a run that posts 20 cards into one channel is a far worse
+        # outcome than a slow one. Codes left over keep status "new", so the next run (minutes
+        # later) posts them - nothing is lost, the flood is just spread out and visible.
+        ctx.errors.append(f"{game.short}: {len(codes)} codes at once - posting the first "
+                          f"{MAX_CARDS_PER_RUN * CODES_PER_CARD}, the rest follow next run")
+        payloads = payloads[:MAX_CARDS_PER_RUN]
     for i, payload in enumerate(payloads):
-        chunk = codes[i * chunk_size:(i + 1) * chunk_size]
+        chunk = codes[i * CODES_PER_CARD:(i + 1) * CODES_PER_CARD]
         if s.test_mode:
             payload = mark_test(payload)
         res = await ctx.webhook.send(webhook, payload)

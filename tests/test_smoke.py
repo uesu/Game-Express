@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import traceback
 from dataclasses import replace
 from pathlib import Path
@@ -267,11 +268,23 @@ def test_games_config_is_valid():
     assert set(GAMES) >= {"genshin", "starrail", "zzz", "wuwa", "hna", "ananta"}
     for g in GAMES.values():
         if g.enabled:
-            assert g.youtube and g.twitch and g.x_accounts and g.codes.get("sources"), g.key
+            # YouTube is where every one of these games streams its program, so an enabled game
+            # must have it. Twitch is NOT universal: HoYoverse has announced no Twitch channel for
+            # Nexus Anima and NetEase lists none for ANANTA, and cards.py only adds the button
+            # when the field is filled, so an empty twitch is a fact about the game, not a gap.
+            assert g.youtube and g.x_accounts and g.codes.get("sources"), g.key
+            assert g.youtube.startswith("https://www.youtube.com/@"), g.key
+            assert not g.twitch or g.twitch.startswith("https://www.twitch.tv/"), g.key
         cards.program_title(g, {"version": "1.0"})
         cards.header_line(g, {"version": "1.0"})
-    assert not GAMES["hna"].enabled and GAMES["hna"].hoyolab_gid == 9
-    assert not GAMES["ananta"].enabled and not GAMES["ananta"].card.show_banners
+    # both pre-release games are switched ON (2026-10-02) so nothing is missed before launch
+    assert GAMES["hna"].enabled and GAMES["hna"].hoyolab_gid == 9
+    assert GAMES["ananta"].enabled and not GAMES["ananta"].card.show_banners
+    assert GAMES["ananta"].auto_enable_on == "2027-01-15"        # kept as a safety net
+    # ...but neither is RELEASED, which is a separate fact: it is what the test bench uses to
+    # decide a game has no real codes to fetch yet (--unlaunched), not whether it is monitored.
+    assert not GAMES["hna"].released and not GAMES["ananta"].released
+    assert all(GAMES[k].released for k in ("genshin", "starrail", "zzz", "wuwa"))
     assert isinstance(load_overrides(), dict)
 
 
@@ -540,14 +553,263 @@ def test_no_ping_and_test_marker():
     assert set(CODE_SAMPLES) == {"genshin", "starrail", "zzz", "wuwa", "hna", "ananta"}
 
 
-def test_prepared_games_switch_on():
+def test_a_feed_full_of_old_announcements_still_posts_only_the_newest():
+    """A real timeline is not sorted and is mostly history: the 3.5 and 3.6 broadcasts are
+    still sitting there when 3.7 is announced. Whatever order a mirror hands them over in, the
+    run must post the current version once and leave the older ones alone."""
+    now = 1789300000
+    newest = item_from_fx_json("wuwa", fx("fx_wuwa_3_7_broadcast.json"))
+
+    def older(version, days):
+        old = item_from_fx_json("wuwa", fx("fx_wuwa_3_7_broadcast.json"))
+        old.id = f"old{version.replace('.', '')}"
+        old.url = old.url.replace("status/", f"status/{version.replace('.', '')}")
+        old.title = old.title.replace("3.7", version)
+        old.text = old.text.replace("3.7", version)
+        old.published_ts = newest.published_ts - days * 86400
+        return old
+
+    history = [older("3.5", 84), older("3.6", 42)]
+
+    for order in (history + [newest],                 # oldest -> newest
+                  [newest] + history,                 # newest -> oldest
+                  [history[1], newest, history[0]]):  # shuffled, like a real mirror
+        with tempfile.TemporaryDirectory() as tmp:
+            sp = Path(tmp) / "state.json"
+            ctx = make_ctx(sp)                        # seed run: nothing is posted
+            asyncio.run(schedule.run(ctx))
+            ctx.state.save()
+
+            ctx = make_ctx(sp, items={"wuwa": list(order)}, now=now)
+            asyncio.run(schedule.run(ctx))
+            posts = [x for x in ctx.webhook.sent if x["method"] == "POST"]
+            assert len(posts) == 1, (len(posts), [i.title for i in order])
+            blob = json.dumps(posts[0]["payload"], ensure_ascii=False)
+            assert "3.7" in blob and "3.5" not in blob and "3.6" not in blob
+
+            # and a second run over the same feed repeats nothing
+            ctx.state.save()
+            ctx2 = make_ctx(sp, items={"wuwa": list(order)}, now=now + 600)
+            asyncio.run(schedule.run(ctx2))
+            assert [x for x in ctx2.webhook.sent if x["method"] == "POST"] == []
+
+
+def test_a_source_dumping_hundreds_of_codes_cannot_flood_the_channel():
+    """Insurance against a broken or tampered-with source: a run posts at most
+    MAX_CARDS_PER_RUN cards per game and the leftovers go out on the next run, instead of
+    dumping 20 cards into one channel in one minute."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        table = {"seria:nap": [CodeHit("ZZZSEED01", "seria", "Polychrome*30", verified=True)]}
+        ctx = make_ctx(sp, codes_table=table, GAME="zzz")
+        ctx.games = [GAMES["zzz"]]
+        asyncio.run(codeposter.run(ctx))                 # first run only seeds
+        ctx.state.save()
+
+        table["seria:nap"] += [CodeHit(f"ZZZFLOOD{i:03d}", "seria", "Polychrome*30", verified=True)
+                               for i in range(120)]      # a source goes haywire
+        ctx = make_ctx(sp, codes_table=table, GAME="zzz")
+        ctx.games = [GAMES["zzz"]]
+        asyncio.run(codeposter.run(ctx))
+
+        assert len(ctx.webhook.sent) == codeposter.MAX_CARDS_PER_RUN   # 5 cards, not 13
+        assert any("120 codes at once" in e for e in ctx.errors)       # the operator is told
+        recs = ctx.state.code_records("zzz")
+        waiting = [k for k, r in recs.items() if r.get("status") != "posted"]
+        assert len(waiting) == 121 - codeposter.MAX_CARDS_PER_RUN * cards.CODES_PER_CARD
+        # and the next run drains them instead of losing them
+        ctx.state.save()
+        ctx = make_ctx(sp, codes_table=table, GAME="zzz")
+        ctx.games = [GAMES["zzz"]]
+        asyncio.run(codeposter.run(ctx))
+        assert len(ctx.webhook.sent) == codeposter.MAX_CARDS_PER_RUN
+
+
+def test_invisible_and_bidi_characters_are_stripped_from_scraped_text():
+    """Text is scraped, so it can carry characters that are not text: zero-width spaces that
+    break a code in half, and bidi overrides that make a line *display* differently from what
+    it says. clean_text() is the chokepoint every source goes through."""
+    from gamexpress.textutil import clean_text, strip_invisible
+
+    assert clean_text("Version\u200b 4.6\u202e Update\ufeff") == "Version 4.6 Update"
+    assert clean_text("GENSHIN\u2066GIFT") == "GENSHINGIFT"
+    assert strip_invisible("a\u0007b\u009fc\u2063d") == "abcd"
+    assert clean_text("line one\nline two\n\n\n\nline three") == "line one\nline two\n\nline three"
+    assert clean_text("real\u00a0space") == "real space"      # nbsp stays a space, not removed
+
+    # and the whole way through a card: an invisible character cannot hide inside a title
+    s_ = settings()
+    d = dict(SCHEDULE_SAMPLES["starrail"])
+    d["program_name"] = "Special\u202e Program"
+    blob = json.dumps(cards.schedule_payload(GAMES["starrail"], d, s_,
+                                             s_.ping("schedule", "starrail")), ensure_ascii=False)
+    assert "\u202e" not in blob and "\u200b" not in blob
+
+
+def test_a_hostile_source_cannot_inject_links_or_kill_a_card():
+    """Everything on a card except the game's own config is scraped from a third party (16
+    community nitter mirrors, wikis, code APIs). If one of them is taken over it must not be
+    able to (a) smuggle an extra clickable link into a card readers trust, or (b) poison one
+    field and take the whole announcement down with it."""
+    s = settings()
+    poisoned = dict(SCHEDULE_SAMPLES["starrail"])
+    poisoned["title_url"] = "https://ok.example/post) [CLAIM 10000 FREE STELLAR JADE](https://evil.example"
+    poisoned["source_url"] = "javascript:alert(document.cookie)"
+    poisoned["source_label"] = "Source"
+    poisoned["images"] = ["https://img.example/real.png", "data:text/html;base64,PHNjcmlwdD4="]
+
+    p = cards.schedule_payload(GAMES["starrail"], poisoned, s, s.ping("schedule", "starrail"))
+    blob = json.dumps(p, ensure_ascii=False)
+
+    assert cards.validate_payload(p) == []          # the card still posts
+    assert "evil.example" not in blob               # the breakout link never renders
+    assert "javascript:" not in blob.lower()
+    assert "data:text/html" not in blob.lower()
+    assert blob.count("https://img.example/real.png") == 1   # the good image survived
+    heads = [c["content"] for c in json.loads(blob)["components"]
+             if isinstance(c, dict) and str(c.get("content", "")).startswith("## ")]
+    heads += [c["content"] for top in json.loads(blob)["components"]
+              for c in (top.get("components") or [])
+              if isinstance(c, dict) and str(c.get("content", "")).startswith("## ")]
+    assert heads and "](" not in heads[0]        # the title is shown, just not as a link
+    container = next(c for c in p["components"] if c.get("type") == 17)
+    rows = [c for c in container["components"] if c.get("type") == 1]
+    assert rows and all(b["url"].startswith("https://") for r in rows for b in r["components"])
+
+    # the same rule, directly
+    assert cards.safe_url("javascript:alert(1)") is None
+    assert cards.safe_url("https://ok.example/a b") is None          # whitespace
+    assert cards.safe_url("https://ok.example/" + "x" * 2000) is None  # absurd length
+    assert cards.safe_url(None) is None
+    assert cards.safe_url("https://ok.example/a(b)c") == "https://ok.example/a%28b%29c"
+    assert cards.link_button("x", "ftp://nope/") is None
+
+
+def test_an_endless_response_body_is_cut_off_instead_of_eating_the_runner():
+    """A hostile or broken host can stream forever; `resp.text()` would buffer all of it until
+    the runner dies. The cap turns it into one ordinary source failure."""
+    import asyncio
+
+    from gamexpress import http as ghttp
+
+    class Resp:
+        status = 200
+        charset = "utf-8"
+
+        def __init__(self, size):
+            self.content = self
+            self._size = size
+
+        async def read(self, n):
+            return b"a" * min(n, self._size)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+    class Session:
+        def __init__(self, size):
+            self.size = size
+            self.calls = 0
+
+        def get(self, url, **kw):
+            self.calls += 1
+            return Resp(self.size)
+
+    big = Session(ghttp.MAX_BYTES * 4)
+    f = ghttp.Fetcher(session=big)                      # type: ignore[arg-type]
+    assert asyncio.run(f.get_text("https://hostile.example", source="s", retries=2)) is None
+    assert big.calls == 1, "a body that big is not worth retrying"
+    assert "larger than" in f.health["s"].last_error
+
+    ok = Session(1024)
+    f2 = ghttp.Fetcher(session=ok)                      # type: ignore[arg-type]
+    assert asyncio.run(f2.get_text("https://fine.example", source="s")) == "a" * 1024
+
+
+def test_every_official_feed_a_game_declares_is_actually_requested():
+    """Coverage guard for the real source list, so a refactor cannot silently drop a feed.
+
+    HoYoLAB's web UI splits a game's official circle into three tabs — notices / events / news
+    (`page_sort=`) — which are `type=1 / 2 / 3` of the same `getNewsList` API. All three must be
+    read for EVERY game that has a gid, or an announcement posted in the "wrong" tab is missed:
+
+        https://www.hoyolab.com/circles/<gid>/<page_type>/official?page_sort=notices|events|news
+
+    and every enabled game's X account must be probed across the nitter fleet.
+    """
+    import asyncio
+
     from gamexpress.config import active_games
-    keys = lambda s, now=None: [g.key for g in active_games(GAMES, s, now)]  # noqa: E731
-    assert keys(settings(), now=1790000000) == ["genshin", "starrail", "zzz", "wuwa"]
-    assert "hna" in keys(settings(ENABLE_GAMES="hna"), now=1790000000)
+    from gamexpress.sources import hoyolab
+    from gamexpress.sources.twitter import XClient
+
+    class Rec:
+        health: dict = {}
+
+        def __init__(self):
+            self.calls = []
+
+        async def get_json(self, url, **kw):
+            self.calls.append((url, kw.get("params") or {}))
+            return None
+
+        async def get_text(self, url, **kw):
+            self.calls.append((url, kw.get("params") or {}))
+            return None
+
+    st = settings()
+    live = active_games(GAMES, st)
+    assert [g.key for g in live] == ["genshin", "starrail", "zzz", "wuwa", "hna", "ananta"]
+
+    rec = Rec()
+    gids = {g.hoyolab_gid for g in live if g.hoyolab_gid}
+    assert gids == {2, 6, 8, 9}, gids                      # GI, HSR, ZZZ, HNA (WW/ANANTA aren't on HoYoLAB)
+
+    async def pull_official():
+        for g in live:
+            if g.hoyolab_gid:
+                await hoyolab.official_items(rec, g, lambda _t: True, 0)
+    asyncio.run(pull_official())
+    asked = {(p["gids"], p["type"]) for u, p in rec.calls if "getNewsList" in u and "type" in p}
+    assert asked == {(gid, t) for gid in gids for t in (1, 2, 3)}, sorted(asked)
+    assert set(hoyolab.NEWS_TYPES) == {1, 2, 3}
+
+    # every account, on the whole fleet — nitter.cf and xitter.cf are the first two mirrors
+    accounts = [a for g in live for a in g.x_accounts]
+    assert accounts == ["GenshinImpact", "honkaistarrail", "ZZZ_EN", "Wuthering_Waves",
+                        "HonkaiNA", "Ananta_EN"]
+    rec2 = Rec()
+    x = XClient(rec2, st)
+
+    async def pull_timelines():
+        for a in accounts:
+            await x.timeline(a)
+    asyncio.run(pull_timelines())
+    urls = {u for u, _p in rec2.calls}
+    for a in accounts:
+        assert f"https://nitter.cf/{a}/rss" in urls, a
+        assert f"https://xitter.cf/{a}/rss" in urls, a
+
+
+def test_prepared_games_switch_on():
+    """All six games ship ON now, but the prepared-game machinery must keep working: it is what
+    an operator uses to run a subset, and what ANANTA's auto_enable_on date falls back to."""
+    from gamexpress.config import active_games
+    keys = lambda g, s, now=None: [x.key for x in active_games(g, s, now)]  # noqa: E731
+    assert keys(GAMES, settings(), now=1790000000) == ["genshin", "starrail", "zzz", "wuwa", "hna", "ananta"]
+    # a copy with both pre-release games switched back off -> the three switch-on paths still work
+    off = dict(GAMES)
+    off["hna"] = replace(GAMES["hna"], enabled=False)
+    off["ananta"] = replace(GAMES["ananta"], enabled=False)
+    assert keys(off, settings(), now=1790000000) == ["genshin", "starrail", "zzz", "wuwa"]
+    assert "hna" in keys(off, settings(ENABLE_GAMES="hna"), now=1790000000)     # 1. ENABLE_GAMES
     jan15 = 1800000000                                                          # 2027-01-15 08:00 UTC
-    assert "ananta" in keys(settings(), now=jan15) and "ananta" not in keys(settings(), now=jan15 - 86400)
-    assert keys(settings(GAMES="ananta"), now=1790000000) == ["ananta"]        # explicit test of a prepared game
+    assert "ananta" in keys(off, settings(), now=jan15) \
+        and "ananta" not in keys(off, settings(), now=jan15 - 86400)            # 2. auto_enable_on
+    assert keys(off, settings(GAMES="ananta"), now=1790000000) == ["ananta"]    # 3. explicit GAMES=
 
 
 def test_four_star_names_rules():
@@ -681,6 +943,50 @@ def test_missing_codes_webhook_names_the_secret():
         assert ctx.state.code_records("zzz")["ZZZNEW99"]["status"] == "pending"   # retried once a webhook exists
 
 
+def test_webhook_spacing_is_never_charged_after_the_last_post():
+    """n posts must cost n-1 gaps, not n: the old code slept 1.2s even after the final send."""
+    from gamexpress.discord import WEBHOOK_SPACING
+
+    class Resp:
+        status = 200
+        headers: dict = {}
+
+        async def text(self):
+            return '{"id": "1234567890"}'
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+    class Session:
+        def __init__(self):
+            self.n = 0
+
+        def request(self, method, url, **kw):
+            self.n += 1
+            return Resp()
+
+    st = settings()
+    payload = cards.schedule_payload(GAMES["genshin"], SCHEDULE_SAMPLES["genshin"], st,
+                                     st.ping("schedule", "genshin"), 1789815600)
+
+    async def post(times: int) -> float:
+        session = Session()
+        wh = WebhookClient(session)
+        t0 = time.monotonic()
+        for _ in range(times):
+            assert (await wh.send(HOOK, payload)).ok
+        assert session.n == times
+        return time.monotonic() - t0
+
+    one = asyncio.run(post(1))
+    assert one < WEBHOOK_SPACING / 2, one                      # single post: no trailing wait at all
+    two = asyncio.run(post(2))
+    assert WEBHOOK_SPACING <= two < 2 * WEBHOOK_SPACING, two   # exactly one gap, and still spaced
+
+
 def test_test_mode_posts_latest_card_marked_test():
     with tempfile.TemporaryDirectory() as tmp:
         ww = item_from_fx_json("wuwa", fx("fx_wuwa_3_7_broadcast.json"))
@@ -734,6 +1040,64 @@ def test_nitter_fleet_probed_in_parallel_batches():
     tl = asyncio.run(x.timeline("Wuthering_Waves"))
     assert [e["id"] for e in tl] and {e["id"] for e in tl} == {"1111111111", "2222222222"}
     assert len(calls) == 8 and "wuthering_waves" in x.reachable                 # 2 batches of 4, then stop
+
+
+def _nitter_fleet_fetcher(ids: dict, hang: str, hung: asyncio.Event, calls: list):
+    """Fake Fetcher: every mirror answers with its own tweet id, except `hang`, which never does."""
+    class F:
+        async def get_text(self, url, **k):
+            calls.append(url)
+            host = url.split("/")[2]
+            if host == hang:
+                hung.set()
+                await asyncio.sleep(60)          # stands in for the 12 s the live mirror burned
+                return None
+            return RSS.format(id=ids[host])
+    return F()
+
+
+def test_a_hung_mirror_no_longer_holds_the_batch_once_two_answered():
+    """Live run #217 took 16.2 s where #215/#216/#218 took 4.9-6 s, for one reason: nitter.cf
+    timed out and asyncio.gather() waited out its whole 12 s NITTER_TIMEOUT even though two
+    higher-ranked mirrors in the same batch had already returned the timeline. The batch now
+    stops as soon as the winners are decided and cancels the rest, which also frees the
+    Fetcher's global request slot for the HoYoLAB / Kuro / code requests queued behind it."""
+    from gamexpress.sources.twitter import XClient
+    calls, hung = [], asyncio.Event()
+    ids = {"m1": "1111111111", "m2": "2222222222", "m3": "3333333333"}
+    fleet = ["https://m1", "https://m2", "https://m3", "https://dead"]
+    x = XClient(_nitter_fleet_fetcher(ids, "dead", hung, calls), settings(NITTER_INSTANCES=",".join(fleet)))
+
+    async def run():
+        started = time.monotonic()
+        tl = await asyncio.wait_for(x.timeline("Wuthering_Waves"), timeout=20)
+        return tl, time.monotonic() - started
+    tl, elapsed = asyncio.run(run())
+    assert {e["id"] for e in tl} == {"1111111111", "2222222222"}     # the top two, as before
+    assert len(calls) == 4 and hung.is_set()                        # all four were still asked
+    assert elapsed < 1, elapsed      # but nothing waited for the hang (old code: the full 60 s)
+
+
+def test_a_hung_top_ranked_mirror_only_costs_the_grace_window():
+    """A mirror ranked ABOVE the answers would have won the merge, so it still gets a grace
+    window — but NITTER_GRACE seconds, not the full 12 s timeout. Ranking beats speed: the two
+    highest-ranked answers are merged, never just the two fastest."""
+    from gamexpress.sources import twitter as tw
+    calls, hung = [], asyncio.Event()
+    ids = {"m2": "2222222222", "m3": "3333333333", "m4": "4444444444"}
+    fleet = ["https://dead", "https://m2", "https://m3", "https://m4"]
+    x = tw.XClient(_nitter_fleet_fetcher(ids, "dead", hung, calls), settings(NITTER_INSTANCES=",".join(fleet)))
+    grace, tw.NITTER_GRACE = tw.NITTER_GRACE, 0.3
+    try:
+        async def run():
+            started = time.monotonic()
+            tl = await asyncio.wait_for(x.timeline("Wuthering_Waves"), timeout=20)
+            return tl, time.monotonic() - started
+        tl, elapsed = asyncio.run(run())
+    finally:
+        tw.NITTER_GRACE = grace
+    assert {e["id"] for e in tl} == {"2222222222", "3333333333"}     # m2 + m3, never m4
+    assert 0.3 <= elapsed < 5, elapsed                               # the grace window, not 60 s
 
 
 def test_workflows_cron_job_org_and_test_bench():
@@ -791,7 +1155,7 @@ def test_workflows_cron_job_org_and_test_bench():
     assert "--unlaunched" in unl["run"] and "--kind codes" in unl["run"]
     for name in ("monitor.yml", "ci.yml"):
         text = (wf / name).read_text(encoding="utf-8")
-        assert "actions/checkout@v7" in text and "actions/setup-python@v7" in text, name
+        assert "uses: actions/checkout@" in text and "uses: actions/setup-python@" in text, name
     am = yaml.safe_load((wf / "ci.yml").read_text(encoding="utf-8"))["jobs"]["automerge"]
     assert am["needs"] == "test" and "vars.AUTO_MERGE_DEPENDABOT == 'yes'" in am["if"]   # only after green tests
     assert "dependabot[bot]" in am["if"] and am["permissions"] == {"contents": "write", "pull-requests": "write"}
@@ -800,6 +1164,36 @@ def test_workflows_cron_job_org_and_test_bench():
     dep = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
     assert all("labels" not in u for u in dep["updates"])            # custom labels must pre-exist -> none
     assert dep["updates"][0]["versioning-strategy"] == "increase-if-necessary"
+
+
+def test_every_action_is_pinned_to_a_commit_sha_with_a_readable_version_comment():
+    """A tag is mutable. In March 2025 an attacker with a stolen bot token repointed every
+    tag of tj-actions/changed-files (v1 … v45.0.7) at one malicious commit that dumped runner
+    memory - including secrets - into the logs of ~23 000 repositories (CVE-2025-30066); the
+    same week reviewdog/action-setup was compromised the same way (CVE-2025-30154), and this
+    repo uses a reviewdog action. A 40-character commit SHA cannot be repointed, so every
+    `uses:` here is a SHA plus a `# vX.Y.Z` comment (Dependabot updates both).
+
+    The comment also keeps the older astral-sh rule readable: astral-sh publishes no floating
+    major tag (no `v10` for setup-uv, no `v4` for ruff-action), and an unresolvable `uses:`
+    fails during *Set up job* before `continue-on-error` can rescue anything.
+    """
+    import re
+    wf = ROOT / ".github" / "workflows"
+    seen = []
+    for path in sorted(wf.glob("*.yml")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            m = re.search(r"uses:\s*([\w.-]+/[\w.-]+)@(\S+)", line)
+            if not m:
+                continue
+            repo, ref = m.group(1), m.group(2)
+            seen.append(f"{repo}@{ref}")
+            assert re.fullmatch(r"[0-9a-f]{40}", ref), f"{path.name}: {repo}@{ref} is not a SHA"
+            ver = re.search(r"#\s*(v[\w.-]+)", line)
+            assert ver, f"{path.name}: {repo} pinned without a version comment"
+            if repo.startswith("astral-sh/"):
+                assert re.fullmatch(r"v\d+\.\d+\.\d+", ver.group(1)), f"{path.name}: {ver.group(1)}"
+    assert len(seen) >= 9, seen
 
 
 def test_preview_html_renders_cards():
@@ -1339,7 +1733,7 @@ def test_sample_cards_are_only_for_the_games_with_nothing_real_to_fetch():
 
     assert set(names()) >= {"codes_genshin", "codes_starrail", "codes_zzz", "codes_wuwa",
                             "codes_hna", "codes_ananta"}
-    assert names(unlaunched=True) == ["codes_hna", "codes_ananta"]       # the prepared games only
+    assert names(unlaunched=True) == ["codes_hna", "codes_ananta"]       # the unreleased games only
     assert names(unlaunched=True, game="ananta") == ["codes_ananta"]
     assert names(game="genshin") == ["codes_genshin"]          # one card per game, all its codes
 

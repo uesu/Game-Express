@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Effective date:** September 25, 2026
+**Effective date:** October 2, 2026
 **Applies to:** *Game-Express*, the open-source game version-schedule announcer and redemption-code
 poster ("the Service"):
 - **Automation mode**: GitHub Actions + Discord webhooks.
@@ -15,17 +15,18 @@ controlled by whoever runs the instance**.
 
 ## 2. Who operates it
 
-Every copy is **self-hosted** by the person or community that deploys it: their GitHub
-repository and their Discord webhooks. There is no central server, account
-system, dashboard or database run by the author.
+Every copy is run by the person or community that deploys it: their GitHub repository, their
+GitHub Actions minutes and their Discord webhooks. There is no central server, account system,
+dashboard, database or Discord bot application run by the author — since v1.7.0 the only runtime
+is GitHub Actions.
 
 ## 3. Data the Service processes
 
 | Data | Where it lives | Why | Shared? |
 |---|---|---|---|
 | Public announcement data (titles, text, times, image links of official posts) | processed **in memory** during a run | building the cards | only sent to the operator's Discord webhooks |
-| Dedup state: version numbers, code strings, Discord **message IDs** of the Service's own posts, timestamps, a short non-reversible webhook fingerprint | `state/state.json` **inside the operator's repository** or host | never posting twice; editing its own cards | no |
-| Webhook URLs, optional nitter token | operator's **encrypted GitHub secrets** or host environment variables | authentication | no. They are never logged; GitHub masks secrets in logs |
+| Dedup state: version numbers, code strings, Discord **message IDs** of the Service's own posts, timestamps, a short non-reversible webhook fingerprint | `state/state.json` **inside the operator's repository** | never posting twice; editing its own cards | no |
+| Webhook URLs, optional nitter token | operator's **encrypted GitHub secrets** | authentication | no. They are never logged; GitHub masks secrets in logs |
 
 No analytics, telemetry, cookies, tracking pixels, advertising, or profiling. The monitor reads only
 public source pages and sends cards to the operator's configured webhooks.
@@ -39,7 +40,7 @@ The Service sends ordinary HTTPS requests (no personal data) to:
 - hoyo-codes.seria.moe, api.ennead.cc (Open Gacha Codes), wuthering.gg, Fandom (MediaWiki API),
   and GitHub / jsDelivr (PromoGacha and Hum-Bao code lists, the optional peer-instance state
   file);
-- Discord (to post and edit the operator's cards and answer slash commands).
+- Discord (to post and edit the operator's cards through the operator's webhooks).
 
 The operator's scheduler (cron-job.org) only calls GitHub's API to start the workflow. It
 receives no data about Discord users.
@@ -53,7 +54,7 @@ sites, and their policies apply.
 - Dedup state keeps roughly the last 6 versions per game and codes seen within about 120 days.
   After that, entries are pruned automatically.
 - Operators can delete `state/state.json` at any time; the next run silently re-seeds.
-- Slash-command data is not retained.
+- Nothing else is retained: a run holds the announcement data it fetched in memory and exits.
 
 ## 6. Children
 

@@ -9,7 +9,7 @@ Automated **version-schedule announcements** and a **redemption-code poster** fo
 Everything is posted as **Discord Components V2 cards**, with the **buttons inside the card**,
 the announcement image, **Discord timestamps** (every reader sees their own timezone),
 **STC / TBA** markers and an **optional role ping**. It runs free on **GitHub Actions** (public
-repos get unlimited minutes), triggered every 10 minutes by **[cron-job.org](https://cron-job.org)**,
+repos get unlimited minutes), triggered every 5 minutes by **[cron-job.org](https://cron-job.org)**,
 with no server, no bot token and nothing to host or redeploy — merging to `main` **is** the
 deploy, so every fix and improvement reaches the running poster on the next 10-minute run.
 
@@ -33,6 +33,10 @@ deploy, so every fix and improvement reaches the running poster on the next 10-m
 - [Community databases & resources](#-community-databases--resources)
 - [Privacy · Terms · Credits](#-privacy--terms--credits)
 - [Changelog](#-changelog)
+
+> **Working on the code (human or AI)?** Start with **[AGENTS.md](AGENTS.md)** — the maintainer's
+> mental model: invariants that must not be "fixed", the exact verification commands, and the
+> traps that have already broken a run.
 
 ---
 
@@ -155,13 +159,22 @@ Each game posts to **its own codes channel** (`DISCORD_WEBHOOK_CODES_GENSHIN`, `
 | Honkai: Star Rail | ✅ on | HoYoLAB API (gid 6) → c3kay · X `@honkaistarrail` · HoYoPlay | same set |
 | Zenless Zone Zero | ✅ on | HoYoLAB API (gid 8) → c3kay · X `@ZZZ_EN` · HoYoPlay | same set |
 | Wuthering Waves | ✅ on | X `@Wuthering_Waves` · Kuro official site · Kuro launcher | official X posts · wuthering.gg (active/expired) · Open Gacha Codes · fandom · PromoGacha |
-| Honkai: Nexus Anima | 💤 prepared (no release date yet) | HoYoLAB API (gid 9) · X `@HonkaiNA` | HoYoLAB livestream module (gid 9) · X |
-| ANANTA (NetEase) | 💤 prepared · **turns on by itself on 2027‑01‑15** | X `@Ananta_EN` | X |
+| Honkai: Nexus Anima | ✅ on · ⏳ not released yet | HoYoLAB API (gid 9) · X `@HonkaiNA` | HoYoLAB livestream module (gid 9) · X |
+| ANANTA (NetEase) | ✅ on · ⏳ releases 2027‑01‑15 | X `@Ananta_EN` | X |
 
-**Turning a prepared game on** needs no code change: set the variable `ENABLE_GAMES=hna` (or
-`hna,ananta`), or set `"enabled": true` in `config/games.json`. ANANTA switches itself on at its
-announced global launch date (`auto_enable_on` in `games.json`; delete that line if the date
-moves). ANANTA has no character gacha, so its card hides the banner section.
+**All six games are monitored**, including the two that are not out yet (switched on 2026‑10‑02),
+so a pre-release Special Program or livestream is caught the moment it is announced. Enabling a
+game is never retroactive: its **first run seeds silently**, so nothing old is posted.
+
+- `"enabled"` = *do we watch it*. `"released"` = *is the game out*. They are separate on purpose:
+  an unreleased game is watched, but it has no real codes to fetch, so the test bench checks its
+  card with sample data (`test-card --kind codes --unlaunched`).
+- To switch a game **off** again, set `"enabled": false` in `config/games.json` (or run only a
+  subset with the `GAMES` variable). ANANTA also keeps `auto_enable_on: 2027-01-15` as a safety
+  net, so it would come back on by itself at launch; `ENABLE_GAMES=hna,ananta` is the no-merge
+  way to switch prepared games on from the repo's Variables page.
+- Neither pre-release game has a Twitch channel yet, so their cards simply have no Twitch button.
+  ANANTA has no character gacha, so its card also hides the banner section.
 
 ---
 
@@ -171,7 +184,7 @@ moves). ANANTA has no character gacha, so its card hides the banner section.
    A second instance repo for fail-over is optional (see
    [Redundancy](#-redundancy-fallback-chains--two-instance-fail-over)). Public repos get
    unlimited free Actions minutes. A private repo works too, but it should run every 30 minutes
-   instead of every 10 ([why](docs/SCHEDULER.md#minutes-and-private-repositories)).
+   instead of every 5 ([why](docs/SCHEDULER.md#minutes-and-private-repositories)).
 2. **Create webhooks.** In Discord: *Channel → Edit Channel → Integrations → Webhooks → New
    Webhook → Copy Webhook URL*. One for the schedule channel, and one per game codes channel.
 3. **Add the secrets** in *Settings → Secrets and variables → Actions → Secrets → New repository
@@ -197,7 +210,7 @@ moves). ANANTA has no character gacha, so its card hides the banner section.
    **[docs/TESTING.md](docs/TESTING.md)**. They post real data labelled 🧪 TEST, never write the
    state, and nobody is pinged by default.
 6. **Go live with cron-job.org.** Create one cron-job.org job per instance repo that calls the
-   `workflow_dispatch` API every 10 minutes, using a GitHub **classic token** with the `repo`
+   `workflow_dispatch` API every 5 minutes, using a GitHub **classic token** with the `repo`
    scope. Step by step: **[docs/SCHEDULER.md](docs/SCHEDULER.md)**. GitHub's own `schedule:` is
    disabled in `monitor.yml`, so the two schedulers can never race.
 
@@ -411,7 +424,7 @@ says — ⑥ used to reach the live run too, which silently muted every real ann
 |---|---|
 | `run` | one pass (what GitHub Actions uses) |
 | `check-webhooks [--kind …] [--game …]` | one "connected" card per unique webhook (no ping) |
-| `test-card [--kind …] [--game …] [--ping] [--unlaunched]` | post the sample cards, labelled 🧪 TEST (no ping unless `--ping`). `--unlaunched` keeps only the games that are not out yet, which have nothing real to fetch |
+| `test-card [--kind …] [--game …] [--ping] [--unlaunched]` | post the sample cards, labelled 🧪 TEST (no ping unless `--ping`). `--unlaunched` keeps only the games with `"released": false`, which have nothing real to fetch yet |
 | `preview` | writes `previews/index.html` (a Discord-like preview of every card) + the JSON for [Discohook](https://discohook.app) |
 | `validate` | prints the resolved routing (which secret feeds which channel), pings and emojis, and checks every sample card against Discord's limits |
 
@@ -460,7 +473,7 @@ repo that posts.
 
 **Scheduler: cron-job.org, one job per instance repo.** GitHub's native `schedule:` is
 disabled (commented out) in `monitor.yml`, exactly like News-Express, because two schedulers
-on one repo race each other. cron-job.org calls the `workflow_dispatch` API every 10 minutes.
+on one repo race each other. cron-job.org calls the `workflow_dispatch` API every 5 minutes.
 The concurrency queue plus the fresh branch checkout make an overlapping trigger safe. Setup,
 the classic token, fail-over timing and the response codes: **[docs/SCHEDULER.md](docs/SCHEDULER.md)**.
 
@@ -477,7 +490,7 @@ should see in Discord, and how to tell that the whole thing is working.
   schedule card — every test fetches the live sources, so what you see in Discord is what a live
   run would post (see [Manual controls](#-manual-controls)).
 - **CI** (`.github/workflows/ci.yml`) runs on every PR and every push to `main`: install,
-  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **131 offline tests
+  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **141 offline tests
   with no network and no secrets**:
   - real official posts captured on 2026-09-25, which must reproduce your reference cards'
     timestamps;
@@ -487,6 +500,10 @@ should see in Discord, and how to tell that the whole thing is working.
     the expired-code edit, pending and bootstrap logic, the 4★ TBA rules, silent edits,
     stale-post suppression, fail-over, per-game codes webhooks, prepared-game switches,
     parallel fetching, and the workflow files themselves (no native schedule, secrets wired).
+- **CI — advisory checks** runs beside it on the same PR and is *informational only* (it can
+  never block a merge): `pip-audit` (CVEs in `requirements.txt`), `actionlint` (workflow YAML),
+  `zizmor` (workflow security — see `.github/zizmor.yml`), and `ruff` (the same `ruff.toml` you
+  run locally, annotated on the PR diff).
 - `UPDATE_GOLDEN=1 python tests/test_smoke.py` refreshes the golden cards after an
   **intentional** design change.
 - `python -m gamexpress preview` → open `previews/index.html` to see every card, or paste a JSON
@@ -525,6 +542,12 @@ The full verified endpoint list, with why each one was chosen or rejected, is in
 livestream `material`, c3kay feeds, HoYoPlay `getGameBranches`, the Kuro site and launcher JSON,
 hoyo-codes.seria.moe, Hum-Bao/hoyoverse-codes, Open Gacha Codes (api.ennead.cc), wuthering.gg,
 the fandom MediaWiki API, PromoGacha `codes.json`, FxTwitter / vxTwitter, and the nitter fleet.
+
+Those sources are other people's servers, so the monitor treats everything they return as
+untrusted input: `cards.safe_url()` gates every link, an 8 MiB cap bounds every response body,
+a code needs two independent sources (or an official one), and one game can post at most five
+code cards per run. The threat model and the test pinning each guard:
+**[docs/SECURITY.md](docs/SECURITY.md)**.
 
 ---
 
@@ -591,7 +614,97 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 
 ## 🗒 Changelog
 
-### 1.7.0 — 2026-10-01 · Python 3.14
+### 1.9.0 — 2026-10-02 · the run stops waiting on a hung mirror, and the dead weight is gone
+
+- **A stalled nitter mirror no longer costs the run its whole timeout.** Each batch of mirrors is
+  still requested in parallel in fleet order, but the batch now **stops the moment the winners are
+  decided** and cancels the stragglers instead of awaiting the slowest one (`asyncio.gather` →
+  `asyncio.wait(FIRST_COMPLETED)` + cancel, in `XClient._probe_batch`). This is the difference
+  between run **#217 (16.2 s, `nitter.cf -> TimeoutError`)** and runs #215/#216/#218 (4.9–6.0 s):
+  in a reproduction of exactly that run the timeline fetch went from **12.01 s to 0.06 s** with a
+  byte-identical result. Cancelling also returns the `Fetcher`'s global request slot immediately,
+  so the HoYoLAB / Kuro / code requests queued behind it start sooner.
+  - The *selection* is deliberately unchanged — **ranking still beats speed**. A mirror is only
+    dropped once enough **higher-ranked** mirrors have answered, never just because it was
+    slower, so the merged timeline is the one the old code would have produced.
+  - A hung mirror that outranks the answers still gets a grace window, but `NITTER_GRACE` = 1.5 s
+    instead of the full 12 s timeout (**12.01 s → 1.56 s** in that worst case).
+  - A probe that raises is now logged and treated as a dead mirror instead of propagating out of
+    the run.
+- **The rate-limit gap is no longer charged after the last post.** Discord's webhook bucket still
+  gets its 1.2 s of spacing between two requests, but the wait now happens *before* a request
+  instead of after a successful one — so a run that posts `n` cards pays `n-1` gaps instead of
+  `n`, and a run that posts a single card pays none at all (**−1.2 s on every posting run**).
+- **Install step no longer phones home for a uv version.** Both workflows pass
+  `version: latest-known` to `astral-sh/setup-uv`: with no version and no `uv.toml`/`pyproject.toml`
+  the action had to fetch `astral-sh/versions`' manifest over the network on **every** run (0.3–4 s
+  in runs #215–#218) and install whatever uv was published minutes earlier, unverified.
+  `latest-known` is the newest uv whose checksum ships inside the pinned action: no manifest
+  lookup, checksum-verified download, and uv only moves when Dependabot bumps the action through
+  the usual green-CI gate.
+- **CI cancels superseded runs** (`concurrency` + `cancel-in-progress` in `ci.yml` only — never in
+  `monitor.yml`, where a cancelled run could post twice), and both read-only checkouts now use
+  `persist-credentials: false`.
+- **Two more informational checks** in the `advisory-checks` job, which still can never block a
+  merge: [`zizmorcore/zizmor`](https://github.com/zizmorcore/zizmor) (static security review of the
+  workflow YAML — the repo is clean, with three documented, justified ignores in
+  `.github/zizmor.yml` and inline) and [`astral-sh/ruff-action`](https://github.com/astral-sh/ruff-action)
+  (the same `ruff.toml` used locally, so a lint regression shows up on the PR without gating it).
+- **Dead weight removed** (no behaviour change): `cards.notice_payload`, `Game.redeem_page` and the
+  three `redeem_page` entries in `config/games.json` (left over from the "Redeem Page" button
+  dropped in 1.3.0), `CodeHit.hard_expired`, `SourceHealth.last_ok_ts` (written on every request,
+  never read), and the duplicate `nitter_pic_to_twimg` in `sources/twitter.py` — it now reuses
+  `media.nitter_pic_to_twimg`, which also handles the `ext_twvideo_thumb/` prefix the copy missed.
+  `codeposter._post` now chunks with `cards.CODES_PER_CARD` instead of a hardcoded `10`, so the
+  card size and the chunk size can never drift apart.
+- **Honkai: Nexus Anima and ANANTA are switched on** (2026-10-02), months before release, so a
+  pre-release Special Program, livestream or code is caught the moment it is announced — the
+  first run for a newly enabled game seeds silently, so nothing old is posted. Their official
+  YouTube channels (`@HonkaiNA`, `@Ananta_Game`) are wired up; neither has a Twitch channel, so
+  their cards simply have no Twitch button, and ANANTA still hides the banner section.
+  - New `"released"` flag in `games.json`, separate from `"enabled"`: *watched* and *out* are
+    different facts. `test-card --unlaunched` now selects "not released" instead of "not enabled",
+    so the sample-card test bench keeps working for games that are monitored but unreleased.
+- **Every GitHub Action is now pinned to a commit SHA** (`@3d3c42e…  # v7`) instead of a
+  movable tag — the `tj-actions/changed-files` compromise of March 2025 (CVE-2025-30066)
+  repointed every tag of a popular action at code that dumped secrets into ~23 000 repos' logs,
+  and the related `reviewdog/action-setup` compromise (CVE-2025-30154) hit the org whose
+  actionlint action runs in this CI. Dependabot updates SHA pins and their version comments, so
+  patches still arrive as PRs.
+- **Invisible-character sanitising:** `strip_invisible()` drops C0/C1 controls, zero-width
+  characters and bidi overrides in `clean_text()` and again in `cards.text()`, so scraped text
+  cannot render as something other than what it says.
+- **Hardening against a hostile source** (`docs/SECURITY.md`, new): every scraped URL now goes
+  through `cards.safe_url()` — http(s) only, no control characters, parentheses encoded — so a
+  taken-over mirror can neither smuggle an extra `[FREE CODES](…)` link into a card nor kill a
+  real announcement with a `javascript:` button (that one button is dropped instead). Response
+  bodies are capped at 8 MiB, and one game can post at most 5 code cards per run, with the
+  remainder following on the next run.
+- **Source-coverage guard:** a new test asserts that every game with a HoYoLAB circle is read on
+  **all three official tabs** (`page_sort=notices|events|news` = `type=1|2|3`, so 12 requests per
+  run across GI/HSR/ZZZ/HNA) and that every enabled game's X account is probed across the nitter
+  fleet, `nitter.cf` and `xitter.cf` first — including the two new accounts `@HonkaiNA` and
+  `@Ananta_EN`. Dropping a sort or a gid now fails CI instead of quietly missing announcements.
+- **The recommended poll interval is now 5 minutes, not 10** — halving the average time-to-post
+  with no code change. `docs/SCHEDULER.md` gains a measured *How fast can it poll?* section: runs
+  take 19–36 s (≈8 % of a 5-minute slot), overlap is impossible by construction, GitHub is free
+  for public repos, and the real limit is politeness toward volunteer-run upstreams. 3 minutes is
+  the floor worth defending; 1 minute is not recommended.
+- **[AGENTS.md](AGENTS.md)** — a maintainer/AI orientation guide: repo map, the invariants that
+  must not be "fixed", exact verification commands, measured performance numbers, and the traps
+  that have already broken a run (astral-sh tag pins, zizmor suppression placement, the hung
+  mirror, the pip cache).
+- **Docs caught up with the code:** the privacy policy no longer mentions slash commands or a
+  self-hosted runtime (the Discord bot was removed in 1.7.0 — GitHub Actions is the only runtime),
+  and the terms no longer claim the Service "never estimates" when a labelled countdown/banner-feed
+  estimate is exactly what a card shows before the official notice lands.
+- 141 offline tests (new regression tests pin the stop-waiting behaviour, the webhook spacing,
+  SHA pinning for every action, the three-tab HoYoLAB coverage, hostile-source handling, and
+  that an unsorted feed full of old announcements still posts only the newest one),
+  `ruff check .`,
+  `python -m gamexpress validate` and `python -m gamexpress preview` all green.
+
+### 1.8.1 — 2026-10-01 · Python 3.14
 
 - **The monitor now runs on Python 3.14** (`.github/workflows/ci.yml` and `monitor.yml` pin
   `python-version: '3.14'`, matching [python.org's current stable release, 3.14.8](https://www.python.org/downloads/release/python-3148/)).
@@ -626,7 +739,7 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 - **Faster installs in CI and in the 10-minutely monitor run**, both switched from `pip` to
   [`astral-sh/setup-uv`](https://docs.astral.sh/uv/guides/integration/github/)'s `uv pip install`
   (same `requirements.txt`, same resolved packages — just a much faster resolver/installer). The
-  monitor workflow runs every 10 minutes, so this is the install path where the speed actually
+  monitor workflow runs every 5 minutes, so this is the install path where the speed actually
   matters day to day.
 - **Two new informational-only checks**, added as a separate `advisory-checks` job in `ci.yml`
   that can never block a merge (`continue-on-error: true` on both steps):
@@ -690,7 +803,7 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
   art, the livestream date/time, the maintenance timestamps and the banners). A sample card could
   hide a broken source; these cannot.
 - Games that are not out yet (HNA, ANANTA) have no real code to fetch, so the codes test gives
-  them example codes — `test-card --kind codes --unlaunched`.
+  them example codes — `test-card --kind codes --unlaunched` (the games with `"released": false`).
 - **A test posts to the real channels, labelled 🧪 TEST, and never writes the state**, so the
   live run still posts the real thing later. `DISCORD_WEBHOOK_TEST` is no longer used (the
   private-test-channel mode is gone); the secret can be deleted.
