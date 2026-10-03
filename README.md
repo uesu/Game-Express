@@ -490,7 +490,7 @@ should see in Discord, and how to tell that the whole thing is working.
   schedule card — every test fetches the live sources, so what you see in Discord is what a live
   run would post (see [Manual controls](#-manual-controls)).
 - **CI** (`.github/workflows/ci.yml`) runs on every PR and every push to `main`: install,
-  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **136 offline tests
+  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **139 offline tests
   with no network and no secrets**:
   - real official posts captured on 2026-09-25, which must reproduce your reference cards'
     timestamps;
@@ -542,6 +542,12 @@ The full verified endpoint list, with why each one was chosen or rejected, is in
 livestream `material`, c3kay feeds, HoYoPlay `getGameBranches`, the Kuro site and launcher JSON,
 hoyo-codes.seria.moe, Hum-Bao/hoyoverse-codes, Open Gacha Codes (api.ennead.cc), wuthering.gg,
 the fandom MediaWiki API, PromoGacha `codes.json`, FxTwitter / vxTwitter, and the nitter fleet.
+
+Those sources are other people's servers, so the monitor treats everything they return as
+untrusted input: `cards.safe_url()` gates every link, an 8 MiB cap bounds every response body,
+a code needs two independent sources (or an official one), and one game can post at most five
+code cards per run. The threat model and the test pinning each guard:
+**[docs/SECURITY.md](docs/SECURITY.md)**.
 
 ---
 
@@ -659,6 +665,12 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
   - New `"released"` flag in `games.json`, separate from `"enabled"`: *watched* and *out* are
     different facts. `test-card --unlaunched` now selects "not released" instead of "not enabled",
     so the sample-card test bench keeps working for games that are monitored but unreleased.
+- **Hardening against a hostile source** (`docs/SECURITY.md`, new): every scraped URL now goes
+  through `cards.safe_url()` — http(s) only, no control characters, parentheses encoded — so a
+  taken-over mirror can neither smuggle an extra `[FREE CODES](…)` link into a card nor kill a
+  real announcement with a `javascript:` button (that one button is dropped instead). Response
+  bodies are capped at 8 MiB, and one game can post at most 5 code cards per run, with the
+  remainder following on the next run.
 - **Source-coverage guard:** a new test asserts that every game with a HoYoLAB circle is read on
   **all three official tabs** (`page_sort=notices|events|news` = `type=1|2|3`, so 12 requests per
   run across GI/HSR/ZZZ/HNA) and that every enabled game's X account is probed across the nitter
@@ -677,7 +689,7 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
   self-hosted runtime (the Discord bot was removed in 1.7.0 — GitHub Actions is the only runtime),
   and the terms no longer claim the Service "never estimates" when a labelled countdown/banner-feed
   estimate is exactly what a card shows before the official notice lands.
-- 136 offline tests (new regression tests pin the stop-waiting behaviour, the webhook spacing,
+- 139 offline tests (new regression tests pin the stop-waiting behaviour, the webhook spacing,
   and full-version pinning for `astral-sh/*` actions, which publish no floating major tag),
   `ruff check .`,
   `python -m gamexpress validate` and `python -m gamexpress preview` all green.

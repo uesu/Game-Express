@@ -553,6 +553,120 @@ def test_no_ping_and_test_marker():
     assert set(CODE_SAMPLES) == {"genshin", "starrail", "zzz", "wuwa", "hna", "ananta"}
 
 
+def test_a_source_dumping_hundreds_of_codes_cannot_flood_the_channel():
+    """Insurance against a broken or tampered-with source: a run posts at most
+    MAX_CARDS_PER_RUN cards per game and the leftovers go out on the next run, instead of
+    dumping 20 cards into one channel in one minute."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        table = {"seria:nap": [CodeHit("ZZZSEED01", "seria", "Polychrome*30", verified=True)]}
+        ctx = make_ctx(sp, codes_table=table, GAME="zzz")
+        ctx.games = [GAMES["zzz"]]
+        asyncio.run(codeposter.run(ctx))                 # first run only seeds
+        ctx.state.save()
+
+        table["seria:nap"] += [CodeHit(f"ZZZFLOOD{i:03d}", "seria", "Polychrome*30", verified=True)
+                               for i in range(120)]      # a source goes haywire
+        ctx = make_ctx(sp, codes_table=table, GAME="zzz")
+        ctx.games = [GAMES["zzz"]]
+        asyncio.run(codeposter.run(ctx))
+
+        assert len(ctx.webhook.sent) == codeposter.MAX_CARDS_PER_RUN   # 5 cards, not 13
+        assert any("120 codes at once" in e for e in ctx.errors)       # the operator is told
+        recs = ctx.state.code_records("zzz")
+        waiting = [k for k, r in recs.items() if r.get("status") != "posted"]
+        assert len(waiting) == 121 - codeposter.MAX_CARDS_PER_RUN * cards.CODES_PER_CARD
+        # and the next run drains them instead of losing them
+        ctx.state.save()
+        ctx = make_ctx(sp, codes_table=table, GAME="zzz")
+        ctx.games = [GAMES["zzz"]]
+        asyncio.run(codeposter.run(ctx))
+        assert len(ctx.webhook.sent) == codeposter.MAX_CARDS_PER_RUN
+
+
+def test_a_hostile_source_cannot_inject_links_or_kill_a_card():
+    """Everything on a card except the game's own config is scraped from a third party (16
+    community nitter mirrors, wikis, code APIs). If one of them is taken over it must not be
+    able to (a) smuggle an extra clickable link into a card readers trust, or (b) poison one
+    field and take the whole announcement down with it."""
+    s = settings()
+    poisoned = dict(SCHEDULE_SAMPLES["starrail"])
+    poisoned["title_url"] = "https://ok.example/post) [CLAIM 10000 FREE STELLAR JADE](https://evil.example"
+    poisoned["source_url"] = "javascript:alert(document.cookie)"
+    poisoned["source_label"] = "Source"
+    poisoned["images"] = ["https://img.example/real.png", "data:text/html;base64,PHNjcmlwdD4="]
+
+    p = cards.schedule_payload(GAMES["starrail"], poisoned, s, s.ping("schedule", "starrail"))
+    blob = json.dumps(p, ensure_ascii=False)
+
+    assert cards.validate_payload(p) == []          # the card still posts
+    assert "evil.example" not in blob               # the breakout link never renders
+    assert "javascript:" not in blob.lower()
+    assert "data:text/html" not in blob.lower()
+    assert blob.count("https://img.example/real.png") == 1   # the good image survived
+    heads = [c["content"] for c in json.loads(blob)["components"]
+             if isinstance(c, dict) and str(c.get("content", "")).startswith("## ")]
+    heads += [c["content"] for top in json.loads(blob)["components"]
+              for c in (top.get("components") or [])
+              if isinstance(c, dict) and str(c.get("content", "")).startswith("## ")]
+    assert heads and "](" not in heads[0]        # the title is shown, just not as a link
+    container = next(c for c in p["components"] if c.get("type") == 17)
+    rows = [c for c in container["components"] if c.get("type") == 1]
+    assert rows and all(b["url"].startswith("https://") for r in rows for b in r["components"])
+
+    # the same rule, directly
+    assert cards.safe_url("javascript:alert(1)") is None
+    assert cards.safe_url("https://ok.example/a b") is None          # whitespace
+    assert cards.safe_url("https://ok.example/" + "x" * 2000) is None  # absurd length
+    assert cards.safe_url(None) is None
+    assert cards.safe_url("https://ok.example/a(b)c") == "https://ok.example/a%28b%29c"
+    assert cards.link_button("x", "ftp://nope/") is None
+
+
+def test_an_endless_response_body_is_cut_off_instead_of_eating_the_runner():
+    """A hostile or broken host can stream forever; `resp.text()` would buffer all of it until
+    the runner dies. The cap turns it into one ordinary source failure."""
+    import asyncio
+
+    from gamexpress import http as ghttp
+
+    class Resp:
+        status = 200
+        charset = "utf-8"
+
+        def __init__(self, size):
+            self.content = self
+            self._size = size
+
+        async def read(self, n):
+            return b"a" * min(n, self._size)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+    class Session:
+        def __init__(self, size):
+            self.size = size
+            self.calls = 0
+
+        def get(self, url, **kw):
+            self.calls += 1
+            return Resp(self.size)
+
+    big = Session(ghttp.MAX_BYTES * 4)
+    f = ghttp.Fetcher(session=big)                      # type: ignore[arg-type]
+    assert asyncio.run(f.get_text("https://hostile.example", source="s", retries=2)) is None
+    assert big.calls == 1, "a body that big is not worth retrying"
+    assert "larger than" in f.health["s"].last_error
+
+    ok = Session(1024)
+    f2 = ghttp.Fetcher(session=ok)                      # type: ignore[arg-type]
+    assert asyncio.run(f2.get_text("https://fine.example", source="s")) == "a" * 1024
+
+
 def test_every_official_feed_a_game_declares_is_actually_requested():
     """Coverage guard for the real source list, so a refactor cannot silently drop a feed.
 

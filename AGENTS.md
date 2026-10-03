@@ -43,7 +43,8 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 | `gamexpress/sources/*` | one module per upstream: `twitter` (nitter fleet + FxEmbed), `hoyolab`, `kuro`, `codes`, `launcher`, `bannerfeed`, `countdown`, `newspage` |
 | `gamexpress/{media,textutil,timeparse,samples,preview_html}.py` | image URL normalisation, HTML→text, date/time parsing, sample cards, local preview |
 | `config/games.json` | per-game config (see §4) · `config/overrides.json` human corrections · `config/program_announcements.json` discovered tweet ids |
-| `tests/test_smoke.py` | **the** test suite: 136 offline tests, no network, no secrets |
+| `tests/test_smoke.py` | **the** test suite: 139 offline tests, no network, no secrets |
+| `docs/SECURITY.md` | threat model: untrusted sources, secret handling, workflow permissions |
 | `.github/workflows/` | `monitor.yml` (production), `ci.yml` (tests + advisory job), `python_version_bump.yml` |
 
 ---
@@ -53,24 +54,29 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 1. **`monitor.yml` must keep `cancel-in-progress: false`.** A run can sit between "posted to
    Discord" and "state committed"; cancelling there causes a double post. `ci.yml` *does* cancel —
    that is fine and intentional.
-2. **GitHub's native `schedule:` stays disabled.** Two schedulers raced in News-Express and
+2. **Scraped URLs go through `cards.safe_url()`, always.** Everything a card links to comes
+   from somebody else's server. `safe_url` keeps http(s)-only, strips nothing silently but
+   rejects control characters, and percent-encodes parentheses so a `)` cannot close a markdown
+   link early and inject a phishing line. `link_button()` returning `None` is deliberate: drop
+   one button, still post the card. See `docs/SECURITY.md` §2.
+3. **GitHub's native `schedule:` stays disabled.** Two schedulers raced in News-Express and
    double-posted. cron-job.org is the single trigger.
-3. **The first run for a new game/feature seeds silently.** `BOOTSTRAP_POST` off = record what
+4. **The first run for a new game/feature seeds silently.** `BOOTSTRAP_POST` off = record what
    exists, post nothing. Never "fix" this into a backfill.
-4. **Posting is once per (game, version) / per code**, then *silent edits* of the same message id.
+5. **Posting is once per (game, version) / per code**, then *silent edits* of the same message id.
    The state's message ids are what make an edit possible — never clear them casually.
-5. **Official times win; estimates are labelled.** Countdown sites and the banner feed may fill a
+6. **Official times win; estimates are labelled.** Countdown sites and the banner feed may fill a
    gap, but the card says so, and a real official time always replaces them.
-6. **Ranking beats speed in the nitter fleet.** `_probe_batch` may stop waiting early, but only
+7. **Ranking beats speed in the nitter fleet.** `_probe_batch` may stop waiting early, but only
    once enough *higher-ranked* mirrors have answered (plus the `NITTER_GRACE` cap). Do not
    "simplify" it to first-two-to-respond: mirror order is a quality ranking.
-7. **The advisory CI job must never gate a merge** (`continue-on-error: true` on every step). Only
+8. **The advisory CI job must never gate a merge** (`continue-on-error: true` on every step). Only
    the `test` job is a required check.
-8. **No new runtime dependencies** without a very good reason. The whole app runs on `aiohttp`,
+9. **No new runtime dependencies** without a very good reason. The whole app runs on `aiohttp`,
    `feedparser`, `python-dotenv`.
-9. **Never commit secrets.** Webhooks and the nitter token are repository secrets; the state file
+10. **Never commit secrets.** Webhooks and the nitter token are repository secrets; the state file
    stores only a 12-char non-reversible webhook fingerprint.
-10. **No LICENSE file is wanted** — this is a personal-use repository (owner's decision,
+11. **No LICENSE file is wanted** — this is a personal-use repository (owner's decision,
     2026-10-03). Do not add one "for completeness".
 
 ---
@@ -103,7 +109,7 @@ so a newly added variable works without touching the workflow.
 uv venv --python 3.11 && uv pip install -r requirements.txt pyyaml ruff pytest vulture
 .venv/bin/python -m compileall -q gamexpress tests .github/scripts
 .venv/bin/ruff check .                      # ruff.toml is authoritative
-.venv/bin/python tests/test_smoke.py        # 136/136 — the plain runner is what CI uses
+.venv/bin/python tests/test_smoke.py        # 139/139 — the plain runner is what CI uses
 .venv/bin/python -m pytest -q tests         # pytest must also pass
 .venv/bin/python -m gamexpress validate     # routing, pings, card limits -> "config OK"
 .venv/bin/python -m gamexpress preview --out /tmp/previews
@@ -128,7 +134,7 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
 | zizmor suppressions | `# zizmor: ignore[rule]` on the *preceding* line is unreliable | put it as a **trailing comment on the exact reported line** |
 | `cache: 'pip'` after the uv switch | warns on every run about a missing `~/.cache/pip` | removed in PR #21; uv has its own cache |
 | `setup-uv` with no `version:` | fetches the version manifest over the network every run | `version: latest-known` |
-| Hung nitter mirror | `asyncio.gather` waited the full 12 s timeout (run #217: 16.2 s vs 5 s) | fixed in v1.9.0; see invariant #6 |
+| Hung nitter mirror | `asyncio.gather` waited the full 12 s timeout (run #217: 16.2 s vs 5 s) | fixed in v1.9.0; see invariant #7 |
 | Hardcoded chunk size | `codeposter` chunked by `10` while cards used `CODES_PER_CARD` | always import the constant |
 | Python 3.14 locally | sandboxes usually cannot download it (TLS proxy); CI pins 3.14 | develop on 3.11, let CI prove 3.14 |
 | `actionlint` locally | `actionlint-py` needs a Go toolchain; it will not install | rely on CI's advisory job + `yaml.safe_load` |

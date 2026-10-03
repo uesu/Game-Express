@@ -35,6 +35,8 @@ from .sources.codes import VALIDATORS, extract_codes_from_text, family
 
 log = logging.getLogger("gamexpress.codes")
 
+MAX_CARDS_PER_RUN = 5     # per game: 50 codes in one run is a broken source, not a real drop
+
 REWARD_PREFERENCE = ("seria", "ennead", "ogc", "hoyolab", "codehub", "wuthering.gg", "fandom", "humbao",
                      "x", "kuro")
 OFFICIAL = {"hoyolab", "x", "kuro"}
@@ -223,6 +225,14 @@ async def _post(ctx, game: Game, codes: list[dict], records: dict) -> None:
         return
     ping = s.ping("codes", game.key)
     payloads = codes_payloads(game, codes, s, ping, ctx.now)
+    if len(payloads) > MAX_CARDS_PER_RUN:
+        # Safety valve. A real drop is 1-6 codes; dozens at once means a source is broken or
+        # has been tampered with, and a run that posts 20 cards into one channel is a far worse
+        # outcome than a slow one. Codes left over keep status "new", so the next run (minutes
+        # later) posts them - nothing is lost, the flood is just spread out and visible.
+        ctx.errors.append(f"{game.short}: {len(codes)} codes at once - posting the first "
+                          f"{MAX_CARDS_PER_RUN * CODES_PER_CARD}, the rest follow next run")
+        payloads = payloads[:MAX_CARDS_PER_RUN]
     for i, payload in enumerate(payloads):
         chunk = codes[i * CODES_PER_CARD:(i + 1) * CODES_PER_CARD]
         if s.test_mode:

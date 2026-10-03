@@ -15,6 +15,15 @@ BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/128.0 Safari/537.36")
 BOT_UA = "Game-Express/1.1 (+https://github.com/uesu/Game-Express)"
 MAX_PARALLEL = 12          # polite global cap on simultaneous requests (all games fetch in parallel)
+MAX_BYTES = 8 * 1024 * 1024
+"""Hard cap on one response body (8 MiB).
+
+Almost everything this monitor reads belongs to a third party nobody here controls: 16
+community nitter mirrors, wikis, code APIs. A hostile or simply broken host can answer with
+an endless stream, and `resp.text()` would buffer all of it until the runner runs out of
+memory or the job hits its timeout. Reading a bounded number of bytes turns that into one
+ordinary source failure instead. The largest real body seen in production is ~1.3 MB.
+"""
 
 
 @dataclass
@@ -58,7 +67,11 @@ class Fetcher:
                 async with self._gate(), self.session.get(url, headers=hdrs, params=params,
                                             timeout=aiohttp.ClientTimeout(total=timeout or self.timeout)) as r:
                     if r.status in ok_statuses:
-                        body = await r.text(errors="replace")
+                        raw = await r.content.read(MAX_BYTES + 1)
+                        if len(raw) > MAX_BYTES:
+                            last = f"response larger than {MAX_BYTES // (1024 * 1024)} MiB"
+                            break   # a source this broken will not fix itself on a retry
+                        body = raw.decode(r.charset or "utf-8", errors="replace")
                         self._mark(source, True)
                         return body
                     last = f"HTTP {r.status}"

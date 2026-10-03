@@ -22,6 +22,7 @@ included), 4000 characters across all Text Displays, 5 buttons per row,
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 from urllib.parse import quote
@@ -29,6 +30,8 @@ from urllib.parse import quote
 from .config import Game, Ping, Settings
 from .textutil import truncate
 from .timeparse import discord_ts
+
+log = logging.getLogger("gamexpress.cards")
 
 IS_COMPONENTS_V2 = 1 << 15
 MAX_COMPONENTS = 40
@@ -47,26 +50,39 @@ def sep(divider: bool = True, spacing: int = 1) -> dict:
 
 
 def gallery(urls: list[str]) -> dict:
-    return {"type": 12, "items": [{"media": {"url": u}} for u in urls[:10]]}
+    safe = [u for u in (safe_url(x) for x in urls) if u]
+    return {"type": 12, "items": [{"media": {"url": u}} for u in safe[:10]]}
 
 
 def thumbnail(url: str) -> dict:
-    return {"type": 11, "media": {"url": url}}
+    return {"type": 11, "media": {"url": safe_url(url) or ""}}
 
 
 def section(texts: list[str], accessory: dict) -> dict:
     return {"type": 9, "components": [text(t) for t in texts[:3]], "accessory": accessory}
 
 
-def link_button(label: str, url: str, emoji: dict | None = None) -> dict:
-    b: dict[str, Any] = {"type": 2, "style": 5, "label": truncate(label, 80), "url": url}
+def link_button(label: str, url: str, emoji: dict | None = None) -> dict | None:
+    """None when the URL cannot be trusted: the caller drops that one button and the rest of the
+    card still posts. Keeping a broken button would fail validate_payload() and lose the whole
+    announcement over a single bad field."""
+    safe = safe_url(url)
+    if not safe:
+        log.warning("dropping button %r - unusable url %r", label, (url or "")[:120])
+        return None
+    b: dict[str, Any] = {"type": 2, "style": 5, "label": truncate(label, 80), "url": safe}
     if emoji:
         b["emoji"] = emoji
     return b
 
 
+def buttons_of(*candidates: dict | None) -> list[dict]:
+    """Keep the buttons that survived link_button()."""
+    return [b for b in candidates if b]
+
+
 def action_row(buttons: list[dict]) -> dict:
-    return {"type": 1, "components": buttons[:5]}
+    return {"type": 1, "components": [b for b in buttons if b][:5]}
 
 
 def container(children: list[dict], color: int) -> dict:
@@ -75,6 +91,33 @@ def container(children: list[dict], color: int) -> dict:
 
 def _md_link_text(s: str) -> str:
     return s.replace("[", "(").replace("]", ")")
+
+
+SAFE_URL_MAX = 1024
+
+
+def safe_url(url: str | None) -> str | None:
+    """A URL that is safe to put on a card, or None if it cannot be trusted.
+
+    Most URLs on a card are scraped from somebody else's server - 16 community nitter mirrors,
+    wikis, code APIs - so any of them can turn hostile the day a mirror changes hands. Two
+    things go wrong if the string is used as-is:
+
+      * a non-http scheme ("javascript:", "data:") in a link button makes Discord reject the
+        whole message, so one poisoned field silently kills a real announcement;
+      * a ")" inside a markdown link closes it early: [title](https://ok/x) [FREE CODES](evil)
+        renders as an extra clickable link nobody here wrote - a phishing line inside a card
+        readers trust because it came from this bot.
+
+    So: http(s) only, no whitespace or control characters, bounded length, and parentheses are
+    percent-encoded (servers decode them back; markdown stops seeing them).
+    """
+    u = (url or "").strip()
+    if not u.lower().startswith(("http://", "https://")) or len(u) > SAFE_URL_MAX:
+        return None
+    if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in u):
+        return None
+    return u.replace("(", "%28").replace(")", "%29")
 
 
 def _is_x_url(url: str) -> bool:
@@ -154,12 +197,12 @@ def _top_line(ping: Ping, line: str) -> str:
 def _std_buttons(game: Game, settings: Settings, extra: list[dict] | None = None) -> list[dict]:
     buttons: list[dict] = []
     if game.youtube:
-        buttons.append(link_button("Youtube", game.youtube, settings.emoji.get("youtube")))
+        buttons += buttons_of(link_button("Youtube", game.youtube, settings.emoji.get("youtube")))
     if game.twitch:
-        buttons.append(link_button("Twitch", game.twitch, settings.emoji.get("twitch")))
-    buttons.extend(extra or [])
+        buttons += buttons_of(link_button("Twitch", game.twitch, settings.emoji.get("twitch")))
+    buttons.extend(b for b in (extra or []) if b)
     for b in settings.extra_buttons:
-        buttons.append(link_button(b["label"], b["url"], _emoji_of(b.get("emoji"))))
+        buttons += buttons_of(link_button(b["label"], b["url"], _emoji_of(b.get("emoji"))))
     return buttons[:5]
 
 
@@ -229,7 +272,7 @@ def maintenance_block(game: Game, d: dict) -> str:
 def schedule_payload(game: Game, d: dict, settings: Settings, ping: Ping,
                      updated_ts: int | None = None) -> dict:
     title = _md_link_text(program_title(game, d))
-    url = d.get("title_url") or d.get("source_url")
+    url = safe_url(d.get("title_url") or d.get("source_url"))
     head = f"## [{title}]({url})" if url else f"## {title}"
     pts = d.get("program_ts")
     if pts:
@@ -265,9 +308,10 @@ def schedule_payload(game: Game, d: dict, settings: Settings, ping: Ping,
     # has no single YouTube video (GI/ZZZ), and when it does (HSR/WW) the title points there — so
     # a third button labelled "x" only ever duplicated something already on the card.
     if src and src != url and not _is_x_url(src):
-        extra.append(link_button(d.get("source_label") or "Source", src, settings.emoji.get("source")))
+        extra += buttons_of(link_button(d.get("source_label") or "Source", src,
+                                        settings.emoji.get("source")))
     elif d.get("youtube_video") and d.get("youtube_video") != url:
-        extra.append(link_button("Watch", d["youtube_video"], settings.emoji.get("youtube")))
+        extra += buttons_of(link_button("Watch", d["youtube_video"], settings.emoji.get("youtube")))
     buttons = _std_buttons(game, settings, extra)
     if buttons:
         children.append(action_row(buttons))
@@ -338,8 +382,8 @@ def codes_card(game: Game, chunk: list[dict], settings: Settings, ping: Ping, de
     children.append(sep())
     live = [c for c in chunk if not c.get("expired")]
     if game.redeem_url and live:
-        btns = [link_button(c["code"], game.redeem_url.format(code=quote(c["code"])),
-                            settings.emoji.get("redeem")) for c in live]
+        btns = buttons_of(*(link_button(c["code"], game.redeem_url.format(code=quote(c["code"])),
+                                        settings.emoji.get("redeem")) for c in live))
         for i in range(0, len(btns), 5):
             children.append(action_row(btns[i:i + 5]))
     hint = game.codes.get("redeem_hint")
@@ -349,8 +393,8 @@ def codes_card(game: Game, chunk: list[dict], settings: Settings, ping: Ping, de
     # Own row, under the codes and separated from the per-code Redeem links: the community
     # invite (+ EXTRA_BUTTONS). No Redeem Page / Youtube / Twitch here — those belong to the
     # livestream (special program / special broadcast) card, not to a codes card.
-    buttons = [link_button(b["label"], b["url"], _emoji_of(b.get("emoji")))
-               for b in (settings.community_buttons + settings.extra_buttons)][:5]
+    buttons = buttons_of(*(link_button(b["label"], b["url"], _emoji_of(b.get("emoji")))
+                           for b in (settings.community_buttons + settings.extra_buttons)))[:5]
     if buttons:
         children.append(action_row(buttons))
     srcs = sorted({s for c in chunk for s in c.get("sources", [])})
