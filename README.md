@@ -597,18 +597,30 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 - **[Privacy Policy](PRIVACY_POLICY.md)** and **[Terms of Service](TERMS_OF_SERVICE.md)**.
 - **Not affiliated** with HoYoverse, Kuro Games, NetEase or Discord. Game names and assets belong
   to their owners.
-- **Credits**:
+- **Credits** — this monitor is a thin layer over other people's work. Everything it reads is
+  someone's volunteer project, and every card it posts exists because these are kept running:
+
+  **Data sources**
   - [seriaati/hoyo-codes](https://github.com/seriaati/hoyo-codes) and [hoyo-update-notifier](https://github.com/seriaati/hoyo-update-notifier) (the verified code API and the Sophon/launcher endpoints)
-  - [c3kay/hoyolab-rss-feeds](https://github.com/c3kay/hoyolab-rss-feeds)
-  - [RSSHub](https://github.com/DIYgod/RSSHub) (Kuro endpoints)
-  - [gripcrip-blip/codehub · PromoGacha](https://github.com/gripcrip-blip/codehub)
-  - [DuolaD/HoYo_Versioncatcher](https://github.com/DuolaD/HoYo_Versioncatcher)
+  - [Ertezy/Kitsudock-data](https://github.com/Ertezy/Kitsudock-data) — the hourly `hub.json` behind the 5★ banner lineups (formerly *Gacha-hub-info*; collector MIT, banner data assembled from the fandom wikis under CC BY-SA 3.0 — Endfield from endfield.wiki.gg, CC BY-SA 4.0), and the [Kitsudock](https://github.com/Ertezy/Kitsudock) launcher it is built for
+  - [c3kay/hoyolab-rss-feeds](https://github.com/c3kay/hoyolab-rss-feeds) — the HoYoLAB mirror that covers for the API when it bot-checks a CI runner
   - [api.ennead.cc](https://api.ennead.cc/) and [Open Gacha Codes](https://github.com/torikushiii/OpenGachaCodes)
   - [Hum-Bao/hoyoverse-codes](https://github.com/Hum-Bao/hoyoverse-codes) (redeem-validated code lists)
+  - [gripcrip-blip/codehub · PromoGacha](https://github.com/gripcrip-blip/codehub)
+  - [DuolaD/HoYo_Versioncatcher](https://github.com/DuolaD/HoYo_Versioncatcher)
+  - [RSSHub](https://github.com/DIYgod/RSSHub) (Kuro endpoints)
   - [wuthering.gg](https://wuthering.gg/codes)
-  - [FxTwitter](https://github.com/FixTweet/FxTwitter)
-  - the nitter instance operators
-  - [News-Express](https://github.com/uesu/News-Express)
+  - The **Fandom wikis** read directly for redemption codes — [Genshin Impact](https://genshin-impact.fandom.com/), [Honkai: Star Rail](https://honkai-star-rail.fandom.com/), [Zenless Zone Zero](https://zenless-zone-zero.fandom.com/) and [Wuthering Waves](https://wutheringwaves.fandom.com/) — and their editors. Wiki text is CC BY-SA 3.0.
+  - [nitter](https://github.com/zedeus/nitter), [xcancel](https://xcancel.com/) and **every operator who keeps a public instance online** — they are the reason an announcement is seen minutes after it is tweeted
+  - [FxTwitter / FixTweet](https://github.com/FixTweet/FxTwitter) (the fallback that resolves a tweet when no mirror answers)
+
+  **Built with**
+  - [aiohttp](https://github.com/aio-libs/aiohttp), [feedparser](https://github.com/kurtmckee/feedparser), [python-dotenv](https://github.com/theskumar/python-dotenv) — the entire runtime dependency list
+  - [astral-sh/uv](https://github.com/astral-sh/uv) and [ruff](https://github.com/astral-sh/ruff) (installs and linting), [zizmor](https://github.com/zizmorcore/zizmor) and [rhysd/actionlint](https://github.com/rhysd/actionlint) (workflow auditing), [pypa/gh-action-pip-audit](https://github.com/pypa/gh-action-pip-audit) (CVE checks), [peter-evans/create-pull-request](https://github.com/peter-evans/create-pull-request)
+  - Discord's [Components V2](https://discord.com/developers/docs/components/reference) and [cron-job.org](https://cron-job.org/) (the external scheduler)
+
+  **Sibling project**
+  - [News-Express](https://github.com/uesu/News-Express) — same design, different beat
 
 ---
 
@@ -781,7 +793,7 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 ### 1.3.0 — 2026-09-27 · card cleanup, banner lineups from a live feed, and proof the X lookup generalises
 
 - **Card cleanup:** removed redundant X button (the announcement tweet is already linked in the card title) while preserving buttons for non-X sources (HoYoLAB, official news page). Removed `🖼️ key art: …` and `Source: …` footer lines so the card footer stays clean.
-- **Banner lineups from live feed (`hub.json`):** rate-up 5★ characters are filled from `ertezy.github.io/Gacha-hub-info/hub.json` (rebuilt hourly, CC BY-SA 3.0) and phase-split around the version's release / maintenance timestamp. Sits at priority 5 (lowest in the monitor), only fills empty phases, refuses stale payloads (>14d), and can be disabled with `BANNER_FEED=0`.
+- **Banner lineups from live feed (`hub.json`):** rate-up 5★ characters are filled from `ertezy.github.io/Kitsudock-data/hub.json` (rebuilt hourly, CC BY-SA 3.0; the project was renamed from Gacha-hub-info in Oct 2026 and the old URL now 404s) and phase-split around the version's release / maintenance timestamp. Sits at priority 5 (lowest in the monitor), only fills empty phases, refuses stale payloads (>14d), and can be disabled with `BANNER_FEED=0`.
 - **Verified X announcement recall across eras:** verified 7/7 positive match across all captured program announcements spanning multiple wording families (GI Luna II, ZZZ 2.5, HSR 4.5/4.6, GI 7.1, ZZZ 3.2, WW 3.7).
 
 ### 1.7.0 — 2026-09-26 · the schedule card links the real announcement, and the Discord bot is gone

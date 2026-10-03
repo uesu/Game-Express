@@ -209,10 +209,11 @@ These are startup data, not permanent per-game rules. As soon as this installati
 notice, that game's median takes precedence. This still cannot predict an unprecedented shortened
 version before any source publishes it; the card stays honestly labelled estimated until one does.
 
-## Banner lineups — Gacha-hub-info (v1.3.0)
+## Banner lineups — Kitsudock-data, ex Gacha-hub-info (v1.3.0)
 
 When no official banner notice has been posted yet, rate-up character lineups are filled from
-`ertezy.github.io/Gacha-hub-info/hub.json`. It is rebuilt hourly by GitHub Actions from the fandom
+`ertezy.github.io/Kitsudock-data/hub.json` (renamed from `Gacha-hub-info` in Oct 2026 — the old
+Pages URL returns 404). It is rebuilt hourly by GitHub Actions from the fandom
 wikis (CC BY-SA 3.0), requires no key, and returns a single JSON file covering the four released games
 (`genshin`, `hsr`, `zzz`, `wuthering` + `endfield`).
 
@@ -243,7 +244,7 @@ release = Phase 1, `startsAt` ~3 weeks later = Phase 2).
 
 | Source | Verdict |
 |---|---|
-| **`ertezy.github.io/Gacha-hub-info/hub.json`** | ✅ **used.** Rebuilt hourly by GitHub Actions, GitHub Pages, no key, one small file for all games. `banners[] = {gameId, title, featured[], rarity, startsAt, endsAt, url, image}`. Covers genshin / hsr / zzz / wuthering (+ endfield). Assembled from the fandom wikis → CC BY-SA 3.0 |
+| **`ertezy.github.io/Kitsudock-data/hub.json`** | ✅ **used.** Rebuilt hourly by GitHub Actions, GitHub Pages, no key, one small file for all games. `banners[] = {gameId, title, featured[], rarity, startsAt, endsAt, url, image}`. Covers genshin / hsr / zzz / wuthering (+ endfield). Assembled from the fandom wikis → CC BY-SA 3.0 |
 | `torikushiii/hoyoverse-api` (`/mihoyo/{game}/calendar`) | ⚠️ good shape (`banners[].characters[].rarity`, `start_time`) but **no Wuthering Waves**, and no public instance was confirmed — not usable as the primary |
 | `DGCK81LNN/gi-gacha` `banners.json` | ⚠️ auto-updated and precise, but **Chinese names only** (`薇斯纳池`) — would need a name-mapping table |
 | `game-i.daa.jp` / `achenachena/gacha_revenue` | ❌ revenue estimates and banner *windows*, not lineups |
