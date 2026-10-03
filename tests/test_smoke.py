@@ -905,6 +905,22 @@ def test_workflows_cron_job_org_and_test_bench():
     assert dep["updates"][0]["versioning-strategy"] == "increase-if-necessary"
 
 
+def test_astral_actions_are_pinned_to_a_full_version_tag():
+    """astral-sh publishes NO floating major tag (no `v10` for setup-uv, no `v4` for
+    ruff-action — only `v10.2.0`, `v4.1.0`). A `uses: astral-sh/x@vN` therefore cannot be
+    resolved, and GitHub resolves every `uses:` during *Set up job*, BEFORE any step runs —
+    so `continue-on-error` cannot save the job either. That exact mistake has already failed
+    a run twice (setup-uv@v9, ruff-action@v4), so it gets a test."""
+    import re
+    wf = ROOT / ".github" / "workflows"
+    seen = []
+    for path in sorted(wf.glob("*.yml")):
+        for ref in re.findall(r"uses:\s*(astral-sh/[\w.-]+@\S+)", path.read_text(encoding="utf-8")):
+            seen.append(ref)
+            assert re.fullmatch(r"astral-sh/[\w.-]+@v\d+\.\d+\.\d+", ref), f"{path.name}: {ref}"
+    assert len(seen) >= 3, seen          # 2x setup-uv (ci + monitor) + ruff-action
+
+
 def test_preview_html_renders_cards():
     from gamexpress.preview_html import inline, render_page
     s = settings()
