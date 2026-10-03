@@ -24,6 +24,8 @@ an endless stream, and `resp.text()` would buffer all of it until the runner run
 memory or the job hits its timeout. Reading a bounded number of bytes turns that into one
 ordinary source failure instead. The largest real body seen in production is ~1.3 MB.
 """
+CHUNK_BYTES = 64 * 1024
+"""Read size per iteration while streaming a body (see get_text)."""
 
 
 @dataclass
@@ -67,11 +69,21 @@ class Fetcher:
                 async with self._gate(), self.session.get(url, headers=hdrs, params=params,
                                             timeout=aiohttp.ClientTimeout(total=timeout or self.timeout)) as r:
                     if r.status in ok_statuses:
-                        raw = await r.content.read(MAX_BYTES + 1)
-                        if len(raw) > MAX_BYTES:
+                        # read in chunks, NOT `content.read(MAX_BYTES + 1)`: aiohttp's read(n)
+                        # returns whatever is buffered RIGHT NOW (up to n), so a body that
+                        # arrives in several TCP reads came back truncated — a valid feed then
+                        # failed as "invalid JSON" / "0 entries". Loop until EOF or the cap.
+                        raw = bytearray()
+                        oversize = False
+                        async for part in r.content.iter_chunked(CHUNK_BYTES):
+                            raw += part
+                            if len(raw) > MAX_BYTES:
+                                oversize = True
+                                break
+                        if oversize:
                             last = f"response larger than {MAX_BYTES // (1024 * 1024)} MiB"
                             break   # a source this broken will not fix itself on a retry
-                        body = raw.decode(r.charset or "utf-8", errors="replace")
+                        body = bytes(raw).decode(r.charset or "utf-8", errors="replace")
                         self._mark(source, True)
                         return body
                     last = f"HTTP {r.status}"
