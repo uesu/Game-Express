@@ -312,6 +312,18 @@
         "status": "posted",
         "webhook_fp": "ee502f83bdf4"
       },
+      "NEEIJB764CA3": {
+        "first_seen": 1791148221,
+        "gate": "only ennead",
+        "last_seen": 1791148221,
+        "rewards": [
+          "Primogem ×60"
+        ],
+        "sources": [
+          "ennead"
+        ],
+        "status": "pending"
+      },
       "NMI20MAJGIBP": {
         "first_seen": 1790323430,
         "last_seen": 1791145219,
