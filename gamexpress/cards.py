@@ -3,7 +3,7 @@
 Layout (schedule card), converted 1:1 from the reference embed cards:
 
   [Container accent=14922399]        <- the whole post; NOTHING sits above it
-     ## [Honkai: Star Rail Version 4.6 Special Program](url)                <- title + url
+     ## [Honkai: Star Rail Version 4.6 Special Program](url) 📜             <- title + url
      <t:…:F> or <t:…:R>  +  ※ maintenance-extended note
      ───────────
      **Version 4.6 Banners (STC)**  re-runs / phases / 4★ (TBA when unknown)
@@ -274,7 +274,7 @@ def schedule_payload(game: Game, d: dict, settings: Settings, ping: Ping,
                      updated_ts: int | None = None) -> dict:
     title = _md_link_text(program_title(game, d))
     url = safe_url(d.get("title_url") or d.get("source_url"))
-    head = f"## [{title}]({url})" if url else f"## {title}"
+    head = f"## [{title}]({url}) 📜" if url else f"## {title} 📜"
     pts = d.get("program_ts")
     if pts:
         ts_line = f"{discord_ts(pts, 'F')} or {discord_ts(pts, 'R')}"

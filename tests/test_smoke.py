@@ -230,7 +230,7 @@ def test_reference_card_text_is_exact():
     (box,) = p["components"]                  # one container, nothing floating above it
     assert _legend(p).endswith("To be Announced <@&1296268365593186426>")
     body = "\n".join(c["content"] for c in box["components"] if c["type"] == 10)
-    for line in ("## [Honkai: Star Rail Version 4.6 Special Program](https://x.com/honkaistarrail/status/2099440781115211916)",
+    for line in ("## [Honkai: Star Rail Version 4.6 Special Program](https://x.com/honkaistarrail/status/2099440781115211916) 📜",
                  "<t:1789903800:F> or <t:1789903800:R>", "**Version 4.6 Banners (STC)**",
                  "✦ First Half/Phase: Pearl", "- 4 Star Characters: TBA", "**Maintenance Details (STC)**",
                  "✦ Pre-Install: <t:1790229600:F>", "✦ Start: <t:1790546400:F>", "✦ End: <t:1790564400:F>"):
@@ -1677,7 +1677,7 @@ def test_the_program_announcement_replaces_the_maintenance_notice_on_the_card():
         assert [x["method"] for x in ctx.webhook.sent] == ["PATCH"]       # same card, edited silently
         flat2 = json.dumps(ctx.webhook.sent[0]["payload"], ensure_ascii=False)
         # the title links the ANNOUNCEMENT, not the stream it happens to mention
-        assert "## [Honkai: Star Rail Version 4.6 Special Program](https://www.hoyolab.com/article/46691962)" in flat2, flat2
+        assert "## [Honkai: Star Rail Version 4.6 Special Program](https://www.hoyolab.com/article/46691962) 📜" in flat2, flat2
         assert "youtube.com/watch?v=EXAMPLE1234" in flat2                 # the stream stays in source_links
         assert "pbs.twimg.com/media/HR70hTAaoAA8Dzz.jpg?name=orig" in flat2    # full-size key art
         assert "<t:1789860600:F>" in flat2 and "<t:1789860600:R>" in flat2     # the air time, user's format
