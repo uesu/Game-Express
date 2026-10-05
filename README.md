@@ -261,6 +261,8 @@ editing YAML. The ones worth knowing:
 
 Webhook routing, most specific first:
 `DISCORD_WEBHOOK_<FEATURE>_<GAME>` → `DISCORD_WEBHOOK_<FEATURE>` → `DISCORD_WEBHOOK_URL`.
+That chain **moves** a card; `DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME>` **copies** it to a second
+channel as well, posted in the same pass and edited together for the life of the version.
 `python -m gamexpress validate` prints which secret feeds which channel.
 
 ---

@@ -1191,6 +1191,59 @@ async def run(ctx) -> None:
         ctx.report.append(problem)
 
 
+async def _sync_mirror(ctx, game: Game, ver: str, record: dict, payload: dict,
+                       updated: dict | None = None) -> None:
+    """Deliver the very same card to the game's own channel, in the same pass.
+
+    This is a fan-out, not a Discord "follow": both copies are built from one payload object
+    and are edited together for the whole life of the version. That is the point — a schedule
+    card is a living document (TBA banners fill in, guessed maintenance times are replaced by
+    the official notice), so a copy that were only posted once would sit in #zzz-news showing
+    estimates forever, which is worse than having no copy at all.
+
+    The mirror is strictly a convenience copy, so every failure is reported and swallowed:
+    a broken game-channel webhook must never stop the real card in the schedule channel from
+    being posted or kept up to date, and must never fail the run. `mirror_hash` is tracked
+    separately from `payload_hash` for the same reason — a copy that failed to update retries
+    on the next run without dragging the primary card back through an edit it already made.
+    """
+    s = ctx.settings
+    name, hook = s.mirror_webhook_source("schedule", game.key)
+    if not hook:
+        # Switched off, or the secret was removed. Drop the ids so that re-adding it later
+        # posts a fresh copy instead of PATCHing a message in a channel we no longer know.
+        for key in ("mirror_message_id", "mirror_webhook_fp", "mirror_hash"):
+            record.pop(key, None)
+        return
+    primary = s.webhook("schedule", game.key)
+    fp = webhook_fingerprint(hook)
+    if primary and webhook_fingerprint(primary) == fp:
+        return                                    # same channel — one card is enough
+    h = stable_hash(payload["components"])
+    mid = record.get("mirror_message_id")
+    if mid and record.get("mirror_webhook_fp") == fp:
+        if record.get("mirror_hash") == h:
+            return                                # copy already shows exactly this
+        res = await ctx.webhook.edit(hook, mid, updated or payload)
+        if res.ok:
+            record["mirror_hash"] = h
+            ctx.report.append(f"✏️ {game.short} {ver}: {name} copy updated")
+            return
+        if res.status != 404:
+            ctx.report.append(f"⚠️ {game.short} {ver}: {name} copy not updated "
+                              f"({res.status}) {res.error}")
+            return
+        record.pop("mirror_message_id", None)     # 10008: gone for good -> one replacement
+    res = await ctx.webhook.send(hook, payload)
+    if res.ok:
+        record.update({"mirror_message_id": res.message_id, "mirror_webhook_fp": fp,
+                       "mirror_hash": h})
+        ctx.report.append(f"🪞 {game.short} {ver}: also posted to {name}")
+    else:
+        ctx.report.append(f"⚠️ {game.short} {ver}: {name} copy failed "
+                          f"({res.status}) {res.error}")
+
+
 async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], records: dict,
                           override: dict, live_info: dict, bootstrapped: bool,
                           estimates: dict | None = None, media: dict | None = None,
@@ -1232,6 +1285,15 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
             return
         payload = schedule_payload(game, data, s, ping)
         h = stable_hash(payload["components"])
+        # `updated` is the body an EDIT sends: same card plus the "Updated …" footer. The hash
+        # stays on the footer-less payload, otherwise a timestamp that moves every run would
+        # look like a change and drive an endless edit loop. Both channels send the same body.
+        updated = schedule_payload(game, data, s, ping, updated_ts=now)
+        # Before the no-change shortcut, never after it: a mirror secret added *after* this
+        # version was posted has to be backfilled, and "the card itself did not change" is
+        # exactly the state that version is in. Putting this below the return would mean the
+        # copy never appears until the card happens to be edited for some other reason.
+        await _sync_mirror(ctx, game, ver, record, payload, updated)
         if h == record.get("payload_hash"):
             return
         mid = record.get("message_id")
@@ -1239,8 +1301,7 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
             record["payload_hash"] = h
             ctx.report.append(f"{game.short} {ver}: card data changed but the original message can't be edited here")
             return
-        payload = schedule_payload(game, data, s, ping, updated_ts=now)
-        res = await ctx.webhook.edit(webhook, mid, payload)
+        res = await ctx.webhook.edit(webhook, mid, updated)
         if res.ok:
             record["payload_hash"] = h
             record["updated_at"] = now
@@ -1311,5 +1372,9 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
                        "webhook_fp": webhook_fingerprint(webhook),
                        "payload_hash": stable_hash(payload["components"])})
         ctx.report.append(f"📜 {game.short} {ver}: schedule card posted")
+        # Same run, same payload object (already 🧪-marked on a test run) — so the two copies
+        # are identical and land together. Only after the real card succeeded: if the schedule
+        # channel rejected the post there is nothing worth copying anywhere.
+        await _sync_mirror(ctx, game, ver, record, payload)
     else:
         ctx.errors.append(f"{game.short} {ver}: post failed ({res.status}) {res.error}")

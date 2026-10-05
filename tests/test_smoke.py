@@ -2223,6 +2223,167 @@ def test_a_non_404_edit_failure_is_still_an_error_not_a_repost():
         assert records["4.6"]["message_id"] == "dead-message"
 
 
+# ------------------------------------------------------- schedule card fan-out (game channel)
+# The second channel a schedule card is copied into: #wuwa-news next to #schedule.
+MIRROR = "https://discord.com/api/webhooks/987654321098765432/game-channel-TOK"
+
+
+class FanOutWebhook:
+    """Routes by destination so a test can assert WHICH channel received WHAT.
+
+    The dry-run client records the fingerprint but always succeeds; ScriptedWebhook can fail
+    on cue but ignores the URL. Fan-out needs both at once.
+    """
+
+    def __init__(self, fail_fp: str | None = None, status: int = 500):
+        self.calls: list[tuple[str, str, dict]] = []      # (method, destination fp, payload)
+        self.fail_fp, self.status, self._n = fail_fp, status, 0
+
+    def to(self, url: str) -> list[tuple[str, dict]]:
+        fp = webhook_fingerprint(url)
+        return [(m, p) for m, f, p in self.calls if f == fp]
+
+    def _result(self, fp: str, message_id: str | None) -> SendResult:
+        if fp == self.fail_fp:
+            return SendResult(False, self.status, error="channel is gone")
+        return SendResult(True, 200, message_id=message_id)
+
+    async def send(self, webhook: str, payload: dict) -> SendResult:
+        fp = webhook_fingerprint(webhook)
+        self.calls.append(("POST", fp, payload))
+        self._n += 1
+        return self._result(fp, f"msg-{self._n}")
+
+    async def edit(self, webhook: str, message_id: str, payload: dict) -> SendResult:
+        fp = webhook_fingerprint(webhook)
+        self.calls.append(("PATCH", fp, payload))
+        return self._result(fp, message_id)
+
+
+def _wuwa_ctx(sp, webhook, **env):
+    ctx = make_ctx(sp, items={"wuwa": [item_from_fx_json("wuwa", fx("fx_wuwa_3_7_broadcast.json"))]},
+                   **env)
+    ctx.webhook = webhook
+    return ctx
+
+
+def test_a_schedule_card_is_delivered_to_both_channels_in_one_pass():
+    """Same payload object, same run — the copy can never lag or differ from the real card."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _wuwa_ctx(Path(tmp) / "state.json", FanOutWebhook(), BOOTSTRAP_POST="1",
+                        DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA=MIRROR)
+        asyncio.run(schedule.run(ctx))
+        primary, copy = ctx.webhook.to(HOOK), ctx.webhook.to(MIRROR)
+        assert [m for m, _ in primary] == ["POST"] and [m for m, _ in copy] == ["POST"]
+        assert primary[0][1] == copy[0][1]          # byte-identical card
+        assert ctx.errors == []
+
+
+def test_without_the_mirror_secret_exactly_one_card_is_sent():
+    """Guards the deliberate missing fallback: BASE_ENV sets DISCORD_WEBHOOK_URL, so a mirror
+    that fell through to the catch-all like webhook_source() does would double-post here."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _wuwa_ctx(Path(tmp) / "state.json", FanOutWebhook(), BOOTSTRAP_POST="1")
+        asyncio.run(schedule.run(ctx))
+        assert len(ctx.webhook.calls) == 1 and ctx.webhook.to(HOOK)
+
+
+def test_a_mirror_added_later_backfills_the_card_already_posted():
+    """The card ZZZ 3.3 is in right now: posted days ago, unchanged since. Adding the secret
+    has to copy it across without disturbing the original."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        ctx = _wuwa_ctx(sp, FanOutWebhook(), BOOTSTRAP_POST="1")
+        asyncio.run(schedule.run(ctx))
+        assert [m for m, _ in ctx.webhook.to(HOOK)] == ["POST"]
+        ctx.state.save()
+
+        ctx = _wuwa_ctx(sp, FanOutWebhook(), now=1789303600,
+                        DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA=MIRROR)
+        asyncio.run(schedule.run(ctx))
+        assert ctx.webhook.to(HOOK) == []                       # original left alone
+        assert [m for m, _ in ctx.webhook.to(MIRROR)] == ["POST"]
+        assert ctx.errors == []
+
+
+def test_both_copies_are_edited_when_the_card_changes():
+    """Without this the copy would sit in the game channel showing TBA and guessed times."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        env = {"DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA": MIRROR}
+        ctx = _wuwa_ctx(sp, FanOutWebhook(), BOOTSTRAP_POST="1", **env)
+        asyncio.run(schedule.run(ctx))
+        ctx.state.save()
+
+        notice = Item("kuro", "wuwa", "9001",
+                      "https://wutheringwaves.kurogames.com/en/main/news/detail/9001",
+                      "Version 3.7 Update Maintenance Notice",
+                      "Version 3.7 pre-download will begin at 2026/09/28 10:00 (UTC+8).\n"
+                      "Maintenance Time: 2026/09/30 04:00 - 11:00 (UTC+8)\nCompensation: Astrite ×300",
+                      1790000000)
+        ctx = make_ctx(sp, items={"wuwa": [item_from_fx_json("wuwa", fx("fx_wuwa_3_7_broadcast.json")),
+                                           notice]}, now=1790001000, **env)
+        ctx.webhook = FanOutWebhook()
+        asyncio.run(schedule.run(ctx))
+        primary, copy = ctx.webhook.to(HOOK), ctx.webhook.to(MIRROR)
+        assert [m for m, _ in primary] == ["PATCH"] and [m for m, _ in copy] == ["PATCH"]
+        # Identical bodies, including the "Updated …" footer an edit adds — the copy must not
+        # be a footer-less near-miss of the real card.
+        assert primary[0][1] == copy[0][1]
+        assert "Astrite ×300" in json.dumps(copy[0][1], ensure_ascii=False)
+        assert ctx.errors == []
+
+
+def test_a_mirror_pointed_at_the_schedule_channel_sends_one_card_not_two():
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _wuwa_ctx(Path(tmp) / "state.json", FanOutWebhook(), BOOTSTRAP_POST="1",
+                        DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA=HOOK)
+        asyncio.run(schedule.run(ctx))
+        assert len(ctx.webhook.calls) == 1
+
+
+def test_a_broken_game_channel_never_breaks_the_real_card():
+    """The copy is a convenience. A dead game-channel webhook must not fail the run, must not
+    land in ctx.errors, and must not stop the schedule channel from being served."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        ctx = _wuwa_ctx(sp, FanOutWebhook(fail_fp=webhook_fingerprint(MIRROR), status=403),
+                        BOOTSTRAP_POST="1", DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA=MIRROR)
+        asyncio.run(schedule.run(ctx))
+        assert [m for m, _ in ctx.webhook.to(HOOK)] == ["POST"]      # real card still posted
+        assert ctx.errors == []
+        assert any("copy failed (403)" in line for line in ctx.report)
+        rec = ctx.state.data["schedule"]["wuwa"]["3.7"]
+        assert rec["status"] == "posted" and "mirror_message_id" not in rec
+
+
+def test_removing_the_mirror_secret_forgets_the_copy():
+    """Stale ids would PATCH a message in a channel the run can no longer prove it owns."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        ctx = _wuwa_ctx(sp, FanOutWebhook(), BOOTSTRAP_POST="1",
+                        DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA=MIRROR)
+        asyncio.run(schedule.run(ctx))
+        assert ctx.state.data["schedule"]["wuwa"]["3.7"]["mirror_message_id"]
+        ctx.state.save()
+
+        ctx = _wuwa_ctx(sp, FanOutWebhook(), now=1789303600)         # secret removed
+        asyncio.run(schedule.run(ctx))
+        assert ctx.webhook.to(MIRROR) == []
+        assert "mirror_message_id" not in ctx.state.data["schedule"]["wuwa"]["3.7"]
+
+
+def test_force_webhook_keeps_the_fan_out_out_of_real_game_channels():
+    """FORCE_WEBHOOK redirects the primary to a test channel; the copy must not escape."""
+    with tempfile.TemporaryDirectory() as tmp:
+        force = "https://discord.com/api/webhooks/111111111111111111/test-channel"
+        ctx = _wuwa_ctx(Path(tmp) / "state.json", FanOutWebhook(), BOOTSTRAP_POST="1",
+                        FORCE_WEBHOOK=force, DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA=MIRROR)
+        asyncio.run(schedule.run(ctx))
+        assert [m for m, _ in ctx.webhook.to(force)] == ["POST"]
+        assert ctx.webhook.to(MIRROR) == []
+
+
 def test_preinstall_cold_start_reproduces_four_real_notices():
     """Each shipped lead must reproduce a TYPICAL published notice, not the latest one.
 

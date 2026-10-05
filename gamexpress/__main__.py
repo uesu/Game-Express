@@ -246,7 +246,7 @@ def cmd_validate(_args) -> int:
           f"| nitter instances={len(settings.nitter_instances)} | token={'set' if settings.nitter_token else '—'}")
     print("emoji: " + ", ".join(f"{k}={'✓' if v else '—'}" for k, v in settings.emoji.items()))
     ok = True
-    from .discord import WEBHOOK_RE
+    from .discord import WEBHOOK_RE, webhook_fingerprint
     for g in games.values():
         on = game_is_on(g, settings)
         cols = []
@@ -256,7 +256,16 @@ def cmd_validate(_args) -> int:
             if url and not WEBHOOK_RE.match(url):
                 hook = f"✗ {secret} is not a webhook URL"
                 ok = False
-            cols.append(f"{feature}[{hook} | {settings.ping(feature, g.key).text or 'no ping'}]")
+            mirror = ""
+            msecret, murl = settings.mirror_webhook_source(feature, g.key)
+            if murl and not WEBHOOK_RE.match(murl):
+                mirror = f" | ✗ {msecret} is not a webhook URL"
+                ok = False
+            elif murl and url and webhook_fingerprint(murl) == webhook_fingerprint(url):
+                mirror = f" | ⚠ {msecret} is the same channel as {secret} — no copy sent"
+            elif murl:
+                mirror = f" | 🪞 also {msecret}"
+            cols.append(f"{feature}[{hook} | {settings.ping(feature, g.key).text or 'no ping'}{mirror}]")
         flag = "✓" if on else "·"
         note = "" if on else (f" (off; auto-on {g.auto_enable_on})" if g.auto_enable_on else " (off)")
         print(f"  {flag} {g.key:9} {g.name:22}{note}\n      {cols[0]}\n      {cols[1]}\n"

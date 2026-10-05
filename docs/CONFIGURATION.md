@@ -28,7 +28,8 @@ Sensitive — *Settings → Secrets and variables → Actions → **Secrets***.
 | `DISCORD_WEBHOOK_CODES_GENSHIN` · `_STARRAIL` · `_HNA` · `_ZZZ` · `_WUWA` · `_ANANTA` | code cards, one channel per game |
 | `DISCORD_WEBHOOK_CODES` | optional: codes of any game without its own secret |
 | `DISCORD_WEBHOOK_URL` | optional catch-all fallback |
-| `DISCORD_WEBHOOK_SCHEDULE_<GAME>` | optional per-game schedule channel, e.g. `DISCORD_WEBHOOK_SCHEDULE_WUWA` |
+| `DISCORD_WEBHOOK_SCHEDULE_<GAME>` | optional — **moves** that game's schedule card to its own channel, e.g. `DISCORD_WEBHOOK_SCHEDULE_WUWA` |
+| `DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME>` | optional — **copies** the card to a second channel as well, e.g. `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ZZZ` (see *Fan-out* below) |
 | `NITTER_RSS_TOKEN` | optional — the e-mailed token for the one token-gated nitter mirror, `https://nitter.miningtcup.me/` (the same secret News-Express uses). Empty only skips that mirror |
 
 **Webhook routing**, most specific first:
@@ -41,6 +42,40 @@ DISCORD_WEBHOOK_<FEATURE>_<GAME>  →  DISCORD_WEBHOOK_<FEATURE>  →  DISCORD_W
 `WUWA`/`WW`, `HNA`/`NEXUSANIMA`, `ANANTA`. The same URL may be used for several secrets (for
 example, one codes channel for every game). For a forum or thread channel, append
 `?thread_id=<id>` to the webhook URL.
+
+### Fan-out — the same card in two channels
+
+The routing chain above is **first match wins**, so `DISCORD_WEBHOOK_SCHEDULE_ZZZ` *moves* the
+ZZZ card out of the shared schedule channel. To have it in **both** places, add a mirror
+instead:
+
+```
+DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME>  →  DISCORD_WEBHOOK_<FEATURE>_MIRROR
+```
+
+| | |
+|---|---|
+| Example | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ZZZ` → `#schedule` **and** `#zzz-news` |
+| `<GAME>` | same keys and short names as above (`GI`, `HSR`, `WW`, `NEXUSANIMA`, …) |
+| Unset | no copy. Deliberately **no** `DISCORD_WEBHOOK_URL` fallback, so filling in the catch-all one day can never start double-posting every card into it |
+| Same URL as the primary | detected and skipped — one card, not two |
+| `FORCE_WEBHOOK` | switches the fan-out off entirely, so a test run can't reach a real game channel |
+
+Both copies are built from **one payload object and sent in the same pass**, then edited
+together for the life of the version — as TBA banners fill in and estimated maintenance times
+are replaced by the official notice, the copy is corrected too. This is a fan-out, not a
+Discord "follow": nothing lags, and nothing drifts.
+
+The copy is a convenience, so it never blocks the real card. A broken game-channel webhook is
+reported in the run summary (`⚠️ … copy failed`) and retried next run; it is never a run error,
+and the schedule channel is served either way.
+
+Adding the secret **backfills**: every version whose card is still live (posted, not retired,
+maintenance under 45 days old) is copied across on the next run, not just future ones.
+Removing the secret forgets the copy's message id, so re-adding it later posts a fresh one.
+
+Pings follow the primary card — the copy carries the same `PING_SCHEDULE…` mention. Edits never
+ping in either channel.
 
 ---
 

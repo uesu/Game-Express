@@ -276,6 +276,30 @@ class Settings:
     def webhook(self, feature: str, game_key: str) -> str | None:
         return self.webhook_source(feature, game_key)[1]
 
+    def mirror_webhook_source(self, feature: str, game_key: str) -> tuple[str, str | None]:
+        """(secret name, url) for the OPTIONAL second copy of a card — the game's own channel.
+
+        Order: DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME> > DISCORD_WEBHOOK_<FEATURE>_MIRROR.
+
+        Deliberately NOT routed through webhook_source(). That chain ends at
+        DISCORD_WEBHOOK_URL, and an unset mirror has to mean "do not fan out" — never "fall
+        back to the catch-all". Otherwise the day DISCORD_WEBHOOK_URL is filled in, every
+        card would silently start arriving twice in that one channel.
+
+        FORCE_WEBHOOK (the test channel) switches the fan-out off entirely: it already
+        redirects the primary card, so a second copy must not leak into a real game channel.
+        """
+        if self.force_webhook:
+            return "", None
+        f = slug(feature)
+        names = [f"DISCORD_WEBHOOK_{f}_MIRROR_{g}" for g in self._game_slugs(game_key)]
+        names.append(f"DISCORD_WEBHOOK_{f}_MIRROR")
+        for name in names:
+            v = _env(self.env, name)
+            if v:
+                return name, v
+        return "", None
+
     def expected_webhook_names(self, feature: str, game_key: str) -> str:
         f = slug(feature)
         return f"DISCORD_WEBHOOK_{f}_{slug(game_key)} (or DISCORD_WEBHOOK_{f})"

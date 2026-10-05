@@ -69,6 +69,12 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    exists, post nothing. Never "fix" this into a backfill.
 6. **Posting is once per (game, version) / per code**, then *silent edits* of the same message id.
    The state's message ids are what make an edit possible — never clear them casually.
+   The optional fan-out copy (`DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME>`) obeys the same rule with its
+   own `mirror_message_id`, and is edited in the same pass as the original so the two can never
+   disagree. Two things about it are deliberate: it has **no `DISCORD_WEBHOOK_URL` fallback**
+   (an unnamed mirror must stay off, or filling in the catch-all would double-post everything
+   into it), and a failed copy is **reported, never an error** — the real card must not depend
+   on a convenience channel.
 7. **Official times win; estimates are labelled.** Countdown sites and the banner feed may fill a
    gap, but the card says so, and a real official time always replaces them.
 8. **Ranking beats speed in the nitter fleet.** `_probe_batch` may stop waiting early, but only
