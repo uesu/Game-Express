@@ -33,7 +33,6 @@ DEFAULT_EMOJI = {
     "twitch": "a:hsrbbsevanescia:1508647148902813776",
     "source": "",
     "redeem": "🎁",
-    "banners": "",
 }
 
 # Shown on every CODES card, in its own row under the codes (separated from the per-code

@@ -209,7 +209,8 @@ The same URL may be used for several secrets, for example one codes channel for 
 ### 4 · Add the variables
 
 *… → Variables.* `PING_ROLE_ID` = your role ID — **leave it unset for no ping**, or set
-`NO_PING=1`. The emojis already default to the animated ones. Everything else:
+`NO_PING=1`. The Youtube and Twitch emojis already default to the animated ones.
+Everything else:
 **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
 
 ### 5 · Test it

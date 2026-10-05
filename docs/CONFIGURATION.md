@@ -62,7 +62,7 @@ Not secret, one-click switches — *Settings → Secrets and variables → Actio
 | Name | Default | Meaning |
 |---|---|---|
 | `EMOJI_YOUTUBE` / `EMOJI_TWITCH` | the animated defaults | format `a:name:id` (animated), `name:id`, a unicode emoji, or `none` |
-| `EMOJI_SOURCE` / `EMOJI_REDEEM` | — / 🎁 | emojis for the Source and Redeem buttons |
+| `EMOJI_SOURCE` / `EMOJI_REDEEM` | *none* / 🎁 | emojis for the Source and Redeem buttons. These four are the only emoji settings — `EMOJI_BANNERS` was accepted but never rendered, and was removed. |
 | `EXTRA_BUTTONS` | — | JSON list (max 3) of extra buttons on every card, e.g. a community invite |
 | `COMMUNITY_BUTTONS` | `[{"label":"Citlali News","url":"https://discord.gg/HyrVP9wRXu","emoji":"a:starward11:1439878792653832253"}]` | the bottom row of a **codes** card (`none` = no row). Youtube / Twitch / Redeem Page are not shown there — they belong to the livestream card |
 | `SHOW_LEGEND` | on | the `STC — Subject to Change • TBA — To be Announced` footer |
