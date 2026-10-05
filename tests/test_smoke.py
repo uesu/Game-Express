@@ -509,9 +509,9 @@ def test_state_saves_only_on_change():
         assert st.save() is True and sp.exists()
         st2 = State.load(sp)
         assert st2.save() is False
-        st2.heartbeat("alpha", "1.0.0", 60, 1000)
+        st2.heartbeat("alpha", 60, 1000)
         assert st2.save() is True
-        st2.heartbeat("alpha", "1.0.0", 60, 1500)          # < 60 min later -> no new commit
+        st2.heartbeat("alpha", 60, 1500)          # < 60 min later -> no new commit
         assert st2.save() is False
 
 

@@ -20,7 +20,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import __version__
+from . import build_id
 from .cards import IS_COMPONENTS_V2, codes_payloads, container, mark_test, schedule_payload, text, validate_payload
 from .config import ROOT, Ping, game_is_on, load_games, load_settings, parse_ping
 from .samples import CODE_SAMPLES, SCHEDULE_SAMPLES
@@ -240,7 +240,7 @@ def cmd_speculate(args) -> int:
 def cmd_validate(_args) -> int:
     settings = load_settings()
     games = load_games()
-    print(f"Game-Express {__version__} | features={sorted(settings.features) or 'NONE'} | "
+    print(f"Game-Express {build_id()} | features={sorted(settings.features) or 'NONE'} | "
           f"instance={settings.instance_name} ({settings.instance_role}) | dry_run={settings.dry_run}")
     print(f"peer_state_url={'set' if settings.peer_state_url else '—'} | X={'on' if settings.x_enabled else 'off'} "
           f"| nitter instances={len(settings.nitter_instances)} | token={'set' if settings.nitter_token else '—'}")

@@ -5,7 +5,7 @@ behaviours are deliberate (and must not be "fixed"), how to verify a change, and
 already cost a broken run. `README.md` is the user-facing manual and `docs/` is its reference
 material; this file is the maintainer's mental model.
 
-Last updated **2026-10-05** for **v1.9.0**.
+Last updated **2026-10-05**.
 
 ---
 
@@ -43,7 +43,7 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 | `gamexpress/sources/*` | one module per upstream: `twitter` (nitter fleet + FxEmbed), `hoyolab`, `kuro`, `codes`, `launcher`, `bannerfeed`, `countdown`, `newspage` |
 | `gamexpress/{media,textutil,timeparse,samples,preview_html}.py` | image URL normalisation, HTML→text, date/time parsing, sample cards, local preview |
 | `config/games.json` | per-game config (see §4) · `config/overrides.json` human corrections · `config/program_announcements.json` discovered tweet ids |
-| `tests/test_smoke.py` | **the** test suite: 163 offline tests, no network, no secrets |
+| `tests/test_smoke.py` | **the** test suite: every test offline — no network, no secrets |
 | `docs/` | the manual, indexed in `docs/README.md`: `CONFIGURATION`, `ACCURACY`, `SOURCES`, `SCHEDULER`, `TESTING`, `TROUBLESHOOTING`, `SECURITY`, `TIMESTAMP-PATTERNS`, `DEPENDABOT`, `PYTHON_VERSION`, `PROD-REPO-SETUP`, `CREDITS` |
 | `docs/changelog/` | `CHANGELOG.md` (1.8.0 →) + `CHANGELOG_ARCHIVE.md` (1.0.0 – 1.7.0) + an index. **The changelog is no longer in the README.** |
 | `.github/workflows/` | `monitor.yml` (production), `ci.yml` (tests + advisory job), `python_version_bump.yml` |
@@ -113,7 +113,7 @@ so a newly added variable works without touching the workflow.
 uv venv --python 3.11 && uv pip install -r requirements.txt pyyaml ruff pytest vulture
 .venv/bin/python -m compileall -q gamexpress tests .github/scripts
 .venv/bin/ruff check .                      # ruff.toml is authoritative
-.venv/bin/python tests/test_smoke.py        # 163/163 — the plain runner is what CI uses
+.venv/bin/python tests/test_smoke.py        # must end N/N, 0 failed — the plain runner is what CI uses
 .venv/bin/python -m pytest -q tests         # pytest must also pass
 .venv/bin/python -m gamexpress validate     # routing, pings, card limits -> "config OK"
 .venv/bin/python -m gamexpress preview --out /tmp/previews
@@ -174,14 +174,20 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
 
 ## 8. Conventions
 
-- **Versioning**: bump `gamexpress/__init__.py::__version__` *and* add a dated `## x.y.z — YYYY-MM-DD`
-  section at the **top** of `docs/changelog/CHANGELOG.md`, plus its row in
-  `docs/changelog/README.md`. Then refresh the one-release summary under *Changelog* in
-  `README.md`. The version appears in every run summary.
-- **Docs are part of the change.** If a count, a cadence, a flag or a workflow step changes, grep
-  for it across `README.md`, `AGENTS.md`, `docs/**.md` and `.github/workflows/*.yml` — the test
-  count alone appears in six files. The README is a **manual**: deep reference belongs in
-  `docs/`, history belongs in `docs/changelog/`.
+- **No version numbers — do not reintroduce one.** `build_id()` in `gamexpress/__init__.py`
+  reports the short `GITHUB_SHA`, so every run summary already names the exact commit that
+  produced it. The old `__version__` needed four files to move in lockstep and went stale the
+  first time one was missed. To record a change, add a dated `## YYYY-MM-DD` section at the
+  **top** of `docs/changelog/CHANGELOG.md` and its row in `docs/changelog/README.md`; refresh
+  the summary under *Changelog* in `README.md` when the change is worth a reader's attention.
+  Entries up to `1.9.0` keep the numbers they shipped as — **never renumber history.**
+- **Docs are part of the change.** If a count, a cadence, a flag or a workflow step changes,
+  grep for it across `README.md`, `AGENTS.md`, `docs/**.md` and `.github/workflows/*.yml` before
+  trusting any single copy — the same fact tends to be written down in half a dozen places.
+  **Prefer phrasing that cannot rot** ("the full offline suite") over a number that has to be
+  maintained everywhere: the test count used to appear in seven files and is now written down in
+  none. The README is a **manual**: deep reference belongs in `docs/`, history belongs in
+  `docs/changelog/`.
 - **Comments explain *why*, including the incident that caused the line.** That style is why this
   repo is debuggable; keep it.
 - **Branch/PR**: work on a branch, open a PR, let `test` go green. Never push to `main` directly;

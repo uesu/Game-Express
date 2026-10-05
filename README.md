@@ -6,9 +6,8 @@
 Components V2 cards — with no server, no bot token and nothing to host.**
 
 [![CI](https://github.com/uesu/Game-Express/actions/workflows/ci.yml/badge.svg)](https://github.com/uesu/Game-Express/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-1.9.0-E3B29F?labelColor=2b2d31)](docs/changelog/CHANGELOG.md)
 [![Python](https://img.shields.io/badge/python-3.14-3776AB?logo=python&logoColor=white&labelColor=2b2d31)](docs/PYTHON_VERSION.md)
-[![Tests](https://img.shields.io/badge/tests-163%20offline-3FB950?labelColor=2b2d31)](docs/TESTING.md)
+[![Tests](https://img.shields.io/badge/tests-offline%20%C2%B7%20no%20secrets-3FB950?labelColor=2b2d31)](docs/TESTING.md)
 [![Discord](https://img.shields.io/badge/posts%20to-Discord-5865F2?logo=discord&logoColor=white&labelColor=2b2d31)](https://discord.com/developers/docs/components/reference)
 
 [Setup](#-setup) · [Configuration](docs/CONFIGURATION.md) · [Docs](docs/) ·
@@ -402,7 +401,7 @@ make an overlapping trigger safe. **[docs/SCHEDULER.md](docs/SCHEDULER.md)**.
 
 | Gate | What it runs |
 |---|---|
-| **CI** (`ci.yml`, required) | install → `compileall` → `validate` → `tests/test_smoke.py` → preview render. **163 offline tests, no network, no secrets** |
+| **CI** (`ci.yml`, required) | install → `compileall` → `validate` → `tests/test_smoke.py` → preview render. **every test offline — no network, no secrets** |
 | **CI — advisory checks** (never blocks a merge) | `pip-audit` (CVEs in `requirements.txt`), `actionlint` (workflow YAML), `zizmor` (workflow security), `ruff` (the same `ruff.toml` you run locally) |
 | **Monitor test bench** (`mode = test`) | webhooks, real codes, or the real schedule card — against the live sources |
 
@@ -412,7 +411,7 @@ component/character limits, every code parser and the code gate, the 4★ TBA ru
 stale-post suppression, fail-over, parallel fetching, and the workflow files themselves.
 
 ```bash
-python tests/test_smoke.py                       # 163 offline tests
+python tests/test_smoke.py                       # the full offline suite
 UPDATE_GOLDEN=1 python tests/test_smoke.py       # after an INTENTIONAL card change
 python -m gamexpress preview                     # open previews/index.html
 ```
@@ -442,26 +441,26 @@ Index: **[docs/](docs/)**.
 
 ## 🗒 Changelog
 
-**Latest — [`1.9.0`](docs/changelog/CHANGELOG.md#190--2026-10-02) · 2026-10-02 · *the run stops
-waiting on a hung mirror, and the dead weight is gone***
+**Latest — [2026-10-05](docs/changelog/CHANGELOG.md#2026-10-05) · *the README stops being a
+history book, and the version number retires***
 
-- A stalled nitter mirror no longer costs the run its whole timeout: a batch stops as soon as the
-  winners are decided and cancels the stragglers (**12.01 s → 0.06 s** on a reproduced hung run),
-  while *ranking still beats speed*.
-- The webhook rate-limit gap is charged *before* a request, not after — a run that posts one card
-  now pays none at all.
-- `setup-uv` pinned to `version: latest-known`, so the install step no longer fetches a version
-  manifest on every run; CI cancels superseded runs; read-only checkouts drop their credentials.
-- Every GitHub Action is pinned to a **commit SHA** (CVE-2025-30066), scraped URLs go through
-  `cards.safe_url()`, response bodies are capped at 8 MiB, and invisible characters are stripped.
-- Honkai: Nexus Anima and ANANTA switched on months before release, with the new `released` flag
-  separating *watched* from *out*.
-- Dead weight removed, docs caught up with the code, and the recommended poll interval moved from
-  10 minutes to 5.
+- The README went from 958 lines to 483: the configuration reference, accuracy rules,
+  troubleshooting table and credits moved into [`docs/`](docs/), and the release history moved
+  into [`docs/changelog/`](docs/changelog/).
+- **No more version number.** `build_id()` reports the short `GITHUB_SHA` instead, so a run
+  summary reads `### Game-Express 03c1668 — alpha (primary)` and points at the exact code that
+  posted the card. A bump used to mean four files moving in lockstep; now there is nothing to
+  bump and nothing to go stale.
+- Dead fields removed (`Item.author`, `Settings.log_level`, `Game.publisher`, `FoundTime.has_tz`,
+  and `app_version` on the heartbeat) — all written, never read.
+- Stale facts swept repo-wide: the nitter fleet size, the 5-minute poll cadence, and every
+  cross-reference that still pointed at the README's old changelog.
 
 **➡️ Full history: [docs/changelog/](docs/changelog/)** —
-[current line](docs/changelog/CHANGELOG.md) (1.8.0 → 1.9.0) ·
+[current entries](docs/changelog/CHANGELOG.md) (1.8.0 onward) ·
 [archive](docs/changelog/CHANGELOG_ARCHIVE.md) (1.0.0 → 1.7.0).
+
+Entries are **dated, not numbered** — releases up to `1.9.0` keep the numbers they shipped as.
 
 ---
 

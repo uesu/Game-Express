@@ -84,12 +84,11 @@ class State:
         return self.data["codes"].setdefault(game, {})
 
     # ------------------------------------------------------------------ heartbeat
-    def heartbeat(self, instance: str, version: str, every_min: int, now: int) -> None:
+    def heartbeat(self, instance: str, every_min: int, now: int) -> None:
         hb = self.data["heartbeat"]
         if (now - int(hb.get("last_success") or 0) >= every_min * 60 or hb.get("instance") != instance
                 or hb.get("every_min") != every_min):
-            hb.update({"last_success": now, "instance": instance, "app_version": version,
-                       "every_min": every_min})
+            hb.update({"last_success": now, "instance": instance, "every_min": every_min})
 
     # ------------------------------------------------------------------ peer merge
     def merge_peer(self, peer: dict) -> int:

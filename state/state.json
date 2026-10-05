@@ -1773,7 +1773,6 @@
     }
   },
   "heartbeat": {
-    "app_version": "1.9.0",
     "every_min": 1440,
     "instance": "alpha",
     "last_success": 1791102018

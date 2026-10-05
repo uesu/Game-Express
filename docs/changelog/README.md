@@ -1,22 +1,36 @@
 # Changelog
 
-Every Game-Express release, newest first. The log used to live at the bottom of the project
+Every Game-Express change, newest first. The log used to live at the bottom of the project
 README; it now lives here so the README can stay a manual instead of a history book.
 
 | File | Holds |
 |---|---|
-| **[CHANGELOG.md](CHANGELOG.md)** | the current release line — **1.8.0 → 1.9.0** (October 2026). These entries still describe the code on `main`. |
+| **[CHANGELOG.md](CHANGELOG.md)** | current entries — **1.8.0 (October 2026) onward**. These still describe the code on `main`. |
 | **[CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md)** | **1.0.0 → 1.7.0** (September 2026). History only: much of it was replaced by later releases. |
 
-The latest release is also summarised in the
+The newest entry is also summarised in the
 [project README](../../README.md#-changelog).
+
+## Dated, not numbered
+
+Version numbers were retired on **2026-10-05**. Bumping one meant four files had to move in
+lockstep — `gamexpress/__init__.py`, `CHANGELOG.md`, this index and the README summary — and
+missing any one of them left the repo contradicting itself.
+
+Builds now identify themselves by commit: `build_id()` reports the short `GITHUB_SHA`, so a run
+summary reads `### Game-Express 03c1668 — …` and points at the exact code that posted the card.
+Adding an entry here is now the whole ritual.
+
+Releases up to and including `1.9.0` keep their numbers — that is what they shipped as, and
+nothing is renumbered after the fact.
 
 ---
 
-## Releases
+## Entries
 
-| Version | Date | Headline |
+| Entry | Date | Headline |
 |---|---|---|
+| [2026-10-05](CHANGELOG.md#2026-10-05) | 2026-10-05 | the README stops being a history book, and the version number retires |
 | [`1.9.0`](CHANGELOG.md#190--2026-10-02) | 2026-10-02 | the run stops waiting on a hung mirror, and the dead weight is gone |
 | [`1.8.1`](CHANGELOG.md#181--2026-10-01) | 2026-10-01 | Python 3.14 |
 | [`1.8.0`](CHANGELOG.md#180--2026-10-01) | 2026-10-01 | future Python bumps, faster installs, two advisory scans |

@@ -1,12 +1,42 @@
-# Changelog — current release line
+# Changelog — current entries
 
-Releases from **1.8.0** onward: the Python 3.14 runtime, the automated version-bump
-workflow, and the 1.9.0 performance and hardening pass. This is the history that still
-describes the code on `main`.
+The history that still describes the code on `main`: the Python 3.14 runtime, the automated
+version-bump workflow, the 1.9.0 performance and hardening pass, and everything dated since.
 
 Older releases (1.0.0 – 1.7.0, September 2026) live in
 [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md). Start at the
 [changelog index](README.md).
+
+> **Entries are dated, not numbered.** Version numbers were retired on 2026-10-05 — see the
+> entry below for why. Releases up to and including `1.9.0` keep their numbers because that is
+> what they shipped as; nothing is renumbered after the fact.
+
+---
+
+## 2026-10-05
+
+**The README stops being a history book, and the version number retires**
+
+- **The README is a manual again.** It went from 958 lines to 483: the full configuration
+  reference, the accuracy rules, the troubleshooting table and the credits moved into `docs/`,
+  and the entire release history moved into `docs/changelog/`. What is left is current
+  information only.
+- **No more version number.** `gamexpress/__init__.py::__version__` is gone, replaced by
+  `build_id()`, which reports the short `GITHUB_SHA`. A bump used to mean four files moving in
+  lockstep — the app, this file, the changelog index and the README summary — and missing one
+  left the repo contradicting itself. The commit is already exact, already automatic, and can
+  never go stale. Run summaries now read `### Game-Express 03c1668 — alpha (primary)`, which
+  points at the code that actually posted the card; outside Actions it reads `local`.
+- **`app_version` dropped from the heartbeat.** It was written on every beat and never read
+  back: the fail-over check only looks at `last_success` and `every_min`.
+- **Dead fields removed** — `Item.author`, `Settings.log_level`, `Game.publisher` (and its six
+  `games.json` keys) and `FoundTime.has_tz` were all written but never read. `Item.id` is kept
+  deliberately: it is the post's identity and the test constructors pass it positionally.
+- **Stale facts swept repo-wide** — the test count (141 → 163, in six files), the nitter fleet
+  size (16 → 18), the poll cadence (10 → 5 minutes, including the commented-out fallback cron),
+  and every cross-reference that still pointed at the README's old changelog.
+- `ci.yml` pinned `reviewdog/action-actionlint` with a `# v1` comment while the SHA was
+  v1.78.1; corrected, so zizmor reports no findings.
 
 ---
 
