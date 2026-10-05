@@ -59,28 +59,35 @@ A `python-bump` PR only merges automatically when **both** of these hold (the fi
 - every dependency installed from a prebuilt wheel **and** `compileall` + `validate` + the
   offline suite + the preview render all passed under the **new** interpreter — the PR does not
   exist otherwise, so there is nothing to merge;
-- the repository **variable** `AUTO_MERGE_PYTHON_BUMP` is set to `yes` (`all` is accepted too —
-  see below).
+- the repository **variable** `AUTO_MERGE_PYTHON_BUMP` is set to **`all`**. `yes` is deliberately
+  *not* enough here — see the box below.
 
-Leave the variable unset (the default) and the workflow only ever opens the PR for you to read
-and merge by hand — nothing is merged without a human unless you opt in.
+Leave the variable unset, or set it to `yes`, and the workflow only ever opens the PR for you to
+read and merge by hand — nothing is merged without a human unless you explicitly set `all`.
 
-> **`yes` and `all` mean the same thing here, deliberately.** In the sibling repo News-Express
-> they differ: `yes` merges patch bumps only, `all` includes minors. That distinction cannot
-> exist in this repo, because the pin is a **series** (`python-version: '3.14'`) and
-> `setup-python` resolves the patch itself — so every bump this workflow can ever propose is a
-> series bump. Accepting both values means copying the setting across repos can never silently
-> merge nothing.
+> **`yes` does NOT merge in this repo, on purpose.** One rule then holds everywhere:
+>
+> | value | News-Express family (pins `3.14.7`) | Game-Express (pins `3.14`) |
+> |---|---|---|
+> | unset | nothing auto-merges | nothing auto-merges |
+> | `yes` | patch bumps auto-merge | **nothing auto-merges** — no patch PRs exist |
+> | `all` | patch **and** series bumps auto-merge | series bumps auto-merge |
+>
+> Read it as *“`yes` = merge the routine bumps; `all` = also merge the new-series jump.”* Because
+> this repo pins a **series** (`python-version: '3.14'`) and `setup-python` resolves patches by
+> itself, there are no routine bumps here to merge — so `yes` correctly merges nothing. That is
+> what lets you set `AUTO_MERGE_PYTHON_BUMP=yes` in **every** repo and still be certain a 3.15
+> jump always waits for a human.
 
 The merge tries squash, then merge, then rebase, and settles for a warning if the repository
 has all three disabled. A proven-green bump should never show up as a red run because of a
 repository setting.
 
-**Recommended:** leave `AUTO_MERGE_PYTHON_BUMP` unset for at least the *first* bump this produces
-(Python 3.15 is expected around October 2027). A brand-new Python *feature* release is the
-riskiest moment for any third-party dependency to have caught up; reviewing that one PR by hand
-costs a minute and costs nothing if it's clean. Turn auto-merge on afterwards if you'd rather not
-look at these at all.
+**Recommended:** keep `AUTO_MERGE_PYTHON_BUMP` at `yes` (or unset) so the series bump always
+waits for you. Python 3.15 is due around **October 2026**. A brand-new Python *feature* release
+is the riskiest moment for any third-party dependency to have caught up; reading that one PR
+costs a minute and costs nothing if it's clean. Set `all` afterwards if you'd rather not look at
+these at all.
 
 ## One-time setup this needs
 

@@ -141,10 +141,14 @@ with a Linux build, so it is already installable on this repo's runners today.
 
 - `ci.yml` and `monitor.yml`: `python-version: '{old}'` → `'{new}'`.
 {ruff_line}
-- **This PR does not merge itself.** It only merges automatically if the repository variable
-  `AUTO_MERGE_PYTHON_BUMP` is set to `yes`, **and** every check below is green on this exact
-  commit (same gate Dependabot PRs go through: compile, `validate`, all offline tests, preview
-  render). Leave the variable unset to always review these by hand instead.
+- **Everything was already proved green BEFORE this PR existed**, under the **new** interpreter:
+  every dependency installed from a prebuilt wheel (`--only-binary=:all:`), then `compileall` +
+  `validate` + the offline suite + the preview render. You will see **no checks on this PR** —
+  GitHub does not trigger workflows for a PR opened with the built-in `GITHUB_TOKEN`, which is
+  precisely why the gate runs inside the bump job instead.
+- **This PR does not merge itself by default.** It merges automatically only if the repository
+  variable `AUTO_MERGE_PYTHON_BUMP` is set to **`all`**. `yes` deliberately does *not* merge a
+  series bump in this repo — so leaving it at `yes`, or unset, means this one waits for you.
 - Patch releases within the `{new}` series (e.g. the next bugfix release) need no further PRs —
   pinning the minor only (not the full `X.Y.Z`) means the runner always picks the newest patch.
 - The **next** minor bump after this one will need another PR like this one; Python ships a new
