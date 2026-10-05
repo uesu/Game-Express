@@ -9,6 +9,7 @@ Game-Express is and how to set it up; come here for the detail.
 |---|---|
 | **[CONFIGURATION.md](CONFIGURATION.md)** | every secret, variable, `games.json` field and `overrides.json` key |
 | **[SCHEDULER.md](SCHEDULER.md)** | the cron-job.org job that triggers the monitor, the classic token, poll-rate reasoning, private-repo limits |
+| **[ROLLOUT.md](ROLLOUT.md)** | switching on the per-game schedule copies safely, one game at a time |
 | **[TESTING.md](TESTING.md)** | the manual test bench, what you should see in Discord, the local commands |
 | **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** | symptom → fix |
 

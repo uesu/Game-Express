@@ -9,13 +9,22 @@ name: Python version bump (auto)
 # from — and opens a PR only when a newer STABLE series (with a Linux build) already exists
 # there. Nothing is guessed: whatever it proposes is already installable on the runner.
 #
-# It never merges on its own. The merge-only-if-green gate lives in ci.yml (job
-# `automerge-python-bump`), reusing the exact same pattern as the opt-in Dependabot auto-merge:
-# it only fires for a PR labelled `python-bump`, only once the full test job (the offline suite +
-# compile + validate + preview) is green on that exact commit, and only when the repository
-# VARIABLE AUTO_MERGE_PYTHON_BUMP=yes exists. Leave the variable unset to always review these by
-# hand — recommended for at least the first bump (Python 3.15, expected ~October 2027), since a
-# brand-new Python *feature* release is the riskiest moment for any third-party dependency.
+# THE RULE: 100% GREEN OR NOTHING. No PR is opened unless, under the NEW interpreter, all of
+# this passed first: every dependency installed FROM A PREBUILT WHEEL (`--only-binary=:all:`),
+# then compileall + validate + the offline suite + the preview render — the exact commands
+# ci.yml runs. Missing wheels or a red gate => DEFERRED (a warning, next week retries), never a
+# failed run.
+#
+# WHY THE GATE IS HERE AND NOT IN ci.yml: a PR opened with the built-in GITHUB_TOKEN does NOT
+# trigger other workflows, so ci.yml never fires on it and no check is ever posted. A
+# `needs: test` gate over in ci.yml would therefore wait forever — which is exactly why the old
+# `automerge-python-bump` job could never run. Validating here, under the new interpreter, is
+# also strictly more informative than ci.yml would have been: ci.yml tests the OLD pin.
+#
+# Merging is opt-in: repository VARIABLE AUTO_MERGE_PYTHON_BUMP=yes. Leave it unset to always
+# review these by hand — recommended for at least the first bump (Python 3.15, expected
+# ~October 2027), since a brand-new Python *feature* release is the riskiest moment for any
+# third-party dependency.
 #
 # One-time setup this needs: Settings → Actions → General → Workflow permissions → "Allow GitHub
 # Actions to create and approve pull requests" (GitHub blocks workflow-opened PRs until that is
@@ -33,7 +42,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       # peter-evans/create-pull-request pushes the bump branch with these credentials, so they
       # have to persist. Nothing in this job is uploaded as an artifact.
@@ -52,8 +61,66 @@ jobs:
           PR_BODY_PATH: ${{ runner.temp }}/python_bump_body.md
         run: python .github/scripts/python_version_bump.py
 
-      - name: Open the PR (only when a newer stable series was found)
+      # ── Prove the bump before proposing it ────────────────────────────────────────────
+      # A PR opened with the built-in GITHUB_TOKEN does NOT trigger ci.yml, so no check
+      # would ever appear on it. Rather than rely on a check that cannot run, this job
+      # runs CI's own commands here — under the NEW interpreter, on the tree the previous
+      # step already rewrote. That is strictly more informative than ci.yml would have
+      # been, because ci.yml would have tested the OLD pin.
+      - name: Switch to the proposed interpreter
+        id: switch
         if: steps.bump.outputs.changed == 'true'
+        continue-on-error: true
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
+        with:
+          python-version: '${{ steps.bump.outputs.new_version }}'
+
+      # The single most likely way a new CPython series breaks this repo: aiohttp ships
+      # compiled wheels per interpreter ABI, and so do multidict / yarl / frozenlist /
+      # propcache. On the day 3.x.0 lands those wheels do not exist yet; pip would fall
+      # back to compiling from source, which either fails or silently produces a slower,
+      # less-tested build. No wheels => DEFER, do not propose. Not a failed run.
+      #
+      # Every step below must re-check `switch`: if the interpreter did not actually change,
+      # `python` is still the OLD one, and a green gate here would be a lie.
+      - name: Every dependency must install FROM A PREBUILT WHEEL
+        id: wheels
+        if: steps.bump.outputs.changed == 'true' && steps.switch.outcome == 'success'
+        continue-on-error: true
+        run: >-
+          python -m pip install --disable-pip-version-check -q
+          --only-binary=:all: -r requirements.txt pyyaml
+
+      - name: Re-run CI's own gates under the new interpreter
+        id: gates
+        if: steps.bump.outputs.changed == 'true' && steps.switch.outcome == 'success' && steps.wheels.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euxo pipefail
+          python -V
+          python -m compileall -q gamexpress tests
+          python -m gamexpress validate
+          python tests/test_smoke.py
+          python -m gamexpress preview --out "$RUNNER_TEMP/previews" > /dev/null
+
+      # Values reach the shell through env, never through ${{ }} inlined into `run:` —
+      # that is zizmor's template-injection audit, and every workflow in this repo is clean
+      # of it. Same reason the two steps below use env too.
+      - name: Say why nothing was proposed (deferred, not failed)
+        if: steps.bump.outputs.changed == 'true' && (steps.switch.outcome != 'success' || steps.wheels.outcome != 'success' || steps.gates.outcome != 'success')
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+          SWITCH: ${{ steps.switch.outcome }}
+          WHEELS: ${{ steps.wheels.outcome }}
+          GATES: ${{ steps.gates.outcome }}
+        run: |
+          echo "::warning::Python ${NEW_VERSION} is available but NOT proposed yet" \
+               "(interpreter=${SWITCH} wheels=${WHEELS} gates=${GATES})." \
+               "This is a deferral, not a failure — next Monday retries."
+
+      - name: Open the PR (only when a newer stable series was found AND proved green)
+        id: cpr
+        if: steps.bump.outputs.changed == 'true' && steps.switch.outcome == 'success' && steps.wheels.outcome == 'success' && steps.gates.outcome == 'success'
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1  # v8
         with:
           commit-message: "chore(python): bump to Python ${{ steps.bump.outputs.new_version }}"
@@ -66,3 +133,53 @@ jobs:
             .github/workflows/ci.yml
             .github/workflows/monitor.yml
             ruff.toml
+
+      # The merge lives HERE, not in ci.yml. ci.yml cannot do it: its `pull_request`
+      # trigger never fires for a PR opened with GITHUB_TOKEN, so a `needs: test` gate
+      # there would wait for a check that is never going to be posted.
+      #
+      # `all` is accepted as well as `yes` only so that setting the same value as
+      # News-Express cannot silently merge nothing — this repo pins a SERIES ('3.14'), so
+      # setup-python resolves patches by itself and every bump proposed here is a series
+      # bump. There is no patch-only category to distinguish.
+      - name: Merge it (opt-in — repository variable AUTO_MERGE_PYTHON_BUMP=yes)
+        if: steps.cpr.outputs.pull-request-number != '' && (vars.AUTO_MERGE_PYTHON_BUMP == 'yes' || vars.AUTO_MERGE_PYTHON_BUMP == 'all')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ steps.cpr.outputs.pull-request-number }}
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          # Whichever merge method the repo actually allows. A disabled squash button must
+          # not turn a proven-green bump into a red run.
+          if gh pr merge "$PR" --squash  --delete-branch \
+          || gh pr merge "$PR" --merge   --delete-branch \
+          || gh pr merge "$PR" --rebase  --delete-branch; then
+            echo "Merged #${PR} — proved green on Python ${NEW_VERSION} before it was opened."
+          else
+            echo "::warning::PR #${PR} is green but no merge method is enabled in" \
+                 "Settings → General → Pull Requests. Merge it by hand."
+          fi
+
+      - name: Summary
+        if: always()
+        env:
+          OLD_VERSION: ${{ steps.bump.outputs.old_version }}
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+          SWITCH: ${{ steps.switch.outcome }}
+          WHEELS: ${{ steps.wheels.outcome }}
+          GATES: ${{ steps.gates.outcome }}
+          PR_URL: ${{ steps.cpr.outputs.pull-request-url }}
+          AUTO_MERGE: ${{ vars.AUTO_MERGE_PYTHON_BUMP }}
+        run: |
+          {
+            echo "### Python version bump"
+            echo ""
+            echo "* current pin: \`${OLD_VERSION:-unknown}\`"
+            echo "* candidate: \`${NEW_VERSION:-none}\`"
+            echo "* interpreter installed: \`${SWITCH:-n/a}\`"
+            echo "* wheels available: \`${WHEELS:-n/a}\`"
+            echo "* CI gates under the new interpreter: \`${GATES:-n/a}\`"
+            echo "* pull request: ${PR_URL:-none opened}"
+            echo "* auto-merge: \`${AUTO_MERGE:-unset}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

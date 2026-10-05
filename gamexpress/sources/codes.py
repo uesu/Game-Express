@@ -516,7 +516,7 @@ class CodeSources:
         if kind == "fandom":
             wiki, _, page = arg.partition("/")
             d = await f.get_json(FANDOM.format(wiki=wiki, page=page or "Redemption_Code"),
-                                 source="codes:fandom", headers={"User-Agent": "Game-Express/1.1 (code monitor)"})
+                                 source="codes:fandom", headers={"User-Agent": "Game-Express (code monitor)"})
             return parse_fandom(d) if d is not None else None
         if kind == "codehub":
             d = await self._once("codehub", lambda: self._github_raw(CODEHUB, source="codes:codehub", as_json=True))
