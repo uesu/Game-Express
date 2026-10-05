@@ -20,7 +20,7 @@ That workflow:
 
 ## 0. Before merging a PR
 
-The PR's **CI — compile + offline tests** check must be green. It runs 163 offline tests, which
+The PR's **CI — compile + offline tests** check must be green. It runs the whole offline suite, which
 cover:
 
 - the real official posts, which must reproduce your reference cards' timestamps;
@@ -99,8 +99,8 @@ If the title link or the picture is wrong:
 
 - The card is built from whatever official post the run saw. When the Special Program preview is
   older than the lookback window, the monitor looks it up on the **official news page** (then the
-  HoYoLAB list) and replaces the link, the key art and the air time — see the README under
-  *Version schedule card*. `PROGRAM_MEDIA=0` switches that off.
+  HoYoLAB list) and replaces the link, the key art and the air time — see
+  [ACCURACY.md](ACCURACY.md#the-announcements-own-link-and-key-art). `PROGRAM_MEDIA=0` switches that off.
 - A `fastcdn.hoyoverse.com` cover instead of the livestream art means the article has no embedded
   YouTube player, so there is no 1280×720 thumbnail to prefer.
 - `⚠️ … 4★ shown as TBA — 2 name(s) found, 3 expected` → the uncertain 4★ list was correctly
@@ -146,7 +146,7 @@ If the title link or the picture is wrong:
 
 ```bash
 pip install -r requirements.txt pyyaml
-python tests/test_smoke.py                 # 163 offline tests
+python tests/test_smoke.py                 # the full offline suite
 python -m gamexpress validate              # routing, pings, card limits
 python -m gamexpress preview               # previews/index.html = every card, Discord-style
 ruff check .                               # same ruff.toml the advisory job uses

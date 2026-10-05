@@ -35,7 +35,7 @@ Schedules, banners, maintenance times and codes come from official and community
 If you run an instance, you are responsible for:
 - **Using webhooks and tokens you own**, and keeping them secret.
 - **Following the rules of every service involved**: the [Discord Terms of Service](https://discord.com/terms), the [Discord Developer Policy](https://discord.com/developers/docs/policies-and-agreements/developer-policy), the X/Twitter terms, and the terms of the APIs the Service reads.
-- **Respecting sources**: keep the default low request rate (a run every ~10 minutes, with only a few requests per source) and do not use the Service to overload, scrape at high frequency, or resell data.
+- **Respecting sources**: keep the default low request rate (a run every ~5 minutes, with only a few requests per source) and do not use the Service to overload, scrape at high frequency, or resell data.
 - **Your server's content**: ping roles, channels, and who can see the posts.
 
 ## 6. Acceptable use
@@ -61,7 +61,7 @@ Server admins can remove the webhook from their server at any time.
 
 ## 10. Changes
 These Terms may be updated. Changes are published in this file with a new effective date and
-noted in the README changelog. Continued use after a change means you accept the updated Terms.
+noted in the [changelog](docs/changelog/CHANGELOG.md). Continued use after a change means you accept the updated Terms.
 
 ## 11. Contact
 Open an issue in the repository that hosts the instance you are using.

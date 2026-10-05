@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 
 import aiohttp
 
-from . import __version__, codeposter, schedule
+from . import build_id, codeposter, schedule
 from .config import Game, Settings, active_games, load_games, load_overrides
 from .discord import WebhookClient
 from .http import BOT_UA, Fetcher, Probe
@@ -260,7 +260,7 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
             ctx.report.append("⏸️ no active features this run (ENABLED_FEATURES=none or passive standby)")
         ephemeral = settings.dry_run or settings.test_mode
         if ctx.active and features and not ctx.errors and not ephemeral:
-            state.heartbeat(settings.instance_name, __version__, settings.heartbeat_min, ctx.now)
+            state.heartbeat(settings.instance_name, settings.heartbeat_min, ctx.now)
         state.prune(ctx.now)
         if not ephemeral:
             if state.save():
@@ -277,7 +277,7 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
 
 
 def write_summary(ctx: Ctx) -> None:
-    lines = [f"### Game-Express {__version__} — {ctx.settings.instance_name} ({ctx.settings.instance_role})"]
+    lines = [f"### Game-Express {build_id()} — {ctx.settings.instance_name} ({ctx.settings.instance_role})"]
     if ctx.settings.dry_run:
         lines.append("> **DRY RUN** — nothing was posted or saved; \"posted\" below means *would post*. "
                      "The full card JSON is in the job log (paste it into discohook.app to see it).")

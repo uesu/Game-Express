@@ -17,7 +17,6 @@ class Item:
     published_ts: int
     images: list[str] = field(default_factory=list)
     links: list[str] = field(default_factory=list)
-    author: str = ""
     official: bool = True
 
     @property

@@ -39,7 +39,7 @@ separated file-by-file:
 | stack | files |
 |---|---|
 | nitter source notes | `docs/SOURCES.md`, part of `gamexpress/config.py`, part of `tests/test_smoke.py` |
-| timestamp speculation | `config/games.json`, `gamexpress/schedule.py`, `gamexpress/__main__.py`, rest of `config.py`, rest of `test_smoke.py`, `docs/SCHEDULER.md`, `docs/TIMESTAMP-PATTERNS.md`, `README.md`, `docs/TESTING.md` |
+| timestamp speculation | `config/games.json`, `gamexpress/schedule.py`, `gamexpress/__main__.py`, rest of `config.py`, rest of `test_smoke.py`, `docs/SCHEDULER.md`, `docs/TIMESTAMP-PATTERNS.md`, `docs/ACCURACY.md`, `README.md`, `docs/TESTING.md` |
 
 They ship together: **PR #26 on `uesu/Game-Express` is the superset of both stacks**, so merging
 that one PR completes `main` — nothing else needs applying. (Both stacks were also captured as
@@ -49,7 +49,7 @@ ever loses the branch — the sandbox's git history reset twice during developme
 or the other, never both.)
 
 It was verified by checking out a pristine `origin/main` into a scratch worktree, applying the
-patch, and running the full gate on the result: compileall, `validate`, **163/163 tests**,
+patch, and running the full gate on the result: compileall, `validate`, **the whole test suite**,
 preview render and `ruff` all pass. PR #26 carries exactly that tree and is green on the same
 gate plus GitHub's own CI.
 
@@ -64,7 +64,7 @@ rebuilt from the patch instead, a new coding session pointed at `uesu/Game-Expre
 > Apply `game-express-speculation.patch` from the repo root onto a fresh branch, run the full CI
 > gate (`python -m compileall -q gamexpress tests`, `python -m gamexpress validate`,
 > `python tests/test_smoke.py`, `python -m gamexpress preview --out /tmp/previews`,
-> `ruff check gamexpress/ tests/`), confirm 163/163 tests pass, then push the branch and open a
+> `ruff check gamexpress/ tests/`), confirm the whole suite passes, then push the branch and open a
 > pull request.
 
 Either way, land **one** of them — the PR is the patch, so doing both double-applies.
@@ -131,11 +131,12 @@ Discord portal, or publish them somewhere else (Gist, site). Don't leave them da
 ### Leave behind (dev only)
 
 ```
-tests/                     38 files — 163 tests, fixtures, golden cards
-docs/                      SOURCES, SCHEDULER, TESTING, SECURITY, DEPENDABOT,
-                           PYTHON_VERSION, TIMESTAMP-PATTERNS, PROD-REPO-SETUP
-                           (this guide lives in docs/ too — it describes the move,
-                            it is not part of what gets moved)
+tests/                     38 files — the suite, fixtures, golden cards
+docs/                      the whole manual: CONFIGURATION, ACCURACY, SOURCES, SCHEDULER,
+                           TESTING, TROUBLESHOOTING, SECURITY, TIMESTAMP-PATTERNS,
+                           DEPENDABOT, PYTHON_VERSION, CREDITS, PROD-REPO-SETUP and
+                           changelog/  (this guide lives in docs/ too — it describes
+                           the move, it is not part of what gets moved)
 .github/workflows/ci.yml           PRs happen in dev
 .github/workflows/python_version_bump.yml
 .github/scripts/python_version_bump.py

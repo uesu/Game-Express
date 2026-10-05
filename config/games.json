@@ -17,7 +17,6 @@
     "genshin": {
       "name": "Genshin Impact",
       "short": "GI",
-      "publisher": "HoYoverse",
       "enabled": true,
       "four_star_count": 3,
       "icon": "https://pbs.twimg.com/profile_images/2102589386378686464/tS24hVO2_200x200.jpg",
@@ -48,7 +47,6 @@
     "starrail": {
       "name": "Honkai: Star Rail",
       "short": "HSR",
-      "publisher": "HoYoverse",
       "enabled": true,
       "four_star_count": 3,
       "icon": "https://pbs.twimg.com/profile_images/2061274429456334851/xQfl3Ve__200x200.jpg",
@@ -78,7 +76,6 @@
     "zzz": {
       "name": "Zenless Zone Zero",
       "short": "ZZZ",
-      "publisher": "HoYoverse",
       "enabled": true,
       "four_star_count": 2,
       "icon": "https://pbs.twimg.com/profile_images/2097499758462140416/YGW1eFcg_200x200.jpg",
@@ -108,7 +105,6 @@
     "wuwa": {
       "name": "Wuthering Waves",
       "short": "WW",
-      "publisher": "Kuro Games",
       "enabled": true,
       "four_star_count": 3,
       "icon": "https://pbs.twimg.com/profile_images/2085696982958665728/qlgc729S_200x200.jpg",
@@ -145,7 +141,6 @@
     "hna": {
       "name": "Honkai: Nexus Anima",
       "short": "HNA",
-      "publisher": "HoYoverse",
       "enabled": true,
       "released": false,
       "aliases": ["NEXUSANIMA"],
@@ -162,7 +157,6 @@
     "ananta": {
       "name": "ANANTA",
       "short": "ANANTA",
-      "publisher": "NetEase",
       "enabled": true,
       "released": false,
       "auto_enable_on": "2027-01-15",

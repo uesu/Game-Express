@@ -509,9 +509,9 @@ def test_state_saves_only_on_change():
         assert st.save() is True and sp.exists()
         st2 = State.load(sp)
         assert st2.save() is False
-        st2.heartbeat("alpha", "1.0.0", 60, 1000)
+        st2.heartbeat("alpha", 60, 1000)
         assert st2.save() is True
-        st2.heartbeat("alpha", "1.0.0", 60, 1500)          # < 60 min later -> no new commit
+        st2.heartbeat("alpha", 60, 1500)          # < 60 min later -> no new commit
         assert st2.save() is False
 
 
@@ -3462,6 +3462,35 @@ def test_speculate_command_survives_the_real_state_file():
     with contextlib.redirect_stdout(out):
         assert gxmain.main(["speculate"]) == 0
     assert "estimates only" in out.getvalue()
+
+def test_build_id_reports_the_commit_in_actions_and_degrades_quietly_outside():
+    """The run summary's build line replaced a hand-maintained __version__.
+
+    Guards the swap: Actions must get a real commit (the whole point -- it names the code
+    that posted the card), and anywhere without GITHUB_SHA must fall back rather than
+    print an empty string or raise. Also pins the short form: a 40-char SHA in a summary
+    heading is noise.
+    """
+    import gamexpress
+
+    saved = os.environ.get("GITHUB_SHA")
+    try:
+        os.environ["GITHUB_SHA"] = "702c9bd1f4e8a3c05d6b9271ae4c8f0b3d5e7a19"
+        assert gamexpress.build_id() == "702c9bd"
+
+        for blank in ("", "   "[:0]):          # unset and empty both mean "not in Actions"
+            os.environ["GITHUB_SHA"] = blank
+            assert gamexpress.build_id() == "local"
+        os.environ.pop("GITHUB_SHA", None)
+        assert gamexpress.build_id() == "local"
+    finally:
+        os.environ.pop("GITHUB_SHA", None)
+        if saved is not None:
+            os.environ["GITHUB_SHA"] = saved
+
+    # and nothing anywhere still expects the retired attribute
+    assert not hasattr(gamexpress, "__version__")
+
 
 if __name__ == "__main__":
     sys.exit(main())
