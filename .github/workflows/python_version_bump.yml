@@ -21,10 +21,12 @@ name: Python version bump (auto)
 # `automerge-python-bump` job could never run. Validating here, under the new interpreter, is
 # also strictly more informative than ci.yml would have been: ci.yml tests the OLD pin.
 #
-# Merging is opt-in: repository VARIABLE AUTO_MERGE_PYTHON_BUMP=yes. Leave it unset to always
-# review these by hand — recommended for at least the first bump (Python 3.15, expected
-# ~October 2027), since a brand-new Python *feature* release is the riskiest moment for any
-# third-party dependency.
+# Merging is opt-in AND deliberately strict: ONLY the repository VARIABLE
+# AUTO_MERGE_PYTHON_BUMP=all merges a bump from here. The value `yes` — what the News-Express
+# family uses to auto-merge its routine PATCH bumps — does NOT merge here, on purpose: this repo
+# pins a SERIES, so every bump this workflow can propose is a new series, and a brand-new Python
+# *feature* release is the riskiest moment for any third-party dependency. Python 3.15 is due
+# around October 2026, and it will land as a PR you read.
 #
 # One-time setup this needs: Settings → Actions → General → Workflow permissions → "Allow GitHub
 # Actions to create and approve pull requests" (GitHub blocks workflow-opened PRs until that is
@@ -138,12 +140,19 @@ jobs:
       # trigger never fires for a PR opened with GITHUB_TOKEN, so a `needs: test` gate
       # there would wait for a check that is never going to be posted.
       #
-      # `all` is accepted as well as `yes` only so that setting the same value as
-      # News-Express cannot silently merge nothing — this repo pins a SERIES ('3.14'), so
-      # setup-python resolves patches by itself and every bump proposed here is a series
-      # bump. There is no patch-only category to distinguish.
-      - name: Merge it (opt-in — repository variable AUTO_MERGE_PYTHON_BUMP=yes)
-        if: steps.cpr.outputs.pull-request-number != '' && (vars.AUTO_MERGE_PYTHON_BUMP == 'yes' || vars.AUTO_MERGE_PYTHON_BUMP == 'all')
+      # ONLY `all` merges here. `yes` deliberately does not — see the header. This keeps ONE
+      # rule true across every repo in the family, so the same variable can be set everywhere:
+      #
+      #     yes = auto-merge the ROUTINE bumps   (patch bumps; this repo has none to merge,
+      #           because the series pin lets setup-python pick patches up by itself)
+      #     all = ALSO auto-merge a NEW-SERIES bump (3.14 -> 3.15)
+      #
+      # So AUTO_MERGE_PYTHON_BUMP=yes is safe to set in all repos and can never merge a series
+      # jump anywhere. Note a red bump cannot reach this step at all: the PR above is only
+      # created when the wheels gate and every CI gate passed under the new interpreter, and
+      # this step requires that PR to exist.
+      - name: Merge it (opt-in — repository variable AUTO_MERGE_PYTHON_BUMP=all)
+        if: steps.cpr.outputs.pull-request-number != '' && vars.AUTO_MERGE_PYTHON_BUMP == 'all'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ steps.cpr.outputs.pull-request-number }}

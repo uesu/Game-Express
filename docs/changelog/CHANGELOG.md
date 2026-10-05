@@ -15,6 +15,31 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ## 2026-10-05
 
+**`yes` no longer merges a Python series bump — one rule across every repo**
+
+- **The merge gate now requires `all`.** `python_version_bump.yml` previously merged on
+  `AUTO_MERGE_PYTHON_BUMP == 'yes' || == 'all'`. It now requires `all` alone. Because this repo
+  pins a **series** (`python-version: '3.14'`) and `setup-python` resolves patches by itself,
+  every bump this workflow can propose is a new series — so `yes` was authorising exactly the
+  one change that most deserves a human glance.
+- **Why it matters beyond this repo.** The sibling News-Express repos pin the full `3.14.7` and
+  read `yes` as *patch bumps only*, refusing a series jump. The same word therefore meant
+  "merge the small ones" there and "merge the big one" here. One rule now holds everywhere:
+  `yes` = auto-merge the routine bumps, `all` = also auto-merge the new-series jump. That makes
+  `AUTO_MERGE_PYTHON_BUMP=yes` safe to set in **every** repo, with Python 3.15 always waiting
+  for a human in all of them.
+- **No behavioural change from the shipped state** — the variable was unset here, so nothing
+  auto-merged before and nothing does now. Only the *configuration* became uniform.
+- **A red bump still cannot reach the merge step**, unchanged: the PR is only created when the
+  wheels gate plus `compileall` + `validate` + the offline suite + the preview render all passed
+  under the **new** interpreter, and the merge step requires that PR to exist. A failure is a
+  `::warning::` deferral that retries the following Monday.
+- **Date correction: Python 3.15 is due around October 2026, not 2027.** 3.14.0 shipped
+  2025-10-07, so 3.15 is the October 2026 release (actions/python-versions was publishing
+  `3.15.0-rc.3` on this date). Two places said 2027: this workflow's header and
+  `docs/PYTHON_VERSION.md`. The ANANTA `2027-01-15` launch dates elsewhere are unrelated and
+  correct.
+
 **The Python auto-bump can actually merge itself now**
 
 - **The bump PR was waiting on a check that could never be posted.** `python_version_bump.yml`

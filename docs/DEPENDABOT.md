@@ -79,7 +79,8 @@ Dependabot — it's a plain string in workflow YAML, not a tracked ecosystem fil
 job described above: a PR it opens carries the built-in `GITHUB_TOKEN`, which GitHub refuses to
 let trigger further workflows, so no CI check can ever appear on it. It therefore runs the same
 gate itself, under the new interpreter, before the PR exists, and merges from there behind
-`AUTO_MERGE_PYTHON_BUMP=yes`. See [docs/PYTHON_VERSION.md](PYTHON_VERSION.md).
+`AUTO_MERGE_PYTHON_BUMP=all` — `yes` deliberately does *not* merge a series bump in this repo.
+See [docs/PYTHON_VERSION.md](PYTHON_VERSION.md).
 
 That restriction does **not** apply to Dependabot, which GitHub does let trigger workflows — so
 the `test` job really does run on a Dependabot PR, and the gate above is real.

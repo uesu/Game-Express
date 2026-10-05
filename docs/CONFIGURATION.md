@@ -151,7 +151,7 @@ being dropped. A codes drop split across several messages mentions the role on *
 |---|---|---|
 | `INSTANCE_NAME` / `INSTANCE_ROLE` / `PEER_STATE_URL` / `HEARTBEAT_MINUTES` / `FAILOVER_AFTER_MINUTES` | alpha / primary / — / 1440 / 90 | two-instance fail-over, see [README → Reliability](../README.md#-reliability) |
 | `AUTO_MERGE_DEPENDABOT` | — | `yes` = merge green Dependabot PRs automatically (dev repo only; [DEPENDABOT.md](DEPENDABOT.md)) |
-| `AUTO_MERGE_PYTHON_BUMP` | — | `yes` = merge a green, automated Python-version-bump PR automatically ([PYTHON_VERSION.md](PYTHON_VERSION.md)) |
+| `AUTO_MERGE_PYTHON_BUMP` | — | `all` = merge a green, automated Python-version-bump PR automatically. `yes` deliberately does **not** merge here, so it is safe to set repo-wide ([PYTHON_VERSION.md](PYTHON_VERSION.md)) |
 
 ---
 
