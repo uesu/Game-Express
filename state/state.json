@@ -1780,7 +1780,8 @@
   "icons": {
     "genshin": "https://pbs.twimg.com/profile_images/2102589386378686464/tS24hVO2_200x200.jpg",
     "starrail": "https://pbs.twimg.com/profile_images/2061274429456334851/xQfl3Ve__200x200.jpg",
-    "wuwa": "https://pbs.twimg.com/profile_images/2085696982958665728/qlgc729S_200x200.jpg"
+    "wuwa": "https://pbs.twimg.com/profile_images/2085696982958665728/qlgc729S_200x200.jpg",
+    "zzz": "https://pbs.twimg.com/profile_images/2097499758462140416/YGW1eFcg_200x200.jpg"
   },
   "schedule": {
     "ananta": {},
@@ -1991,7 +1992,81 @@
         "status": "seeded"
       }
     },
-    "zzz": {}
+    "zzz": {
+      "3.3": {
+        "data": {
+          "estimate_sources": [
+            "version cadence"
+          ],
+          "estimated": [
+            "preinstall_ts",
+            "maint_start_ts",
+            "maint_end_ts"
+          ],
+          "images": [
+            "https://pbs.twimg.com/media/HTxU4O3W4AAGolV.jpg?name=orig"
+          ],
+          "maint_end_ts": 1792551600,
+          "maint_start_ts": 1792533600,
+          "preinstall_ts": 1792382400,
+          "program_name": "Special Program",
+          "program_seen": true,
+          "program_ts": 1791545400,
+          "source_label": "HoYoLAB",
+          "source_links": [
+            [
+              "X Post",
+              "https://x.com/ZZZ_EN/status/2106957553435312559"
+            ],
+            [
+              "HoYoLAB",
+              "https://www.hoyolab.com/article/46972907"
+            ]
+          ],
+          "source_url": "https://www.hoyolab.com/article/46972907",
+          "title_url": "https://www.hoyolab.com/article/46972907",
+          "version": "3.3",
+          "version_name": "Journey to the Sky"
+        },
+        "estimated_reported": [
+          "preinstall_ts",
+          "maint_start_ts",
+          "maint_end_ts"
+        ],
+        "first_seen": 1791172831,
+        "message_id": "1556516427786096744",
+        "payload_hash": "936c3c0d35967121",
+        "posted_at": 1791172831,
+        "prov": {
+          "maint_end_ts": [
+            9,
+            1791172831
+          ],
+          "maint_start_ts": [
+            9,
+            1791172831
+          ],
+          "preinstall_ts": [
+            9,
+            1791172831
+          ],
+          "program_name": [
+            50,
+            1791172803
+          ],
+          "program_ts": [
+            50,
+            1791172803
+          ],
+          "version_name": [
+            50,
+            1791172803
+          ]
+        },
+        "status": "posted",
+        "webhook_fp": "19991534cf6d"
+      }
+    }
   },
   "schema": 1
 }
