@@ -70,7 +70,6 @@ One card per game + version, triggered by an official *Special Program* / *Speci
 livestream announcement or an update-maintenance notice.
 
 ```
-<@&ROLE> Honkai: Star Rail Version 4.6 Schedule! 📜              ← ping line (only if a role is set)
 ┌───────────────────────────────────────────────────────────── (accent 14922399)
 │ ## Honkai: Star Rail Version 4.6 Special Program               ← title, links to the video/post
 │ <t:1789903800:F> or <t:1789903800:R>                           ← Discord timestamps
@@ -86,7 +85,7 @@ livestream announcement or an update-maintenance notice.
 │ [ announcement image ]
 │ ─────────────
 │ [ Youtube ] [ Twitch ] [ HoYoLAB ]                             ← buttons INSIDE the card
-│ -# STC — Subject to Change • TBA — To be Announced
+│ -# STC — Subject to Change • TBA — To be Announced <@&ROLE>    ← ping (only if a role is set)
 └─────────────────────────────────────────────────────────────
 ```
 
@@ -115,10 +114,9 @@ One card per batch of new codes, in **that game's own codes channel**. New codes
 same run share a card.
 
 ```
-<@&ROLE> Genshin Impact Redemption Codes! 🎁                       ← ping line (optional)
 ┌───────────────────────────────────────────────────────────── (game color)
 │ ## 🎁 Genshin Impact Redemption Codes                     [game icon]
-│ -# 2 new codes • detected <t:…:R>
+│ -# 2 new codes • detected <t:…:R> <@&ROLE>                ← ping (optional)
 │ ─────────────
 │ ✦ `VESNAONPATROL`
 │ -# Primogem ×40 • Mora ×20000 • Hero's Wit ×3

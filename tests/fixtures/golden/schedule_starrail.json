@@ -2,10 +2,6 @@
  "flags": 32768,
  "components": [
   {
-   "type": 10,
-   "content": "<@&1296268365593186426> Honkai: Star Rail Version 4.6 Schedule! 📜"
-  },
-  {
    "type": 17,
    "accent_color": 14922399,
    "components": [
@@ -75,7 +71,7 @@
     },
     {
      "type": 10,
-     "content": "-# STC — Subject to Change • TBA — To be Announced"
+     "content": "-# STC — Subject to Change • TBA — To be Announced <@&1296268365593186426>"
     }
    ]
   }

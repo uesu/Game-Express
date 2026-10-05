@@ -78,7 +78,9 @@ class WebhookClient:
         if problems:
             return SendResult(False, 0, error="invalid payload: " + "; ".join(problems))
         if self.dry_run:
-            self.sent.append({"method": method, "payload": payload})
+            # The fingerprint, never the URL: it is enough to tell two destinations apart (which
+            # is what the fan-out tests assert) and it cannot be turned back into a secret.
+            self.sent.append({"method": method, "payload": payload, "fp": webhook_fingerprint(url)})
             log.info("DRY RUN %s %s\n%s", method, re.sub(r"/webhooks/\d+/[\w-]+", "/webhooks/…", url),
                      json.dumps(payload, ensure_ascii=False)[:1500])
             return SendResult(True, 200, message_id="dry-run")

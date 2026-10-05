@@ -4,7 +4,6 @@
     "color": 14922399,
     "card": {
       "title": "{game} Version {version} {program}",
-      "header": "{game} Version {version} Schedule! 📜",
       "maintenance_heading": "Maintenance Details",
       "maintenance_style": "start_end",
       "maintenance_first": false,
