@@ -181,22 +181,66 @@ def test_golden_reference_cards():
         assert json.loads(path.read_text(encoding="utf-8")) == payload, f"golden mismatch: {path.name}"
 
 
+def test_a_card_has_nothing_above_it_and_pings_from_inside():
+    """The mention used to sit on a bare line above the card. It now lives INSIDE the
+    container — on the legend line of a schedule card, on the '… detected …' line of a codes
+    card — so the post reads as one block. Nothing may float above the container."""
+    s = settings()
+    sched = _render("starrail")
+    assert [c["type"] for c in sched["components"]] == [17]          # the container, alone
+    assert _legend(sched) == ("-# STC — Subject to Change • TBA — To be Announced "
+                              "<@&1296268365593186426>")
+    assert sched["allowed_mentions"] == {"parse": [], "roles": ["1296268365593186426"]}
+
+    # A codes card says "code" for one and "codes" for several, in both the heading and the
+    # count line, and mentions the role exactly once — on the count line.
+    g, ping = GAMES["genshin"], s.ping("codes", "genshin")
+    for n, word in ((1, "Code"), (2, "Codes"), (3, "Codes")):
+        codes = [{"code": f"GENSHIN{i:02d}", "rewards": [{"name": "Primogem", "qty": 60}],
+                  "sources": ["ennead"]} for i in range(n)]
+        p = cards.codes_payloads(g, codes, s, ping, 1791149429)[0]
+        assert [c["type"] for c in p["components"]] == [17]
+        head, sub = (c["content"] for c in p["components"][0]["components"][0]["components"][:2])
+        assert head == f"## 🎁 Genshin Impact Redemption {word}"
+        assert sub == (f"-# {n} new code{'' if n == 1 else 's'} • detected "
+                       f"<t:1791149429:R> <@&1296268365593186426>")
+        assert json.dumps(p, ensure_ascii=False).count("<@&1296268365593186426>") == 1
+
+    # A split drop notifies once: the follow-up parts carry neither mention nor permission.
+    many = [{"code": f"GI{i:02d}", "sources": ["ennead"]} for i in range(13)]
+    parts = cards.codes_payloads(g, many, s, ping, 1791149429)
+    assert len(parts) == 2
+    assert parts[1]["allowed_mentions"] == {"parse": []}
+    assert "<@&" not in json.dumps(parts[1], ensure_ascii=False)
+
+
+def test_the_ping_is_never_silently_dropped_when_the_legend_is_off():
+    """SHOW_LEGEND=0 removes the line the mention normally rides on. It must then get a line
+    of its own rather than vanish — a configured ping that notifies nobody is a silent bug."""
+    s = settings(SHOW_LEGEND="0")
+    p = cards.schedule_payload(GAMES["zzz"], SCHEDULE_SAMPLES["zzz"], s, s.ping("schedule", "zzz"))
+    foot = [c["content"] for c in p["components"][0]["components"]
+            if str(c.get("content", "")).startswith("-# ")]
+    assert foot == ["-# <@&1296268365593186426>"]
+    assert p["allowed_mentions"] == {"parse": [], "roles": ["1296268365593186426"]}
+
+
 def test_reference_card_text_is_exact():
     p = _render("starrail")
-    top, box = p["components"]
-    assert top["content"] == "<@&1296268365593186426> Honkai: Star Rail Version 4.6 Schedule! 📜"
+    (box,) = p["components"]                  # one container, nothing floating above it
+    assert _legend(p).endswith("To be Announced <@&1296268365593186426>")
     body = "\n".join(c["content"] for c in box["components"] if c["type"] == 10)
     for line in ("## [Honkai: Star Rail Version 4.6 Special Program](https://x.com/honkaistarrail/status/2099440781115211916)",
                  "<t:1789903800:F> or <t:1789903800:R>", "**Version 4.6 Banners (STC)**",
                  "✦ First Half/Phase: Pearl", "- 4 Star Characters: TBA", "**Maintenance Details (STC)**",
                  "✦ Pre-Install: <t:1790229600:F>", "✦ Start: <t:1790546400:F>", "✦ End: <t:1790564400:F>"):
         assert line in body, line
-    ww = "\n".join(c["content"] for c in _render("wuwa")["components"][1]["components"] if c["type"] == 10)
+    ww = "\n".join(c["content"] for c in _render("wuwa")["components"][0]["components"] if c["type"] == 10)
     assert 'Wuthering Waves Version 3.7 "Special Broadcast"' in ww
     assert "✦ Maintenance: <t:1790712000:f> to <t:1790737200:t>" in ww
     assert "※ 4 Star Characters: Buling, Taoqi, Youhu, Lumi, Danjin, Yangyang" in ww
     assert ww.index("Maintenance Time & Compensation Details") < ww.index("Banners (STC)")
-    gi = "\n".join(c["content"] for c in _render("genshin")["components"][1]["components"] if c["type"] == 10)
+    gi = "\n".join(c["content"] for c in _render("genshin")["components"][0]["components"] if c["type"] == 10)
     assert "**[Version 7.1 Banners (STC)](https://lunaris.moe/banners)**" in gi
     assert "※ Re-runs: Skirk, Escoffier" in gi
 
@@ -281,7 +325,6 @@ def test_games_config_is_valid():
             assert g.youtube.startswith("https://www.youtube.com/@"), g.key
             assert not g.twitch or g.twitch.startswith("https://www.twitch.tv/"), g.key
         cards.program_title(g, {"version": "1.0"})
-        cards.header_line(g, {"version": "1.0"})
     # both pre-release games are switched ON (2026-10-02) so nothing is missed before launch
     assert GAMES["hna"].enabled and GAMES["hna"].hoyolab_gid == 9
     assert GAMES["ananta"].enabled and not GAMES["ananta"].card.show_banners
@@ -358,8 +401,7 @@ def test_schedule_post_once_then_edit_silently():
         asyncio.run(schedule.run(ctx))
         posts = [x for x in ctx.webhook.sent if x["method"] == "POST"]
         assert len(posts) == 1
-        top = posts[0]["payload"]["components"][0]["content"]
-        assert top == "<@&1296268365593186426> Wuthering Waves Version 3.7 Schedule! 📜"
+        assert _legend(posts[0]["payload"]).endswith("To be Announced <@&1296268365593186426>")
         assert posts[0]["payload"]["allowed_mentions"] == {"parse": [], "roles": ["1296268365593186426"]}
         ctx.state.save()
         ctx = make_ctx(sp, items={"wuwa": [ww]}, now=1789303600)   # 3) same item again -> nothing
@@ -550,9 +592,12 @@ def test_no_ping_and_test_marker():
     s = settings()
     p = cards.codes_payloads(GAMES["genshin"], CODE_SAMPLES["genshin"], s, s.ping("codes", "genshin"), 1)[0]
     t = cards.mark_test(p)
-    assert t["components"][0]["content"].startswith("🧪 [TEST] <@&1296268365593186426>")
-    assert "TEST CARD" in t["components"][1]["components"][0]["content"] and not cards.validate_payload(t)
-    assert not p["components"][0]["content"].startswith("🧪")                    # original untouched
+    assert "TEST CARD" in t["components"][0]["components"][0]["content"] and not cards.validate_payload(t)
+    assert cards.mark_test(t) == t                       # idempotent: never stacks a 2nd banner
+    assert "TEST CARD" not in json.dumps(p, ensure_ascii=False)                 # original untouched
+    # the codes mention rides on the "… new code(s) • detected …" line, inside the card
+    assert p["components"][0]["components"][0]["components"][1]["content"].endswith(
+        "<@&1296268365593186426>")
     for key in CODE_SAMPLES:                                                    # one sample per game (6)
         assert key in GAMES
     assert set(CODE_SAMPLES) == {"genshin", "starrail", "zzz", "wuwa", "hna", "ananta"}
@@ -1006,7 +1051,8 @@ def test_test_mode_posts_latest_card_marked_test():
         ctx = make_ctx(Path(tmp) / "s.json", items={"wuwa": [ww]}, now=1789815600 + 5 * 86400, TEST_MODE="1")
         asyncio.run(schedule.run(ctx))                                          # 5 days old, fresh state
         posts = [x for x in ctx.webhook.sent if x["method"] == "POST"]
-        assert len(posts) == 1 and posts[0]["payload"]["components"][0]["content"].startswith("🧪 [TEST]")
+        assert len(posts) == 1
+        assert posts[0]["payload"]["components"][0]["components"][0]["content"].startswith("-# 🧪 TEST CARD")
 
 
 def test_parallel_probe_counts_per_game():
@@ -1461,7 +1507,7 @@ def test_code_card_buttons_are_the_code_links_then_the_community_row():
     rows = [c for c in ww["components"][-1]["components"] if c["type"] == 1]
     assert [b["label"] for b in rows[-1]["components"]] == ["Citlali News"]       # in-game-only game too
     # the livestream card keeps Youtube / Twitch
-    labels = [b["label"] for c in _render("starrail")["components"][1]["components"] if c["type"] == 1
+    labels = [b["label"] for c in _render("starrail")["components"][0]["components"] if c["type"] == 1
               for b in c["components"]]
     assert labels[:2] == ["Youtube", "Twitch"]
     # configurable: COMMUNITY_BUTTONS=none -> no row at all
@@ -2059,7 +2105,7 @@ def test_a_non_x_source_still_gets_its_own_button():
     d["source_url"] = "https://www.hoyolab.com/article/46814308"
     d["source_label"] = "HoYoLAB"
     p = cards.schedule_payload(GAMES["starrail"], d, s, s.ping("schedule", "starrail"))
-    btn_urls = [c["url"] for comp in p["components"][1]["components"] if comp["type"] == 1
+    btn_urls = [c["url"] for comp in p["components"][0]["components"] if comp["type"] == 1
                 for c in comp.get("components", [])]
     assert "https://www.hoyolab.com/article/46814308" in btn_urls
 
@@ -2221,6 +2267,210 @@ def test_a_non_404_edit_failure_is_still_an_error_not_a_repost():
                                              {"compensation": "Stellar Jade ×301"}, {}, True))
         assert ctx.webhook.sends == [] and ctx.errors == ["HSR 4.6: edit failed (400) bad payload"]
         assert records["4.6"]["message_id"] == "dead-message"
+
+
+# ------------------------------------------------------- schedule card fan-out (game channel)
+# The second channel a schedule card is copied into: #wuwa-news next to #schedule.
+MIRROR = "https://discord.com/api/webhooks/987654321098765432/game-channel-TOK"
+
+
+class FanOutWebhook:
+    """Routes by destination so a test can assert WHICH channel received WHAT.
+
+    The dry-run client records the fingerprint but always succeeds; ScriptedWebhook can fail
+    on cue but ignores the URL. Fan-out needs both at once.
+    """
+
+    def __init__(self, fail_fp: str | None = None, status: int = 500):
+        self.calls: list[tuple[str, str, dict]] = []      # (method, destination fp, payload)
+        self.fail_fp, self.status, self._n = fail_fp, status, 0
+
+    def to(self, url: str) -> list[tuple[str, dict]]:
+        fp = webhook_fingerprint(url)
+        return [(m, p) for m, f, p in self.calls if f == fp]
+
+    def _result(self, fp: str, message_id: str | None) -> SendResult:
+        if fp == self.fail_fp:
+            return SendResult(False, self.status, error="channel is gone")
+        return SendResult(True, 200, message_id=message_id)
+
+    async def send(self, webhook: str, payload: dict) -> SendResult:
+        fp = webhook_fingerprint(webhook)
+        self.calls.append(("POST", fp, payload))
+        self._n += 1
+        return self._result(fp, f"msg-{self._n}")
+
+    async def edit(self, webhook: str, message_id: str, payload: dict) -> SendResult:
+        fp = webhook_fingerprint(webhook)
+        self.calls.append(("PATCH", fp, payload))
+        return self._result(fp, message_id)
+
+
+def _wuwa_ctx(sp, webhook, **env):
+    ctx = make_ctx(sp, items={"wuwa": [item_from_fx_json("wuwa", fx("fx_wuwa_3_7_broadcast.json"))]},
+                   **env)
+    ctx.webhook = webhook
+    return ctx
+
+
+def _card(payload: dict) -> dict:
+    return payload["components"][0]          # the container — a card has no line above it
+
+
+def _unpinged(payload: dict) -> dict:
+    """The card with the mention stripped off its legend line — i.e. everything the two
+    channels must still have in common now that the ping lives inside the container."""
+    head = "-# STC — Subject to Change • TBA — To be Announced"
+    card = json.loads(json.dumps(_card(payload)))            # deep copy, no extra import
+    for c in card.get("components", []):
+        if str(c.get("content", "")).startswith(head):
+            c["content"] = head
+    return card
+
+
+def _legend(payload: dict) -> str:
+    """The legend footer line. A schedule card carries its mention at the end of this line,
+    inside the container, so the post is one block instead of a bare @role above a card."""
+    return next(c["content"] for c in _card(payload)["components"]
+                if str(c.get("content", "")).startswith("-# STC —"))
+
+
+def test_a_schedule_card_is_delivered_to_both_channels_in_one_pass():
+    """Same data, same run — the copy can never lag or differ, except for the ping."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _wuwa_ctx(Path(tmp) / "state.json", FanOutWebhook(), BOOTSTRAP_POST="1",
+                        DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA=MIRROR)
+        asyncio.run(schedule.run(ctx))
+        primary, copy = ctx.webhook.to(HOOK), ctx.webhook.to(MIRROR)
+        assert [m for m, _ in primary] == ["POST"] and [m for m, _ in copy] == ["POST"]
+        # Identical apart from the mention, which only the schedule channel carries.
+        assert _unpinged(primary[0][1]) == _unpinged(copy[0][1])
+        assert ctx.errors == []
+
+
+def test_the_game_channel_copy_never_pings():
+    """One announcement must not notify the role twice. The schedule channel is the only
+    place the role is mentioned; the copy carries neither the mention nor the permission."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _wuwa_ctx(Path(tmp) / "state.json", FanOutWebhook(), BOOTSTRAP_POST="1",
+                        DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA=MIRROR)
+        asyncio.run(schedule.run(ctx))
+        primary, copy = ctx.webhook.to(HOOK)[0][1], ctx.webhook.to(MIRROR)[0][1]
+
+        # The mention sits at the end of the legend line, inside the card.
+        assert _legend(primary).endswith("To be Announced <@&1296268365593186426>")
+        assert primary["allowed_mentions"] == {"parse": [], "roles": ["1296268365593186426"]}
+
+        # No mention text at all, so the copy does not render a dead blue @role pill either.
+        assert _legend(copy) == "-# STC — Subject to Change • TBA — To be Announced"
+        assert "<@&" not in json.dumps(copy, ensure_ascii=False)
+        assert copy["allowed_mentions"] == {"parse": []}
+
+
+def test_without_the_mirror_secret_exactly_one_card_is_sent():
+    """Guards the deliberate missing fallback: BASE_ENV sets DISCORD_WEBHOOK_URL, so a mirror
+    that fell through to the catch-all like webhook_source() does would double-post here."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _wuwa_ctx(Path(tmp) / "state.json", FanOutWebhook(), BOOTSTRAP_POST="1")
+        asyncio.run(schedule.run(ctx))
+        assert len(ctx.webhook.calls) == 1 and ctx.webhook.to(HOOK)
+
+
+def test_a_mirror_added_later_backfills_the_card_already_posted():
+    """The card ZZZ 3.3 is in right now: posted days ago, unchanged since. Adding the secret
+    has to copy it across without disturbing the original."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        ctx = _wuwa_ctx(sp, FanOutWebhook(), BOOTSTRAP_POST="1")
+        asyncio.run(schedule.run(ctx))
+        assert [m for m, _ in ctx.webhook.to(HOOK)] == ["POST"]
+        ctx.state.save()
+
+        ctx = _wuwa_ctx(sp, FanOutWebhook(), now=1789303600,
+                        DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA=MIRROR)
+        asyncio.run(schedule.run(ctx))
+        assert ctx.webhook.to(HOOK) == []                       # original left alone
+        assert [m for m, _ in ctx.webhook.to(MIRROR)] == ["POST"]
+        assert ctx.errors == []
+
+
+def test_both_copies_are_edited_when_the_card_changes():
+    """Without this the copy would sit in the game channel showing TBA and guessed times."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        env = {"DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA": MIRROR}
+        ctx = _wuwa_ctx(sp, FanOutWebhook(), BOOTSTRAP_POST="1", **env)
+        asyncio.run(schedule.run(ctx))
+        ctx.state.save()
+
+        notice = Item("kuro", "wuwa", "9001",
+                      "https://wutheringwaves.kurogames.com/en/main/news/detail/9001",
+                      "Version 3.7 Update Maintenance Notice",
+                      "Version 3.7 pre-download will begin at 2026/09/28 10:00 (UTC+8).\n"
+                      "Maintenance Time: 2026/09/30 04:00 - 11:00 (UTC+8)\nCompensation: Astrite ×300",
+                      1790000000)
+        ctx = make_ctx(sp, items={"wuwa": [item_from_fx_json("wuwa", fx("fx_wuwa_3_7_broadcast.json")),
+                                           notice]}, now=1790001000, **env)
+        ctx.webhook = FanOutWebhook()
+        asyncio.run(schedule.run(ctx))
+        primary, copy = ctx.webhook.to(HOOK), ctx.webhook.to(MIRROR)
+        assert [m for m, _ in primary] == ["PATCH"] and [m for m, _ in copy] == ["PATCH"]
+        # Identical card bodies, including the "Updated …" footer an edit adds — the copy must
+        # not be a footer-less near-miss of the real card.
+        assert _unpinged(primary[0][1]) == _unpinged(copy[0][1])
+        assert "Astrite ×300" in json.dumps(copy[0][1], ensure_ascii=False)
+        assert "<@&" not in json.dumps(copy[0][1], ensure_ascii=False)   # still silent on edit
+        assert ctx.errors == []
+
+
+def test_a_mirror_pointed_at_the_schedule_channel_sends_one_card_not_two():
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _wuwa_ctx(Path(tmp) / "state.json", FanOutWebhook(), BOOTSTRAP_POST="1",
+                        DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA=HOOK)
+        asyncio.run(schedule.run(ctx))
+        assert len(ctx.webhook.calls) == 1
+
+
+def test_a_broken_game_channel_never_breaks_the_real_card():
+    """The copy is a convenience. A dead game-channel webhook must not fail the run, must not
+    land in ctx.errors, and must not stop the schedule channel from being served."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        ctx = _wuwa_ctx(sp, FanOutWebhook(fail_fp=webhook_fingerprint(MIRROR), status=403),
+                        BOOTSTRAP_POST="1", DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA=MIRROR)
+        asyncio.run(schedule.run(ctx))
+        assert [m for m, _ in ctx.webhook.to(HOOK)] == ["POST"]      # real card still posted
+        assert ctx.errors == []
+        assert any("copy failed (403)" in line for line in ctx.report)
+        rec = ctx.state.data["schedule"]["wuwa"]["3.7"]
+        assert rec["status"] == "posted" and "mirror_message_id" not in rec
+
+
+def test_removing_the_mirror_secret_forgets_the_copy():
+    """Stale ids would PATCH a message in a channel the run can no longer prove it owns."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        ctx = _wuwa_ctx(sp, FanOutWebhook(), BOOTSTRAP_POST="1",
+                        DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA=MIRROR)
+        asyncio.run(schedule.run(ctx))
+        assert ctx.state.data["schedule"]["wuwa"]["3.7"]["mirror_message_id"]
+        ctx.state.save()
+
+        ctx = _wuwa_ctx(sp, FanOutWebhook(), now=1789303600)         # secret removed
+        asyncio.run(schedule.run(ctx))
+        assert ctx.webhook.to(MIRROR) == []
+        assert "mirror_message_id" not in ctx.state.data["schedule"]["wuwa"]["3.7"]
+
+
+def test_force_webhook_keeps_the_fan_out_out_of_real_game_channels():
+    """FORCE_WEBHOOK redirects the primary to a test channel; the copy must not escape."""
+    with tempfile.TemporaryDirectory() as tmp:
+        force = "https://discord.com/api/webhooks/111111111111111111/test-channel"
+        ctx = _wuwa_ctx(Path(tmp) / "state.json", FanOutWebhook(), BOOTSTRAP_POST="1",
+                        FORCE_WEBHOOK=force, DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA=MIRROR)
+        asyncio.run(schedule.run(ctx))
+        assert [m for m, _ in ctx.webhook.to(force)] == ["POST"]
+        assert ctx.webhook.to(MIRROR) == []
 
 
 def test_preinstall_cold_start_reproduces_four_real_notices():

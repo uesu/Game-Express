@@ -29,6 +29,7 @@ Sensitive — *Settings → Secrets and variables → Actions → **Secrets***.
 | `DISCORD_WEBHOOK_CODES` | optional: codes of any game without its own secret |
 | `DISCORD_WEBHOOK_URL` | optional catch-all fallback |
 | `DISCORD_WEBHOOK_SCHEDULE_<GAME>` | optional per-game schedule channel, e.g. `DISCORD_WEBHOOK_SCHEDULE_WUWA` |
+| `DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME>` | optional — **copies** the card to a second channel as well, e.g. `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ZZZ` (see *Fan-out* below) |
 | `NITTER_RSS_TOKEN` | optional — the e-mailed token for the one token-gated nitter mirror, `https://nitter.miningtcup.me/` (the same secret News-Express uses). Empty only skips that mirror |
 
 **Webhook routing**, most specific first:
@@ -41,6 +42,43 @@ DISCORD_WEBHOOK_<FEATURE>_<GAME>  →  DISCORD_WEBHOOK_<FEATURE>  →  DISCORD_W
 `WUWA`/`WW`, `HNA`/`NEXUSANIMA`, `ANANTA`. The same URL may be used for several secrets (for
 example, one codes channel for every game). For a forum or thread channel, append
 `?thread_id=<id>` to the webhook URL.
+
+### Fan-out — the same card in two channels
+
+The routing chain above is **first match wins**, so `DISCORD_WEBHOOK_SCHEDULE_ZZZ` *moves* the
+ZZZ card out of the shared schedule channel. To have it in **both** places, add a mirror
+instead:
+
+```
+DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME>  →  DISCORD_WEBHOOK_<FEATURE>_MIRROR
+```
+
+| | |
+|---|---|
+| Example | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ZZZ` → `#schedule` **and** `#zzz-news` |
+| `<GAME>` | same keys and short names as above (`GI`, `HSR`, `WW`, `NEXUSANIMA`, …) |
+| Unset | no copy. Deliberately **no** `DISCORD_WEBHOOK_URL` fallback, so filling in the catch-all one day can never start double-posting every card into it |
+| Same URL as the primary | detected and skipped — one card, not two |
+| `FORCE_WEBHOOK` | switches the fan-out off entirely, so a test run can't reach a real game channel |
+
+Both copies are **sent in the same pass from the same data**, then edited together for the life
+of the version — as TBA banners fill in and estimated maintenance times are replaced by the
+official notice, the copy is corrected too. This is a fan-out, not a Discord "follow": nothing
+lags, and nothing drifts. The card body is identical in both channels; the ping is the only
+difference (see below).
+
+The copy is a convenience, so it never blocks the real card. A broken game-channel webhook is
+reported in the run summary (`⚠️ … copy failed`) and retried next run; it is never a run error,
+and the schedule channel is served either way.
+
+Adding the secret **backfills**: every version whose card is still live (posted, not retired,
+maintenance under 45 days old) is copied across on the next run, not just future ones.
+Removing the secret forgets the copy's message id, so re-adding it later posts a fresh one.
+
+**Only the primary card pings.** The role is mentioned once, in the schedule channel; the copy
+is built with no ping at all, so one announcement never notifies the same member twice. The
+copy carries no mention *text* either, so it does not show a dead blue `@role` pill that
+notifies nobody. Edits never ping in either channel.
 
 ---
 
@@ -56,6 +94,12 @@ Not secret, one-click switches — *Settings → Secrets and variables → Actio
 | `PING_SCHEDULE` / `PING_CODES` | inherit | per-feature override; `none` = explicitly no ping |
 | `PING_<FEATURE>_<GAME>` | inherit | e.g. `PING_SCHEDULE_GENSHIN=111…` |
 | `NO_PING` | off | `1` = never ping, whatever the other ping variables say. `monitor.yml` sets it per run: `1` for a test started without ⑥, `0` otherwise (never blank — a blank value would be re-filled from a stale repo variable by the `GE_VARS_JSON` catch-all) |
+
+**Where the mention appears.** Inside the card, not above it — on the legend line of a schedule
+card (`-# STC — Subject to Change • TBA — To be Announced @role`) and on the count line of a
+codes card (`-# 2 new codes • detected <t:…:R> @role`). Nothing floats above the container. If
+`SHOW_LEGEND=0` removes the legend, the mention gets a small-text line of its own rather than
+being dropped. A codes drop split across several messages mentions the role on **part 1 only**.
 
 ### Card appearance
 
@@ -115,7 +159,7 @@ Not secret, one-click switches — *Settings → Secrets and variables → Actio
 
 Every setting lives in one place per game: name, color, X accounts, HoYoLAB game ID, launcher
 ID, detection patterns, YouTube/Twitch buttons, code sources, redeem URL/hint, release cadence,
-and card style (`title`, `header`, `maintenance_heading`, `maintenance_style` =
+and card style (`title`, `maintenance_heading`, `maintenance_style` =
 `start_end|range`, `maintenance_first`, `four_star_summary`, `banners_url`, `show_banners`).
 
 Two flags are deliberately separate:

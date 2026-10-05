@@ -2,8 +2,7 @@
 
 Layout (schedule card), converted 1:1 from the reference embed cards:
 
-  [Text Display]  "<@&ROLE> Honkai: Star Rail Version 4.6 Schedule! 📜"   <- old `content`
-  [Container accent=14922399]                                               <- old embed
+  [Container accent=14922399]        <- the whole post; NOTHING sits above it
      ## [Honkai: Star Rail Version 4.6 Special Program](url)                <- title + url
      <t:…:F> or <t:…:R>  +  ※ maintenance-extended note
      ───────────
@@ -13,7 +12,7 @@ Layout (schedule card), converted 1:1 from the reference embed cards:
      [Media Gallery]  announcement image                                   <- embed image
      ───────────
      [Action Row]  Youtube · Twitch · Source (+ EXTRA_BUTTONS)             <- buttons INSIDE
-     -# STC — Subject to Change • TBA — To be Announced
+     -# STC — Subject to Change • TBA — To be Announced <@&ROLE>          <- mention lives HERE
 
 Hard limits enforced by validate_payload(): 40 components total (nested
 included), 4000 characters across all Text Displays, 5 buttons per row,
@@ -189,13 +188,17 @@ def validate_payload(payload: dict) -> list[str]:
     return problems
 
 
-def _payload(top_line: str, card: dict, ping: Ping) -> dict:
-    comps = [text(top_line), card] if top_line else [card]
-    return {"flags": IS_COMPONENTS_V2, "components": comps, "allowed_mentions": ping.allowed_mentions}
+def _payload(card: dict, ping: Ping) -> dict:
+    """One card, nothing above it. The mention lives INSIDE the container (on the legend line
+    of a schedule card, on the '… new code(s) • detected …' line of a codes card) so the post
+    reads as a single block instead of a bare @role floating above a card."""
+    return {"flags": IS_COMPONENTS_V2, "components": [card], "allowed_mentions": ping.allowed_mentions}
 
 
-def _top_line(ping: Ping, line: str) -> str:
-    return f"{ping.text} {line}".strip() if ping else line
+def _with_ping(line: str, ping: Ping) -> str:
+    """Append the mention to a small-text line. Empty Ping -> line is returned untouched, so a
+    no-ping card never renders a stray space or a dead blue pill."""
+    return f"{line} {ping.text}" if ping else line
 
 
 def _std_buttons(game: Game, settings: Settings, extra: list[dict] | None = None) -> list[dict]:
@@ -230,12 +233,6 @@ def program_title(game: Game, d: dict) -> str:
     program = d.get("program_name") or game.program_label
     return game.card.title.format(game=game.name, version=d.get("version") or TBA, program=program,
                                   version_name=d.get("version_name") or "").strip()
-
-
-def header_line(game: Game, d: dict) -> str:
-    return game.card.header.format(game=game.name, version=d.get("version") or TBA,
-                                   program=d.get("program_name") or game.program_label,
-                                   version_name=d.get("version_name") or "").strip()
 
 
 def banners_block(game: Game, d: dict) -> str:
@@ -329,9 +326,16 @@ def schedule_payload(game: Game, d: dict, settings: Settings, ping: Ping,
         foot.append(f"🕒 {what} estimated from {est_src} — the official notice replaces it automatically")
     if updated_ts:
         foot.append(f"Updated {discord_ts(updated_ts, 'R')}")
+    # The mention rides on the FIRST footer line (normally the legend). If every footer is
+    # switched off it gets a line of its own — the ping must never be silently dropped.
+    if ping:
+        if foot:
+            foot[0] = _with_ping(foot[0], ping)
+        else:
+            foot.append(ping.text)
     for part in foot:                      # one small-text line each, not one run-on line
         children.append(text("-# " + part))
-    return _payload(_top_line(ping, header_line(game, d)), container(children, game.color), ping)
+    return _payload(container(children, game.color), ping)
 
 
 # --------------------------------------------------------------------------- codes card
@@ -371,6 +375,9 @@ def codes_card(game: Game, chunk: list[dict], settings: Settings, ping: Ping, de
         sub = f"-# {n} new code{plural} • detected {discord_ts(detected_ts, 'R')}"
     if part[1] > 1:
         sub += f" • part {part[0]}/{part[1]}"
+    # Only the first part of a split drop mentions anyone: one notification per batch of codes.
+    if part[0] == 1:
+        sub = _with_ping(sub, ping)
     children: list[dict] = []
     if game.icon:
         children.append(section([head, sub], thumbnail(game.icon)))
@@ -405,8 +412,7 @@ def codes_card(game: Game, chunk: list[dict], settings: Settings, ping: Ping, de
     foot = "-# Source: " + (", ".join(SOURCE_LABELS.get(s, s) for s in srcs) if srcs else "—")
     foot += " • Codes expire — redeem soon." if live else " • Expired codes are kept for reference."
     children.append(text(foot))
-    top = _top_line(ping, f"{game.name} Redemption Codes! 🎁") if part[0] == 1 else ""
-    return _payload(top, container(children, game.color), ping if part[0] == 1 else Ping())
+    return _payload(container(children, game.color), ping if part[0] == 1 else Ping())
 
 
 def codes_payloads(game: Game, codes: list[dict], settings: Settings, ping: Ping,
@@ -437,17 +443,15 @@ TEST_NOTE = "🧪 TEST CARD — sample / test data, not a real announcement"
 
 
 def mark_test(payload: dict, note: str = TEST_NOTE) -> dict:
-    """Label a card as a test: a line at the top of the card + '🧪 [TEST]' on the header line.
-    Used by the monitor's test bench so nobody mistakes a test post for real news or real codes."""
+    """Label a card as a test: a '🧪 TEST CARD …' line inserted at the very top of the card.
+    Used by the monitor's test bench so nobody mistakes a test post for real news or real codes.
+    Idempotent — marking an already-marked card does not stack a second banner."""
     import copy
     p = copy.deepcopy(payload)
-    comps = p.get("components") or []
-    for c in comps:
-        if c.get("type") == 10 and c.get("content") and not c["content"].startswith("🧪"):
-            c["content"] = f"🧪 [TEST] {c['content']}"
-            break
-    for c in comps:
+    for c in p.get("components") or []:
         if c.get("type") == 17:
-            c["components"].insert(0, text(f"-# {note}"))
+            kids = c.setdefault("components", [])
+            if not (kids and str(kids[0].get("content", "")).startswith("-# 🧪")):
+                kids.insert(0, text(f"-# {note}"))
             break
     return p

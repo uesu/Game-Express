@@ -68,19 +68,32 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 5. **The first run for a new game/feature seeds silently.** `BOOTSTRAP_POST` off = record what
    exists, post nothing. Never "fix" this into a backfill.
 6. **Posting is once per (game, version) / per code**, then *silent edits* of the same message id.
-   The state's message ids are what make an edit possible — never clear them casually.
-7. **Official times win; estimates are labelled.** Countdown sites and the banner feed may fill a
+   The state's message ids are what make an edit possible — never clear them casually. The
+   optional fan-out copy (`DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME>`) obeys the same rule with its
+   own `mirror_message_id`, and is edited in the same pass as the original so the two can never
+   disagree. Three things about it are deliberate: it has **no `DISCORD_WEBHOOK_URL` fallback**
+   (an unnamed mirror must stay off, or filling in the catch-all would double-post everything
+   into it); a failed copy is **reported, never an error** — the real card must not depend on a
+   convenience channel; and the copy is built with an **empty `Ping()`** so one announcement
+   never notifies the same role twice. Never "simplify" that by reusing the primary's payload.
+7. **The mention lives INSIDE the container.** A card payload is exactly one top-level
+   component. The ping rides on the legend line of a schedule card and the `… detected …` line
+   of a codes card — never on a separate Text Display above the card. `_payload()` takes no
+   top-line argument; if you find yourself adding one back, you are undoing this. Keep the
+   empty-`Ping()` escape hatch working: it must strip the mention *text* as well as the
+   `allowed_mentions` entry, or a copy renders a dead blue pill that notifies nobody.
+8. **Official times win; estimates are labelled.** Countdown sites and the banner feed may fill a
    gap, but the card says so, and a real official time always replaces them.
-8. **Ranking beats speed in the nitter fleet.** `_probe_batch` may stop waiting early, but only
+9. **Ranking beats speed in the nitter fleet.** `_probe_batch` may stop waiting early, but only
    once enough *higher-ranked* mirrors have answered (plus the `NITTER_GRACE` cap). Do not
    "simplify" it to first-two-to-respond: mirror order is a quality ranking.
-9. **The advisory CI job must never gate a merge** (`continue-on-error: true` on every step). Only
+10. **The advisory CI job must never gate a merge** (`continue-on-error: true` on every step). Only
    the `test` job is a required check.
-10. **No new runtime dependencies** without a very good reason. The whole app runs on `aiohttp`,
+11. **No new runtime dependencies** without a very good reason. The whole app runs on `aiohttp`,
    `feedparser`, `python-dotenv`.
-11. **Never commit secrets.** Webhooks and the nitter token are repository secrets; the state file
+12. **Never commit secrets.** Webhooks and the nitter token are repository secrets; the state file
    stores only a 12-char non-reversible webhook fingerprint.
-12. **No LICENSE file is wanted** — this is a personal-use repository (owner's decision,
+13. **No LICENSE file is wanted** — this is a personal-use repository (owner's decision,
     2026-10-03). Do not add one "for completeness".
 
 ---
