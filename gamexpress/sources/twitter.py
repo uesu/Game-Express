@@ -301,8 +301,7 @@ class XClient:
         return Item(source="x", game=game.key, id=tid,
                     url=t.get("url") or f"https://x.com/{account}/status/{tid}",
                     title="", text=t.get("text") or "", published_ts=t.get("ts") or 0,
-                    images=t.get("photos") or [], links=t.get("links") or [],
-                    author=t.get("author") or account)
+                    images=t.get("photos") or [], links=t.get("links") or [])
 
     async def items(self, game: Game, want: Callable[[str], bool], since_ts: int) -> list[Item]:
         if not self.settings.x_enabled:
@@ -319,7 +318,7 @@ class XClient:
                 url=(t or {}).get("url") or f"https://x.com/{account}/status/{e['id']}",
                 title="", text=text, published_ts=(t or {}).get("ts") or e["ts"],
                 images=(t or {}).get("photos") or e["images"],
-                links=(t or {}).get("links") or e["links"], author=account))
+                links=(t or {}).get("links") or e["links"]))
         return out
 
 
@@ -331,5 +330,4 @@ def item_from_fx_json(game_key: str, data: dict) -> Item:
     return Item(source="x", game=game_key, id=str(t.get("id")), url=t.get("url") or "", title="",
                 text=t.get("text") or "", published_ts=int(t.get("created_timestamp") or 0),
                 images=[p["url"] for p in ((t.get("media") or {}).get("photos") or []) if p.get("url")],
-                links=links + find_urls(t.get("text") or ""),
-                author=(t.get("author") or {}).get("screen_name") or "")
+                links=links + find_urls(t.get("text") or ""))

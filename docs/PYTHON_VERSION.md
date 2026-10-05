@@ -32,7 +32,7 @@ bump (auto) → Run workflow*:
    value Ruff would reject.
 4. Opens a PR (via [`peter-evans/create-pull-request`](https://github.com/peter-evans/create-pull-request))
    labelled `python-bump`, which triggers the normal `ci.yml` `pull_request` run — the exact same
-   141-test / compile / `validate` / preview gate every Dependabot PR goes through.
+   163-test / compile / `validate` / preview gate every Dependabot PR goes through.
 
 ## It never merges blind
 
@@ -41,7 +41,7 @@ A `python-bump` PR only merges automatically when **all** of these hold (job
 
 - the PR carries the `python-bump` label (so this can never be confused with a Dependabot PR, or
   any other automated PR that might exist in the future);
-- the `test` job (141 offline tests, compile, `validate`, preview) passed **on that exact
+- the `test` job (163 offline tests, compile, `validate`, preview) passed **on that exact
   commit** — a later push invalidates a stale approval, same rule as Dependabot auto-merge;
 - the repository **variable** `AUTO_MERGE_PYTHON_BUMP` is set to `yes`.
 

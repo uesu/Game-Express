@@ -1,38 +1,61 @@
-# Game-Express — Version Schedule Announcements + Code Poster → Discord
+<div align="center">
+
+# Game-Express
+
+**Version-schedule announcements and redemption codes for six gacha games, posted to Discord as
+Components V2 cards — with no server, no bot token and nothing to host.**
 
 [![CI](https://github.com/uesu/Game-Express/actions/workflows/ci.yml/badge.svg)](https://github.com/uesu/Game-Express/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/badge/release-1.9.0-E3B29F?labelColor=2b2d31)](docs/changelog/CHANGELOG.md)
+[![Python](https://img.shields.io/badge/python-3.14-3776AB?logo=python&logoColor=white&labelColor=2b2d31)](docs/PYTHON_VERSION.md)
+[![Tests](https://img.shields.io/badge/tests-163%20offline-3FB950?labelColor=2b2d31)](docs/TESTING.md)
+[![Discord](https://img.shields.io/badge/posts%20to-Discord-5865F2?logo=discord&logoColor=white&labelColor=2b2d31)](https://discord.com/developers/docs/components/reference)
 
-Automated **version-schedule announcements** and a **redemption-code poster** for
-**Genshin Impact · Honkai: Star Rail · Zenless Zone Zero · Wuthering Waves**, with
-**Honkai: Nexus Anima** and **ANANTA (NetEase)** already prepared (switched off until they launch).
+[Setup](#-setup) · [Configuration](docs/CONFIGURATION.md) · [Docs](docs/) ·
+[Changelog](docs/changelog/CHANGELOG.md) · [Troubleshooting](docs/TROUBLESHOOTING.md)
 
-Everything is posted as **Discord Components V2 cards**, with the **buttons inside the card**,
-the announcement image, **Discord timestamps** (every reader sees their own timezone),
-**STC / TBA** markers and an **optional role ping**. It runs free on **GitHub Actions** (public
-repos get unlimited minutes), triggered every 5 minutes by **[cron-job.org](https://cron-job.org)**,
-with no server, no bot token and nothing to host or redeploy — merging to `main` **is** the
-deploy, so every fix and improvement reaches the running poster on the next 10-minute run.
-
-> Same architecture and lessons as [News-Express](https://github.com/uesu/News-Express):
-> fallback chains for every source, dedup state committed to the repo, a queued (never
-> cancelled) workflow, offline golden tests as the CI gate, and a two-instance fail-over.
+</div>
 
 ---
 
-## Contents
+Game-Express watches the official channels of **Genshin Impact**, **Honkai: Star Rail**,
+**Zenless Zone Zero**, **Wuthering Waves**, **Honkai: Nexus Anima** and **ANANTA**. When a
+Special Program is announced or a new redemption code appears, it posts one card — and then
+keeps that card correct by editing it silently as official information arrives.
+
+It runs entirely on **GitHub Actions** (free and unlimited on public repos), triggered every
+5 minutes by **[cron-job.org](https://cron-job.org)**. There is nothing to deploy: merging to
+`main` **is** the deploy.
+
+> Same architecture and lessons as **[News-Express](https://github.com/uesu/News-Express)**:
+> fallback chains for every source, dedup state committed to the repo, a queued (never
+> cancelled) workflow, offline golden tests as the CI gate, and a two-instance fail-over.
+
+## ✨ Highlights
+
+- **Never posts on a timer.** A card exists because an *official* post matched a pattern.
+- **Posted once, then corrected silently.** No second ping, no duplicate, no stale card.
+- **Honest about what it doesn't know.** Unknowns are `TBA`; estimates are labelled as estimates
+  and are replaced the moment an official value lands.
+- **A code must earn its place** — official, redeem-validated, or two independent sources that
+  all agree it is still live.
+- **No single point of failure.** Every data point has a fallback chain, and a second instance
+  can take over automatically.
+- **No server, no bot token, no container.** Webhooks and a scheduled workflow, nothing else.
+
+## 📖 Contents
+
 - [What it posts](#-what-it-posts)
 - [Supported games](#-supported-games)
-- [Setup — 6 steps (GitHub Actions + cron-job.org)](#-setup--6-steps-github-actions--cron-joborg)
-- [Configuration reference](#-configuration-reference)
-- [How it decides to post (accuracy rules)](#-how-it-decides-to-post-accuracy-rules)
-- [Manual controls](#-manual-controls)
-- [Redundancy: fallback chains + two-instance fail-over](#-redundancy-fallback-chains--two-instance-fail-over)
-- [Testing & previews](#-testing--previews)
-- [Troubleshooting](#-troubleshooting)
-- [Data sources](#-data-sources)
-- [Community databases & resources](#-community-databases--resources)
-- [Privacy · Terms · Credits](#-privacy--terms--credits)
+- [Setup](#-setup)
+- [Configuration](#-configuration)
+- [How it decides to post](#-how-it-decides-to-post)
+- [Running it](#-running-it)
+- [Reliability](#-reliability)
+- [Testing & CI](#-testing--ci)
+- [Documentation](#-documentation)
 - [Changelog](#-changelog)
+- [Legal & credits](#-legal--credits)
 
 > **Working on the code (human or AI)?** Start with **[AGENTS.md](AGENTS.md)** — the maintainer's
 > mental model: invariants that must not be "fixed", the exact verification commands, and the
@@ -42,11 +65,10 @@ deploy, so every fix and improvement reaches the running poster on the next 10-m
 
 ## 🃏 What it posts
 
-### 1. Version schedule card: posted once per game + version, only on a pattern match
+### 1 · Version schedule card
 
-Triggered by an **official** post that matches a pattern: a *Special Program* / *Special
-Broadcast* / livestream announcement, or an official update-maintenance notice. It never
-posts on a timer.
+One card per game + version, triggered by an official *Special Program* / *Special Broadcast* /
+livestream announcement or an update-maintenance notice.
 
 ```
 <@&ROLE> Honkai: Star Rail Version 4.6 Schedule! 📜              ← ping line (only if a role is set)
@@ -69,56 +91,29 @@ posts on a timer.
 └─────────────────────────────────────────────────────────────
 ```
 
-- **Your four reference cards were converted 1:1.** Each game keeps its own format:
-  - Wuthering Waves uses `"Special Broadcast"` in the title, shows maintenance before banners, uses `✦ Maintenance: <t:…:f> to <t:…:t>`, and has the `※ 4 Star Characters:` summary line.
-  - Genshin's banner heading links to lunaris.moe/banners.
-  - HSR's heading reads `Maintenance Details (STC)`.
-- **The card stays accurate after posting.** When official information arrives later (the
-  maintenance notice with pre-install/start/duration/compensation, pre-install going live in the
-  official launcher, an official banner notice, or your edits in `config/overrides.json`), the
-  **same message is edited silently**, with no second ping and no duplicate post.
+- **Each game keeps its own format.** Wuthering Waves uses `"Special Broadcast"` in the title,
+  shows maintenance before banners and adds the `※ 4 Star Characters:` summary line; Genshin's
+  banner heading links to lunaris.moe; HSR's heading reads `Maintenance Details (STC)`. All four
+  reference cards were converted 1:1 and are pinned by golden tests.
+- **The card stays accurate after posting.** When the maintenance notice arrives, pre-install
+  goes live in the launcher, an official banner notice lands, or you edit
+  `config/overrides.json`, the **same message is edited silently** — no second ping, no
+  duplicate.
+- **Gaps are filled, and labelled.** Until the official notice exists, three fallbacks keep the
+  card useful — each one marked on the card and replaced automatically:
 
-**Maintenance times before the official notice (estimates).** The maintenance notice usually
-arrives days after the Special Program, so until then the card can only show `TBA`. Since
-**1.2.0** the monitor fills those gaps from community countdown sites
-(`{game}-countdown.gengamer.in`, `gachacountdown.online`):
+  | Gap | Filled from | Off switch |
+  |---|---|---|
+  | maintenance start / end | community countdown sites | `COUNTDOWN_ESTIMATES=0` |
+  | pre-install | that game's **median observed lead** in hours, learned from real notices | — |
+  | the announcement's own link + key art | the official news page, then the paged-back HoYoLAB list | `PROGRAM_MEDIA=0` |
 
-- an estimate is used **only** for a time that no official source has given yet, and it is
-  replaced automatically the moment the official notice is seen (the same silent edit);
-- the card says so: `🕒 maintenance start, maintenance end estimated from Gacha Countdown — the
-  official notice replaces it automatically`, and the run summary carries the same line;
-- `COUNTDOWN_ESTIMATES=0` switches it off, and a countdown site is only asked for a game that
-  is actually missing a time (no request is wasted on a version that is already out).
+  Details: **[docs/ACCURACY.md → Filling the gaps](docs/ACCURACY.md#filling-the-gaps-before-the-official-notice)**.
 
-**Pre-install time when the notice has not arrived (since 1.6.0).** If maintenance start is known
-but no official source has published pre-install yet, the monitor derives one labelled
-**estimated**. The fallback is not a fixed weekday rule: each real notice records its lead in
-hours (`maintenance start - pre-install`), and later versions use that game's median. The median
-handles shortened/extended patches and holiday moves without one bad parse dragging future
-cards. On a fresh installation the verified 2026 leads are used once (GI 43 h · HSR 88 h · ZZZ
-42 h · WW 42 h). A derived value never teaches the model, so a guess cannot confirm itself; an
-official HoYoLAB, X/Nitter, Kuro, launcher or override value replaces it automatically.
+### 2 · Redemption code card
 
-**The announcement's own link and key art (since 1.3.0).** A run only sees posts inside its
-lookback window, so a version that is already a week old can end up with a card that links to the
-*Update and Maintenance Notice* — and shows that notice's cover — simply because the Special
-Program announcement had scrolled out. Since **1.3.0** the monitor looks the announcement up:
-
-- the **official news pages** (`genshin.hoyoverse.com/en/news`, `hsr.hoyoverse.com/en-us/news`,
-  `zenless.hoyoverse.com/en-us/news`, `wutheringwaves.kurogames.com/en/main/news`) archive every
-  announcement with its cover, and an article page carries the embedded stream — whose YouTube
-  thumbnail is the program's own 1280×720 artwork;
-- failing that, the **HoYoLAB news list is paged back** past the lookback window;
-- images are always upgraded to the biggest rendition the source serves (tweet photo → `?name=orig`,
-  YouTube → `maxresdefault`), and the card says where the key art came from
-  (`🖼️ key art: HoYoLAB — the official announcement`);
-- one lookup per version that still needs it, never for a version that is already live, and
-  `PROGRAM_MEDIA=0` switches it off.
-
-### 2. Redemption code card: posted once per code (also Components V2)
-
-Each game posts to **its own codes channel** (`DISCORD_WEBHOOK_CODES_GENSHIN`, `…_STARRAIL`,
-`…_HNA`, `…_ZZZ`, `…_WUWA`, `…_ANANTA`). New codes found in the same run share one card.
+One card per batch of new codes, in **that game's own codes channel**. New codes found in the
+same run share a card.
 
 ```
 <@&ROLE> Genshin Impact Redemption Codes! 🎁                       ← ping line (optional)
@@ -142,12 +137,13 @@ Each game posts to **its own codes channel** (`DISCORD_WEBHOOK_CODES_GENSHIN`, `
 - **GI / HSR / ZZZ**: every Redeem button opens the official page with the code prefilled.
   **Wuthering Waves** has no web redemption, so the card shows the in-game path instead
   (*Settings → Other Settings → Account → Redemption Code*, Union Level 2+).
-- **Expired codes are struck through automatically.** When every source that still lists a
-  posted code says it expired, the same message is edited silently: `~~CODE~~ · expired`, and
-  its button is removed. No second ping. Turn it off with `CODES_MARK_EXPIRED=off`.
-- Codes are only posted after passing the accuracy gate (see
-  [below](#-how-it-decides-to-post-accuracy-rules)). Screenshots of every card:
-  `python -m gamexpress preview` → open `previews/index.html`.
+- **Expired codes are struck through automatically.** When every source that still lists a posted
+  code says it expired, the same message is edited silently: `~~CODE~~ · expired`, and its button
+  is removed. No second ping. `CODES_MARK_EXPIRED=off` disables it.
+- Codes only post after passing the [accuracy gate](#-how-it-decides-to-post).
+
+> Want to see every card before touching Discord? `python -m gamexpress preview` →
+> open `previews/index.html`.
 
 ---
 
@@ -162,295 +158,218 @@ Each game posts to **its own codes channel** (`DISCORD_WEBHOOK_CODES_GENSHIN`, `
 | Honkai: Nexus Anima | ✅ on · ⏳ not released yet | HoYoLAB API (gid 9) · X `@HonkaiNA` | HoYoLAB livestream module (gid 9) · X |
 | ANANTA (NetEase) | ✅ on · ⏳ releases 2027‑01‑15 | X `@Ananta_EN` | X |
 
-**All six games are monitored**, including the two that are not out yet (switched on 2026‑10‑02),
-so a pre-release Special Program or livestream is caught the moment it is announced. Enabling a
-game is never retroactive: its **first run seeds silently**, so nothing old is posted.
+**All six are monitored**, including the two that are not out yet, so a pre-release Special
+Program is caught the moment it is announced. Enabling a game is never retroactive: its **first
+run seeds silently**, so nothing old is posted.
 
-- `"enabled"` = *do we watch it*. `"released"` = *is the game out*. They are separate on purpose:
-  an unreleased game is watched, but it has no real codes to fetch, so the test bench checks its
+- `enabled` = *do we watch it*. `released` = *is the game out*. Separate on purpose: an
+  unreleased game is watched, but it has no real codes to fetch, so the test bench checks its
   card with sample data (`test-card --kind codes --unlaunched`).
-- To switch a game **off** again, set `"enabled": false` in `config/games.json` (or run only a
-  subset with the `GAMES` variable). ANANTA also keeps `auto_enable_on: 2027-01-15` as a safety
-  net, so it would come back on by itself at launch; `ENABLE_GAMES=hna,ananta` is the no-merge
-  way to switch prepared games on from the repo's Variables page.
+- To switch a game **off**, set `"enabled": false` in `config/games.json` — or run a subset with
+  the `GAMES` variable. `ENABLE_GAMES=hna,ananta` is the no-merge way to switch prepared games on
+  from the repo's Variables page; ANANTA also keeps `auto_enable_on: 2027-01-15` as a safety net.
 - Neither pre-release game has a Twitch channel yet, so their cards simply have no Twitch button.
-  ANANTA has no character gacha, so its card also hides the banner section.
+  ANANTA has no character gacha, so its card hides the banner section.
 
 ---
 
-## 🚀 Setup — 6 steps (GitHub Actions + cron-job.org)
+## 🚀 Setup
 
-1. **Get the repo.** The simplest setup is one repo that is both the code home and production.
-   A second instance repo for fail-over is optional (see
-   [Redundancy](#-redundancy-fallback-chains--two-instance-fail-over)). Public repos get
-   unlimited free Actions minutes. A private repo works too, but it should run every 30 minutes
-   instead of every 5 ([why](docs/SCHEDULER.md#minutes-and-private-repositories)).
-2. **Create webhooks.** In Discord: *Channel → Edit Channel → Integrations → Webhooks → New
-   Webhook → Copy Webhook URL*. One for the schedule channel, and one per game codes channel.
-3. **Add the secrets** in *Settings → Secrets and variables → Actions → Secrets → New repository
-   secret*:
+Six steps, about fifteen minutes. One repo can be both the code home and production — CI tests
+every PR, and merging deploys it.
 
-   | Secret | Channel |
-   |---|---|
-   | `DISCORD_WEBHOOK_SCHEDULE` | version-schedule announcements (all games) |
-   | `DISCORD_WEBHOOK_CODES_GENSHIN` | Genshin Impact codes |
-   | `DISCORD_WEBHOOK_CODES_STARRAIL` | Honkai: Star Rail codes |
-   | `DISCORD_WEBHOOK_CODES_HNA` | Honkai: Nexus Anima codes (used once the game is on) |
-   | `DISCORD_WEBHOOK_CODES_ZZZ` | Zenless Zone Zero codes |
-   | `DISCORD_WEBHOOK_CODES_WUWA` | Wuthering Waves codes |
-   | `DISCORD_WEBHOOK_CODES_ANANTA` | ANANTA codes (used once the game is on) |
-   | `NITTER_RSS_TOKEN` | *optional*: the same one as News-Express |
+### 1 · Get the repo
 
-   The same URL may be used for several secrets (for example, one codes channel for every game).
-4. **Add variables** (not secret) in *… → Variables*:
-   - `PING_ROLE_ID` = `1296268365593186426` (**leave it unset for no ping**, or `NO_PING=1`)
-   - the emojis already default to your animated ones
-5. **Test.** *Actions → **Game-Express Monitor** → Run workflow → `mode` = **test***:
-   `webhooks` → `codes` → `schedule`. Each one is explained in
-   **[docs/TESTING.md](docs/TESTING.md)**. They post real data labelled 🧪 TEST, never write the
-   state, and nobody is pinged by default.
-6. **Go live with cron-job.org.** Create one cron-job.org job per instance repo that calls the
-   `workflow_dispatch` API every 5 minutes, using a GitHub **classic token** with the `repo`
-   scope. Step by step: **[docs/SCHEDULER.md](docs/SCHEDULER.md)**. GitHub's own `schedule:` is
-   disabled in `monitor.yml`, so the two schedulers can never race.
+Fork or clone it. **Public repos get unlimited free Actions minutes** — a private repo works
+too, but it should run every 30 minutes instead of every 5
+([why](docs/SCHEDULER.md#minutes-and-private-repositories)). A second instance repo for
+fail-over is optional ([Reliability](#-reliability)).
+
+### 2 · Create the Discord webhooks
+
+*Channel → Edit Channel → Integrations → Webhooks → New Webhook → Copy Webhook URL.*
+One for the schedule channel, and one per game codes channel.
+
+### 3 · Add the secrets
+
+*Settings → Secrets and variables → Actions → Secrets → New repository secret.*
+
+| Secret | Channel |
+|---|---|
+| `DISCORD_WEBHOOK_SCHEDULE` | version-schedule announcements (all games) |
+| `DISCORD_WEBHOOK_CODES_GENSHIN` | Genshin Impact codes |
+| `DISCORD_WEBHOOK_CODES_STARRAIL` | Honkai: Star Rail codes |
+| `DISCORD_WEBHOOK_CODES_HNA` | Honkai: Nexus Anima codes |
+| `DISCORD_WEBHOOK_CODES_ZZZ` | Zenless Zone Zero codes |
+| `DISCORD_WEBHOOK_CODES_WUWA` | Wuthering Waves codes |
+| `DISCORD_WEBHOOK_CODES_ANANTA` | ANANTA codes |
+| `NITTER_RSS_TOKEN` | *optional* — the same one as News-Express |
+
+The same URL may be used for several secrets, for example one codes channel for every game.
+
+### 4 · Add the variables
+
+*… → Variables.* `PING_ROLE_ID` = your role ID — **leave it unset for no ping**, or set
+`NO_PING=1`. The emojis already default to the animated ones. Everything else:
+**[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
+
+### 5 · Test it
+
+*Actions → **Game-Express Monitor** → Run workflow → `mode` = **test***, then `webhooks` →
+`codes` → `schedule`. Each one posts **real** data labelled 🧪 TEST, never writes the state, and
+pings nobody by default. Walkthrough: **[docs/TESTING.md](docs/TESTING.md)**.
+
+### 6 · Go live with cron-job.org
+
+Create one cron-job.org job per instance repo that calls the `workflow_dispatch` API every
+5 minutes, using a GitHub **classic token** with the `repo` scope. Step by step:
+**[docs/SCHEDULER.md](docs/SCHEDULER.md)**. GitHub's own `schedule:` is disabled in
+`monitor.yml`, so two schedulers can never race.
+
+### Then what?
 
 **First real run = silent seed.** Current announcements and every existing code are recorded
 without posting, so deploying never spams old items. The summary lists what was seeded
-(`🌱 HSR 4.6: seeded silently`, `🌱 GI: seeded 34 existing codes`). To post what's current on
-the very first run instead, set the variable `BOOTSTRAP_POST=1` before that run.
+(`🌱 HSR 4.6: seeded silently`, `🌱 GI: seeded 34 existing codes`). To post what's current on the
+very first run instead, set `BOOTSTRAP_POST=1` before that run.
 
-**Already seeded and want a current card posted now?** Run the Monitor with
-`repost = starrail:4.6` (any version shown in a summary). The card is posted as a new message
-and is then kept up to date like any other. If the version's Special Program aired before the
-bot was running, its time isn't in the feeds any more, so the card simply leaves that line
-out. You can pin it in `config/overrides.json` (`"program_ts": "2026-09-20T19:30:00+08:00"`).
+**Already seeded and want a current card now?** Run the Monitor with `repost = starrail:4.6` (any
+version shown in a summary). The card is posted as a new message and then kept up to date like
+any other. If the Special Program aired before the bot was running, its time isn't in the feeds
+any more, so the card leaves that line out — pin it in `config/overrides.json`
+(`"program_ts": "2026-09-20T19:30:00+08:00"`).
 
 ---
 
-## ⚙️ Configuration reference
+## ⚙️ Configuration
 
-### Secrets (sensitive)
-| Name | Purpose |
-|---|---|
-| `DISCORD_WEBHOOK_SCHEDULE` | schedule cards |
-| `DISCORD_WEBHOOK_CODES_GENSHIN` · `_STARRAIL` · `_HNA` · `_ZZZ` · `_WUWA` · `_ANANTA` | code cards, one channel per game |
-| `DISCORD_WEBHOOK_CODES` | optional: codes of any game without its own secret |
-| `DISCORD_WEBHOOK_URL` | optional catch-all fallback |
-| `DISCORD_WEBHOOK_SCHEDULE_<GAME>` | optional per-game schedule channel, e.g. `DISCORD_WEBHOOK_SCHEDULE_WUWA` |
-| `NITTER_RSS_TOKEN` | optional — the e-mailed token for the one token-gated nitter mirror, `https://nitter.miningtcup.me/` (same secret News-Express uses). Empty only skips that mirror |
+**➡️ Full reference: [docs/CONFIGURATION.md](docs/CONFIGURATION.md)** — every secret, variable,
+`games.json` field and `overrides.json` key.
 
-Webhook routing: `DISCORD_WEBHOOK_<FEATURE>_<GAME>` → `DISCORD_WEBHOOK_<FEATURE>` → `DISCORD_WEBHOOK_URL`.
-`<GAME>` is the game key or its short name: `GENSHIN`/`GI`, `STARRAIL`/`HSR`, `ZZZ`,
-`WUWA`/`WW`, `HNA`/`NEXUSANIMA`, `ANANTA`. For a forum or thread channel, append
-`?thread_id=<id>` to the webhook URL. `python -m gamexpress validate` (step 1 of every workflow
-run) prints which secret feeds which channel.
+The workflow passes **every** secret and variable to the app, so any of them works without
+editing YAML. The ones worth knowing:
 
-### Variables (not secret)
-
-These are one-click switches. The workflow passes **every** secret and variable to the app, so
-any name below works without editing YAML.
-
-| Name | Default | Meaning |
+| Variable | Default | What it does |
 |---|---|---|
-| `PING_ROLE_ID` | *(unset)* | role ID(s) to ping. **Unset = no ping.** Comma-separate for several; `everyone` / `here` allowed |
-| `PING_SCHEDULE` / `PING_CODES` | inherit | per-feature override; `none` = explicitly no ping |
-| `PING_<FEATURE>_<GAME>` | inherit | e.g. `PING_SCHEDULE_GENSHIN=111…` |
-| `NO_PING` | off | `1` = never ping, whatever the other ping variables say. `monitor.yml` sets it per run: `1` for a test started without ⑥, `0` otherwise (never blank — a blank value would be re-filled from a stale repo variable by the `GE_VARS_JSON` catch-all) |
-| `EMOJI_YOUTUBE` / `EMOJI_TWITCH` | your animated emojis | format `a:name:id` (animated), `name:id`, a unicode emoji, or `none` |
-| `EMOJI_SOURCE` / `EMOJI_REDEEM` | — / 🎁 | emojis for the Source and Redeem buttons |
-| `EXTRA_BUTTONS` | — | JSON list (max 3) of extra buttons on every card, e.g. a community invite |
-| `COMMUNITY_BUTTONS` | `[{"label":"Citlali News","url":"https://discord.gg/HyrVP9wRXu","emoji":"a:starward11:1439878792653832253"}]` | the bottom row of a **codes** card (`none` = no row). Youtube / Twitch / Redeem Page are not shown there — they belong to the livestream card |
-| `COUNTDOWN_ESTIMATES` | on | `0` = never fill program / maintenance times from countdown sites |
-| `PROGRAM_MEDIA` | on | `0` = never look the program announcement up on the official news page (the card then keeps whatever the run's own feed showed) |
-| `BANNER_FEED` | on | `0` = never fill banner lineups from hub.json |
+| `PING_ROLE_ID` | *(unset)* | role(s) to ping. Unset = no ping |
 | `ENABLED_FEATURES` | `schedule,codes` | `schedule` · `codes` · `none` (paused / cold standby) |
-| `GAMES` | all enabled | allow-list, e.g. `genshin,starrail` |
-| `ENABLE_GAMES` | — | switch prepared games on, e.g. `hna` or `hna,ananta` |
-| `DRY_RUN` | off | build and log only |
-| `TEST_MODE` | off | cards get a 🧪 TEST label, the freshness/seed rules are skipped and the state is never saved (the monitor's test modes set it) |
-| `BOOTSTRAP_POST` | off | first run posts current items instead of seeding |
-| `EDIT_ON_UPDATE` | on | silent in-place edits when official info arrives |
-| `POST_ON_MAINTENANCE_NOTICE` | on | if the program announcement was missed, post from the maintenance notice |
+| `GAMES` / `ENABLE_GAMES` | all enabled / — | run a subset · switch prepared games on |
 | `LOOKBACK_HOURS` | 72 | how far back official posts are considered |
-| `CODES_MIN_SOURCES` | 2 | independent community sources needed for an unverified code |
-| `CODES_MARK_EXPIRED` | on | strike through posted codes once every source lists them as expired |
-| `SHOW_LEGEND` | on | the `STC — Subject to Change • TBA — To be Announced` footer |
-| `X_ENABLED` / `NITTER_INSTANCES` | on / built-in fleet | X monitoring on/off, or a custom nitter list |
-| `INSTANCE_NAME` / `INSTANCE_ROLE` / `PEER_STATE_URL` / `HEARTBEAT_MINUTES` / `FAILOVER_AFTER_MINUTES` | alpha / primary / — / 1440 / 90 | [fail-over](#-redundancy-fallback-chains--two-instance-fail-over) |
-| `AUTO_MERGE_DEPENDABOT` | — | `yes` = merge green Dependabot PRs automatically (dev repo only; [docs/DEPENDABOT.md](docs/DEPENDABOT.md)) |
-| `AUTO_MERGE_PYTHON_BUMP` | — | `yes` = merge a green, automated Python-version-bump PR automatically ([docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md)) |
+| `CODES_MIN_SOURCES` | 2 | independent sources needed for an unverified code |
+| `EDIT_ON_UPDATE` | on | silent in-place edits when official info arrives |
+| `DRY_RUN` | off | build and log only, post nothing |
 
-### `config/games.json` (per game)
-
-Every setting lives in one place per game: name, color, X accounts, HoYoLAB game ID, launcher
-ID, detection patterns, YouTube/Twitch buttons, code sources, redeem URL/hint, and card style
-(`title`, `header`, `maintenance_heading`, `maintenance_style` = `start_end|range`,
-`maintenance_first`, `four_star_summary`, `banners_url`, `show_banners`).
-
-Templates can use `{game}`, `{version}`, `{program}` and `{version_name}`. For example, set
-`"title": "{game} Version {version} \"{version_name}\" {program}"` to include the version's
-subtitle.
-
-### `config/overrides.json`: human-verified corrections
-
-Overrides win over every automatic source, and the posted card is edited on the next run
-(silently). Use them for banners that are only shown as images, leaks you've confirmed, or
-times you want pinned:
-
-```json
-{
-  "starrail": {
-    "4.7": {
-      "banners": { "phase1": ["Name"], "phase1_4": ["A", "B", "C"], "phase2": ["Name"], "reruns": ["X", "Y"] },
-      "maint_start_ts": "2026-11-09T06:00:00+08:00"
-    }
-  }
-}
-```
-
-Edit it straight on GitHub (✏️ button). An empty list shows `TBA`.
+Webhook routing, most specific first:
+`DISCORD_WEBHOOK_<FEATURE>_<GAME>` → `DISCORD_WEBHOOK_<FEATURE>` → `DISCORD_WEBHOOK_URL`.
+`python -m gamexpress validate` prints which secret feeds which channel.
 
 ---
 
-## 🎯 How it decides to post (accuracy rules)
+## 🎯 How it decides to post
 
-1. **Detect**: official posts are read from HoYoLAB, official X accounts and the Kuro site, then
-   filtered by per-game patterns (`special program`, `special broadcast`, maintenance /
-   pre-install notices, banner notices, explicit "redemption code" posts). Posts that aren't
-   announcements are ignored: recaps, replays, "has ended", merch.
-2. **Extract, from official text only**:
-   - **Program time** comes from the post's datetime with an explicit offset: `UTC+8`,
-     `UTC-4`, `GMT+8`. `(server time)` is never trusted, because it differs per region.
-     Missing years are inferred from the post date (`December 19 at 19:30 (UTC+8)`).
-   - **Version**: `Version 4.6` / `Ver.4.6` / `V4.6`. Genshin tweets that only say "the new
-     version" get the number from the matching HoYoLAB post, or from the official launcher's
-     live version + 0.1.
-   - **Maintenance**: pre-install, start, and end (end comes from an explicit end time, a range
-     like `04:00 - 11:00 (UTC+8)`, or "estimated to take 5 hours"). Compensation deadlines and
-     event end dates are never mistaken for maintenance.
-   - **Banners**: only quoted names that directly follow "5-star character" / "S-Rank Agent" /
-     "5-star Resonator" (and the 4★ equivalents) in official banner notices. Weapons never
-     match.
-   - **4★ characters are TBA unless certain.** The names are shown only when the official
-     notice lists exactly the expected number of rate-up 4★ (GI 3 · HSR 3 · ZZZ 2 · WW 3), every
-     name looks like a real name, and no official source disagrees. Otherwise the card shows
-     `4 Star Characters: TBA` and the job summary says why. Once two official posts disagree,
-     that phase stays TBA until you confirm the names in `config/overrides.json`.
-3. **Merge with provenance.** Priority is *overrides > official notice > official tweet >
-   launcher signal > countdown estimate > learned pre-install fallback > banner feed*.
-4. **Unknown values are TBA, and banners always carry (STC).** Countdown and learned pre-install
-   values are explicitly labelled estimated; neither can overwrite an official value.
-5. **Post once** per game + version (`state/state.json`), then **edit silently** when data
-   changes. If a moderator deleted the original Discord message, a `404 Unknown Message` causes
-   one fresh post whose new message id is adopted; every other edit failure remains an error and
-   never reposts. Announcements that are already stale (the program aired more than 36 h ago with
-   no pending maintenance) are recorded, not posted.
+**➡️ Full rules: [docs/ACCURACY.md](docs/ACCURACY.md).** The short version:
 
-**Verified against real posts.** The parsers reproduce the exact timestamps of your reference
-cards from the official posts:
-- GI 7.1 program: `1789214400`
-- GI 7.1 pre-install / maintenance start: `1789959600` / `1790114400` (43 h)
-- HSR 4.6 pre-install / maintenance: `1790229600` / `1790546400` → `1790564400` (88 h)
-- ZZZ 3.2 pre-install: `1788753600` (42 h before maintenance)
-- WW 3.7 pre-install / broadcast: `1790560800` / `1789815600` (42 h before maintenance)
+1. **Detect** — official posts from HoYoLAB, official X accounts and the Kuro site, filtered by
+   per-game patterns. Recaps, replays, "has ended" and merch are ignored.
+2. **Extract from official text only** — times need an explicit offset (`UTC+8`; `(server time)`
+   is never trusted), versions come from `Version 4.6` / `Ver.4.6` / `V4.6`, banners only from
+   quoted names following "5-star character" / "S-Rank Agent" / "5-star Resonator".
+3. **Merge with provenance** — *overrides > official notice > official tweet > launcher signal >
+   countdown estimate > learned pre-install fallback > banner feed*.
+4. **Unknown is `TBA`**, banners always carry `(STC)`, and no estimate can overwrite an official
+   value.
+5. **Post once, then edit silently.** A deleted Discord message (`404 Unknown Message`) is
+   re-posted once and the new id adopted; every other edit failure stays an error and never
+   reposts.
 
-**Code gate.** A code is posted when **any one** of these is true:
-1. it comes from an **official** source: the HoYoLAB livestream module, or an official X /
-   HoYoLAB post that explicitly lists redemption codes;
-2. a **redeem-validator** (hoyo-codes.seria.moe or Hum-Bao, which both try every code on a real
-   account) reports it working, and no validator reports it expired;
-3. at least `CODES_MIN_SOURCES` (default **2**) *independent* community sources list it as
-   active **and no source lists it as expired**.
-   - Open Gacha Codes and ennead count as one source, because they share a backend.
-   - PromoGacha copies seria and the wikis, so it counts as whichever of those it copied.
-   - The other independent sources are fandom and wuthering.gg.
-
-**Expiry dates come first.** If a source gives an explicit *valid until* date and that date
-has passed, the code is expired, no matter who else still lists it. This matters because:
-- wiki editors often leave 24-hour livestream codes under *Active* for days;
-- aggregators never delete anything.
-
-A posted code whose date passes is struck through on the card silently.
-
-Anything else waits as *pending* for up to 14 days and is posted the moment a second source
-confirms it. The job summary lists those codes with the reason (`only fandom`). It counts the
-already-expired ones in one line (`🧊 HSR: 12 code(s) ignored — already expired`) instead of
-listing each. Glued-together codes, placeholders and unmapped reward icons are filtered out
-before the gate.
+**The code gate.** A code posts when **any one** of these is true: it comes from an **official**
+source; a **redeem-validator** (seria or Hum-Bao, which try every code on a real account) says it
+works and none says it expired; or **≥ `CODES_MIN_SOURCES` independent** community sources list
+it as active and **none** lists it as expired. An explicit *valid until* date that has passed
+beats every source that still lists the code. Anything else waits as *pending* for up to 14 days,
+with the reason in the job summary.
 
 ---
 
-## 🕹 Manual controls
+## 🕹 Running it
 
 **Actions → Game-Express Monitor → Run workflow.** One input decides everything: **`mode`**.
 
 | `mode` | What it is |
 |---|---|
-| `live` *(default)* | **the real monitor.** cron-job.org triggers exactly this — it sends no inputs at all. It fetches the official sources, posts a card when something new matches, edits it silently when official info arrives, and commits the state. Nothing new → it posts nothing |
-| `test` | **check it with real data.** Every test fetches the live sources and posts what they really returned, labelled 🧪 TEST — so a wrong link, a wrong picture or a wrong timestamp is visible *before* a real announcement goes out |
+| `live` *(default)* | **the real monitor.** cron-job.org triggers exactly this — it sends no inputs at all. Fetches the official sources, posts a card when something new matches, edits it silently when official info arrives, and commits the state. Nothing new → it posts nothing |
+| `test` | **check it with real data.** Every test fetches the live sources and posts what they really returned, labelled 🧪 TEST — so a wrong link, picture or timestamp is visible *before* a real announcement goes out |
 
-#### `mode = live`
+<details>
+<summary><b><code>mode = live</code> inputs</b></summary>
 
 | Input | Effect |
 |---|---|
 | `only` | everything / only `schedule` announcements / only `codes` |
 | `game` | one game key |
-| `repost` | post a version card again as a **new** message, e.g. `starrail:4.6`. Only versions the monitor has already seen in an official post work, so an unannounced `genshin:7.2` can't be reposted yet. The summary says so, and lists the tracked versions |
+| `repost` | post a version card again as a **new** message, e.g. `starrail:4.6`. Only versions the monitor has already seen in an official post work, so an unannounced `genshin:7.2` can't be reposted yet — the summary says so and lists the tracked versions |
 
 Nothing is ever posted twice: each card is remembered in `state/state.json` by its key **and** by
 a hash of its payload, so a re-run can neither re-post nor rewrite an unchanged card. Code sources
-are fetched once per run and shared between games (`CodeSources` cache), and the fetcher caps
-concurrent requests, so a run costs a handful of HTTP calls.
+are fetched once per run and shared between games, and the fetcher caps concurrent requests, so a
+run costs a handful of HTTP calls.
 
-#### `mode = test`
+</details>
+
+<details>
+<summary><b><code>mode = test</code> inputs</b></summary>
 
 | `test` | What you get — all real, all labelled 🧪 TEST, state never saved |
 |---|---|
 | `webhooks` | one small green "✅ connected" card per webhook, listing which game/feature cards that channel receives. Checks all 6 per-game codes secrets |
-| `codes` | the **real codes that are on the live sources right now**, posted to each game's own codes channel. Games that are not out yet (HNA, ANANTA) have no real code to fetch, so they get example codes |
+| `codes` | the **real codes on the live sources right now**, posted to each game's own codes channel. Games that are not out yet (HNA, ANANTA) have no real code to fetch, so they get example codes |
 | `schedule` | the **real schedule card** for the version that is out now: the announcement's own link and key art, the livestream date/time, the maintenance timestamps and the banners — exactly what a live run would post |
 | `all` | webhooks → codes → schedule |
 
 `game` narrows any of them to one game; `ping` (off by default) adds your role ping **to the test
 cards only**. A live run pings according to `PING_SCHEDULE` / `PING_ROLE_ID` whatever this switch
-says — ⑥ used to reach the live run too, which silently muted every real announcement.
+says.
 
 > A test posts to the **real** channels and never writes the state — so the live run still posts
 > the real thing later. Delete the test cards when you are done with them.
 
-**CLI** (local runs and debugging): `python -m gamexpress <command>`
+</details>
+
+### CLI
+
+For local runs and debugging: `python -m gamexpress <command>`
 
 | Command | What it does |
 |---|---|
 | `run` | one pass (what GitHub Actions uses) |
-| `check-webhooks [--kind …] [--game …]` | one "connected" card per unique webhook (no ping) |
-| `test-card [--kind …] [--game …] [--ping] [--unlaunched]` | post the sample cards, labelled 🧪 TEST (no ping unless `--ping`). `--unlaunched` keeps only the games with `"released": false`, which have nothing real to fetch yet |
+| `validate` | prints the resolved routing, pings and emojis, and checks every sample card against Discord's limits |
 | `preview` | writes `previews/index.html` (a Discord-like preview of every card) + the JSON for [Discohook](https://discohook.app) |
-| `speculate [--game …] [--verbose] [--now <unix>]` | read-only: what the bot would predict for each game's next version (livestream, pre-install, maintenance), the confidence, and the real dates it is anchored on. Posts nothing and writes no state |
-| `validate` | prints the resolved routing (which secret feeds which channel), pings and emojis, and checks every sample card against Discord's limits |
+| `check-webhooks [--kind …] [--game …]` | one "connected" card per unique webhook (no ping) |
+| `test-card [--kind …] [--game …] [--ping] [--unlaunched]` | post the sample cards, labelled 🧪 TEST. `--unlaunched` keeps only the games with `"released": false` |
+| `speculate [--game …] [--verbose] [--now <unix>]` | read-only: what the bot would predict for each game's next version, the confidence, and the real dates it is anchored on |
 
 Flags: `--dry-run --only --game --repost --kind --ping --out`.
 
 ---
 
-## 🛡 Redundancy: fallback chains + two-instance fail-over
+## 🛡 Reliability
 
-**Layer 1: every data point has a fallback chain inside every run.**
+**Layer 1 — every data point has a fallback chain, inside every run.**
 
 | Data | Chain |
 |---|---|
 | HoYoverse news | official HoYoLAB API → c3kay JSON-Feed mirror |
-| X timelines | 15-instance nitter fleet (first **two** working instances are merged, so a stale-but-200 mirror can't hide a tweet) |
+| X timelines | the built-in nitter fleet (18 mirrors; `NITTER_INSTANCES` overrides it). The first **two** working mirrors are merged, so a stale-but-200 mirror can't hide a tweet |
 | Tweet details | FxTwitter → vxTwitter → RSS body |
-| Codes | up to 8 sources per game (validators, APIs, wikis, official posts), fetched in parallel, with the gate above |
+| Codes | up to 8 sources per game (validators, APIs, wikis, official posts), fetched in parallel, behind the gate above |
 | Version / pre-install | HoYoPlay `getGameBranches` / Kuro launcher index |
 
-A dead source is logged, shown in the job summary, and skipped. Sources are fetched in
-parallel (max 12 connections, per-request timeouts), so a run takes seconds even when several
-hosts are down. If every announcement source of a game is down, the summary says so, and the
-next run re-reads the last `LOOKBACK_HOURS` (72 h), so nothing is missed.
+A dead source is logged, shown in the job summary, and skipped. Everything is fetched in parallel
+(max 12 connections, per-request timeouts), so a run takes seconds even when several hosts are
+down. If every announcement source of a game is down, the summary says so and the next run
+re-reads the last `LOOKBACK_HOURS` — nothing is missed.
 
-**Layer 2: two instances with automatic fail-over and shared dedup.**
+**Layer 2 — two instances, automatic fail-over, shared dedup.**
 
 | Instance | Variables |
 |---|---|
@@ -461,498 +380,104 @@ next run re-reads the last `LOOKBACK_HOURS` (72 h), so nothing is missed.
 - Every run, each instance imports the other's posted keys. The standby stays passive while the
   primary's heartbeat is fresh, and starts posting automatically when it goes stale.
 - The standby never fails over faster than 2.5× the primary's heartbeat interval, and never when
-  the peer state can't be read. So a misconfiguration can't cause double posts.
-- When alpha comes back it imports bravo's posts and edits bravo's cards (same webhook), so
-  nothing is posted twice.
+  the peer state can't be read — so a misconfiguration cannot cause double posts.
+- When alpha comes back it imports bravo's posts and edits bravo's cards (same webhook).
 
-**One repo or several.** One repo can be the code home and production at once: CI tests every
-PR before you merge, and merging deploys it. You can also follow the News-Express convention of
-a development repo plus instance repos (alpha / bravo). Only a development copy that must never
-post gets the variable `ENABLED_FEATURES=none`. The monitor is then skipped even if something
-triggers it, while a manual `test` run of the monitor still works there. Never set it on the
-repo that posts.
+**One repo or several.** One repo can be the code home and production at once: CI tests every PR,
+and merging deploys it. You can also follow the News-Express convention of a development repo
+plus instance repos (alpha / bravo) — see [docs/PROD-REPO-SETUP.md](docs/PROD-REPO-SETUP.md).
+Only a development copy that must never post gets `ENABLED_FEATURES=none`; a manual `test` run
+still works there. **Never set it on the repo that posts.**
 
-**Scheduler: cron-job.org, one job per instance repo.** GitHub's native `schedule:` is
-disabled (commented out) in `monitor.yml`, exactly like News-Express, because two schedulers
-on one repo race each other. cron-job.org calls the `workflow_dispatch` API every 5 minutes.
-The concurrency queue plus the fresh branch checkout make an overlapping trigger safe. Setup,
-the classic token, fail-over timing and the response codes: **[docs/SCHEDULER.md](docs/SCHEDULER.md)**.
+**Scheduler.** GitHub's native `schedule:` is disabled (commented out) in `monitor.yml`, exactly
+like News-Express, because two schedulers on one repo race each other. cron-job.org calls the
+`workflow_dispatch` API every 5 minutes; the concurrency queue plus the fresh branch checkout
+make an overlapping trigger safe. **[docs/SCHEDULER.md](docs/SCHEDULER.md)**.
 
 ---
 
----
+## 🧪 Testing & CI
 
-## 🧪 Testing & previews
+**➡️ Full checklist: [docs/TESTING.md](docs/TESTING.md).**
 
-**➡️ Full checklist: [docs/TESTING.md](docs/TESTING.md)**. It covers what to click, what you
-should see in Discord, and how to tell that the whole thing is working.
-
-- **Monitor test bench** (`monitor.yml`, `mode` = `test`): webhooks, real codes, or the real
-  schedule card — every test fetches the live sources, so what you see in Discord is what a live
-  run would post (see [Manual controls](#-manual-controls)).
-- **CI** (`.github/workflows/ci.yml`) runs on every PR and every push to `main`: install,
-  compile, `validate`, `tests/test_smoke.py`, and a preview render. That's **163 offline tests
-  with no network and no secrets**:
-  - real official posts captured on 2026-09-25, which must reproduce your reference cards'
-    timestamps;
-  - golden JSON for the 4 converted cards (`tests/fixtures/golden/`);
-  - button nesting, component and character limits, ping and emoji resolution, TEST labels;
-  - all code parsers (real API captures), the code gate (families, validators, expired veto),
-    the expired-code edit, pending and bootstrap logic, the 4★ TBA rules, silent edits,
-    stale-post suppression, fail-over, per-game codes webhooks, prepared-game switches,
-    parallel fetching, and the workflow files themselves (no native schedule, secrets wired).
-- **CI — advisory checks** runs beside it on the same PR and is *informational only* (it can
-  never block a merge): `pip-audit` (CVEs in `requirements.txt`), `actionlint` (workflow YAML),
-  `zizmor` (workflow security — see `.github/zizmor.yml`), and `ruff` (the same `ruff.toml` you
-  run locally, annotated on the PR diff).
-- `UPDATE_GOLDEN=1 python tests/test_smoke.py` refreshes the golden cards after an
-  **intentional** design change.
-- `python -m gamexpress preview` → open `previews/index.html` to see every card, or paste a JSON
-  file into Discohook.
-
----
-
-## 🚨 Troubleshooting
-
-| Symptom | Fix |
+| Gate | What it runs |
 |---|---|
-| Nothing posted for days | Normal. It posts only on official announcements and new codes. Check the job summary: *"nothing new"* plus source health. |
-| First Monitor runs posted nothing | Correct: the first run per game is a **silent seed** (`🌱 … seeded silently`). Use `repost = starrail:4.6` to post a current card now |
-| `repost` posted nothing | the version isn't tracked yet (not announced, or never seen). The summary says `version … isn't tracked` and lists the ones that are |
-| `400 … components` in the log | a card broke a Discord limit. `python -m gamexpress validate` pinpoints it (CI also catches this) |
-| No ping | `PING_ROLE_ID` unset or `none`; the role must be mentionable, or the webhook needs *Mention @everyone, @here and All Roles* |
-| Emojis show as `:name:` | the webhook's channel needs *Use External Emojis* for `@everyone`, or change `EMOJI_*` |
-| Card not edited after an override | the card must have been posted by a webhook with the same URL (the fingerprint is stored) |
-| `every code source was unreachable` | a transient outage. The next run catches up because codes are compared against the state, not the time |
-| X silent | nitter fleet down. The HoYoLAB / Kuro sources still work; add `NITTER_RSS_TOKEN` or a fresh `NITTER_INSTANCES` |
-| cron-job.org shows **401** | the token expired or is wrong: make a new classic token (`repo` scope) and paste it into the job's header ([docs/SCHEDULER.md](docs/SCHEDULER.md)) |
-| cron-job.org shows **404** | wrong owner / repo / file name in the URL, or the token can't see the repo |
-| cron-job.org shows **422** | the branch in the body doesn't exist (`{"ref":"main"}`) or the workflow has no `workflow_dispatch` |
-| Runs are skipped (grey) | the variable `ENABLED_FEATURES=none` is set. That's only for a development copy; remove it on the repo that posts |
-| A code isn't posted | it's *pending*: only one source has it, or a source lists it as expired. The job summary shows the reason. Official / redeem-validated codes post immediately |
-| `4 Star Characters: TBA` although the names are known | the official text didn't list exactly the expected number, or two posts disagreed. Put the names in `config/overrides.json`; the card is edited on the next run |
-| `webhooks` test shows ✗ / `not a webhook URL` | the secret holds something else (a channel link, extra spaces). Copy the webhook URL again |
-| Workflow stopped after 60 days | GitHub pauses idle repos. The daily heartbeat commit prevents this; re-enable it in the Actions tab if it happened |
+| **CI** (`ci.yml`, required) | install → `compileall` → `validate` → `tests/test_smoke.py` → preview render. **163 offline tests, no network, no secrets** |
+| **CI — advisory checks** (never blocks a merge) | `pip-audit` (CVEs in `requirements.txt`), `actionlint` (workflow YAML), `zizmor` (workflow security), `ruff` (the same `ruff.toml` you run locally) |
+| **Monitor test bench** (`mode = test`) | webhooks, real codes, or the real schedule card — against the live sources |
+
+The offline suite pins real official posts captured on 2026-09-25 (which must reproduce the
+reference cards' timestamps), golden JSON for the 4 converted cards, button nesting and Discord's
+component/character limits, every code parser and the code gate, the 4★ TBA rules, silent edits,
+stale-post suppression, fail-over, parallel fetching, and the workflow files themselves.
+
+```bash
+python tests/test_smoke.py                       # 163 offline tests
+UPDATE_GOLDEN=1 python tests/test_smoke.py       # after an INTENTIONAL card change
+python -m gamexpress preview                     # open previews/index.html
+```
 
 ---
 
-## 📡 Data sources
+## 📚 Documentation
 
-The full verified endpoint list, with why each one was chosen or rejected, is in
-**[docs/SOURCES.md](docs/SOURCES.md)**. It covers HoYoLAB `getNewsList` / `getPostFull` /
-livestream `material`, c3kay feeds, HoYoPlay `getGameBranches`, the Kuro site and launcher JSON,
-hoyo-codes.seria.moe, Hum-Bao/hoyoverse-codes, Open Gacha Codes (api.ennead.cc), wuthering.gg,
-the fandom MediaWiki API, PromoGacha `codes.json`, FxTwitter / vxTwitter, and the nitter fleet.
+| Doc | What's in it |
+|---|---|
+| **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** | every secret, variable, `games.json` field and `overrides.json` key |
+| **[docs/ACCURACY.md](docs/ACCURACY.md)** | how a post becomes a card: detection, extraction, provenance, the code gate |
+| **[docs/SOURCES.md](docs/SOURCES.md)** | every verified endpoint, with why it was chosen or rejected |
+| **[docs/SCHEDULER.md](docs/SCHEDULER.md)** | the cron-job.org trigger, the classic token, how fast it can poll |
+| **[docs/TESTING.md](docs/TESTING.md)** | the manual test bench and the local commands |
+| **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** | symptom → fix |
+| **[docs/SECURITY.md](docs/SECURITY.md)** | threat model: untrusted sources, secrets, workflow permissions |
+| **[docs/TIMESTAMP-PATTERNS.md](docs/TIMESTAMP-PATTERNS.md)** | the release-rhythm study the estimates are calibrated on |
+| **[docs/DEPENDABOT.md](docs/DEPENDABOT.md)** · **[docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md)** | dependency and interpreter upkeep |
+| **[docs/PROD-REPO-SETUP.md](docs/PROD-REPO-SETUP.md)** | splitting into a private dev repo + a public production repo |
+| **[docs/CREDITS.md](docs/CREDITS.md)** | upstream projects and community databases |
+| **[AGENTS.md](AGENTS.md)** | the maintainer's mental model — read before changing code |
 
-Those sources are other people's servers, so the monitor treats everything they return as
-untrusted input: `cards.safe_url()` gates every link, an 8 MiB cap bounds every response body,
-a code needs two independent sources (or an official one), and one game can post at most five
-code cards per run. The threat model and the test pinning each guard:
-**[docs/SECURITY.md](docs/SECURITY.md)**.
-
----
-
-## 📚 Community databases & resources
-
-<details><summary><b>Solaris — Wuthering Waves</b></summary>
-
-- **Discover Wuthering Waves Lore**: https://wutheringwaves.notion.site/
-- **The Shorekeeper (Team Management)**: https://cyzed.com/
-- **Wuthering Waves Database**: https://encore.moe/
-- **Guides or Builds, Tier Lists, Detailed Information**: https://www.prydwen.gg/wuthering-waves/ · [game8.co/games/Wuthering-Waves](https://game8.co/games/Wuthering-Waves/archives/457465)
-- **Character Builds, Tier List, Echoes, Guides, Weapons and their Background Information**: https://wutheringlab.com/
-- **Provides Detailed Data to Help Players Navigate the Game World more Efficiently**: https://wuthering.gg/map
-- **Built by Wuthering Waves' experienced theorycrafting & speedrunning community**: https://tethys.gg/
-- **Official Wiki**: https://wutheringwaves.fandom.com/
-- **More**: https://wuthering.gg/ · https://arabwuwa.com/ · https://wuwa.akademiya.app/en · https://wuwatracker.com/characters · https://wuwacompanion.com/en/database · https://www.prydwen.gg/wuthering-waves/characters
-</details>
-
-<details><summary><b>New Eridu — Zenless Zone Zero</b></summary>
-
-- **Database for everything in Zenless Zone Zero**: https://zzz.gachabase.net/?lang=en&branch=beta
-- **Guides or Builds, Tier Lists, Detailed Information**: https://www.prydwen.gg/zenless/ · https://www.icy-veins.com/zenless-zone-zero/ · https://www.icy-veins.com/zenless-zone-zero/tier-list · [game8.co/games/Zenless-Zone-Zero](https://game8.co/games/Zenless-Zone-Zero/archives/522597)
-- **Information Related to Zenless Zone Zero**: https://zzz.honeyhunterworld.com/?lang=EN · https://zzz-run-archive.onrender.com/
-- **Official Wiki**: https://zenless-zone-zero.fandom.com/
-</details>
-
-<details><summary><b>Genshin Impact</b></summary>
-
-https://ambr.top/en · https://lunaris.moe/ · https://e-teyvat.vxnus.xyz/ · https://gensh.honeyhunterworld.com/?lang=EN · https://www.icy-veins.com/genshin-impact/ · https://www.icy-veins.com/genshin-impact/tier-list · https://www.prydwen.gg/genshin-impact/characters
-</details>
-
-<details><summary><b>Honkai: Star Rail</b></summary>
-
-https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/en · https://starrail.honeyhunterworld.com/?lang=EN · https://www.icy-veins.com/honkai-star-rail/ · https://www.prydwen.gg/star-rail/characters/ · https://sk.theherta.com/ · [game8.co/games/Honkai-Star-Rail](https://game8.co/games/Honkai-Star-Rail/archives/404256)
-</details>
-
-<details><summary><b>All HoYoverse + Wuthering Waves · more databases</b></summary>
-
-- **The definitive database for all HoYoverse and Wuthering Waves (Release, Beta & CBT)**: https://gachabase.net/ · https://nanoka.cc/
-- **More Database**: https://endfield.teamstardust.org/ · https://silver.teamstardust.org/ · https://www.ntegame.com/ · https://irminsul.gg/ · https://perlica.moe/ · https://endfieldtools.dev/ · https://anantacodex.com/
-</details>
-
----
-
-## 📄 Privacy · Terms · Credits
-
-- **[Privacy Policy](PRIVACY_POLICY.md)** and **[Terms of Service](TERMS_OF_SERVICE.md)**.
-- **Not affiliated** with HoYoverse, Kuro Games, NetEase or Discord. Game names and assets belong
-  to their owners.
-- **Credits** — this monitor is a thin layer over other people's work. Everything it reads is
-  someone's volunteer project, and every card it posts exists because these are kept running:
-
-  **Data sources**
-  - [seriaati/hoyo-codes](https://github.com/seriaati/hoyo-codes) and [hoyo-update-notifier](https://github.com/seriaati/hoyo-update-notifier) (the verified code API and the Sophon/launcher endpoints)
-  - [Ertezy/Kitsudock-data](https://github.com/Ertezy/Kitsudock-data) — the hourly `hub.json` behind the 5★ banner lineups (formerly *Gacha-hub-info*; collector MIT, banner data assembled from the fandom wikis under CC BY-SA 3.0 — Endfield from endfield.wiki.gg, CC BY-SA 4.0), and the [Kitsudock](https://github.com/Ertezy/Kitsudock) launcher it is built for
-  - [c3kay/hoyolab-rss-feeds](https://github.com/c3kay/hoyolab-rss-feeds) — the HoYoLAB mirror that covers for the API when it bot-checks a CI runner
-  - [api.ennead.cc](https://api.ennead.cc/) and [Open Gacha Codes](https://github.com/torikushiii/OpenGachaCodes)
-  - [Hum-Bao/hoyoverse-codes](https://github.com/Hum-Bao/hoyoverse-codes) (redeem-validated code lists)
-  - [gripcrip-blip/codehub · PromoGacha](https://github.com/gripcrip-blip/codehub)
-  - [DuolaD/HoYo_Versioncatcher](https://github.com/DuolaD/HoYo_Versioncatcher)
-  - [RSSHub](https://github.com/DIYgod/RSSHub) (Kuro endpoints)
-  - [wuthering.gg](https://wuthering.gg/codes)
-  - The **Fandom wikis** read directly for redemption codes — [Genshin Impact](https://genshin-impact.fandom.com/), [Honkai: Star Rail](https://honkai-star-rail.fandom.com/), [Zenless Zone Zero](https://zenless-zone-zero.fandom.com/) and [Wuthering Waves](https://wutheringwaves.fandom.com/) — and their editors. Wiki text is CC BY-SA 3.0.
-  - [nitter](https://github.com/zedeus/nitter) (and forks / instances: [git.kareem.one/shaquille/nitter](https://git.kareem.one/shaquille/nitter), [tw.eir-nya.gay](https://tw.eir-nya.gay/), [Cynosphere/nitter](https://gitlab.com/Cynosphere/nitter)), [xcancel](https://xcancel.com/) and **every operator who keeps a public instance online** — they are the reason an announcement is seen minutes after it is tweeted
-  - [FxTwitter / FixTweet](https://github.com/FixTweet/FxTwitter) (the fallback that resolves a tweet when no mirror answers)
-
-  **Built with**
-  - [aiohttp](https://github.com/aio-libs/aiohttp), [feedparser](https://github.com/kurtmckee/feedparser), [python-dotenv](https://github.com/theskumar/python-dotenv) — the entire runtime dependency list
-  - [astral-sh/uv](https://github.com/astral-sh/uv) and [ruff](https://github.com/astral-sh/ruff) (installs and linting), [zizmor](https://github.com/zizmorcore/zizmor) and [rhysd/actionlint](https://github.com/rhysd/actionlint) (workflow auditing), [pypa/gh-action-pip-audit](https://github.com/pypa/gh-action-pip-audit) (CVE checks), [peter-evans/create-pull-request](https://github.com/peter-evans/create-pull-request)
-  - Discord's [Components V2](https://discord.com/developers/docs/components/reference) and [cron-job.org](https://cron-job.org/) (the external scheduler)
-
-  **Sibling project**
-  - [News-Express](https://github.com/uesu/News-Express) — same design, different beat
+Index: **[docs/](docs/)**.
 
 ---
 
 ## 🗒 Changelog
 
-### 1.9.0 — 2026-10-02 · the run stops waiting on a hung mirror, and the dead weight is gone
+**Latest — [`1.9.0`](docs/changelog/CHANGELOG.md#190--2026-10-02) · 2026-10-02 · *the run stops
+waiting on a hung mirror, and the dead weight is gone***
 
-- **A stalled nitter mirror no longer costs the run its whole timeout.** Each batch of mirrors is
-  still requested in parallel in fleet order, but the batch now **stops the moment the winners are
-  decided** and cancels the stragglers instead of awaiting the slowest one (`asyncio.gather` →
-  `asyncio.wait(FIRST_COMPLETED)` + cancel, in `XClient._probe_batch`). This is the difference
-  between run **#217 (16.2 s, `nitter.cf -> TimeoutError`)** and runs #215/#216/#218 (4.9–6.0 s):
-  in a reproduction of exactly that run the timeline fetch went from **12.01 s to 0.06 s** with a
-  byte-identical result. Cancelling also returns the `Fetcher`'s global request slot immediately,
-  so the HoYoLAB / Kuro / code requests queued behind it start sooner.
-  - The *selection* is deliberately unchanged — **ranking still beats speed**. A mirror is only
-    dropped once enough **higher-ranked** mirrors have answered, never just because it was
-    slower, so the merged timeline is the one the old code would have produced.
-  - A hung mirror that outranks the answers still gets a grace window, but `NITTER_GRACE` = 1.5 s
-    instead of the full 12 s timeout (**12.01 s → 1.56 s** in that worst case).
-  - A probe that raises is now logged and treated as a dead mirror instead of propagating out of
-    the run.
-- **The rate-limit gap is no longer charged after the last post.** Discord's webhook bucket still
-  gets its 1.2 s of spacing between two requests, but the wait now happens *before* a request
-  instead of after a successful one — so a run that posts `n` cards pays `n-1` gaps instead of
-  `n`, and a run that posts a single card pays none at all (**−1.2 s on every posting run**).
-- **Install step no longer phones home for a uv version.** Both workflows pass
-  `version: latest-known` to `astral-sh/setup-uv`: with no version and no `uv.toml`/`pyproject.toml`
-  the action had to fetch `astral-sh/versions`' manifest over the network on **every** run (0.3–4 s
-  in runs #215–#218) and install whatever uv was published minutes earlier, unverified.
-  `latest-known` is the newest uv whose checksum ships inside the pinned action: no manifest
-  lookup, checksum-verified download, and uv only moves when Dependabot bumps the action through
-  the usual green-CI gate.
-- **CI cancels superseded runs** (`concurrency` + `cancel-in-progress` in `ci.yml` only — never in
-  `monitor.yml`, where a cancelled run could post twice), and both read-only checkouts now use
-  `persist-credentials: false`.
-- **Two more informational checks** in the `advisory-checks` job, which still can never block a
-  merge: [`zizmorcore/zizmor`](https://github.com/zizmorcore/zizmor) (static security review of the
-  workflow YAML — the repo is clean, with three documented, justified ignores in
-  `.github/zizmor.yml` and inline) and [`astral-sh/ruff-action`](https://github.com/astral-sh/ruff-action)
-  (the same `ruff.toml` used locally, so a lint regression shows up on the PR without gating it).
-- **Dead weight removed** (no behaviour change): `cards.notice_payload`, `Game.redeem_page` and the
-  three `redeem_page` entries in `config/games.json` (left over from the "Redeem Page" button
-  dropped in 1.3.0), `CodeHit.hard_expired`, `SourceHealth.last_ok_ts` (written on every request,
-  never read), and the duplicate `nitter_pic_to_twimg` in `sources/twitter.py` — it now reuses
-  `media.nitter_pic_to_twimg`, which also handles the `ext_twvideo_thumb/` prefix the copy missed.
-  `codeposter._post` now chunks with `cards.CODES_PER_CARD` instead of a hardcoded `10`, so the
-  card size and the chunk size can never drift apart.
-- **Honkai: Nexus Anima and ANANTA are switched on** (2026-10-02), months before release, so a
-  pre-release Special Program, livestream or code is caught the moment it is announced — the
-  first run for a newly enabled game seeds silently, so nothing old is posted. Their official
-  YouTube channels (`@HonkaiNA`, `@Ananta_Game`) are wired up; neither has a Twitch channel, so
-  their cards simply have no Twitch button, and ANANTA still hides the banner section.
-  - New `"released"` flag in `games.json`, separate from `"enabled"`: *watched* and *out* are
-    different facts. `test-card --unlaunched` now selects "not released" instead of "not enabled",
-    so the sample-card test bench keeps working for games that are monitored but unreleased.
-- **Every GitHub Action is now pinned to a commit SHA** (`@3d3c42e…  # v7`) instead of a
-  movable tag — the `tj-actions/changed-files` compromise of March 2025 (CVE-2025-30066)
-  repointed every tag of a popular action at code that dumped secrets into ~23 000 repos' logs,
-  and the related `reviewdog/action-setup` compromise (CVE-2025-30154) hit the org whose
-  actionlint action runs in this CI. Dependabot updates SHA pins and their version comments, so
-  patches still arrive as PRs.
-- **Invisible-character sanitising:** `strip_invisible()` drops C0/C1 controls, zero-width
-  characters and bidi overrides in `clean_text()` and again in `cards.text()`, so scraped text
-  cannot render as something other than what it says.
-- **Hardening against a hostile source** (`docs/SECURITY.md`, new): every scraped URL now goes
-  through `cards.safe_url()` — http(s) only, no control characters, parentheses encoded — so a
-  taken-over mirror can neither smuggle an extra `[FREE CODES](…)` link into a card nor kill a
-  real announcement with a `javascript:` button (that one button is dropped instead). Response
-  bodies are capped at 8 MiB, and one game can post at most 5 code cards per run, with the
-  remainder following on the next run.
-- **Source-coverage guard:** a new test asserts that every game with a HoYoLAB circle is read on
-  **all three official tabs** (`page_sort=notices|events|news` = `type=1|2|3`, so 12 requests per
-  run across GI/HSR/ZZZ/HNA) and that every enabled game's X account is probed across the nitter
-  fleet, `nitter.cf` first — including the two new accounts `@HonkaiNA` and
-  `@Ananta_EN`. Dropping a sort or a gid now fails CI instead of quietly missing announcements.
-- **The recommended poll interval is now 5 minutes, not 10** — halving the average time-to-post
-  with no code change. `docs/SCHEDULER.md` gains a measured *How fast can it poll?* section: runs
-  take 19–36 s (≈8 % of a 5-minute slot), overlap is impossible by construction, GitHub is free
-  for public repos, and the real limit is politeness toward volunteer-run upstreams. 3 minutes is
-  the floor worth defending; 1 minute is not recommended.
-- **[AGENTS.md](AGENTS.md)** — a maintainer/AI orientation guide: repo map, the invariants that
-  must not be "fixed", exact verification commands, measured performance numbers, and the traps
-  that have already broken a run (astral-sh tag pins, zizmor suppression placement, the hung
-  mirror, the pip cache).
-- **Docs caught up with the code:** the privacy policy no longer mentions slash commands or a
-  self-hosted runtime (the Discord bot was removed in 1.7.0 — GitHub Actions is the only runtime),
-  and the terms no longer claim the Service "never estimates" when a labelled countdown/banner-feed
-  estimate is exactly what a card shows before the official notice lands.
-- 163 offline tests (new regression tests pin the stop-waiting behaviour, the webhook spacing,
-  SHA pinning for every action, the three-tab HoYoLAB coverage, hostile-source handling, and
-  that an unsorted feed full of old announcements still posts only the newest one),
-  `ruff check .`,
-  `python -m gamexpress validate` and `python -m gamexpress preview` all green.
+- A stalled nitter mirror no longer costs the run its whole timeout: a batch stops as soon as the
+  winners are decided and cancels the stragglers (**12.01 s → 0.06 s** on a reproduced hung run),
+  while *ranking still beats speed*.
+- The webhook rate-limit gap is charged *before* a request, not after — a run that posts one card
+  now pays none at all.
+- `setup-uv` pinned to `version: latest-known`, so the install step no longer fetches a version
+  manifest on every run; CI cancels superseded runs; read-only checkouts drop their credentials.
+- Every GitHub Action is pinned to a **commit SHA** (CVE-2025-30066), scraped URLs go through
+  `cards.safe_url()`, response bodies are capped at 8 MiB, and invisible characters are stripped.
+- Honkai: Nexus Anima and ANANTA switched on months before release, with the new `released` flag
+  separating *watched* from *out*.
+- Dead weight removed, docs caught up with the code, and the recommended poll interval moved from
+  10 minutes to 5.
 
-### 1.8.1 — 2026-10-01 · Python 3.14
+**➡️ Full history: [docs/changelog/](docs/changelog/)** —
+[current line](docs/changelog/CHANGELOG.md) (1.8.0 → 1.9.0) ·
+[archive](docs/changelog/CHANGELOG_ARCHIVE.md) (1.0.0 → 1.7.0).
 
-- **The monitor now runs on Python 3.14** (`.github/workflows/ci.yml` and `monitor.yml` pin
-  `python-version: '3.14'`, matching [python.org's current stable release, 3.14.8](https://www.python.org/downloads/release/python-3148/)).
-  Pinning the *minor* version only (not `'3.14.8'`) means GitHub's runners keep picking the newest
-  3.14.x bugfix release on their own — no PR needed for a patch release, the same trick already
-  used for 3.11 before it. Python 3.11 reaches end of active support around October 2027; 3.14 is
-  supported into **October 2030**.
-  - Verified safe before merging: the three runtime dependencies (`aiohttp`, `feedparser`,
-    `python-dotenv`) already ship Python 3.14 wheels/classifiers, and a full repo scan found zero
-    uses of any stdlib API removed or deprecated between 3.9 and 3.14 (no `datetime.utcnow()`,
-    no `collections.Mapping`, no dead-battery modules, no old asyncio loop APIs, etc.).
-  - `ruff.toml`'s `target-version` is now `py314` to match; `ruff check .` is unchanged (0 issues)
-    under both the old and new target.
-  - **Dependabot cannot bump this for you** — `python-version` is a workflow input, not a tracked
-    package ecosystem, so the *next* Python feature release (3.15, ~October 2027) would have
-    needed the same one-line manual edit in both workflow files (and `ruff.toml`) by hand — see
-    **1.8.0** below, which automates exactly that.
-- No functional changes: all 131 offline tests, `ruff check .`, `python -m gamexpress validate`
-  and `python -m gamexpress preview` are unaffected.
+---
 
-### 1.8.0 — 2026-10-01 · future Python bumps, faster installs, two advisory scans
+## 📄 Legal & credits
 
-- **New: `.github/workflows/python_version_bump.yml`.** Weekly (and on demand), it compares the
-  pinned Python series against [`actions/python-versions`](https://github.com/actions/python-versions)'
-  own release manifest — the exact list `actions/setup-python` installs from — and opens a PR the
-  moment a newer *stable* series is actually available, instead of waiting for a human to notice.
-  It never merges blind: the PR only auto-merges when it carries the `python-bump` label, the full
-  131-test CI gate is green on that exact commit, **and** the repository variable
-  `AUTO_MERGE_PYTHON_BUMP=yes` is set — unset by default, so today this only ever opens the PR for
-  review. Full design, safety reasoning, and the one-time "allow Actions to open PRs" setting it
-  needs: [docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md).
-- **Faster installs in CI and in the 10-minutely monitor run**, both switched from `pip` to
-  [`astral-sh/setup-uv`](https://docs.astral.sh/uv/guides/integration/github/)'s `uv pip install`
-  (same `requirements.txt`, same resolved packages — just a much faster resolver/installer). The
-  monitor workflow runs every 5 minutes, so this is the install path where the speed actually
-  matters day to day.
-- **Two new informational-only checks**, added as a separate `advisory-checks` job in `ci.yml`
-  that can never block a merge (`continue-on-error: true` on both steps):
-  - [`pypa/gh-action-pip-audit`](https://github.com/pypa/gh-action-pip-audit) scans
-    `requirements.txt` against the PyPA known-vulnerability database on every PR;
-  - [`reviewdog/action-actionlint`](https://github.com/reviewdog/action-actionlint) statically
-    checks the workflow YAML itself (typos, bad expressions, shellcheck of `run:` blocks) —
-    actionlint has no first-party GitHub Action of its own, this reviewdog wrapper is the
-    documented way to run it in CI.
-- **Housekeeping:** removed `.dockerignore` (the repo has never had a `Dockerfile`) and the
-  `DISCORD_WEBHOOK_TEST=` line in `.env.example` (README already noted it's no longer used, since
-  the live-test-channel workflow was retired). Fixed three stale "N offline tests" mentions in
-  the docs that still said 55/67 instead of the current 131.
-- No functional changes to the monitor itself: all 131 offline tests, `ruff check .`,
-  `python -m gamexpress validate` and `python -m gamexpress preview` are unaffected.
-
-### 1.6.0 — 2026-09-27 · the pre-install lead is learned, not hardcoded
-
-- A missing pre-install timestamp is derived as **hours before maintenance start**, which carries
-  both the day and clock time without brittle weekday arithmetic. Cold-start values reproduce the
-  real 2026 notices (GI 43 h · HSR 88 h · ZZZ 42 h · WW 42 h).
-- Every real pre-install/maintenance pair records its lead. Later versions use the per-game median;
-  malformed values and leads above 14 days are ignored, and even-sized histories average their
-  middle pair.
-- Derived pre-install times remain labelled estimated and are never fed back into the history, so
-  the fallback cannot validate itself. Official notices discovered through HoYoLAB, X/Nitter or
-  Kuro replace the estimate automatically.
-
-### 1.5.0 — 2026-09-27 · deleted Discord cards heal themselves
-
-- Discord `404 / 10008 Unknown Message` on a schedule-card edit now means the original message was
-  deleted: the current card is posted once and the replacement message id is adopted. The next run
-  edits that replacement instead of retrying a dead id forever.
-- Only a 404 takes that recovery path. A 400, 5xx or exhausted retry remains an error and never
-  reposts; if the recovery post itself fails, the stale id is retained so the next run retries.
-- The same production run established HSR 4.6's real pre-install lead as 88 hours (Thu 14:00 to
-  Mon 06:00 UTC+8), now represented by the learned-hours model above rather than a weekday rule.
-
-### 1.3.0 — 2026-09-27 · card cleanup, banner lineups from a live feed, and proof the X lookup generalises
-
-- **Card cleanup:** removed redundant X button (the announcement tweet is already linked in the card title) while preserving buttons for non-X sources (HoYoLAB, official news page). Removed `🖼️ key art: …` and `Source: …` footer lines so the card footer stays clean.
-- **Banner lineups from live feed (`hub.json`):** rate-up 5★ characters are filled from `ertezy.github.io/Kitsudock-data/hub.json` (rebuilt hourly, CC BY-SA 3.0; the project was renamed from Gacha-hub-info in Oct 2026 and the old URL now 404s) and phase-split around the version's release / maintenance timestamp. Sits at priority 5 (lowest in the monitor), only fills empty phases, refuses stale payloads (>14d), and can be disabled with `BANNER_FEED=0`.
-- **Verified X announcement recall across eras:** verified 7/7 positive match across all captured program announcements spanning multiple wording families (GI Luna II, ZZZ 2.5, HSR 4.5/4.6, GI 7.1, ZZZ 3.2, WW 3.7).
-
-### 1.7.0 — 2026-09-26 · the schedule card links the real announcement, and the Discord bot is gone
-
-- The announcement lookup now uses versions from the current run as well as state, so first runs and test runs recover the archived announcement and key art.
-- Event, update-details and maintenance-notice titles are excluded from program matching; livestream URLs in `/live/`, `/shorts/` and `/embed/` now produce real thumbnails.
-- Duplicate HoYoLAB artwork and alternate media renditions are collapsed, and incomplete banner lists no longer blank otherwise valid names.
-- Wuthering Waves can use configured RSS/Atom mirrors, and tweet data falls back from fxtwitter to fixupx to vxtwitter.
-- Program lookups run concurrently with each other and with countdown estimates.
-- The Discord bot and all 24/7 self-hosting commands and files were removed; GitHub Actions is the only runtime.
-
-### 1.6.0 — 2026-09-26 · two modes, and the tests use real data
-- **The dialog is now just `mode` + what that mode needs.** `live` = the real monitor (`only`,
-  `game`, `repost`). `test` = `webhooks` / `codes` / `schedule` / `all`. Gone: the `dry_run`
-  input and the `probe` debug input (and the `gamexpress probe` command behind it).
-- **The tests no longer post sample cards — they post what the sources really returned.** The
-  `codes` test posts the real codes currently on the live sources to each game's own codes
-  channel; the `schedule` test posts the real schedule card (the announcement's own link and key
-  art, the livestream date/time, the maintenance timestamps and the banners). A sample card could
-  hide a broken source; these cannot.
-- Games that are not out yet (HNA, ANANTA) have no real code to fetch, so the codes test gives
-  them example codes — `test-card --kind codes --unlaunched` (the games with `"released": false`).
-- **A test posts to the real channels, labelled 🧪 TEST, and never writes the state**, so the
-  live run still posts the real thing later. `DISCORD_WEBHOOK_TEST` is no longer used (the
-  private-test-channel mode is gone); the secret can be deleted.
-- The live run is unchanged apart from losing `dry_run`: post what is new, edit silently when
-  official info arrives, commit the state, and never post twice (state keys + payload hashes).
-
-### 1.5.0 — 2026-09-26 · the dispatch form says which of the two things you are doing
-- **`mode` = `live` or `test`.** Still one workflow, but the Run-workflow dialog now opens with
-  the choice between the real monitor and the manual test bench, every input is labelled for the
-  mode it belongs to, and the steps are named `LIVE · …` / `TEST · …` so the log says which ran.
-- **`only` is now the single "simplify" switch** for both modes (`all` / `schedule` / `codes`);
-  the duplicate `kind` input is gone.
-- **New live input `probe`** — debug ONE real schedule post, e.g. `starrail:4.6`. It prints what
-  the lookback window saw, what is stored for that version, the program lookup tab by tab with
-  the air time parsed out of the article text, **every image it found (ranked, with why the
-  winner won)** and the card it would build. Read-only: nothing is posted or saved. Also on the
-  CLI as `python -m gamexpress probe starrail:4.6`.
-- The lookup is now one function (`runner.find_program`) shared by the monitor and the probe, so
-  the debug report can never drift from what a real run does.
-- cron-job.org is unaffected: it sends no inputs, so `mode` defaults to `live` and the pass is
-  exactly what it was.
-
-### 1.4.0 — 2026-09-25 · the test bench moves into the Monitor
-- **`test.yml` is gone; the manual test bench is now a mode of the Monitor workflow.** In
-  *Actions → Game-Express Monitor → Run workflow*, pick `test` = `webhooks` / `sample-cards` /
-  `live-dry-run` / `live-test-channel` / `offline-tests` / `full`. New inputs `kind` and `ping`
-  came across unchanged.
-- A test run is still safe everywhere: the **Run monitor** step and the **Commit state** step are
-  both gated on `inputs.test == ''`, so a test never posts to the real channels and never writes
-  `state/state.json` — and it still works on a dev repo with `ENABLED_FEATURES=none`
-  (the job's `if` is now `vars.ENABLED_FEATURES != 'none' || inputs.test != ''`).
-- cron-job.org keeps calling the same `monitor.yml` dispatch with no `test` input, so scheduled
-  behaviour is byte-identical to before.
-
-### 1.3.0 — 2026-09-25 · the schedule card shows the real announcement
-- **The card now shows the program announcement, not whichever post the run happened to see.**
-  HSR 4.6 linked to the *Update and Maintenance Notice* and showed its Pompom cover, because the
-  Special Program preview (article 46691962) was 11 days older and had fallen out of the lookback
-  window. A new lookup finds the announcement on the **official news page** (or the HoYoLAB news
-  list, paged back past the window) and uses its link, its key art and its air time.
-- **A maintenance notice's own cover is no longer used as the card image** — it is not the
-  program's key art. The notice stays as a Source link when nothing better is known.
-- **Images are upgraded to the biggest rendition each source serves** (`gamexpress/media.py`):
-  tweet photos get `?name=orig` (X serves `small` by default), nitter `/pic/` proxies are
-  rewritten to `pbs.twimg.com`, and YouTube thumbnails go `hqdefault` → `maxresdefault`
-  (1280×720). A URL that already asks for a size is left exactly as the source gave it.
-- The air time from a recovered announcement is an official time, so a program that has already
-  aired is still shown (`<t:…:F> or <t:…:R>` — "5 days ago"), and it never overwrites a time an
-  official post already gave.
-- `PROGRAM_MEDIA=0` switches the lookup off. `docs/SOURCES.md` lists the news pages and what each
-  one is verified to serve.
-
-### 1.2.0 — 2026-09-25 · card buttons and maintenance estimates
-- **Codes card buttons cleaned up.** `Redeem Page`, `Youtube` and `Twitch` are gone from codes
-  cards — the livestream buttons belong to the Special Program / Special Broadcast card, and
-  `Redeem Page` was redundant next to one prefilled Redeem button per code.
-- **New community row** after a separator: `Citlali News` → `https://discord.gg/HyrVP9wRXu` with
-  the animated `starward11` emoji (`COMMUNITY_BUTTONS`, max 3, `none` = off).
-- **Maintenance times are estimated when the official notice hasn't arrived yet** (countdown
-  sites, lowest priority, marked with a 🕒 line on the card, replaced automatically).
-- Time parsing understands named zones such as `8:00 AM EDT`.
-- Docs: `docs/SOURCES.md` lists every countdown source; **60 offline tests**.
-
-### 1.1.1 — 2026-09-25 · fixes from the first live runs
-- **Expired codes are no longer mistaken for new ones.** The first live dry run showed 3 HSR +
-  3 WW livestream codes that had expired on 2026-09-21 but were still listed as active. Wikis
-  keep them under *Active*, PromoGacha never deletes, and Open Gacha Codes lags. The bot now:
-  - reads *valid until* dates on the fandom wikis (all three table formats, with time zones);
-  - treats a passed date as expired, whatever other sources say;
-  - strikes the code through on already-posted cards.
-- **More accurate wiki parsing:**
-  - Genshin rows that hold several codes are split;
-  - Star Rail rows with nested `{{Item List}}` keep their dates;
-  - the stray `TERMINOLOGYINFOBOX` "code" is gone.
-- **PromoGacha counts as its upstream.** It counts as seria or fandom, and its stale copies are
-  ignored.
-- **Cleaner rewards.** Open Gacha Codes `Unknown reward (hash)` entries and duplicate reward
-  lines are dropped.
-- **Shorter summaries.** Expired codes are counted in one line; codes waiting for a second
-  source are listed in one line.
-- **Schedule cards:**
-  - no more misleading `Special Program: TBA` once the update is known (the program already
-    aired);
-  - `repost` now explains when a version isn't tracked (e.g. an unannounced `genshin:7.2`);
-  - the first run notes versions that are already out.
-- **Dependabot:**
-  - auto-merge moved into `ci.yml` as a job that runs after the tests (the separate
-    `workflow_run` workflow never fired);
-  - no custom labels (they had to exist first);
-  - only PRs for versions outside the allowed range.
-- **One repo can be production.** The docs no longer tell you to set `ENABLED_FEATURES=none` on
-  this repo; that variable is only for a development copy. [SCHEDULER.md](docs/SCHEDULER.md)
-  explains private repos: 2,000 free Actions minutes a month means a 30-minute schedule.
-- **Tests are hermetic again.** The bot test read the repo's `state/state.json`, so it failed
-  (on `main` too) as soon as the Monitor had committed real codes. It now uses its own state.
-- **Test bench:** `offline-tests` installs discord.py + PyYAML so no check is skipped.
-  `x.yuuki.sh` (403 on GitHub runners) moved to the end of the nitter fleet. **55 offline
-  tests.**
-
-### 1.1.0 — 2026-09-25 · per-game code channels, cron-job.org, Test workflow
-- **Per-game codes webhooks** for all 6 games (`DISCORD_WEBHOOK_CODES_GENSHIN` · `_STARRAIL` ·
-  `_HNA` · `_ZZZ` · `_WUWA` · `_ANANTA`, short names like `_HSR` / `_WW` work too).
-- **Scheduler = cron-job.org.** GitHub's native `schedule:` is disabled in `monitor.yml`
-  (News-Express style); every secret is wired explicitly; actions bumped to v7.
-- **Game-Express Test workflow**: webhook check, labelled sample cards, live dry run, live cards
-  to a test channel, offline tests. It never commits and pings nobody by default.
-- **4★ = TBA when unsure**: exact expected count, name plausibility, and a sticky
-  disagreement rule.
-- **Codes**: new sources (Hum-Bao validator, Open Gacha Codes, wuthering.gg for Wuthering
-  Waves), expired-code detection (an expired flag vetoes a post; posted codes are struck
-  through silently), shared-backend sources counted once, and the reason for every pending
-  code in the summary.
-- **Speed**: all sources are fetched in parallel with a connection cap and per-request
-  timeouts; the nitter fleet is probed in batches; run time is shown in the summary.
-- **Prepared games**: `ENABLE_GAMES` variable; ANANTA switches itself on at its announced
-  launch (2027-01-15); HNA gets the HoYoLAB livestream-code module (gid 9).
-- `check-webhooks` command, `test-card --ping` (no ping by default, 🧪 TEST label),
-  `validate` shows which secret feeds which channel, and `preview` writes an HTML page.
-- Optional Dependabot auto-merge (off unless `AUTO_MERGE_DEPENDABOT=yes`), grouped weekly
-  Dependabot PRs. New docs: SCHEDULER, TESTING, DEPENDABOT. 47 offline tests.
-
-### 1.0.0 — 2026-09-25 · initial release
-- **Schedule announcements** for GI / HSR / ZZZ / WW, with HNA and ANANTA prepared.
-  - Pattern-triggered and posted once per version, then silent in-place edits as official
-    maintenance, pre-install, banner and override data arrives.
-  - The 4 reference cards were converted to Components V2 with the buttons nested inside the
-    container.
-- **Code poster** with an official / verified / 2-source accuracy gate, a silent first-run seed,
-  pending codes, and per-code prefilled Redeem buttons.
-- **Sources**: HoYoLAB official API + c3kay fallback, official X via a 15-instance nitter fleet +
-  FxTwitter/vxTwitter, the Kuro site, HoYoPlay `getGameBranches`, the Kuro launcher, seria,
-  ennead, the fandom API, and PromoGacha.
-- **Operations**:
-  - a queued workflow with a fresh branch checkout, and state commits even after partial failure;
-  - all secrets and variables are auto-exposed, so per-game overrides need no YAML edits;
-  - two-instance auto fail-over with shared dedup;
-  - `test-card`, `preview` and `validate` commands, and a GitHub job summary with source health.
-- **Bot mode** (`/codes`, `/schedule`, `/status`) plus free-hosting guides and deploy files.
-- **33 offline tests** (real-post fixtures + golden cards), run as the CI gate.
+- **[Privacy Policy](PRIVACY_POLICY.md)** · **[Terms of Service](TERMS_OF_SERVICE.md)**
+- **Not affiliated** with HoYoverse, Kuro Games, NetEase or Discord. Game names and assets belong
+  to their owners.
+- This monitor is a thin layer over other people's work — [seriaati/hoyo-codes](https://github.com/seriaati/hoyo-codes),
+  [Ertezy/Kitsudock-data](https://github.com/Ertezy/Kitsudock-data),
+  [c3kay/hoyolab-rss-feeds](https://github.com/c3kay/hoyolab-rss-feeds),
+  [Open Gacha Codes](https://github.com/torikushiii/OpenGachaCodes),
+  [Hum-Bao/hoyoverse-codes](https://github.com/Hum-Bao/hoyoverse-codes),
+  [PromoGacha](https://github.com/gripcrip-blip/codehub), the Fandom wikis and their editors,
+  [nitter](https://github.com/zedeus/nitter) and every operator who keeps a public instance
+  online, and [FxTwitter](https://github.com/FixTweet/FxTwitter). The full list, with licences
+  and the community databases: **[docs/CREDITS.md](docs/CREDITS.md)**.
+- **Sibling project:** [News-Express](https://github.com/uesu/News-Express) — same design,
+  different beat.

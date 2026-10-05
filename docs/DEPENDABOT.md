@@ -14,7 +14,7 @@ Once a week (Monday), Dependabot checks two things. When there is something new,
 | `deps(python)` | `requirements.txt` | `aiohttp` 3.x → 4.0 |
 | `deps(actions)` | the actions used in `.github/workflows/*` | `actions/checkout` v7 → v8 |
 
-The **CI** workflow tests every Dependabot PR: install, compile, validate, and the 141 offline
+The **CI** workflow tests every Dependabot PR: install, compile, validate, and the 163 offline
 tests. Nothing reaches `main` until you merge it, or until auto-merge does (see below).
 
 - **Python PRs are rare on purpose** (`versioning-strategy: increase-if-necessary`). The ranges

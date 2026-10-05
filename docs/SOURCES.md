@@ -309,7 +309,7 @@ share it.
 | MoonShadow1976 WW asset repos | manually maintained, last updated Jan 2026, so too stale for codes |
 | DuolaD/HoYo_Versioncatcher | launcher-data repo; led us to the launcher endpoints |
 | genshin.dev | character/game data API, not schedules or codes |
-| gachabase.net · nanoka.cc · sr.yatta.moe · lunaris.moe · ambr.top | databases, listed in README → resources. No public schedule/banner API was verified, so **banner names come from official notices or `config/overrides.json`** |
+| gachabase.net · nanoka.cc · sr.yatta.moe · lunaris.moe · ambr.top | databases, listed in [CREDITS.md](CREDITS.md#community-databases--resources). No public schedule/banner API was verified, so **banner names come from official notices or `config/overrides.json`** |
 
 ## Games not yet released
 

@@ -99,8 +99,8 @@ If the title link or the picture is wrong:
 
 - The card is built from whatever official post the run saw. When the Special Program preview is
   older than the lookback window, the monitor looks it up on the **official news page** (then the
-  HoYoLAB list) and replaces the link, the key art and the air time — see the README under
-  *Version schedule card*. `PROGRAM_MEDIA=0` switches that off.
+  HoYoLAB list) and replaces the link, the key art and the air time — see
+  [ACCURACY.md](ACCURACY.md#the-announcements-own-link-and-key-art). `PROGRAM_MEDIA=0` switches that off.
 - A `fastcdn.hoyoverse.com` cover instead of the livestream art means the article has no embedded
   YouTube player, so there is no 1280×720 thumbnail to prefer.
 - `⚠️ … 4★ shown as TBA — 2 name(s) found, 3 expected` → the uncertain 4★ list was correctly

@@ -119,7 +119,7 @@ async def official_items(fetcher: Fetcher, game: Game, want: Callable[[str], boo
             images = _images(wrapper)
         items.append(Item(source="hoyolab", game=game.key, id=pid, url=ARTICLE_URL.format(pid),
                           title=subject, text=text, published_ts=created, images=images,
-                          links=links, author=((wrapper.get("user") or {}).get("nickname") or "")))
+                          links=links))
     return items
 
 

@@ -39,7 +39,7 @@ separated file-by-file:
 | stack | files |
 |---|---|
 | nitter source notes | `docs/SOURCES.md`, part of `gamexpress/config.py`, part of `tests/test_smoke.py` |
-| timestamp speculation | `config/games.json`, `gamexpress/schedule.py`, `gamexpress/__main__.py`, rest of `config.py`, rest of `test_smoke.py`, `docs/SCHEDULER.md`, `docs/TIMESTAMP-PATTERNS.md`, `README.md`, `docs/TESTING.md` |
+| timestamp speculation | `config/games.json`, `gamexpress/schedule.py`, `gamexpress/__main__.py`, rest of `config.py`, rest of `test_smoke.py`, `docs/SCHEDULER.md`, `docs/TIMESTAMP-PATTERNS.md`, `docs/ACCURACY.md`, `README.md`, `docs/TESTING.md` |
 
 They ship together: **PR #26 on `uesu/Game-Express` is the superset of both stacks**, so merging
 that one PR completes `main` — nothing else needs applying. (Both stacks were also captured as
@@ -132,10 +132,11 @@ Discord portal, or publish them somewhere else (Gist, site). Don't leave them da
 
 ```
 tests/                     38 files — 163 tests, fixtures, golden cards
-docs/                      SOURCES, SCHEDULER, TESTING, SECURITY, DEPENDABOT,
-                           PYTHON_VERSION, TIMESTAMP-PATTERNS, PROD-REPO-SETUP
-                           (this guide lives in docs/ too — it describes the move,
-                            it is not part of what gets moved)
+docs/                      the whole manual: CONFIGURATION, ACCURACY, SOURCES, SCHEDULER,
+                           TESTING, TROUBLESHOOTING, SECURITY, TIMESTAMP-PATTERNS,
+                           DEPENDABOT, PYTHON_VERSION, CREDITS, PROD-REPO-SETUP and
+                           changelog/  (this guide lives in docs/ too — it describes
+                           the move, it is not part of what gets moved)
 .github/workflows/ci.yml           PRs happen in dev
 .github/workflows/python_version_bump.yml
 .github/scripts/python_version_bump.py

@@ -11,7 +11,7 @@ name: Python version bump (auto)
 #
 # It never merges on its own. The merge-only-if-green gate lives in ci.yml (job
 # `automerge-python-bump`), reusing the exact same pattern as the opt-in Dependabot auto-merge:
-# it only fires for a PR labelled `python-bump`, only once the full test job (141 offline tests +
+# it only fires for a PR labelled `python-bump`, only once the full test job (163 offline tests +
 # compile + validate + preview) is green on that exact commit, and only when the repository
 # VARIABLE AUTO_MERGE_PYTHON_BUMP=yes exists. Leave the variable unset to always review these by
 # hand — recommended for at least the first bump (Python 3.15, expected ~October 2027), since a

@@ -5,7 +5,7 @@ name: Game-Express Monitor
 # runs change nothing and commit nothing.
 #
 # TRIGGER = cron-job.org (external scheduler) calling the workflow_dispatch API every
-# 10 minutes. Setup: docs/SCHEDULER.md (cron-job.org job + GitHub classic token).
+# 5 minutes. Setup: docs/SCHEDULER.md (cron-job.org job + GitHub classic token).
 #
 # ────────────────────────────────────────────────────────────────────────────────────────
 # THIS WORKFLOW DOES TWO THINGS, AND THE `mode` INPUT PICKS WHICH. NOTHING ELSE TO CHOOSE.
@@ -60,7 +60,7 @@ on:
   # To re-enable GitHub's schedule instead, uncomment these two lines AND pause the
   # cron-job.org job (never run both on the same repo):
   #   schedule:
-  #     - cron: '*/10 * * * *'
+  #     - cron: '*/5 * * * *'
   workflow_dispatch:          # manual runs + cron-job.org (POST .../workflows/monitor.yml/dispatches)
     inputs:
       mode:
@@ -119,7 +119,7 @@ jobs:
       NITTER_RSS_TOKEN: ${{ secrets.NITTER_RSS_TOKEN }}                             # optional (same as News-Express)
       # ── Everything else, as JSON (catch-all): per-game SCHEDULE webhooks
       #    (DISCORD_WEBHOOK_SCHEDULE_<GAME>), pings (PING_*), emojis (EMOJI_*) and every other
-      #    variable in the README work without editing this file.
+      #    variable in docs/CONFIGURATION.md work without editing this file.
       # Deliberate: this blob is what lets an operator add DISCORD_WEBHOOK_SCHEDULE_<GAME> /
       # PING_* / EMOJI_* without editing this workflow (config._merge_json_blobs reads it).
       GE_SECRETS_JSON: ${{ toJSON(secrets) }}  # zizmor: ignore[overprovisioned-secrets]

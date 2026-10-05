@@ -70,7 +70,8 @@ data from anyone. Discord's own age requirements apply to its users.
 
 ## 8. Changes
 
-Updates are published in this file with a new effective date and noted in the README changelog.
+Updates are published in this file with a new effective date and noted in the
+[changelog](docs/changelog/CHANGELOG.md).
 
 ## 9. Contact
 

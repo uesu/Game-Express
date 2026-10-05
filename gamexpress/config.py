@@ -240,7 +240,6 @@ class Settings:
     emoji: dict[str, dict | None]
     show_legend: bool
     repost: str
-    log_level: str
     http_timeout: int
     no_ping: bool = False              # NO_PING=1 -> never ping (test runs)
     force_webhook: str = ""            # FORCE_WEBHOOK -> every card goes to ONE channel (test channel)
@@ -378,7 +377,6 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         banner_feed=_bool(env, "BANNER_FEED", True),
         show_legend=_bool(env, "SHOW_LEGEND", True),
         repost=_env(env, "REPOST").replace(" ", "").lower(),
-        log_level=_env(env, "LOG_LEVEL", "INFO").upper(),
         http_timeout=_int(env, "HTTP_TIMEOUT", 20),
         no_ping=_bool(env, "NO_PING"),
         force_webhook=_env(env, "FORCE_WEBHOOK"),
@@ -523,7 +521,6 @@ class Game:
     # monitored for announcements, it just has no real codes to fetch, so the test bench checks
     # its card with sample data (`test-card --unlaunched`, see __main__.sample_payloads).
     released: bool = True
-    publisher: str = ""
     icon: str = ""
     hoyolab_gid: int | None = None
     c3kay_feed: str = ""
@@ -567,7 +564,6 @@ def load_games(path: Path | None = None) -> dict[str, Game]:
             enabled=bool(g.get("enabled", True)),
             released=bool(g.get("released", True)),
             color=int(g.get("color", defaults.get("color", DEFAULT_COLOR))),
-            publisher=g.get("publisher", ""),
             icon=g.get("icon", ""),
             hoyolab_gid=hl.get("gid"),
             c3kay_feed=hl.get("c3kay", ""),

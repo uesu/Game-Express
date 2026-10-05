@@ -67,7 +67,6 @@ class FoundTime:
     start: int         # index in text
     end: int
     raw: str
-    has_tz: bool
     year_inferred: bool = False
 
 
@@ -163,7 +162,7 @@ def find_datetimes(text: str, ref_ts: int | float | None = None,
             except (ValueError, KeyError):
                 continue
             found.append(FoundTime(int(dt.timestamp()), m.start(), m.end(), m.group(0).strip(),
-                                   has_tz=off is not None, year_inferred=year_inferred))
+                                   year_inferred=year_inferred))
             taken.append((m.start(), m.end()))
     found.sort(key=lambda f: f.start)
     return found
