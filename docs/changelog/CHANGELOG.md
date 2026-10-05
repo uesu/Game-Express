@@ -15,6 +15,77 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ## 2026-10-05
 
+**The Python auto-bump can actually merge itself now**
+
+- **The bump PR was waiting on a check that could never be posted.** `python_version_bump.yml`
+  opens its PR with the built-in `GITHUB_TOKEN`, and GitHub deliberately does not trigger
+  workflows for such PRs — so `ci.yml`'s `pull_request` run never fired, `test` never ran, and
+  `automerge-python-bump` (`needs: test`) could never run either. The PR would have sat forever
+  with zero checks, and `AUTO_MERGE_PYTHON_BUMP=yes` was a no-op. Latent rather than urgent: the
+  pin is a *series* (`'3.14'`), so `setup-python` resolves patches on its own and the workflow
+  only fires for 3.15 (expected ~October 2027).
+- **The gate moved into the bump job, where it is strictly better.** Before opening anything,
+  the job now installs the proposed interpreter and re-runs CI's own commands *under it*, on the
+  tree it just rewrote — `compileall`, `validate`, the offline suite, the preview render. The
+  old arrangement would have tested the **old** pin; this tests the new one.
+- **Missing wheels defer instead of breaking.** Every dependency must install from a prebuilt
+  wheel (`--only-binary=:all:`). On the day a new CPython series lands, `aiohttp` and its
+  compiled dependencies have no matching ABI wheels yet, and pip would quietly fall back to
+  building from source. No wheels, or a red gate, means no PR: a warning and a retry next
+  Monday, not a failed run.
+- **The merge happens in the same job**, right after the PR is created, still opt-in behind
+  `AUTO_MERGE_PYTHON_BUMP=yes` (`all` accepted too, so copying the sibling repo's value cannot
+  silently merge nothing — this repo pins a *series*, so every bump it proposes is a series
+  bump). It tries squash → merge → rebase and degrades to a warning if the repository has all
+  three disabled: a proven-green bump must never surface as a red run because of a settings
+  toggle. `automerge-python-bump` is deleted from `ci.yml`. The Dependabot `automerge` job is
+  untouched — Dependabot *can* trigger workflows, so that path was never affected.
+- **Every gate re-checks that the interpreter actually switched.** `actions/setup-python` for
+  the proposed version is soft-failed like the rest, so a version that will not install defers
+  instead of going red — but that means `python` could still be the *old* interpreter, and a
+  green gate would then be a lie. The wheel install, the gate run and the PR step all require
+  it, so the chain stops rather than opening a PR claiming a validation it never performed.
+- **No `${{ }}` reaches a shell.** Values are passed through `env:` instead, which is zizmor's
+  `template-injection` audit and the standing convention in every other workflow here — the new
+  steps would otherwise have been the only findings in the repo.
+- **`docs/ROLLOUT.md`** — the step-by-step for switching on the per-game schedule copies, one
+  game at a time, with the `Show resolved config` lines to read at each step and the backfill
+  warning that makes the order matter.
+
+**Every doc re-matched to the configuration that is actually running**
+
+- **`PROD-REPO-SETUP.md` was describing a repo that no longer exists.** It opened by telling you
+  to merge PR #26 and to apply `game-express-speculation.patch` before doing anything — both
+  landed long ago and neither file is in the tree. That whole section is replaced by a green-tree
+  check. Its file manifest was also off (`gamexpress/` is 25 `.py` files, not 24; `tests/` is 42,
+  not 38), its scratch-file exclusion list still named `PR-*` / `*.patch` instead of `APPLY-*`,
+  and its docs list did not mention `ROLLOUT.md`.
+- **The six `DISCORD_WEBHOOK_SCHEDULE_MIRROR_*` secrets are now documented as part of the prod
+  secret set.** They are live, so a prod repo built from the old table would have silently lost
+  the per-game fan-out. The guide also now warns that `mode=test` / `test=webhooks` does **not**
+  cover them — `check-webhooks` only walks the primary chain, so the `🪞` line in
+  `Show resolved config` is the only real verification.
+- **`PING_SCHEDULE` is no longer documented as `none`.** It carries a real role ID now. Both that
+  guide and `ROLLOUT.md` gained the first-set-wins warning: the literal string `none` *counts as
+  set*, so it beats a `PING_ROLE_ID` sitting beside it.
+- **`ROLLOUT.md` records that the fan-out is fully switched on** (2026-10-05, all six games) and
+  is kept as the reference procedure for standing up prod, or for a seventh game.
+- **`DEPENDABOT.md` was quoting a dependency range the repo outgrew** (`aiohttp >=3.9,<4`; it is
+  `>=3.14.3,<4`), and now explains why the Python bump cannot use the `ci.yml` gate while
+  Dependabot can.
+- **The billed-minutes estimate is measured, not guessed** — a whole monitor job is ~15 s
+  (5.5 s of actual run), still one billed minute per dispatch.
+- **The version number is gone from the User-Agent too.** `BOT_UA` still carried the old
+  `/1.1` suffix — a hand-maintained number that stopped being maintained the day
+  `__version__` was retired, so it sat frozen, announcing something untrue to every site the
+  monitor touches. All three copies now drop it (`gamexpress/http.py`, `sources/codes.py`'s
+  Fandom header, and `sources/twitter.py`'s `X_UA`). A bare product token is valid — RFC 9110
+  makes the `/version` part optional — and it can never go stale. The contact URL, which is the
+  half anyone reading a server log actually cares about, is unchanged.
+- **Spent scaffolding deleted**: `APPLY-EMOJI.md` (documented the *rejected* emoji-inside-the-link
+  form), `APPLY-COMPACT.md` and `APPLY-CARD-CHANGES.sh` — 480 KB of instructions for pull
+  requests that merged days ago.
+
 **The README stops being a history book, and the version number retires**
 
 - **The README is a manual again.** It went from 958 lines to 483: the full configuration

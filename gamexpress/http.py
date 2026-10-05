@@ -13,7 +13,14 @@ log = logging.getLogger("gamexpress.http")
 
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/128.0 Safari/537.36")
-BOT_UA = "Game-Express/1.1 (+https://github.com/uesu/Game-Express)"
+# No version in the User-Agent, on purpose. It used to include the old "/1.1" suffix — a
+# hand-maintained number that stopped being maintained the day `__version__` was retired in
+# favour of build_id() (see __init__.py), so it sat frozen, announcing something to every site
+# the monitor touches that had not been true for a long time. A bare product token is valid
+# (RFC 9110: the "/version" part is optional) and can never go stale. The contact URL is the
+# half that actually matters to anyone reading a log. Same string in sources/codes.py and
+# sources/twitter.py.
+BOT_UA = "Game-Express (+https://github.com/uesu/Game-Express)"
 MAX_PARALLEL = 12          # polite global cap on simultaneous requests (all games fetch in parallel)
 MAX_BYTES = 8 * 1024 * 1024
 """Hard cap on one response body (8 MiB).

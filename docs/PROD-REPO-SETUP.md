@@ -16,7 +16,8 @@ This is not a style preference, it is billing.
 - **Public repos: GitHub Actions is free and unlimited.**
 - **Private repos: billed per minute, rounded UP to a whole minute per job.**
 
-The monitor run takes ~20 s, so every dispatch costs **1 billed minute**. At a 5-minute
+A whole monitor job takes about 15 s end to end (measured 2026-10-05: 15 s of job, 5.5 s of
+actual run), so every dispatch still costs **1 billed minute**. At a 5-minute
 cadence that is 288 runs/day ≈ **8,640 minutes/month**, against 2,000 free on the Free plan
 (3,000 on Pro). A private prod repo stops running about six days into every month.
 
@@ -30,46 +31,25 @@ Nothing sensitive ends up in the public repo. Webhook URLs live in repository **
 
 ---
 
-## 0b. The dev repo has unmerged work — merge that first
+## 0b. Before you start: `main` must be green and current
 
-`main` on GitHub does **not** yet contain everything described here. Two stacks sat outside it,
-and they overlap in `gamexpress/config.py` and `tests/test_smoke.py`, so they could not be
-separated file-by-file:
+Everything this guide describes is already on `main`. There is no pending stack to land first and
+no scratch patch to apply — earlier revisions of this guide told you to merge PR #26 and to apply
+`game-express-speculation.patch`; both landed long ago and neither file exists any more. Confirm
+the tree is green in a clean checkout of `main`:
 
-| stack | files |
-|---|---|
-| nitter source notes | `docs/SOURCES.md`, part of `gamexpress/config.py`, part of `tests/test_smoke.py` |
-| timestamp speculation | `config/games.json`, `gamexpress/schedule.py`, `gamexpress/__main__.py`, rest of `config.py`, rest of `test_smoke.py`, `docs/SCHEDULER.md`, `docs/TIMESTAMP-PATTERNS.md`, `docs/ACCURACY.md`, `README.md`, `docs/TESTING.md` |
-
-They ship together: **PR #26 on `uesu/Game-Express` is the superset of both stacks**, so merging
-that one PR completes `main` — nothing else needs applying. (Both stacks were also captured as
-`game-express-speculation.patch`, a scratch patch that is deliberately **not** committed; PR #26's
-diff is byte-identical to it, and the patch file exists only as a recovery path if a checkout
-ever loses the branch — the sandbox's git history reset twice during development. Use one route
-or the other, never both.)
-
-It was verified by checking out a pristine `origin/main` into a scratch worktree, applying the
-patch, and running the full gate on the result: compileall, `validate`, **the whole test suite**,
-preview render and `ruff` all pass. PR #26 carries exactly that tree and is green on the same
-gate plus GitHub's own CI.
+```bash
+python -m compileall -q gamexpress tests
+python -m gamexpress validate
+python tests/test_smoke.py
+python -m gamexpress preview --out /tmp/previews
+ruff check .
+```
 
 **Do the dev repo first, then prod.** Copying an unmerged working tree straight into prod means
 prod runs code that `main` has never seen, and the next dev→prod sync (§8) silently reverts it.
 
-### Step 1 — on Game-Express: merge PR #26
-
-One click on GitHub; no session is needed. `main` is then complete. If the PR ever had to be
-rebuilt from the patch instead, a new coding session pointed at `uesu/Game-Express` would get:
-
-> Apply `game-express-speculation.patch` from the repo root onto a fresh branch, run the full CI
-> gate (`python -m compileall -q gamexpress tests`, `python -m gamexpress validate`,
-> `python tests/test_smoke.py`, `python -m gamexpress preview --out /tmp/previews`,
-> `ruff check gamexpress/ tests/`), confirm the whole suite passes, then push the branch and open a
-> pull request.
-
-Either way, land **one** of them — the PR is the patch, so doing both double-applies.
-
-### Step 2 — a new session on the prod repo
+### A new session on the prod repo
 
 Create the empty public prod repo on GitHub first, then open a second session pointed at it with:
 
@@ -80,7 +60,7 @@ Create the empty public prod repo on GitHub first, then open a second session po
 > `state/state.json`, `requirements.txt`, `.gitignore`, `.github/workflows/monitor.yml`,
 > `PRIVACY_POLICY.md`, `TERMS_OF_SERVICE.md`), write the 3-line prod README from §2, then open a
 > pull request. Do not copy `tests/`, `docs/`, `ci.yml`, `ruff.toml`, `AGENTS.md`, `README.md`,
-> or any `PR-*` / `*.patch` scratch file.
+> or any `APPLY-*` scratch file.
 
 That session can reach GitHub, so it can push and open the PR for you. **Nothing in this flow
 touches the Game-Express working tree** — step 2 only reads a clone of it.
@@ -90,9 +70,10 @@ still manual: an agent cannot set your repository secrets or your cron-job.org s
 
 ---
 
-> **Nothing in this guide changed when the timestamp speculation feature landed.** It adds no
-> new file, no new secret and no new variable — the per-game rhythm lives inside
-> `config/games.json`, which is already on the copy list. The read-only
+> **The schedule fan-out DOES change this guide.** It adds up to six new secrets — see §3 — and
+> they are already live on dev. Everything else that landed recently (timestamp speculation, the
+> card layout pass) adds no file, no secret and no variable: the per-game rhythm lives inside
+> `config/games.json`, which is already on the copy list, and the read-only
 > `python -m gamexpress speculate` command works in prod as soon as the files are there.
 
 ## 1. The file manifest — exactly 33 files
@@ -100,7 +81,7 @@ still manual: an agent cannot set your repository secrets or your cron-job.org s
 ### Copy to prod (runtime)
 
 ```
-gamexpress/                      24 .py files — the whole package
+gamexpress/                      25 .py files — the whole package
   __init__.py  __main__.py  cards.py  codeposter.py  config.py  discord.py
   http.py  media.py  models.py  preview_html.py  runner.py  samples.py
   schedule.py  state.py  textutil.py  timeparse.py
@@ -131,12 +112,12 @@ Discord portal, or publish them somewhere else (Gist, site). Don't leave them da
 ### Leave behind (dev only)
 
 ```
-tests/                     38 files — the suite, fixtures, golden cards
+tests/                     42 files — the suite, fixtures, golden cards
 docs/                      the whole manual: CONFIGURATION, ACCURACY, SOURCES, SCHEDULER,
-                           TESTING, TROUBLESHOOTING, SECURITY, TIMESTAMP-PATTERNS,
-                           DEPENDABOT, PYTHON_VERSION, CREDITS, PROD-REPO-SETUP and
-                           changelog/  (this guide lives in docs/ too — it describes
-                           the move, it is not part of what gets moved)
+                           ROLLOUT, TESTING, TROUBLESHOOTING, SECURITY,
+                           TIMESTAMP-PATTERNS, DEPENDABOT, PYTHON_VERSION, CREDITS,
+                           PROD-REPO-SETUP and changelog/  (this guide lives in docs/
+                           too — it describes the move, it is not part of what moves)
 .github/workflows/ci.yml           PRs happen in dev
 .github/workflows/python_version_bump.yml
 .github/scripts/python_version_bump.py
@@ -144,8 +125,7 @@ docs/                      the whole manual: CONFIGURATION, ACCURACY, SOURCES, S
 ruff.toml
 README.md                  write a 3-line prod README instead (see §2)
 .env.example
-PR-*.md  PR-*.txt  *.patch  PULL-REQUEST.md   scratch files
-game-express-speculation.patch     carried the feature into dev; prod never needs it
+APPLY-*.md  APPLY-*.sh         hand-off scratch files for a pull-request session
 AGENTS.md
 ```
 
@@ -215,9 +195,25 @@ Webhooks).
 | `DISCORD_WEBHOOK_CODES_WUWA` | yes | |
 | `DISCORD_WEBHOOK_CODES_HNA` | yes | |
 | `DISCORD_WEBHOOK_CODES_ANANTA` | yes | |
+| `DISCORD_WEBHOOK_SCHEDULE_MIRROR_GI` | **set on dev** | fan-out: the schedule card is **copied** to `#gi-news` as well |
+| `DISCORD_WEBHOOK_SCHEDULE_MIRROR_HSR` | **set on dev** | |
+| `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ZZZ` | **set on dev** | |
+| `DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA` | **set on dev** | |
+| `DISCORD_WEBHOOK_SCHEDULE_MIRROR_HNA` | **set on dev** | |
+| `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ANANTA` | **set on dev** | |
 | `NITTER_RSS_TOKEN` | optional | only unlocks `nitter.miningtcup.me` — but that mirror is **1 of your 2 proven answerers**, so treat it as required |
 | `DISCORD_WEBHOOK_CODES` | optional | catch-all for games without their own channel |
 | `DISCORD_WEBHOOK_URL` | optional | global catch-all |
+
+**The six `_MIRROR_` secrets are what makes each game's schedule card also land in that game's
+own news channel**, while `#schedule` keeps receiving everything. Omit them in prod and you get
+the old single-channel behaviour with no code change; copy them and prod matches dev. Read
+[`ROLLOUT.md`](ROLLOUT.md) before adding them — **the first run after adding one back-fills
+every live card for that game**, so add them one game at a time rather than all six at once.
+
+Two names to avoid: `DISCORD_WEBHOOK_SCHEDULE_<GAME>` *moves* that game out of `#schedule`
+instead of copying it, and `DISCORD_WEBHOOK_SCHEDULE_MIRROR` with no game suffix mirrors **every**
+game into one channel.
 
 `github_token` appears in the logs' `GE_SECRETS_JSON` blob — that is GitHub's automatic token,
 not something you create.
@@ -226,10 +222,17 @@ not something you create.
 
 | Variable | Prod value | Notes |
 |---|---|---|
-| `PING_SCHEDULE` | `none` | current dev value; change if you want a role pinged |
+| `PING_SCHEDULE` | `<@&…>` | dev currently pings a real role. Copy the same value to keep behaviour identical, or set `none` for a silent prod |
 | `ENABLED_FEATURES` | **do not set** | default is `schedule,codes`. Setting it to `none` is the kill switch — never on prod |
 | `AUTO_MERGE_DEPENDABOT` | **do not copy** | dev-only, there is no Dependabot in prod |
 | `AUTO_MERGE_PYTHON_BUMP` | **do not copy** | dev-only |
+
+⚠️ `PING_SCHEDULE` is resolved first-set-wins (`PING_<FEATURE>_<GAME>` → `PING_<FEATURE>` →
+`PING_ROLE_ID`), and the literal string `none` **counts as set** — it will beat a correct
+`PING_ROLE_ID` sitting next to it. Set the one variable you mean; do not stack them.
+
+Only `#schedule` is ever pinged. The game-channel copies are deliberately silent, so a role ID
+here does not multiply the notification across six more channels.
 
 Emojis need no variables — `EMOJI_YOUTUBE` / `EMOJI_TWITCH` fall back to the defaults baked
 into `gamexpress/config.py`, which is where your current values already live.
@@ -283,7 +286,13 @@ The variable is the better switch.
 5. **Dev repo**: set `ENABLED_FEATURES=none` (§5), then flip it to **private**.
 6. **Prod smoke tests** — Actions → Game-Express Monitor → Run workflow:
    - `mode=test`, `test=webhooks` → one "✅ connected" card per channel. Any missing or
-     misnamed secret shows up here. Never writes state.
+     misnamed **primary** secret shows up here. Never writes state.
+     ⚠️ **This does not test the `_MIRROR_` secrets** — `check-webhooks` only walks the primary
+     `webhook_source()` chain. To verify the fan-out, read the `Show resolved config` step of
+     any run instead: each game must show `🪞 also DISCORD_WEBHOOK_SCHEDULE_MIRROR_<GAME>`. A
+     misspelled name shows no `🪞` at all, a channel link instead of a webhook URL shows
+     `✗ … is not a webhook URL`, and pasting the `#schedule` URL shows
+     `⚠ … is the same channel as DISCORD_WEBHOOK_SCHEDULE — no copy sent`.
    - `mode=test`, `test=schedule` → the real current card with real art and timestamps.
    - Delete the 🧪 TEST cards afterwards.
 7. **First live run**: `mode=live`, `only=all`. Expect "nothing new" plus either a state commit
@@ -305,11 +314,15 @@ run still sees anything announced in the last three days.
 ## 7. Gotchas specific to this split
 
 **The bot's User-Agent points at a repo that will 404.**
-`gamexpress/http.py:16`:
+`gamexpress/http.py`:
 
 ```python
-BOT_UA = "Game-Express/1.1 (+https://github.com/uesu/Game-Express)"
+BOT_UA = "Game-Express (+https://github.com/uesu/Game-Express)"
 ```
+
+(There is deliberately no version in it — a bare product token is valid and can never go stale.
+The same name also appears in `sources/codes.py` (`Game-Express (code monitor)`) and
+`sources/twitter.py` (`X_UA`); change all three together or none.)
 
 Once dev is private, every site you fetch sees a dead link. Two options — pick one and change
 it in **dev** so both repos stay in sync:
@@ -361,7 +374,7 @@ git commit -m "sync: <dev commit sha>" && git push
 Note it **never** copies `state/state.json` or `config/program_announcements.json` — those
 belong to prod now.
 
-Tag the dev commit you shipped (`git tag prod-2026-10-03 && git push --tags`) so "what is
+Tag the dev commit you shipped (`git tag prod-$(date +%F)`, then push the tag) so "what is
 running right now" is always answerable.
 
 ---

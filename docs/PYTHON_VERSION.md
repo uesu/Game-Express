@@ -30,23 +30,51 @@ bump (auto) → Run workflow*:
    Python series sometimes ships a few weeks before Ruff adds a matching target; when that
    happens, `ruff.toml` is left untouched and the PR body says so, instead of writing a config
    value Ruff would reject.
-4. Opens a PR (via [`peter-evans/create-pull-request`](https://github.com/peter-evans/create-pull-request))
-   labelled `python-bump`, which triggers the normal `ci.yml` `pull_request` run — the exact same
-   test / compile / `validate` / preview gate every Dependabot PR goes through.
+4. **Proves the bump before proposing it.** It installs the new interpreter, requires every
+   dependency to come from a **prebuilt wheel** (`--only-binary=:all:` — on the day a new series
+   lands, `aiohttp` and its compiled friends have no matching ABI wheels yet), then re-runs CI's
+   own gate — `compileall`, `validate`, the offline suite, the preview render — **under the new
+   interpreter, on the already-rewritten tree**. If the interpreter will not install, if wheels
+   are missing, or if a gate is red, nothing is proposed: the run logs a warning and next Monday
+   tries again. A deferral, never a failure.
+
+   Each of those three steps re-checks that the interpreter *actually* switched. If it did not,
+   `python` would still be the old one and a green gate here would be a lie — so the chain stops
+   instead of producing a PR that claims a validation it never did.
+5. Only then opens a PR (via [`peter-evans/create-pull-request`](https://github.com/peter-evans/create-pull-request))
+   labelled `python-bump`.
+
+> **Why the gate lives in this workflow and not in `ci.yml`.** A PR opened with the built-in
+> `GITHUB_TOKEN` does **not** trigger other workflows, so `ci.yml`'s `pull_request` trigger never
+> fires on it and no check is ever posted. A `needs: test` gate over in `ci.yml` would wait
+> forever — which is exactly why the old `automerge-python-bump` job could never run and has been
+> removed. Validating here is also *strictly more informative*: `ci.yml` would have tested the
+> **old** pin, this tests the new one.
 
 ## It never merges blind
 
-A `python-bump` PR only merges automatically when **all** of these hold (job
-`automerge-python-bump` in `ci.yml`):
+A `python-bump` PR only merges automatically when **both** of these hold (the final step of
+`python_version_bump.yml`):
 
-- the PR carries the `python-bump` label (so this can never be confused with a Dependabot PR, or
-  any other automated PR that might exist in the future);
-- the `test` job (the offline suite, compile, `validate`, preview) passed **on that exact
-  commit** — a later push invalidates a stale approval, same rule as Dependabot auto-merge;
-- the repository **variable** `AUTO_MERGE_PYTHON_BUMP` is set to `yes`.
+- every dependency installed from a prebuilt wheel **and** `compileall` + `validate` + the
+  offline suite + the preview render all passed under the **new** interpreter — the PR does not
+  exist otherwise, so there is nothing to merge;
+- the repository **variable** `AUTO_MERGE_PYTHON_BUMP` is set to `yes` (`all` is accepted too —
+  see below).
 
 Leave the variable unset (the default) and the workflow only ever opens the PR for you to read
 and merge by hand — nothing is merged without a human unless you opt in.
+
+> **`yes` and `all` mean the same thing here, deliberately.** In the sibling repo News-Express
+> they differ: `yes` merges patch bumps only, `all` includes minors. That distinction cannot
+> exist in this repo, because the pin is a **series** (`python-version: '3.14'`) and
+> `setup-python` resolves the patch itself — so every bump this workflow can ever propose is a
+> series bump. Accepting both values means copying the setting across repos can never silently
+> merge nothing.
+
+The merge tries squash, then merge, then rebase, and settles for a warning if the repository
+has all three disabled. A proven-green bump should never show up as a red run because of a
+repository setting.
 
 **Recommended:** leave `AUTO_MERGE_PYTHON_BUMP` unset for at least the *first* bump this produces
 (Python 3.15 is expected around October 2027). A brand-new Python *feature* release is the

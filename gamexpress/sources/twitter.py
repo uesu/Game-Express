@@ -74,7 +74,7 @@ def save_program_seed(game_key: str, version: str, entry: dict) -> bool:
 FX_SOURCES = (("fxtwitter", "https://api.fxtwitter.com/status/{id}"),
               ("fixupx", "https://api.fixupx.com/status/{id}"))
 VXTWITTER_URL = "https://api.vxtwitter.com/Twitter/status/{id}"
-X_UA = "Game-Express/1.1"
+X_UA = "Game-Express"
 
 
 def _from_fx(t: dict, tweet_id: str) -> dict:

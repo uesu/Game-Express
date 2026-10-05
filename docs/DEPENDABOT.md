@@ -27,7 +27,7 @@ tests. Nothing reaches `main` until you merge it, or until auto-merge does (see 
 
 ## Why it's optional
 
-- **Python packages** are version *ranges* (`aiohttp>=3.9,<4`). Every run already installs the
+- **Python packages** are version *ranges* (`aiohttp>=3.14.3,<4`). Every run already installs the
   newest compatible bug-fix release, with no PR needed. Dependabot only matters when a new
   *major* version comes out.
 - **GitHub Actions** are pinned to full commit SHAs with a `# v7` style comment — a tag can be
@@ -74,5 +74,12 @@ variable* → `AUTO_MERGE_DEPENDABOT` = `yes`. Delete the variable to turn it of
 *Settings → Code security → Dependabot version updates*.
 
 **Note:** the Python interpreter version itself (`python-version: '3.14'`) is invisible to
-Dependabot — it's a plain string in workflow YAML, not a tracked ecosystem file. A separate,
-opt-in-to-merge workflow covers that one gap; see [docs/PYTHON_VERSION.md](PYTHON_VERSION.md).
+Dependabot — it's a plain string in workflow YAML, not a tracked ecosystem file.
+`python_version_bump.yml` covers that one gap on its own schedule, and it does **not** use the
+job described above: a PR it opens carries the built-in `GITHUB_TOKEN`, which GitHub refuses to
+let trigger further workflows, so no CI check can ever appear on it. It therefore runs the same
+gate itself, under the new interpreter, before the PR exists, and merges from there behind
+`AUTO_MERGE_PYTHON_BUMP=yes`. See [docs/PYTHON_VERSION.md](PYTHON_VERSION.md).
+
+That restriction does **not** apply to Dependabot, which GitHub does let trigger workflows — so
+the `test` job really does run on a Dependabot PR, and the gate above is real.
