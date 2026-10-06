@@ -15,22 +15,30 @@ name: Python version bump (auto)
 # ci.yml runs. Missing wheels or a red gate => DEFERRED (a warning, next week retries), never a
 # failed run.
 #
-# WHY THE GATE IS HERE AND NOT IN ci.yml: a PR opened with the built-in GITHUB_TOKEN does NOT
-# trigger other workflows, so ci.yml never fires on it and no check is ever posted. A
-# `needs: test` gate over in ci.yml would therefore wait forever — which is exactly why the old
-# `automerge-python-bump` job could never run. Validating here, under the new interpreter, is
-# also strictly more informative than ci.yml would have been: ci.yml tests the OLD pin.
+# WHY THE GATE IS HERE AND NOT IN ci.yml: this job has to decide whether to open a PR AT ALL.
+# It validates the new interpreter on the already-rewritten tree BEFORE any PR exists, so a
+# bump that cannot work becomes a silent deferral instead of a red pull request to clean up.
+# (There used to be a second reason: a PR opened with the built-in GITHUB_TOKEN does not trigger
+# other workflows, so ci.yml could never post a check on it. That stopped being true when this
+# workflow moved to BUMP_PAT — a PAT-opened PR is an ordinary user action, so ci.yml does run on
+# it now. The inline gate is kept because it runs first and gates the PR's very existence;
+# ci.yml is now a second opinion rather than the only one that was impossible.)
 #
 # Merging is opt-in AND deliberately strict: ONLY the repository VARIABLE
 # AUTO_MERGE_PYTHON_BUMP=all merges a bump from here. The value `yes` — what the News-Express
 # family uses to auto-merge its routine PATCH bumps — does NOT merge here, on purpose: this repo
 # pins a SERIES, so every bump this workflow can propose is a new series, and a brand-new Python
-# *feature* release is the riskiest moment for any third-party dependency. Python 3.15 is due
-# around October 2026, and it will land as a PR you read.
+# *feature* release is the riskiest moment for any third-party dependency. Python 3.15.0 is
+# released 2026-10-09 (PEP 790), and it will land as a PR you read.
 #
-# One-time setup this needs: Settings → Actions → General → Workflow permissions → "Allow GitHub
-# Actions to create and approve pull requests" (GitHub blocks workflow-opened PRs until that is
-# turned on — same kind of one-time setup as the cron-job.org token in docs/SCHEDULER.md).
+# One-time setup this needs:
+#   1. The repository secret BUMP_PAT — a PAT with Workflows: read and write. Without it this
+#      workflow validates everything and then dies on the final push, because the built-in
+#      GITHUB_TOKEN may never write a file under .github/workflows/. Full permission list and
+#      reasoning: docs/PYTHON_VERSION.md.
+#   2. Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to create and
+#      approve pull requests" — the same kind of one-time repository setting as the cron-job.org
+#      token in docs/SCHEDULER.md.
 
 on:
   schedule:
@@ -66,11 +74,11 @@ jobs:
         run: python .github/scripts/python_version_bump.py
 
       # ── Prove the bump before proposing it ────────────────────────────────────────────
-      # A PR opened with the built-in GITHUB_TOKEN does NOT trigger ci.yml, so no check
-      # would ever appear on it. Rather than rely on a check that cannot run, this job
-      # runs CI's own commands here — under the NEW interpreter, on the tree the previous
-      # step already rewrote. That is strictly more informative than ci.yml would have
-      # been, because ci.yml would have tested the OLD pin.
+      # Runs CI's own commands here, under the NEW interpreter, on the tree the previous step
+      # already rewrote — BEFORE any PR exists. A bump that cannot install its wheels or cannot
+      # pass the suite therefore never becomes a pull request at all; it is deferred to next
+      # Monday instead. ci.yml also runs on the PR once it is opened (BUMP_PAT means workflow
+      # triggers fire normally), but that is too late to stop a bad PR being created.
       - name: Switch to the proposed interpreter
         id: switch
         if: steps.bump.outputs.changed == 'true'
@@ -134,14 +142,16 @@ jobs:
           branch: auto/python-${{ steps.bump.outputs.new_version }}
           delete-branch: true
           labels: python-bump
-          add-paths: |
-            .github/workflows/ci.yml
-            .github/workflows/monitor.yml
-            ruff.toml
+          # Exactly the files the script reported rewriting — never a fixed list. A repo that
+          # has no ci.yml and no ruff.toml (a production repo carries only monitor.yml) stages
+          # only what it actually has, so ONE workflow serves dev and prod unmodified. It also
+          # makes it structurally impossible for a bump to stage a README or anything in docs/.
+          add-paths: ${{ steps.bump.outputs.changed_files }}
 
-      # The merge lives HERE, not in ci.yml. ci.yml cannot do it: its `pull_request`
-      # trigger never fires for a PR opened with GITHUB_TOKEN, so a `needs: test` gate
-      # there would wait for a check that is never going to be posted.
+      # The merge lives HERE, not in ci.yml, because this job already knows the bump is green:
+      # the PR above is only created once the wheels gate and every CI gate passed under the new
+      # interpreter. ci.yml's automerge job is Dependabot-only by design and deliberately does
+      # not act on python-bump PRs.
       #
       # ONLY `all` merges here. `yes` deliberately does not — see the header. This keeps ONE
       # rule true across every repo in the family, so the same variable can be set everywhere:

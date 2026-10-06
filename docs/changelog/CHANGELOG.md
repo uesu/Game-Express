@@ -13,6 +13,110 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ---
 
+## 2026-10-06
+
+**Banner line-ups fill themselves in from the game wikis — plus a countdown fix and a
+documentation accuracy sweep**
+
+### Banner line-ups from each game's own wiki
+
+- **New reader: `gamexpress/sources/gachawiki.py`.** A banner slot nobody has officially
+  announced yet used to print `TBA` until the livestream. All four games have a community wiki
+  that documents the line-up the day the beta shows it, through the same MediaWiki API — no key,
+  pure JSON. The reader speaks all four dialects (`Wish Pool`, `Warp Pool`,
+  `Signal Search Pool`, `Convene/Pool`) and fills the blanks.
+- **Blanks only, never an override.** `PRIORITY["gachawiki"] = 6` — above the community banner
+  feed (5), below every official source and below `config/overrides.json`. An official notice
+  can be *ahead* of the wiki, so the wiki never replaces one.
+- **Two requests per game and version, and only while something is still TBA.**
+  `schedule.banner_block_complete()` runs before any fetch, so a complete banner block costs
+  zero traffic for ever — and a version whose card is already frozen is never asked about at
+  all (`CARD_FREEZE_D`, now declared once and shared with the card-edit logic). Request 1 is the `Version/<X.Y>` page; request 2 is one batched
+  `prop=revisions` over the dated banner pages it named.
+- **Re-runs are a set difference** against the version's debut roster — never "this banner title
+  appeared before" (HSR reused `Indelible Coterie` 14 times with disjoint casts).
+- **A 4★ list of the wrong length is dropped, not published.** Wiki placeholders
+  (`Unknown Character` ×3) are filtered out as well.
+- **ZZZ's 4★ line now reads `4 Star Characters (Default)`** — its A-Rank rate-ups are
+  player-customisable ("Custom Search"), so the documented list is a default, not a guarantee.
+  This is the only byte that changed in any golden card.
+- **The early tier.** A version with a debut roster but no phase data yet prints
+  `※ Confirmed: <names>` above `※ Re-runs: TBA`. `confirmed` is not part of the banner key set,
+  so the line deletes itself on the silent edit that brings the real phase data in.
+- **`GACHA_WIKI=0` switches the whole thing off**; no source, no requests. Documented in
+  `.env.example`, `docs/CONFIGURATION.md` and the new
+  [BANNER_DATABASE.md](../BANNER_DATABASE.md), which is now linked from both doc indexes.
+- No new dependencies (standard-library `re` + the existing `Fetcher.get_json`), and the
+  User-Agent `Game-Express (banner monitor)` carries no version number.
+
+### Two real countdown misreads
+
+- **A gengamer landing page is a *banner* countdown, not a version countdown.** Genshin's reads
+  "7.1 **Banner** Countdown" and timed Skirk + Escoffier on Oct 13 — nowhere near 7.2's release,
+  yet it was being wired to `maint_start_ts`. A non-program page must now carry an explicit
+  version-release marker or it is ignored.
+- **Those pages server-render every timer as `0 Days 0 Hours 0 Minutes 0 Seconds`** and fill
+  them in with JavaScript. A zero delta meant "now"; it now means unknown. The guard lives in
+  `parse_page()`, because `apply_estimates()`'s window accepts `ts == now`. A timestamp already
+  in the past is refused too.
+
+### Python bump script
+
+- **The weekly summary said `current pin: unknown`.** The `old_version` output was only emitted
+  on the bump path, so every "nothing to do" run — most of them — reported `unknown`. It is now
+  emitted as soon as the pin is read, which also covers the manifest-failure path.
+- **The bump PR body no longer claims checks cannot appear on it.** Since the workflow moved to
+  `BUMP_PAT`, the PR is opened by a personal access token, so `ci.yml` fires on it normally.
+  The inline gate is still what decides the PR is worth opening.
+
+### The weekly bump no longer crashes in a documentation-free production repo
+
+- **`current_pin()` read `ci.yml` unconditionally.** A production repo ships `monitor.yml` and
+  nothing else, so the script died with `FileNotFoundError` before it did anything. It now
+  reads the pin from whichever workflow is present, rewrites only the files that exist, and
+  `bump_ruff_toml()` is a no-op without a `ruff.toml`.
+- **`ALLOWED_WRITES` makes the blast radius explicit**: `ci.yml`, `monitor.yml`, `ruff.toml`
+  and nothing else is ever opened for writing. No README, nothing under `docs/` — the failure
+  mode that corrupted dated history entries in a sibling repository cannot happen here.
+- **`add-paths` is now the script's own `changed_files` output** instead of a hard-coded list,
+  so one workflow file serves dev and prod with no prod-only edit. `_out()` learned the
+  heredoc form for multi-line values.
+- **Nothing is proposed when nothing was rewritten** — an empty PR is no longer possible.
+- `tests/test_smoke.py` builds a throwaway prod repo *and* a throwaway dev repo, runs the real
+  script against a stubbed manifest, and asserts the Markdown is byte-identical afterwards and
+  that no `.md` path ever reaches the staged set.
+- `docs/PROD-REPO-SETUP.md` gained the dev-repo/prod-repo family model, the bump as an optional
+  prod component, and a pre-sync check for the one way a sync can silently *downgrade*
+  production's interpreter (GitHub disables a scheduled workflow after 60 days of inactivity).
+
+### Documentation accuracy
+
+- **`BUMP_PAT` is now documented where it is needed**: the full permission list and the
+  `refusing to allow a GitHub App to create or update workflow …` failure it prevents in
+  `docs/PYTHON_VERSION.md`, the secret tables in `README.md` and `docs/PROD-REPO-SETUP.md`, and
+  the setup list in the workflow header. The secret is per-repository even when the token
+  covers all repositories.
+- **Five workflow comments** in `python_version_bump.yml` still described the pre-`BUMP_PAT`
+  world ("a PR opened with GITHUB_TOKEN triggers no workflows"). Corrected — comments only, no
+  behaviour change. `add-paths`, `permissions:`, the cron and `python-version: '3.14'` are
+  untouched.
+- **Python 3.15.0 is dated exactly**: 2026-10-09 (PEP 790), in both the doc and the workflow.
+- **The nitter fleet count is now pinned to the code.** `docs/SECURITY.md` said 18 where the
+  live fleet is 17, `README.md` said a bare 18 and `docs/SOURCES.md` still said 15. All three
+  now read "18 entries, 17 live" (`xcancel.com` is suspended and kept last as a dead entry),
+  and a test asserts those numbers against `config.DEFAULT_NITTER` so they cannot rot again.
+  `docs/PROD-REPO-SETUP.md` no longer calls `NITTER_RSS_TOKEN` effectively required — with 8
+  mirrors answering on 2026-10-06 and only the first two merged, it is useful, not required.
+- **Stale facts fixed**: `docs/PYTHON_VERSION.md` no longer hard-codes News-Express's exact
+  patch pin;
+  `docs/CREDITS.md` linked to the suspended xcancel; `README.md` was missing three CLI flags
+  (`--unlaunched --verbose --now`) and never linked `docs/ROLLOUT.md`.
+- **The prod manifest would have shipped a broken repo** — it did not name the new module.
+  Fixed (34 files / 26 `.py`), and the file-count check now comes with a `diff`-based package
+  check that cannot go stale.
+
+---
+
 ## 2026-10-05
 
 **`yes` no longer merges a Python series bump — one rule across every repo**

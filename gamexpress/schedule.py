@@ -25,6 +25,7 @@ from .config import Game, Ping
 from .discord import webhook_fingerprint
 from .media import rank, youtube_thumb
 from .models import Item
+from .sources import gachawiki
 from .sources.bannerfeed import banner_feed_for
 from .sources.codes import extract_codes_from_text
 from .state import stable_hash
@@ -188,9 +189,10 @@ LABEL_NO_TIME = re.compile(r"storage|space|GB|file\s+size|download\s+size", re.I
 # precedence of sources for a field (higher wins). Derived values are below external countdown
 # estimates; the banner feed is the lowest (5). Any official source or override replaces both.
 PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "news": 45, "x": 40, "launcher": 20,
-            "countdown": 10, "pattern": 9, "bannerfeed": 5}
+            "countdown": 10, "pattern": 9, "gachawiki": 6, "bannerfeed": 5}
 ESTIMATED_KEYS = ("program_ts", "preinstall_ts", "maint_start_ts", "maint_end_ts")
 MAINT_HOURS_ESTIMATE = 5          # typical HoYoverse / Kuro maintenance window
+CARD_FREEZE_D = 45                 # after this many days past maintenance a card is never edited
 PROGRAM_FRESH_H = 36              # how long after the air time a program still counts as news
 
 # Cold-start pre-install leads, measured from maintenance START. Once this installation has seen
@@ -880,6 +882,51 @@ def apply_banner_feed(data: dict, prov: dict, feed: dict | None, now: int) -> No
         data["banners"] = banners
 
 
+BANNER_KEYS = ("phase1", "phase1_4", "phase2", "phase2_4", "reruns")
+"""Everything a complete banner block needs. `confirmed` is deliberately NOT in here: it is the
+early-tier line, so a version that has real phase data is complete without it — which is also
+what makes the line delete itself."""
+
+
+def banner_block_complete(game: Game, data: dict) -> bool:
+    """True when nothing in the banner block is TBA — then the wikis are never even asked."""
+    if not game.card.show_banners:
+        return True
+    banners = data.get("banners") or {}
+    keys = list(BANNER_KEYS) + (["four_star"] if game.card.four_star_summary else [])
+    return all(banners.get(k) for k in keys)
+
+
+def apply_gacha_wiki(game: Game, data: dict, prov: dict, wiki: dict | None, now: int) -> None:
+    """Fill banner lists from the game's own wiki, but ONLY where the card still says TBA.
+
+    PRIORITY['gachawiki'] is 6: above the community banner feed, below every official source
+    and below config/overrides.json. A 4★ list the reader could not verify never arrives here —
+    gachawiki.build_lineup drops it rather than publish a half-right line-up.
+    """
+    if not wiki:
+        return
+    banners = dict(data.get("banners") or {})
+    changed = False
+    for key in list(BANNER_KEYS) + ["four_star", "confirmed"]:
+        value = wiki.get(key)
+        if not value or banners.get(key):
+            continue
+        if prov.get(f"b_{key}", [0])[0] > PRIORITY["gachawiki"]:
+            continue
+        banners[key] = list(value)
+        prov[f"b_{key}"] = [PRIORITY["gachawiki"], now]
+        changed = True
+    # The early-tier line is a stand-in for phase data. Once the phases are known it is noise,
+    # so it goes on the same silent edit that brings the real line-up in.
+    if banners.get("confirmed") and banners.get("phase1"):
+        banners.pop("confirmed")
+        prov.pop("b_confirmed", None)
+        changed = True
+    if changed:
+        data["banners"] = banners
+
+
 def apply_program_media(data: dict, prov: dict, media: dict | None, now: int) -> list[str]:
     """Give the card the ANNOUNCEMENT it should be showing: the program article's own link and
     its key art, instead of whatever the run happened to see.
@@ -991,7 +1038,7 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
           launcher: dict, now: int, notes: list[str] | None = None,
           estimates: dict | None = None, media: dict | None = None,
           banner_feed: list[dict] | None = None, lead_h: float | None = None,
-          records: dict | None = None) -> dict:
+          records: dict | None = None, wiki: dict | None = None) -> dict:
     """Return the merged card data (record['data'] is the previous state).
     4★ rule: no data or ANY doubt (wrong count, odd name, sources disagree) -> TBA;
     config/overrides.json is always trusted."""
@@ -1109,6 +1156,9 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
         lineup = banner_feed_for(banner_feed, rel_ts) if rel_ts else {}
         apply_banner_feed(data, prov, lineup, now)
 
+    # the game's own wiki: fill whatever is still TBA (phases, 4★, re-runs, the early tier)
+    apply_gacha_wiki(game, data, prov, wiki, now)
+
     # human overrides win over everything
     for key in ("program_ts", "preinstall_ts", "maint_start_ts", "maint_end_ts"):
         if key in override:
@@ -1191,6 +1241,28 @@ async def run(ctx) -> None:
         ctx.report.append(problem)
 
 
+async def gather_wiki_lineup(ctx, game: Game, ver: str, record: dict) -> dict | None:
+    """Ask the game's wiki for this version's line-up — only while a blank remains.
+
+    The short-circuit is the whole traffic budget: a version whose banner block is already
+    complete costs zero requests, for ever, no matter how often the monitor runs.
+    """
+    if not ctx.settings.gacha_wiki or game.key not in gachawiki.WIKIS:
+        return None
+    data = record.get("data") or {}
+    if banner_block_complete(game, data):
+        return None
+    start = data.get("maint_start_ts")
+    if start and ctx.now > int(start) + CARD_FREEZE_D * 86400:
+        return None            # the card is frozen (never edited again) -> asking is pure waste
+    try:
+        return await gachawiki.fetch_lineup(ctx.fetcher, game.key, ver, game.four_star_count,
+                                            game.card.four_star_summary)
+    except Exception as e:                                   # noqa: BLE001 — one wiki, never fatal
+        log.warning("%s wiki lookup failed for %s: %s", game.key, ver, e)
+        return None
+
+
 async def _sync_mirror(ctx, game: Game, ver: str, record: dict, data: dict, now: int) -> None:
     """Deliver the same card to the game's own channel, in the same pass — but silently.
 
@@ -1263,8 +1335,9 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     s, now = ctx.settings, ctx.now
     record = records.setdefault(ver, {"status": "new", "first_seen": now})
     notes: list[str] = []
+    wiki = await gather_wiki_lineup(ctx, game, ver, record)
     data = merge(game, ver, extracts, record, override, live_info, now, notes, estimates, media,
-                 banner_feed, lead_h=observed_lead_h(records), records=records)
+                 banner_feed, lead_h=observed_lead_h(records), records=records, wiki=wiki)
     ctx.report.extend(notes)
     estimated = data.get("estimated") or []
     if estimated and estimated != record.get("estimated_reported"):
@@ -1289,7 +1362,7 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     repost = s.repost == f"{game.key}:{ver}"
 
     maint_start = data.get("maint_start_ts")
-    frozen = bool(maint_start and now > int(maint_start) + 45 * 86400)
+    frozen = bool(maint_start and now > int(maint_start) + CARD_FREEZE_D * 86400)
 
     settled = program_settled(data, now)
     if status in ("posted", "live") and not repost:

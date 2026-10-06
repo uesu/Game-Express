@@ -93,7 +93,8 @@
       "youtube": "https://www.youtube.com/@ZZZ_Official/videos",
       "twitch": "https://www.twitch.tv/zenlesszonezero",
       "card": {
-        "maintenance_heading": "Maintenance Details"
+        "maintenance_heading": "Maintenance Details",
+        "four_star_label": "4 Star Characters (Default)"
       },
       "codes": {
         "sources": ["hoyolab:8", "seria:nap", "humbao:ZZZ", "ogc:zenless", "ennead:zenless", "fandom:zenless-zone-zero/Redemption_Code", "codehub:zenless-zone-zero", "x"],

@@ -249,6 +249,7 @@ class Settings:
     countdown_estimates: bool = True   # COUNTDOWN_ESTIMATES=0 -> never fill times from countdown sites
     program_media: bool = True         # PROGRAM_MEDIA=0 -> never look an announcement up on the news page
     banner_feed: bool = True           # BANNER_FEED=0 -> never fill banner lineups from hub.json
+    gacha_wiki: bool = True            # GACHA_WIKI=0 -> never fill banner lineups from the game wikis
 
     # -- routing ---------------------------------------------------------------
     def _game_slugs(self, game_key: str) -> list[str]:
@@ -398,6 +399,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         countdown_estimates=_bool(env, "COUNTDOWN_ESTIMATES", True),
         program_media=_bool(env, "PROGRAM_MEDIA", True),
         banner_feed=_bool(env, "BANNER_FEED", True),
+        gacha_wiki=_bool(env, "GACHA_WIKI", True),
         show_legend=_bool(env, "SHOW_LEGEND", True),
         repost=_env(env, "REPOST").replace(" ", "").lower(),
         http_timeout=_int(env, "HTTP_TIMEOUT", 20),
@@ -434,6 +436,12 @@ class CardStyle:
     maintenance_style: str = "start_end"      # start_end | range (WW)
     maintenance_first: bool = False           # WW: maintenance block before banners
     four_star_summary: bool = False           # WW: '※ 4 Star Characters:' summary line
+    four_star_label: str = "4 Star Characters"
+    """Heading of the per-phase 4★ line.
+
+    ZZZ overrides it with '4 Star Characters (Default)': its A-Rank rate-ups are
+    player-customisable ("Custom Search", HoYoLAB post 46015688), so the list the wiki
+    documents is the DEFAULT line-up, not a guarantee."""
     banners_url: str = ""                     # GI: banner heading links to lunaris.moe/banners
     show_banners: bool = True                 # ANANTA is not a character gacha -> False
     note: str = MAINTENANCE_NOTE

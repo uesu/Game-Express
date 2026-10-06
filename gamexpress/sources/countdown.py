@@ -65,6 +65,20 @@ _RELEASE_LINE = re.compile(r"(?:release|start|maintenance|update|live)[^\n:]{0,4
 _DELTA = re.compile(r"(\d{1,3})\s*Days?\s*(\d{1,2})\s*Hours?\s*(\d{1,2})\s*Minutes?\s*(\d{1,2})\s*Seconds?", re.I)
 _VERSION = re.compile(r"(?:version\s*[:\-]?\s*|v\.?\s*)(\d+\.\d+)(?![\d.])", re.I)
 _VERSION_TITLE = re.compile(r"\b(\d+\.\d+)\s+(?:livestream|release|update|countdown)", re.I)
+# The ONE marker that proves a page is counting down to a VERSION RELEASE.
+#
+# A gengamer landing page is a *banner* countdown, not a version countdown: Genshin's reads
+# "7.1 Banner Countdown" and times Skirk + Escoffier on Oct 13 — nowhere near 7.2's release.
+# Wiring that timestamp to maint_start_ts put a banner date on the maintenance line.
+_VERSION_RELEASE = re.compile(
+    r"countdown\s+to\s+version\s*(\d+\.\d+)"
+    r"|\b(\d+\.\d+)\s+(?:update\s+)?(?:is\s+set|is\s+expected|is\s+due)\s+to\s+release", re.I)
+
+
+def version_release_hit(text: str) -> str | None:
+    """The version this page says it is counting down to, or None when it never says so."""
+    m = _VERSION_RELEASE.search(text or "")
+    return (m.group(1) or m.group(2)) if m else None
 
 
 def strip_html(html: str) -> str:
@@ -84,8 +98,21 @@ def find_version(text: str) -> str | None:
 
 def parse_page(kind: str, html: str, now: int) -> dict | None:
     """-> {'version', 'ts'} or None. An absolute 'Release Date & Time:' line wins over a
-    live countdown block (which is only a delta from now, so it drifts with the request)."""
+    live countdown block (which is only a delta from now, so it drifts with the request).
+
+    Two guards, both for real misreads seen on live pages:
+
+    * a non-program page must SAY it is counting down to a version release. Without that
+      marker the page is a banner countdown and its timestamp has nothing to do with the
+      next maintenance;
+    * these pages are server-rendered with every timer at "0 Days 0 Hours 0 Minutes
+      0 Seconds" and filled in by JavaScript. A zero delta means UNKNOWN, not "now". The
+      guard has to live here, because apply_estimates()'s window accepts ts == now.
+    """
     text = strip_html(html)
+    release_version = version_release_hit(text)
+    if kind != "program" and not release_version:
+        return None
     ts = None
     m = _RELEASE_LINE.search(text)
     if m:
@@ -95,10 +122,13 @@ def parse_page(kind: str, html: str, now: int) -> dict | None:
     if ts is None:
         d = _DELTA.search(text)
         if d:
-            ts = int(now) + int(d[1]) * 86400 + int(d[2]) * 3600 + int(d[3]) * 60 + int(d[4])
-    if not ts:
+            parts = [int(d[1]), int(d[2]), int(d[3]), int(d[4])]
+            if not any(parts):
+                return None                      # server-rendered placeholder, not "right now"
+            ts = int(now) + parts[0] * 86400 + parts[1] * 3600 + parts[2] * 60 + parts[3]
+    if not ts or int(ts) <= int(now):
         return None
-    return {"version": find_version(text), "ts": int(ts), "kind": kind}
+    return {"version": release_version or find_version(text), "ts": int(ts), "kind": kind}
 
 
 async def fetch_game(fetcher, game_key: str, now: int) -> dict | None:

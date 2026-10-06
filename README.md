@@ -201,6 +201,7 @@ One for the schedule channel, and one per game codes channel.
 | `DISCORD_WEBHOOK_CODES_WUWA` | Wuthering Waves codes |
 | `DISCORD_WEBHOOK_CODES_ANANTA` | ANANTA codes |
 | `NITTER_RSS_TOKEN` | *optional* — the same one as News-Express |
+| `BUMP_PAT` | *required only for the weekly Python bump* — a PAT with **Workflows: read and write**. See [docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md#one-time-setup-this-needs) |
 
 The same URL may be used for several secrets, for example one codes channel for every game.
 
@@ -346,7 +347,7 @@ For local runs and debugging: `python -m gamexpress <command>`
 | `test-card [--kind …] [--game …] [--ping] [--unlaunched]` | post the sample cards, labelled 🧪 TEST. `--unlaunched` keeps only the games with `"released": false` |
 | `speculate [--game …] [--verbose] [--now <unix>]` | read-only: what the bot would predict for each game's next version, the confidence, and the real dates it is anchored on |
 
-Flags: `--dry-run --only --game --repost --kind --ping --out`.
+Flags: `--dry-run --only --game --repost --kind --ping --out --unlaunched --verbose --now`.
 
 ---
 
@@ -357,7 +358,7 @@ Flags: `--dry-run --only --game --repost --kind --ping --out`.
 | Data | Chain |
 |---|---|
 | HoYoverse news | official HoYoLAB API → c3kay JSON-Feed mirror |
-| X timelines | the built-in nitter fleet (18 mirrors; `NITTER_INSTANCES` overrides it). The first **two** working mirrors are merged, so a stale-but-200 mirror can't hide a tweet |
+| X timelines | the built-in nitter fleet (18 entries, 17 live — `xcancel.com` is suspended and kept last as a dead entry; `NITTER_INSTANCES` overrides the list). The first **two** working mirrors are merged, so a stale-but-200 mirror can't hide a tweet |
 | Tweet details | FxTwitter → vxTwitter → RSS body |
 | Codes | up to 8 sources per game (validators, APIs, wikis, official posts), fetched in parallel, behind the gate above |
 | Version / pre-install | HoYoPlay `getGameBranches` / Kuro launcher index |
@@ -424,13 +425,14 @@ python -m gamexpress preview                     # open previews/index.html
 | **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** | every secret, variable, `games.json` field and `overrides.json` key |
 | **[docs/ACCURACY.md](docs/ACCURACY.md)** | how a post becomes a card: detection, extraction, provenance, the code gate |
 | **[docs/SOURCES.md](docs/SOURCES.md)** | every verified endpoint, with why it was chosen or rejected |
+| **[docs/BANNER_DATABASE.md](docs/BANNER_DATABASE.md)** | where banner line-ups come from: the wiki readers, the precedence order, and how a TBA fills itself in |
 | **[docs/SCHEDULER.md](docs/SCHEDULER.md)** | the cron-job.org trigger, the classic token, how fast it can poll |
 | **[docs/TESTING.md](docs/TESTING.md)** | the manual test bench and the local commands |
 | **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** | symptom → fix |
 | **[docs/SECURITY.md](docs/SECURITY.md)** | threat model: untrusted sources, secrets, workflow permissions |
 | **[docs/TIMESTAMP-PATTERNS.md](docs/TIMESTAMP-PATTERNS.md)** | the release-rhythm study the estimates are calibrated on |
 | **[docs/DEPENDABOT.md](docs/DEPENDABOT.md)** · **[docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md)** | dependency and interpreter upkeep |
-| **[docs/PROD-REPO-SETUP.md](docs/PROD-REPO-SETUP.md)** | splitting into a private dev repo + a public production repo |
+| **[docs/PROD-REPO-SETUP.md](docs/PROD-REPO-SETUP.md)** · **[docs/ROLLOUT.md](docs/ROLLOUT.md)** | splitting into a private dev repo + a public production repo, and the order to roll a change out in |
 | **[docs/CREDITS.md](docs/CREDITS.md)** | upstream projects and community databases |
 | **[AGENTS.md](AGENTS.md)** | the maintainer's mental model — read before changing code |
 
