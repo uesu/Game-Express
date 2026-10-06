@@ -30,7 +30,7 @@
       "6LS3F3LS5K87": {
         "first_seen": 1790944228,
         "gate": "redeem-validated",
-        "last_seen": 1791206420,
+        "last_seen": 1791249621,
         "message_id": "1555557642519445636",
         "msg_codes": [
           "6LS3F3LS5K87"
@@ -439,7 +439,7 @@
       "PLDXULN2L986": {
         "first_seen": 1790944825,
         "gate": "only ennead",
-        "last_seen": 1791206420,
+        "last_seen": 1791249621,
         "rewards": [
           "Mora ×10000",
           "Adventurer's Experience ×10",
@@ -2052,7 +2052,7 @@
           ],
           "preinstall_ts": [
             9,
-            1791249021
+            1791249621
           ],
           "program_name": [
             50,
