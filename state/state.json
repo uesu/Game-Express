@@ -1776,7 +1776,7 @@
   "heartbeat": {
     "every_min": 1440,
     "instance": "alpha",
-    "last_success": 1791188825
+    "last_success": 1791275428
   },
   "icons": {
     "genshin": "https://pbs.twimg.com/profile_images/2102589386378686464/tS24hVO2_200x200.jpg",
@@ -2062,7 +2062,7 @@
           ],
           "preinstall_ts": [
             9,
-            1791274819
+            1791275428
           ],
           "program_name": [
             50,
