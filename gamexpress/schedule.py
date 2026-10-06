@@ -898,23 +898,44 @@ def banner_block_complete(game: Game, data: dict) -> bool:
 
 
 def apply_gacha_wiki(game: Game, data: dict, prov: dict, wiki: dict | None, now: int) -> None:
-    """Fill banner lists from the game's own wiki, but ONLY where the card still says TBA.
+    """Fill banner lists from the game's own wiki wherever the card still says TBA, and keep
+    the entries this source owns in step with what the wiki currently says.
 
     PRIORITY['gachawiki'] is 6: above the community banner feed, below every official source
     and below config/overrides.json. A 4★ list the reader could not verify never arrives here —
     gachawiki.build_lineup drops it rather than publish a half-right line-up.
+
+    `wiki is None` means the wikis were not read (complete block, frozen card, failed request)
+    and nothing is touched. A dict means the page WAS read, so an entry this source wrote and
+    the wiki no longer supports is withdrawn rather than left on the card for ever.
     """
-    if not wiki:
-        return
+    if wiki is None:
+        return                      # the wikis were not consulted this run -> touch nothing
     banners = dict(data.get("banners") or {})
     changed = False
     for key in list(BANNER_KEYS) + ["four_star", "confirmed"]:
-        value = wiki.get(key)
-        if not value or banners.get(key):
+        value = [n for n in (wiki.get(key) or []) if gachawiki.publishable_name(n)]
+        owner = prov.get(f"b_{key}", [0])[0]
+        have = banners.get(key)
+        if have:
+            # A value is only as good as the read it came from, so the wiki reader is allowed
+            # to correct -- and to withdraw -- what the wiki reader itself wrote. Everything
+            # official, and every human override, outranks this source and is never touched.
+            # Without this a single bad read is permanent: ZZZ 3.3 sat on "Agent" because
+            # "already filled" was treated as "already right".
+            if owner != PRIORITY["gachawiki"] or list(have) == value:
+                continue
+            if value:
+                banners[key] = value
+                prov[f"b_{key}"] = [PRIORITY["gachawiki"], now]
+            else:
+                banners.pop(key, None)          # the wiki no longer says it -> back to TBA
+                prov.pop(f"b_{key}", None)
+            changed = True
             continue
-        if prov.get(f"b_{key}", [0])[0] > PRIORITY["gachawiki"]:
+        if not value or owner > PRIORITY["gachawiki"]:
             continue
-        banners[key] = list(value)
+        banners[key] = value
         prov[f"b_{key}"] = [PRIORITY["gachawiki"], now]
         changed = True
     # The early-tier line is a stand-in for phase data. Once the phases are known it is noise,
