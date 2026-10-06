@@ -2874,6 +2874,61 @@ def test_banner_block_complete_short_circuits_the_whole_fetch():
     assert "ananta" not in gachawiki.WIKIS and "hna" not in gachawiki.WIKIS
 
 
+def test_gachawiki_zzz_third_bucket_and_multi_name_annotations():
+    """ZZZ 3.1, captured live: the trap that broke the first build.
+
+    'Lasting the whole version:' is a THIRD bucket and belongs to phase 1 — which makes phase 1
+    the re-run Aria alongside the debuting Remielle. One annotation can also hold several
+    agents ('Exclusive Rescreening' runs three).
+    """
+    out = gachawiki.build_lineup("zzz", _wiki("version_zzz_3_1.wiki"), {}, four_star_count=2)
+    assert out["phase1"] == ["Remielle", "Aria"]
+    assert out["phase2"] == ["Sigrid", "Dialyn", "Ukinami Yuzuha", "Asaba Harumasa"]
+    # 'Remielle' / 'Sigrid' are nicknames of the debuting 'Remielle Dan' / 'Sigrid de L'Azur'
+    assert out["reruns"] == ["Aria", "Dialyn", "Ukinami Yuzuha", "Asaba Harumasa"]
+    # the sibling '====W-Engine Channels====' section never leaks in
+    assert not any("Signal Search" in n for n in out["phase1"] + out["phase2"])
+
+
+def test_gachawiki_lineup_reaches_the_rendered_card():
+    """End to end: wiki output -> merge() -> the banner block a channel would see."""
+    games = load_games(ROOT / "config" / "games.json")
+    game = games["genshin"]
+    wiki = gachawiki.build_lineup("genshin", _wiki("version_genshin_7_1.wiki"), {
+        "When Warm Winds Cavort/2026-09-23": _wiki("banner_genshin_warm_winds.wiki"),
+        "Surging Ballad/2026-09-23": _wiki("banner_genshin_surging_ballad.wiki"),
+    }, four_star_count=3)
+    record = {"data": {"banners": {"phase2": ["Official Phase 2"]}},
+              "prov": {"b_phase2": [schedule.PRIORITY["hoyolab"], 1]}}
+    data = schedule.merge(game, "7.1", [], record, {}, {}, 1790000000, wiki=wiki)
+    block_text = cards.banners_block(game, data)
+    assert "✦ First Half/Phase: Vesna, Vodyanitsa" in block_text
+    assert "- 4 Star Characters: Bennett, Xingqiu, Sucrose" in block_text
+    assert "✦ Second Half/Phase: Official Phase 2" in block_text    # official is never replaced
+    assert "※ Re-runs: Skirk, Escoffier" in block_text
+    assert "※ Confirmed:" not in block_text                          # phases exist -> no early line
+
+
+def test_gachawiki_is_not_asked_when_it_cannot_help():
+    """Every path that must cost zero requests: toggle off, no wiki, complete block, dead card."""
+    games = load_games(ROOT / "config" / "games.json")
+
+    class _Ctx:
+        now = 1790000000
+
+        def __init__(self, **kw):
+            self.settings = settings(**kw)
+            self.fetcher = None            # any real attempt would raise -> None proves no call
+
+    complete = {"data": {"banners": {"phase1": ["A"], "phase2": ["B"], "phase1_4": ["a", "b", "c"],
+                                     "phase2_4": ["a", "b", "c"], "reruns": ["B"]}}}
+    assert asyncio.run(schedule.gather_wiki_lineup(_Ctx(), games["genshin"], "7.1", complete)) is None
+    assert asyncio.run(schedule.gather_wiki_lineup(_Ctx(GACHA_WIKI="0"), games["genshin"], "7.1", {})) is None
+    assert asyncio.run(schedule.gather_wiki_lineup(_Ctx(), games["ananta"], "1.0", {})) is None
+    frozen = {"data": {"maint_start_ts": _Ctx.now - 60 * 86400}}
+    assert asyncio.run(schedule.gather_wiki_lineup(_Ctx(), games["genshin"], "6.0", frozen)) is None
+
+
 def test_countdown_ignores_a_banner_countdown_and_a_server_rendered_zero():
     now = LIVE_NOW
     banner_page = ("<p>Genshin Impact 7.1 Banner Countdown</p>"

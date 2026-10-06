@@ -1248,8 +1248,12 @@ async def gather_wiki_lineup(ctx, game: Game, ver: str, record: dict) -> dict | 
     """
     if not ctx.settings.gacha_wiki or game.key not in gachawiki.WIKIS:
         return None
-    if banner_block_complete(game, record.get("data") or {}):
+    data = record.get("data") or {}
+    if banner_block_complete(game, data):
         return None
+    start = data.get("maint_start_ts")
+    if start and ctx.now > int(start) + 45 * 86400:
+        return None            # the card is frozen (never edited again) -> asking is pure waste
     try:
         return await gachawiki.fetch_lineup(ctx.fetcher, game.key, ver, game.four_star_count,
                                             game.card.four_star_summary)

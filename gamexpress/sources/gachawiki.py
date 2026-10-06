@@ -163,8 +163,8 @@ def clean_name(value: str) -> str:
 @dataclass
 class BannerRef:
     """One banner found on a Version page."""
-    page: str | None = None        # wiki page title, e.g. 'Bloodmoon Rising/2026-09-09'
-    name: str | None = None        # the name the Version page prints in brackets
+    page: str | None = None               # wiki page title, e.g. 'Bloodmoon Rising/2026-09-09'
+    names: list[str] = field(default_factory=list)   # the names the Version page brackets
     phase: int = 0
 
 
@@ -224,9 +224,16 @@ def _ref_from_line(line: str) -> BannerRef | None:
     # HSR appends '- Phase 1' AFTER the name, so the bracket is not at the end of the line.
     rest = line[line.index("]]") + 2:]
     m = _PAREN.search(rest)
-    name = clean_name(m.group(1)) if m else None
-    # No bracket at all (some WuWa lines) -> the banner page resolves the name instead.
-    return BannerRef(page=page, name=name or None)
+    # One annotation can hold SEVERAL characters: ZZZ 3.1's 'Exclusive Rescreening' is
+    # ([[Dialyn]], [[Ukinami Yuzuha]], [[Asaba Harumasa]]) — one banner, three agents.
+    names: list[str] = []
+    if m:
+        for part in m.group(1).split(","):
+            name = clean_name(part)
+            if name and not _PLACEHOLDER.match(name):
+                names.append(name)
+    # No bracket at all (some WuWa lines) -> the banner page resolves the names instead.
+    return BannerRef(page=page, names=names)
 
 
 def parse_version_page(game_key: str, wikitext: str) -> VersionPage:
@@ -302,7 +309,7 @@ def build_lineup(game_key: str, version_wikitext: str, pages: dict[str, str],
         five: list[str] = []
         for ref in [b for b in vp.banners if b.phase == phase]:
             pool = parse_banner_page(game_key, pages.get(ref.page or "", "")) if ref.page else {}
-            names = pool.get("five") or ([ref.name] if ref.name else [])
+            names = pool.get("five") or ref.names
             for n in names:
                 if n and n not in five:
                     five.append(n)

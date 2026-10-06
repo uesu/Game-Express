@@ -161,7 +161,15 @@ being dropped. A codes drop split across several messages mentions the role on *
 Every setting lives in one place per game: name, color, X accounts, HoYoLAB game ID, launcher
 ID, detection patterns, YouTube/Twitch buttons, code sources, redeem URL/hint, release cadence,
 and card style (`title`, `maintenance_heading`, `maintenance_style` =
-`start_end|range`, `maintenance_first`, `four_star_summary`, `banners_url`, `show_banners`).
+`start_end|range`, `maintenance_first`, `four_star_summary`, `four_star_label`, `banners_url`,
+`show_banners`).
+
+`four_star_count` is the number of rate-up 4★ characters one banner phase has (GI/HSR/WW 3,
+ZZZ 2). Any list of another length is shown as TBA instead of published — that applies to an
+official notice the reader is unsure about *and* to a wiki line-up
+([BANNER_DATABASE.md](BANNER_DATABASE.md)). `four_star_label` renames the per-phase 4★ line;
+ZZZ sets it to `4 Star Characters (Default)` because its A-Rank rate-ups are
+player-customisable.
 
 Two flags are deliberately separate:
 

@@ -34,6 +34,8 @@ ANANTA and Honkai: Nexus Anima have no gacha data and are deliberately absent fr
 
 1. `schedule.banner_block_complete()` runs **before any fetch**. A version whose banner block is
    already complete costs zero traffic, for ever.
+   A version whose card is already frozen (its maintenance started more than 45 days ago, so
+   the card is never edited again) is skipped for the same reason.
 2. Request 1 — `action=parse&page=Version/<X.Y>&prop=wikitext`: the debut roster and the banner
    section, split into phases.
 3. Request 2 — one batched `action=query&prop=revisions` over the *dated* banner pages found in
@@ -72,7 +74,9 @@ not a regression.
 
 - **A debut roster is not a line-up.** ZZZ 3.0 lists Pyrois with no Exclusive Channel; ZZZ 3.1
   puts Remielle under `* Lasting the whole version:`, which makes phase 1 the *re-run* Aria.
-  That third bucket maps to phase 1 and can hold several characters.
+  That third bucket maps to phase 1.
+- **One annotation can hold several characters.** ZZZ 3.1's `Exclusive Rescreening` reads
+  `([[Dialyn]], [[Ukinami Yuzuha]], [[Asaba Harumasa]])` — one banner, three agents.
 - **Never detect a re-run from a repeated banner title.** HSR's `Indelible Coterie` was reused
   14 times with disjoint casts. It is always a set difference against the debut roster.
 - **`character_5_F` is not single-valued** — always split on the separator.

@@ -30,7 +30,8 @@ documentation accuracy sweep**
   can be *ahead* of the wiki, so the wiki never replaces one.
 - **Two requests per game and version, and only while something is still TBA.**
   `schedule.banner_block_complete()` runs before any fetch, so a complete banner block costs
-  zero traffic for ever. Request 1 is the `Version/<X.Y>` page; request 2 is one batched
+  zero traffic for ever — and a version whose card is already frozen is never asked about at
+  all. Request 1 is the `Version/<X.Y>` page; request 2 is one batched
   `prop=revisions` over the dated banner pages it named.
 - **Re-runs are a set difference** against the version's debut roster — never "this banner title
   appeared before" (HSR reused `Indelible Coterie` 14 times with disjoint casts).
