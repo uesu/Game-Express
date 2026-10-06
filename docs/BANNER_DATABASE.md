@@ -5,9 +5,14 @@ announced yet — which, for a version whose livestream has not aired, is all of
 these games has a community wiki that documents the line-up the day the beta shows it, through
 the same MediaWiki API: no key, pure JSON, `GET`. `gamexpress/sources/gachawiki.py` reads it.
 
-**It fills blanks only.** An official notice (HoYoLAB, Kuro, the news page, X) or an entry in
-`config/overrides.json` always wins. The reader sits at `PRIORITY["gachawiki"] = 6` — above the
-community banner feed (5), below everything official.
+**It never overrides anyone else.** An official notice (HoYoLAB, Kuro, the news page, X) or an
+entry in `config/overrides.json` always wins. The reader sits at `PRIORITY["gachawiki"] = 6` —
+above the community banner feed (5), below everything official.
+
+Inside its own lane it is **self-correcting**: an entry this reader wrote is kept in step with
+what the wiki says now, and is withdrawn when the wiki stops supporting it. A value is only as
+good as the read it came from — "already filled" is not the same as "already right", which is
+how ZZZ 3.3 kept the slot word `Agent` on the card for a full day in October 2026.
 
 ## Precedence, top to bottom
 
@@ -16,7 +21,7 @@ community banner feed (5), below everything official.
 | 100 | `config/overrides.json` | anything — the human is always right |
 | 50 / 45 / 40 | HoYoLAB · Kuro · news page · X | the official line-up |
 | 9 | cadence patterns | timestamps only |
-| **6** | **the game wikis (this doc)** | **fill a banner slot that is still TBA** |
+| **6** | **the game wikis (this doc)** | **fill a banner slot that is still TBA — and revise or withdraw its own earlier entries** |
 | 5 | `hub.json` banner feed | fill a 5★ phase that is still TBA |
 
 ## The four dialects
@@ -70,6 +75,10 @@ When a version has a debut roster but no phase data yet, the reader emits
 disappears by itself on the silent edit that brings the real phase data in. That is intended,
 not a regression.
 
+A channel list that exists but names no character counts as "no phase data": a version stub
+whose phases read `** [[Exclusive Channel]] (Agent)` is the early tier with extra markup, so the
+card shows the debut roster instead of the slot word.
+
 ## Traps, every one of them a real bug
 
 - **A debut roster is not a line-up.** ZZZ 3.0 lists Pyrois with no Exclusive Channel; ZZZ 3.1
@@ -86,8 +95,10 @@ not a regression.
   `====W-Engine Channels====`, WuWa `Weapon Event Convenes`. Parsing stops at the section's own
   boundary, or weapons end up in the character line-up.
 - **Placeholders exist in unannounced slots** — Genshin pads `character_4_F` with
-  `Unknown Character` ×3. Those are filtered, and an official notice can be *ahead* of the wiki,
-  which is the other reason this reader only ever fills blanks.
+  `Unknown Character` ×3, and a version stub names the *slot* rather than the character: ZZZ
+  writes `(Agent)`, Genshin `(Character)`, WuWa `(Resonator)`. `publishable_name()` rejects both
+  kinds at every point a name enters, in all four dialects. An official notice can also be
+  *ahead* of the wiki, which is why this reader never outranks one.
 - **Wiki version ≠ calendar half.** Bucket on `time_start`.
 - **Anchor the template regex**: `{{Wish` also matches `{{Wish Pool`.
 - **Category listings are not clean lists** — filter `ns == 0`.

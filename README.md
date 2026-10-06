@@ -1,6 +1,6 @@
 <div align="center">
 
-# Game-Express
+# 🎮 Game-Express
 
 **Version-schedule announcements and redemption codes for six gacha games, posted to Discord as
 Components V2 cards — with no server, no bot token and nothing to host.**
