@@ -240,13 +240,20 @@ def banners_block(game: Game, d: dict) -> str:
     v = d.get("version") or TBA
     heading = f"Version {v} Banners (STC)"
     heading = f"**[{heading}]({game.card.banners_url})**" if game.card.banners_url else f"**{heading}**"
-    lines = [heading, "", f"※ Re-runs: {names(b.get('reruns'))}"]
+    lines = [heading, ""]
+    # The early tier: the wiki knows WHO debuts in this version but no phase split exists yet
+    # (the livestream has not aired). The line disappears by itself the moment real phase data
+    # lands, because `confirmed` is not part of the banner key set.
+    if b.get("confirmed") and not b.get("phase1"):
+        lines.append(f"※ Confirmed: {names(b.get('confirmed'))}")
+    lines.append(f"※ Re-runs: {names(b.get('reruns'))}")
     if game.card.four_star_summary:
         lines.append(f"※ 4 Star Characters: {names(b.get('four_star'))}")
+    four = game.card.four_star_label
     lines += ["", f"✦ First Half/Phase: {names(b.get('phase1'))}",
-              f"- 4 Star Characters: {names(b.get('phase1_4'))}", "",
+              f"- {four}: {names(b.get('phase1_4'))}", "",
               f"✦ Second Half/Phase: {names(b.get('phase2'))}",
-              f"- 4 Star Characters: {names(b.get('phase2_4'))}"]
+              f"- {four}: {names(b.get('phase2_4'))}"]
     return "\n".join(lines)
 
 

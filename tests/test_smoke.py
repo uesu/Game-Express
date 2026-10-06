@@ -38,7 +38,7 @@ from gamexpress.models import CodeHit, Item  # noqa: E402
 from gamexpress.runner import Ctx, failover_check  # noqa: E402
 from gamexpress.samples import CODE_SAMPLES, SCHEDULE_SAMPLES  # noqa: E402
 from gamexpress.sources import codes as csrc  # noqa: E402
-from gamexpress.sources import countdown, hoyolab, newspage  # noqa: E402
+from gamexpress.sources import countdown, gachawiki, hoyolab, newspage  # noqa: E402
 from gamexpress.sources.hoyolab import _post_text  # noqa: E402
 from gamexpress.sources.kuro import parse_launcher_index  # noqa: E402
 from gamexpress.sources.launcher import parse_branches  # noqa: E402
@@ -2741,6 +2741,153 @@ def test_a_version_whose_air_time_is_only_an_estimate_is_looked_up_again():
         }
     }
     assert schedule.needs_program_lookup([], rec_cutoff, now) is False
+
+
+# =========================================================================== banner line-ups from the game wikis
+WIKI_FIX = FIX / "gachawiki"
+
+
+def _wiki(name: str) -> str:
+    return (WIKI_FIX / name).read_text(encoding="utf-8")
+
+
+def test_gachawiki_reads_every_dialect():
+    """One parser, four wiki dialects — checked against pages captured live on 2026-10-06."""
+    gi = gachawiki.build_lineup("genshin", _wiki("version_genshin_7_1.wiki"), {
+        "When Warm Winds Cavort/2026-09-23": _wiki("banner_genshin_warm_winds.wiki"),
+        "Surging Ballad/2026-09-23": _wiki("banner_genshin_surging_ballad.wiki"),
+    }, four_star_count=3)
+    assert gi["phase1"] == ["Vesna", "Vodyanitsa"]
+    assert gi["phase2"] == ["Skirk", "Escoffier"]                  # inline names, no page needed
+    assert gi["phase1_4"] == ["Bennett", "Xingqiu", "Sucrose"]
+
+    hsr = gachawiki.build_lineup("starrail", _wiki("version_starrail_4_6.wiki"),
+                                 {"An Ocean in a Pearl/2026-09-28": _wiki("banner_starrail_pearl.wiki")},
+                                 four_star_count=3)
+    # the sibling 'Light Cone Event Warps:' list must not leak into the character line-up
+    assert hsr["phase1"] == ["Pearl", "Evanescia"] and hsr["phase2"] == ["Mortenax Blade"]
+
+    zzz = gachawiki.build_lineup("zzz", _wiki("version_zzz_3_2.wiki"), {
+        "Bloodmoon Rising/2026-09-09": _wiki("banner_zzz_bloodmoon.wiki"),
+        "Cindernight Respite/2026-09-30": _wiki("banner_zzz_cindernight.wiki"),
+    }, four_star_count=2)
+    # the Version page nicknames its own agents ('Claret'); the banner page's full name wins
+    assert zzz["phase1"] == ["Claret Flint", "Nangong Yu"]
+    assert zzz["phase2"] == ["Roxy Ifrita Pryce", "Promeia"]
+    assert zzz["phase1_4"] == ["Anton Ivanov", "Nicole Demara"]
+
+    ww = gachawiki.build_lineup("wuwa", _wiki("version_wuwa_3_7.wiki"),
+                                {"As Full as Tonight, Forever/2026-09-30": _wiki("banner_wuwa_tonight.wiki")},
+                                four_star_count=3, four_star_summary=True)
+    # WuWa marks no phases at all: a dated banner page is phase 1, an undated one phase 2
+    assert ww["phase1"] == ["Hsin", "Chisa", "Iuno"]
+    assert ww["phase2"] == ["Suoming", "Lucilla", "Lynae"]
+    assert ww["four_star"] == ["Danjin", "Mortefi", "Yuanwu"]      # summary line is WuWa-only
+
+
+def test_gachawiki_reruns_are_a_set_difference_against_the_debut_roster():
+    """Never 'the title was used before': HSR reused 'Indelible Coterie' 14 times."""
+    gi = gachawiki.build_lineup("genshin", _wiki("version_genshin_7_1.wiki"), {}, four_star_count=3)
+    assert gi["reruns"] == ["Skirk", "Escoffier"]                  # Vesna/Vodyanitsa debut here
+    zzz = gachawiki.build_lineup("zzz", _wiki("version_zzz_3_2.wiki"), {}, four_star_count=2)
+    # 'Claret' is the nickname of the debuting 'Claret Flint' -> prefix match, not a re-run
+    assert zzz["reruns"] == ["Nangong Yu", "Promeia"]
+
+
+def test_gachawiki_drops_a_four_star_list_of_the_wrong_length():
+    pages = {"Bloodmoon Rising/2026-09-09": _wiki("banner_zzz_bloodmoon.wiki")}
+    ok = gachawiki.build_lineup("zzz", _wiki("version_zzz_3_2.wiki"), pages, four_star_count=2)
+    assert ok["phase1_4"] == ["Anton Ivanov", "Nicole Demara"]
+    wrong = gachawiki.build_lineup("zzz", _wiki("version_zzz_3_2.wiki"), pages, four_star_count=3)
+    assert "phase1_4" not in wrong                                 # published half-right: never
+    # placeholders in an unannounced slot are not names (Genshin: 'Unknown Character' x3)
+    placeholder = gachawiki.build_lineup(
+        "genshin", _wiki("version_genshin_7_1.wiki"),
+        {"Void Star's Advent/2026-10-14": _wiki("banner_genshin_unannounced.wiki")}, four_star_count=3)
+    assert "phase2_4" not in placeholder
+
+
+def test_gachawiki_early_tier_is_confirmed_names_only():
+    early = gachawiki.build_lineup("zzz", _wiki("version_zzz_3_3_early.wiki"), {}, four_star_count=2)
+    assert early == {"confirmed": ["Phoenix Reffaella", "Severian Lowell"]}
+    game = load_games(ROOT / "config" / "games.json")["zzz"]
+    data, prov = {}, {}
+    schedule.apply_gacha_wiki(game, data, prov, early, 1790000000)
+    assert data["banners"]["confirmed"] == ["Phoenix Reffaella", "Severian Lowell"]
+    card = cards.banners_block(game, {"version": "3.3", **data})
+    assert "※ Confirmed: Phoenix Reffaella, Severian Lowell" in card
+    # real phase data lands -> the early line deletes itself on the same silent edit
+    schedule.apply_gacha_wiki(game, data, prov, {"phase1": ["Phoenix Reffaella"]}, 1790000001)
+    assert "confirmed" not in data["banners"] and "b_confirmed" not in prov
+
+
+def test_gachawiki_fills_only_blanks_and_never_outranks_an_official_notice():
+    game = load_games(ROOT / "config" / "games.json")["genshin"]
+    assert schedule.PRIORITY["bannerfeed"] < schedule.PRIORITY["gachawiki"] < schedule.PRIORITY["pattern"]
+    data = {"banners": {"phase1": ["Official Name"]}}
+    prov = {"b_phase1": [schedule.PRIORITY["hoyolab"], 1]}
+    schedule.apply_gacha_wiki(game, data, prov, {"phase1": ["Wiki Name"], "phase2": ["Wiki Two"]}, 10)
+    assert data["banners"]["phase1"] == ["Official Name"]          # official wins
+    assert data["banners"]["phase2"] == ["Wiki Two"]               # the blank is filled
+
+
+def test_zzz_four_star_line_says_default():
+    """ZZZ's A-Rank rate-ups are player-customisable, so the wiki list is a default."""
+    games = load_games(ROOT / "config" / "games.json")
+    assert "(Default)" in cards.banners_block(games["zzz"], {"version": "3.2"})
+    assert "(Default)" not in cards.banners_block(games["genshin"], {"version": "7.1"})
+
+
+def test_banner_block_complete_short_circuits_the_whole_fetch():
+    games = load_games(ROOT / "config" / "games.json")
+    full = {"banners": {"phase1": ["A"], "phase2": ["B"], "phase1_4": ["a", "b", "c"],
+                        "phase2_4": ["a", "b", "c"], "reruns": ["B"]}}
+    assert schedule.banner_block_complete(games["genshin"], full)
+    partial = {"banners": dict(full["banners"], reruns=[])}
+    assert not schedule.banner_block_complete(games["genshin"], partial)
+    # WuWa also needs its summary line before it counts as complete
+    assert not schedule.banner_block_complete(games["wuwa"], full)
+    # ANANTA has no banner block at all -> nothing to ask any wiki for
+    assert schedule.banner_block_complete(games["ananta"], {})
+
+    calls: list[str] = []
+
+    class _Fetcher:
+        async def get_json(self, url, **kw):
+            calls.append(url)
+            if "action=parse" in url:
+                return {"parse": {"wikitext": _wiki("version_zzz_3_2.wiki")}}
+            return {"query": {"pages": [
+                {"ns": 0, "title": "Bloodmoon Rising/2026-09-09",
+                 "revisions": [{"slots": {"main": {"content": _wiki("banner_zzz_bloodmoon.wiki")}}}]},
+                {"ns": 0, "title": "Cindernight Respite/2026-09-30",
+                 "revisions": [{"slots": {"main": {"content": _wiki("banner_zzz_cindernight.wiki")}}}]},
+                {"ns": 14, "title": "Category:noise"},
+            ]}}
+
+    out = asyncio.run(gachawiki.fetch_lineup(_Fetcher(), "zzz", "3.2", 2))
+    assert len(calls) == 2                                          # two requests, no more
+    assert "Version%2F3.2" in calls[0] and "%7C" in calls[1]
+    assert out["phase1"] == ["Claret Flint", "Nangong Yu"]
+    assert out["reruns"] == ["Nangong Yu", "Promeia"]
+    assert gachawiki.WIKI_UA == "Game-Express (banner monitor)"      # no version number, ever
+    assert "ananta" not in gachawiki.WIKIS and "hna" not in gachawiki.WIKIS
+
+
+def test_countdown_ignores_a_banner_countdown_and_a_server_rendered_zero():
+    now = LIVE_NOW
+    banner_page = ("<p>Genshin Impact 7.1 Banner Countdown</p>"
+                   "<p>12 Days 03 Hours 00 Minutes 00 Seconds</p>")
+    assert countdown.parse_page("update", banner_page, now) is None      # banner != version
+    assert countdown.parse_page("program", banner_page, now)["ts"] > now  # a livestream page is fine
+
+    zeros = "<p>Countdown to Version 7.2</p><p>0 Days 0 Hours 0 Minutes 0 Seconds</p>"
+    assert countdown.parse_page("update", zeros, now) is None            # JS has not filled it in
+    real = "<p>7.2 update is set to release</p><p>10 Days 00 Hours 00 Minutes 00 Seconds</p>"
+    hit = countdown.parse_page("update", real, now)
+    assert hit["version"] == "7.2" and hit["ts"] == now + 10 * 86400
+    past = "<p>Countdown to Version 7.2</p><p>Release Date & Time: Friday, October 23, 2020 at 8:00 AM EDT</p>"
+    assert countdown.parse_page("update", past, now) is None             # already gone by
 
 
 def main() -> int:

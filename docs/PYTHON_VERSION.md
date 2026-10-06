@@ -67,7 +67,7 @@ read and merge by hand — nothing is merged without a human unless you explicit
 
 > **`yes` does NOT merge in this repo, on purpose.** One rule then holds everywhere:
 >
-> | value | News-Express family (pins `3.14.7`) | Game-Express (pins `3.14`) |
+> | value | News-Express family (pins an exact patch, e.g. `3.14.8`) | Game-Express (pins the series, `3.14`) |
 > |---|---|---|
 > | unset | nothing auto-merges | nothing auto-merges |
 > | `yes` | patch bumps auto-merge | **nothing auto-merges** — no patch PRs exist |
@@ -84,17 +84,52 @@ has all three disabled. A proven-green bump should never show up as a red run be
 repository setting.
 
 **Recommended:** keep `AUTO_MERGE_PYTHON_BUMP` at `yes` (or unset) so the series bump always
-waits for you. Python 3.15 is due around **October 2026**. A brand-new Python *feature* release
+waits for you. Python 3.15.0 final is scheduled for **2026-10-09**
+([PEP 790](https://peps.python.org/pep-0790/)), so the first 3.14 → 3.15 proposal will appear on
+one of the Monday runs right after that — this is the PR that box above is about. A brand-new
+Python *feature* release
 is the riskiest moment for any third-party dependency to have caught up; reading that one PR
 costs a minute and costs nothing if it's clean. Set `all` afterwards if you'd rather not look at
 these at all.
 
 ## One-time setup this needs
 
-*Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to create and
-approve pull requests."* GitHub blocks a workflow from opening its own PRs until this is turned
-on — the same kind of one-time repository setting as the classic PAT in
-[docs/SCHEDULER.md](SCHEDULER.md).
+**1 · Let Actions open pull requests.** *Settings → Actions → General → Workflow permissions →
+"Allow GitHub Actions to create and approve pull requests."* GitHub blocks a workflow from
+opening its own PRs until this is turned on — the same kind of one-time repository setting as
+the classic PAT in [docs/SCHEDULER.md](SCHEDULER.md).
+
+**2 · Add the `BUMP_PAT` secret.** *Settings → Secrets and variables → Actions → Secrets → New
+repository secret*, named exactly `BUMP_PAT`.
+
+This one is not optional. A series bump rewrites `python-version:` inside
+`.github/workflows/ci.yml` and `.github/workflows/monitor.yml`, and **the built-in
+`GITHUB_TOKEN` can never push a change to a file under `.github/workflows/`** — the `workflows`
+permission does not exist for it and cannot be granted in a `permissions:` block. Without
+`BUMP_PAT` the run does all its work, proves the new interpreter green, and then dies on the
+final push with:
+
+```
+refusing to allow a GitHub App to create or update workflow
+.github/workflows/ci.yml without workflows permission
+```
+
+Use a personal access token with these permissions — fine-grained works, classic works with
+`repo` + `workflow`:
+
+| Permission | Why |
+|---|---|
+| Contents: **Read and write** | push the bump branch |
+| Metadata: Read-only | always required |
+| Pull requests: **Read and write** | open the PR |
+| Workflows: **Read and write** | the one that fixes the error above |
+
+A token valid for "all repositories" still has to be added as a secret in **each** repository
+separately — the scope of the token and the existence of the secret are different things.
+
+> Add the secret **before** merging any change that references it. `secrets.BUMP_PAT` on a repo
+> that doesn't have it resolves to an empty string, and `token: ''` fails the *checkout* — which
+> is worse than the original bug, because the run then dies at the first step instead of the last.
 
 ## Why this can't quietly break the live monitor
 

@@ -76,17 +76,17 @@ still manual: an agent cannot set your repository secrets or your cron-job.org s
 > `config/games.json`, which is already on the copy list, and the read-only
 > `python -m gamexpress speculate` command works in prod as soon as the files are there.
 
-## 1. The file manifest — exactly 33 files
+## 1. The file manifest — exactly 34 files
 
 ### Copy to prod (runtime)
 
 ```
-gamexpress/                      25 .py files — the whole package
+gamexpress/                      26 .py files — the whole package
   __init__.py  __main__.py  cards.py  codeposter.py  config.py  discord.py
   http.py  media.py  models.py  preview_html.py  runner.py  samples.py
   schedule.py  state.py  textutil.py  timeparse.py
-  sources/__init__.py  bannerfeed.py  codes.py  countdown.py  hoyolab.py
-          kuro.py  launcher.py  newspage.py  twitter.py
+  sources/__init__.py  bannerfeed.py  codes.py  countdown.py  gachawiki.py
+          hoyolab.py  kuro.py  launcher.py  newspage.py  twitter.py
 config/games.json                game definitions, X accounts, code sources
 config/overrides.json            manual corrections
 config/program_announcements.json  discovered tweet ids — the workflow commits to this
@@ -113,11 +113,12 @@ Discord portal, or publish them somewhere else (Gist, site). Don't leave them da
 
 ```
 tests/                     42 files — the suite, fixtures, golden cards
-docs/                      the whole manual: CONFIGURATION, ACCURACY, SOURCES, SCHEDULER,
-                           ROLLOUT, TESTING, TROUBLESHOOTING, SECURITY,
-                           TIMESTAMP-PATTERNS, DEPENDABOT, PYTHON_VERSION, CREDITS,
-                           PROD-REPO-SETUP and changelog/  (this guide lives in docs/
-                           too — it describes the move, it is not part of what moves)
+docs/                      the whole manual: README (index), CONFIGURATION, ACCURACY,
+                           SOURCES, BANNER_DATABASE, SCHEDULER, ROLLOUT, TESTING,
+                           TROUBLESHOOTING, SECURITY, TIMESTAMP-PATTERNS, DEPENDABOT,
+                           PYTHON_VERSION, CREDITS, PROD-REPO-SETUP and changelog/
+                           (this guide lives in docs/ too — it describes the move,
+                           it is not part of what moves)
 .github/workflows/ci.yml           PRs happen in dev
 .github/workflows/python_version_bump.yml
 .github/scripts/python_version_bump.py
@@ -149,7 +150,18 @@ cp -r --parents \
   /tmp/prod/
 
 find /tmp/prod -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
-find /tmp/prod -type f | wc -l     # expect 35 (33 runtime + 2 policy files)
+find /tmp/prod -type f | wc -l     # expect 36 (34 runtime + 2 policy files)
+```
+
+**Don't trust that number on its own — verify the package instead.** The count goes stale the
+day a new module is added (`sources/gachawiki.py` was exactly that), and a missing module is not
+a quiet problem: prod imports it on the first run and the monitor dies. This check keeps working
+no matter how many files the package grows to:
+
+```bash
+diff <(cd /path/to/Game-Express && find gamexpress -name '*.py' -not -path '*__pycache__*' | sort) \
+     <(cd /tmp/prod          && find gamexpress -name '*.py' -not -path '*__pycache__*' | sort) \
+  && echo "package complete"
 ```
 
 ---
@@ -202,8 +214,17 @@ Webhooks).
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_HNA` | **set on dev** | |
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ANANTA` | **set on dev** | |
 | `NITTER_RSS_TOKEN` | optional | only unlocks `nitter.miningtcup.me` — but that mirror is **1 of your 2 proven answerers**, so treat it as required |
+| `BUMP_PAT` | yes, if you keep `python_version_bump.yml` | a PAT with **Workflows: read and write**. Without it the weekly bump validates fine and then fails on the push — see below |
 | `DISCORD_WEBHOOK_CODES` | optional | catch-all for games without their own channel |
 | `DISCORD_WEBHOOK_URL` | optional | global catch-all |
+
+**`BUMP_PAT` is per-repository and easy to forget.** The Python bump workflow rewrites
+`python-version:` inside `.github/workflows/`, and the built-in `GITHUB_TOKEN` is never allowed
+to push a file under that directory — so a brand-new repo gets a weekly red run that says
+`refusing to allow a GitHub App to create or update workflow … without workflows permission`,
+even though every test passed. One PAT can cover all your repositories, but **the secret itself
+must be created separately in each one**. Full permission list and reasoning:
+[`PYTHON_VERSION.md`](PYTHON_VERSION.md#one-time-setup-this-needs).
 
 **The six `_MIRROR_` secrets are what makes each game's schedule card also land in that game's
 own news channel**, while `#schedule` keeps receiving everything. Omit them in prod and you get

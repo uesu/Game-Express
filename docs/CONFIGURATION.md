@@ -128,6 +128,7 @@ being dropped. A codes drop split across several messages mentions the role on *
 | `COUNTDOWN_ESTIMATES` | on | `0` = never fill program / maintenance times from countdown sites |
 | `PROGRAM_MEDIA` | on | `0` = never look the program announcement up on the official news page (the card then keeps whatever the run's own feed showed) |
 | `BANNER_FEED` | on | `0` = never fill banner lineups from `hub.json` |
+| `GACHA_WIKI` | on | `0` = never fill banner line-ups from the game wikis ([BANNER_DATABASE.md](BANNER_DATABASE.md)) |
 | `CODES_MIN_SOURCES` | 2 | independent community sources needed for an unverified code |
 | `CODES_MARK_EXPIRED` | on | strike through posted codes once every source lists them as expired |
 | `EDIT_ON_UPDATE` | on | silent in-place edits when official info arrives |

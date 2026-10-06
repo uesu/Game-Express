@@ -143,9 +143,9 @@ with a Linux build, so it is already installable on this repo's runners today.
 {ruff_line}
 - **Everything was already proved green BEFORE this PR existed**, under the **new** interpreter:
   every dependency installed from a prebuilt wheel (`--only-binary=:all:`), then `compileall` +
-  `validate` + the offline suite + the preview render. You will see **no checks on this PR** —
-  GitHub does not trigger workflows for a PR opened with the built-in `GITHUB_TOKEN`, which is
-  precisely why the gate runs inside the bump job instead.
+  `validate` + the offline suite + the preview render. `ci.yml` also runs on this PR normally —
+  it is opened with a personal access token, so workflow triggers fire — but that check arrives
+  after the fact; the gate inside the bump job is what decided this PR was worth opening.
 - **This PR does not merge itself by default.** It merges automatically only if the repository
   variable `AUTO_MERGE_PYTHON_BUMP` is set to **`all`**. `yes` deliberately does *not* merge a
   series bump in this repo — so leaving it at `yes`, or unset, means this one waits for you.
@@ -165,6 +165,10 @@ def main() -> int:
         print("::warning::could not find a python-version pin in ci.yml — skipping")
         _out("changed", "false")
         return 0
+    old_str = f"{pin[0]}.{pin[1]}"
+    # Known from here on. Emit it now so every run reports the pin — including the
+    # "up to date" and manifest-failure paths, where it is the only useful fact.
+    _out("old_version", old_str)
     manifest = fetch_manifest()
     if manifest is None:
         _out("changed", "false")
@@ -175,7 +179,6 @@ def main() -> int:
         _out("changed", "false")
         return 0
     (new_major, new_minor), new_full = hit
-    old_str = f"{pin[0]}.{pin[1]}"
     new_str = f"{new_major}.{new_minor}"
     if (new_major, new_minor) <= pin:
         print(f"up to date: {old_str} is already the newest stable series ({new_str} <= {old_str})")
@@ -186,7 +189,6 @@ def main() -> int:
     ruff_bumped = bump_ruff_toml(new_major, new_minor)
     write_body(old_str, new_str, new_full, ruff_bumped)
     _out("changed", "true")
-    _out("old_version", old_str)
     _out("new_version", new_str)
     _out("ruff_bumped", "true" if ruff_bumped else "false")
     return 0
