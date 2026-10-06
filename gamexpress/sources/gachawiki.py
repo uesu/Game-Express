@@ -114,7 +114,22 @@ _LINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 _PAREN = re.compile(r"\(([^()]*)\)")
 # Unannounced slots are padded on the wiki itself (Genshin writes character_4_F = Unknown
 # Character x3). A placeholder is not a name and must never reach a card.
-_PLACEHOLDER = re.compile(r"^(?:unknown\b.*|tba|\?+)$", re.I)
+_PLACEHOLDER = re.compile(r"^(?:unknown\b.*|tba|tbd|\?+)$", re.I)
+# A version page can name a SLOT instead of a character while the line-up is still unannounced:
+# ZZZ writes "(Agent)", Genshin "(Character)", WuWa "(Resonator)". That is the wiki saying it
+# does not know yet -- publishing one puts the literal word "Agent" on the card where a name
+# belongs (ZZZ 3.3, 2026-10-06). A slot word is never a name, in any of the four dialects.
+_STRUCTURAL = {
+    "agent", "agents", "character", "characters", "resonator", "resonators",
+    "unit", "units", "banner", "banners", "phase", "rerun", "reruns", "re-run",
+    "new agent", "new character", "new resonator", "exclusive channel", "signal search",
+}
+
+
+def publishable_name(name: str) -> bool:
+    """False for a placeholder or a slot word -- anything that is not a character's name."""
+    n = (name or "").strip()
+    return bool(n) and not _PLACEHOLDER.match(n) and n.casefold() not in _STRUCTURAL
 _DATED = re.compile(r"/\d{4}-\d{2}-\d{2}$")
 _PHASE_MARK = re.compile(r"^\*\s*Phase\s+(I{1,3}|\d)\s*:?\s*$", re.I)
 _WHOLE_VERSION = re.compile(r"^\*\s*Lasting the whole version\s*:?\s*$", re.I)
@@ -148,7 +163,7 @@ def split_names(value: str) -> list[str]:
     """A pool field is never single-valued: 'A;B; C' -> ['A', 'B', 'C']."""
     parts = [p.strip() for p in re.split(r"[;\n]", value or "")]
     names = [clean_name(p) for p in parts if p.strip()]
-    return [n for n in names if n and not _PLACEHOLDER.match(n)]
+    return [n for n in names if publishable_name(n)]
 
 
 def clean_name(value: str) -> str:
@@ -213,7 +228,7 @@ def parse_debuts(game_key: str, wikitext: str) -> list[str]:
                  for t, lbl in _LINK.findall(ln) if not t.lower().startswith("file:")]
         if links:
             names.append(links[-1])
-    return [n for n in dict.fromkeys(names) if n]
+    return [n for n in dict.fromkeys(names) if publishable_name(n)]
 
 
 def _ref_from_line(line: str) -> BannerRef | None:
@@ -230,7 +245,7 @@ def _ref_from_line(line: str) -> BannerRef | None:
     if m:
         for part in m.group(1).split(","):
             name = clean_name(part)
-            if name and not _PLACEHOLDER.match(name):
+            if publishable_name(name):
                 names.append(name)
     # No bracket at all (some WuWa lines) -> the banner page resolves the names instead.
     return BannerRef(page=page, names=names)
@@ -326,6 +341,11 @@ def build_lineup(game_key: str, version_wikitext: str, pages: dict[str, str],
             log.info("%s phase %d: %d 4★ name(s) found, %s expected — dropped",
                      game_key, phase, len(four), four_star_count)
 
+    if not featured:
+        # The banner section exists but named no CHARACTER -- a version stub whose channels are
+        # still slot words. That is the early tier with extra markup, not phase data.
+        return {"confirmed": vp.debuts} if vp.debuts else {}
+
     reruns = [n for n in dict.fromkeys(featured) if not _is_debut(n, vp.debuts)]
     if reruns:
         out["reruns"] = reruns
@@ -375,10 +395,15 @@ def _revisions_of(payload: Any) -> dict[str, str]:
 
 async def fetch_lineup(fetcher, game_key: str, version: str,
                        four_star_count: int | None = None,
-                       four_star_summary: bool = False) -> dict[str, list[str]]:
-    """Two requests, and only ever for a version that still has a blank to fill."""
+                       four_star_summary: bool = False) -> dict[str, list[str]] | None:
+    """Two requests, and only ever for a version that still has a blank to fill.
+
+    None means "could not read the wiki" (disabled, request failed, page missing). A dict --
+    including an empty one -- means the page WAS read, and is therefore allowed to retract an
+    earlier reading. Collapsing the two would let one failed request wipe a good line-up.
+    """
     if fetcher is None or game_key not in WIKIS:
-        return {}
+        return None
     headers = {"User-Agent": WIKI_UA}
     try:
         payload = await fetcher.get_json(version_page_url(game_key, version),
@@ -386,10 +411,10 @@ async def fetch_lineup(fetcher, game_key: str, version: str,
                                          retries=1)
     except Exception as e:                                      # noqa: BLE001 — one bad wiki
         log.warning("%s wiki: version page request failed: %s", game_key, e)
-        return {}
+        return None
     wikitext = _wikitext_of(payload)
     if not wikitext:
-        return {}
+        return None
     vp = parse_version_page(game_key, wikitext)
     titles = [b.page for b in vp.banners if b.page and _DATED.search(b.page)]
     pages: dict[str, str] = {}
