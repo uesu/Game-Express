@@ -9,7 +9,13 @@ Source of truth: actions/python-versions' versions-manifest.json — the EXACT l
 actions/setup-python itself downloads from. Anything this script proposes is therefore
 already installable on the runner the moment the PR opens; nothing is guessed.
 
-Writes GitHub Actions outputs (changed, old_version, new_version, ruff_bumped) and a
+Deliberately narrow: the ONLY files it may ever write inside the repository are the two
+workflow YAMLs and ruff.toml (see ALLOWED_WRITES). It never creates, rewrites or even reads
+a README or anything under docs/ — a production repo that carries nothing but monitor.yml
+must be able to run this unchanged, and it does: every target is skipped when absent.
+
+Writes GitHub Actions outputs (changed, old_version, new_version, ruff_bumped,
+changed_files) and a
 PR body to $PR_BODY_PATH. Never raises on a network hiccup: it just skips this week's
 check (changed=false) so a flaky connection can't turn into a failed scheduled run —
 next Monday tries again.
@@ -31,14 +37,32 @@ WORKFLOW_FILES = [
     os.path.join(ROOT, ".github", "workflows", "monitor.yml"),
 ]
 RUFF_TOML = os.path.join(ROOT, "ruff.toml")
+# The complete set of repository files this script is permitted to modify. Nothing else is
+# opened for writing, so no README and no doc can ever be rewritten by a bump — the failure
+# mode that corrupted dated history entries in a sibling repository.
+ALLOWED_WRITES = frozenset({"ci.yml", "monitor.yml", "ruff.toml"})
 MANIFEST_URL = "https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json"
 PIN_RE = re.compile(r"(python-version:\s*')(\d+\.\d+)(')")
 RUFF_TARGET_RE = re.compile(r'(target-version\s*=\s*")py(\d+)(")')
 
 
+def _present(paths: list[str]) -> list[str]:
+    """Only the targets this repository actually has.
+
+    A production repo is a subset of the dev repo: it ships monitor.yml and nothing else from
+    this list. Skipping silently is what lets ONE script serve both without a prod-only fork.
+    """
+    return [p for p in paths if os.path.isfile(p)]
+
+
 def _out(key: str, value: str) -> None:
     path = os.environ.get("GITHUB_OUTPUT")
-    line = f"{key}={value}\n"
+    # A multi-line value needs the heredoc form; `key=value` would truncate at the newline.
+    if "\n" in value:
+        delim = "GEBUMPEOF"
+        line = f"{key}<<{delim}\n{value}\n{delim}\n"
+    else:
+        line = f"{key}={value}\n"
     if path:
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(line)
@@ -47,13 +71,18 @@ def _out(key: str, value: str) -> None:
 
 
 def current_pin() -> tuple[int, int] | None:
-    with open(WORKFLOW_FILES[0], encoding="utf-8") as fh:
-        text = fh.read()
-    m = PIN_RE.search(text)
-    if not m:
-        return None
-    major, minor = m.group(2).split(".")
-    return int(major), int(minor)
+    """The pinned series, read from the first workflow present that declares one.
+
+    Dev answers from ci.yml, prod from monitor.yml. Both pin the same series, so the order
+    only decides which file is consulted first, never the answer.
+    """
+    for path in _present(WORKFLOW_FILES):
+        with open(path, encoding="utf-8") as fh:
+            m = PIN_RE.search(fh.read())
+        if m:
+            major, minor = m.group(2).split(".")
+            return int(major), int(minor)
+    return None
 
 
 def fetch_manifest() -> list[dict] | None:
@@ -101,17 +130,25 @@ def ruff_understands(target: str) -> bool:
     return proc.returncode != 2 and "invalid value" not in (proc.stderr or "").lower()
 
 
-def bump_workflow_files(new_minor: str) -> None:
-    for path in WORKFLOW_FILES:
+def bump_workflow_files(new_minor: str) -> list[str]:
+    """-> repo-relative paths actually rewritten. Absent files are skipped, not an error."""
+    changed: list[str] = []
+    for path in _present(WORKFLOW_FILES):
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
         new_text = PIN_RE.sub(rf"\g<1>{new_minor}\g<3>", text)
         if new_text != text:
+            assert os.path.basename(path) in ALLOWED_WRITES, path
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(new_text)
+            changed.append(os.path.relpath(path, ROOT).replace(os.sep, "/"))
+    return changed
 
 
 def bump_ruff_toml(new_major: int, new_minor: int) -> bool:
+    if not os.path.isfile(RUFF_TOML):
+        print("note: no ruff.toml in this repository — nothing to bump there")
+        return False
     target = f"py{new_major}{new_minor}"
     if not ruff_understands(target):
         print(f"::warning::ruff does not recognise --target-version {target} yet — "
@@ -185,12 +222,23 @@ def main() -> int:
         _out("changed", "false")
         return 0
     print(f"bumping {old_str} -> {new_str} (newest stable patch: {new_full})")
-    bump_workflow_files(new_str)
+    changed_files = bump_workflow_files(new_str)
     ruff_bumped = bump_ruff_toml(new_major, new_minor)
+    if ruff_bumped:
+        changed_files.append("ruff.toml")
+    if not changed_files:
+        # The pin was found but nothing matched the rewrite - propose nothing rather than
+        # open an empty PR.
+        print("::warning::no file was actually rewritten - skipping")
+        _out("changed", "false")
+        return 0
     write_body(old_str, new_str, new_full, ruff_bumped)
     _out("changed", "true")
     _out("new_version", new_str)
     _out("ruff_bumped", "true" if ruff_bumped else "false")
+    # Exactly what to stage. Lets ONE workflow serve dev and prod: whatever this repo
+    # happens to contain is what gets committed, with no prod-only edit to add-paths.
+    _out("changed_files", "\n".join(changed_files))
     return 0
 
 

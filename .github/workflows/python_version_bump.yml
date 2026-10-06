@@ -142,10 +142,11 @@ jobs:
           branch: auto/python-${{ steps.bump.outputs.new_version }}
           delete-branch: true
           labels: python-bump
-          add-paths: |
-            .github/workflows/ci.yml
-            .github/workflows/monitor.yml
-            ruff.toml
+          # Exactly the files the script reported rewriting — never a fixed list. A repo that
+          # has no ci.yml and no ruff.toml (a production repo carries only monitor.yml) stages
+          # only what it actually has, so ONE workflow serves dev and prod unmodified. It also
+          # makes it structurally impossible for a bump to stage a README or anything in docs/.
+          add-paths: ${{ steps.bump.outputs.changed_files }}
 
       # The merge lives HERE, not in ci.yml, because this job already knows the bump is green:
       # the PR above is only created once the wheels gate and every CI gate passed under the new

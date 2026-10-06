@@ -31,7 +31,7 @@ documentation accuracy sweep**
 - **Two requests per game and version, and only while something is still TBA.**
   `schedule.banner_block_complete()` runs before any fetch, so a complete banner block costs
   zero traffic for ever — and a version whose card is already frozen is never asked about at
-  all. Request 1 is the `Version/<X.Y>` page; request 2 is one batched
+  all (`CARD_FREEZE_D`, now declared once and shared with the card-edit logic). Request 1 is the `Version/<X.Y>` page; request 2 is one batched
   `prop=revisions` over the dated banner pages it named.
 - **Re-runs are a set difference** against the version's debut roster — never "this banner title
   appeared before" (HSR reused `Indelible Coterie` 14 times with disjoint casts).
@@ -68,6 +68,26 @@ documentation accuracy sweep**
 - **The bump PR body no longer claims checks cannot appear on it.** Since the workflow moved to
   `BUMP_PAT`, the PR is opened by a personal access token, so `ci.yml` fires on it normally.
   The inline gate is still what decides the PR is worth opening.
+
+### The weekly bump no longer crashes in a documentation-free production repo
+
+- **`current_pin()` read `ci.yml` unconditionally.** A production repo ships `monitor.yml` and
+  nothing else, so the script died with `FileNotFoundError` before it did anything. It now
+  reads the pin from whichever workflow is present, rewrites only the files that exist, and
+  `bump_ruff_toml()` is a no-op without a `ruff.toml`.
+- **`ALLOWED_WRITES` makes the blast radius explicit**: `ci.yml`, `monitor.yml`, `ruff.toml`
+  and nothing else is ever opened for writing. No README, nothing under `docs/` — the failure
+  mode that corrupted dated history entries in a sibling repository cannot happen here.
+- **`add-paths` is now the script's own `changed_files` output** instead of a hard-coded list,
+  so one workflow file serves dev and prod with no prod-only edit. `_out()` learned the
+  heredoc form for multi-line values.
+- **Nothing is proposed when nothing was rewritten** — an empty PR is no longer possible.
+- `tests/test_smoke.py` builds a throwaway prod repo *and* a throwaway dev repo, runs the real
+  script against a stubbed manifest, and asserts the Markdown is byte-identical afterwards and
+  that no `.md` path ever reaches the staged set.
+- `docs/PROD-REPO-SETUP.md` gained the dev-repo/prod-repo family model, the bump as an optional
+  prod component, and a pre-sync check for the one way a sync can silently *downgrade*
+  production's interpreter (GitHub disables a scheduled workflow after 60 days of inactivity).
 
 ### Documentation accuracy
 

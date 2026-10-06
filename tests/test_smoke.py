@@ -2945,6 +2945,76 @@ def test_countdown_ignores_a_banner_countdown_and_a_server_rendered_zero():
     assert countdown.parse_page("update", past, now) is None             # already gone by
 
 
+def test_python_bump_is_safe_in_a_docless_production_repo():
+    """The bump must run in a repo that has monitor.yml and nothing else.
+
+    A production repo carries no ci.yml, no ruff.toml, no README and no docs/. Before this
+    was fixed the script raised FileNotFoundError on ci.yml and the weekly run went red.
+    It must now read the pin from whatever workflow exists, rewrite only that, and never
+    open a Markdown file for writing.
+    """
+    import importlib.util
+    import shutil
+    import tempfile
+
+    fake = [{"version": "3.99.0", "stable": True, "files": [{"platform": "linux"}]}]
+    script = ROOT / ".github" / "scripts" / "python_version_bump.py"
+
+    for shape in ("prod", "dev"):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".github" / "workflows").mkdir(parents=True)
+            (root / ".github" / "scripts").mkdir(parents=True)
+            shutil.copy(script, root / ".github" / "scripts" / "python_version_bump.py")
+            shutil.copy(ROOT / ".github" / "workflows" / "monitor.yml",
+                        root / ".github" / "workflows" / "monitor.yml")
+            (root / "README.md").write_text("pinned to 3.14\n", encoding="utf-8")
+            (root / "docs").mkdir()
+            (root / "docs" / "PYTHON_VERSION.md").write_text("3.14\n", encoding="utf-8")
+            if shape == "dev":
+                shutil.copy(ROOT / ".github" / "workflows" / "ci.yml",
+                            root / ".github" / "workflows" / "ci.yml")
+                shutil.copy(ROOT / "ruff.toml", root / "ruff.toml")
+
+            spec = importlib.util.spec_from_file_location(
+                f"bump_{shape}", root / ".github" / "scripts" / "python_version_bump.py")
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            mod.fetch_manifest = lambda: fake
+
+            out = root / "out.txt"
+            env = dict(GITHUB_OUTPUT=str(out), PR_BODY_PATH=str(root / "body.md"))
+            old = {k: os.environ.get(k) for k in env}
+            os.environ.update(env)
+            try:
+                assert mod.main() == 0                      # never raises, never non-zero
+            finally:
+                for k, v in old.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+
+            text = out.read_text(encoding="utf-8")
+            assert "old_version=3.14" in text               # read from whatever exists
+            assert "changed=true" in text
+            # the Markdown in the repo is byte-identical afterwards
+            assert (root / "README.md").read_text(encoding="utf-8") == "pinned to 3.14\n"
+            assert (root / "docs" / "PYTHON_VERSION.md").read_text(encoding="utf-8") == "3.14\n"
+            # and the staged set never names one
+            staged = [ln for ln in text.splitlines()
+                      if ln.endswith((".yml", ".toml")) or ln.startswith("changed_files")]
+            assert staged and not any(".md" in ln for ln in staged), staged
+            assert "'3.99'" in (root / ".github" / "workflows" / "monitor.yml").read_text(
+                encoding="utf-8")
+            if shape == "prod":
+                assert "changed_files=.github/workflows/monitor.yml" in text
+                assert "ruff_bumped=false" in text
+
+    src = script.read_text(encoding="utf-8")
+    assert "ALLOWED_WRITES" in src and '"ci.yml", "monitor.yml", "ruff.toml"' in src
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0

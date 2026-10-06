@@ -192,6 +192,7 @@ PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "news": 45, "x": 40, "la
             "countdown": 10, "pattern": 9, "gachawiki": 6, "bannerfeed": 5}
 ESTIMATED_KEYS = ("program_ts", "preinstall_ts", "maint_start_ts", "maint_end_ts")
 MAINT_HOURS_ESTIMATE = 5          # typical HoYoverse / Kuro maintenance window
+CARD_FREEZE_D = 45                 # after this many days past maintenance a card is never edited
 PROGRAM_FRESH_H = 36              # how long after the air time a program still counts as news
 
 # Cold-start pre-install leads, measured from maintenance START. Once this installation has seen
@@ -1252,7 +1253,7 @@ async def gather_wiki_lineup(ctx, game: Game, ver: str, record: dict) -> dict | 
     if banner_block_complete(game, data):
         return None
     start = data.get("maint_start_ts")
-    if start and ctx.now > int(start) + 45 * 86400:
+    if start and ctx.now > int(start) + CARD_FREEZE_D * 86400:
         return None            # the card is frozen (never edited again) -> asking is pure waste
     try:
         return await gachawiki.fetch_lineup(ctx.fetcher, game.key, ver, game.four_star_count,
@@ -1361,7 +1362,7 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     repost = s.repost == f"{game.key}:{ver}"
 
     maint_start = data.get("maint_start_ts")
-    frozen = bool(maint_start and now > int(maint_start) + 45 * 86400)
+    frozen = bool(maint_start and now > int(maint_start) + CARD_FREEZE_D * 86400)
 
     settled = program_settled(data, now)
     if status in ("posted", "live") and not repost:

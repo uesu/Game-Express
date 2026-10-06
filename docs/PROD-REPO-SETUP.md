@@ -5,7 +5,30 @@ Target shape:
 | Repo | Visibility | Runs the monitor? | Holds |
 |---|---|---|---|
 | `uesu/Game-Express` | **private** | no (kill-switched) | everything: code, tests, docs, CI, Dependabot |
-| `uesu/<random-name>` | **public** | **yes**, every 5 min | 33 runtime files + state |
+| `uesu/<random-name>` | **public** | **yes**, every 5 min | 34 runtime files + state |
+
+---
+
+## The family model this follows
+
+After the split, **`Game-Express` stops being a bot and becomes a development repository** —
+the place changes are written, reviewed and tested. It never posts again. That is exactly the
+arrangement `News-Express` already has: development lives in the named repo, and the live bots
+run from separate obscure production repos (currently two of them, for Twitter and for Reddit).
+
+What that means in practice:
+
+| | development repo | production repo |
+|---|---|---|
+| name | `Game-Express` — public today, **private** after the split | random, unguessable, **public** |
+| posts to Discord | never (`ENABLED_FEATURES=none` + no webhooks) | yes, every 5 minutes |
+| holds | code, tests, `docs/`, `README.md`, CI, Dependabot, this guide | the package, three config files, state, one workflow |
+| Markdown in it | the whole manual | **none required** — see §1 |
+| pull requests | all of them | none; it only receives syncs |
+
+So treat anything below that mentions `docs/`, `README.md` or `tests/` as **development-repo
+only**. The production repo is deliberately documentation-free: it is not read by people, it is
+executed by a runner.
 
 ---
 
@@ -97,6 +120,38 @@ requirements.txt
 .gitignore
 ```
 
+### Optionally copy: the weekly Python bump
+
+```
+.github/workflows/python_version_bump.yml
+.github/scripts/python_version_bump.py
+```
+
+**Why you may want this in prod.** Prod's `monitor.yml` pins `python-version: '3.14'`. Nothing
+else updates it. If you sync from dev regularly the pin rides along with `monitor.yml` and you
+can skip this — but if dev goes quiet for a few months, prod keeps running an ageing
+interpreter with no one telling it.
+
+**It is safe to run in a documentation-free repo.** The script writes to exactly three
+filenames — `ci.yml`, `monitor.yml`, `ruff.toml` — and skips every one it cannot find, so in a
+prod repo it rewrites `monitor.yml` and nothing else. It reads the current pin from whichever
+workflow is present. **It never opens a Markdown file for writing**, so there is no README and
+no `docs/` for it to invent or corrupt; the PR body it composes is written to the runner's temp
+directory, not into the repo. The set of files staged in the PR is whatever the script reports
+having rewritten, not a hard-coded list, which is why the same workflow file works in both
+repos with no prod-only edit. `tests/test_smoke.py` asserts all of this against a simulated
+prod repo on every CI run.
+
+Two consequences if you do copy it:
+
+- It needs its own **`BUMP_PAT`** secret in the prod repo (§3) — the built-in token may not
+  write under `.github/workflows/`.
+- Leave `AUTO_MERGE_PYTHON_BUMP` **unset** in prod. A new Python series reaching the live bot
+  unreviewed is the one thing this whole split exists to prevent. The PR will sit and wait.
+
+If you skip it, delete nothing else — just don't copy these two files, and rely on §8 syncs to
+carry the pin.
+
 ### Also copy (public-facing, not runtime)
 
 ```
@@ -112,7 +167,8 @@ Discord portal, or publish them somewhere else (Gist, site). Don't leave them da
 ### Leave behind (dev only)
 
 ```
-tests/                     42 files — the suite, fixtures, golden cards
+tests/                     the suite, fixtures, golden cards (grows every release —
+                           deliberately not counted here)
 docs/                      the whole manual: README (index), CONFIGURATION, ACCURACY,
                            SOURCES, BANNER_DATABASE, SCHEDULER, ROLLOUT, TESTING,
                            TROUBLESHOOTING, SECURITY, TIMESTAMP-PATTERNS, DEPENDABOT,
@@ -120,10 +176,8 @@ docs/                      the whole manual: README (index), CONFIGURATION, ACCU
                            (this guide lives in docs/ too — it describes the move,
                            it is not part of what moves)
 .github/workflows/ci.yml           PRs happen in dev
-.github/workflows/python_version_bump.yml
-.github/scripts/python_version_bump.py
-.github/dependabot.yml
-ruff.toml
+.github/dependabot.yml             prod receives syncs, it does not raise PRs
+ruff.toml                          lint config; prod never lints
 README.md                  write a 3-line prod README instead (see §2)
 .env.example
 APPLY-*.md  APPLY-*.sh         hand-off scratch files for a pull-request session
@@ -151,6 +205,7 @@ cp -r --parents \
 
 find /tmp/prod -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
 find /tmp/prod -type f | wc -l     # expect 36 (34 runtime + 2 policy files)
+                                  # 38 if you also copied the two python-bump files
 ```
 
 **Don't trust that number on its own — verify the package instead.** The count goes stale the
@@ -394,6 +449,33 @@ git commit -m "sync: <dev commit sha>" && git push
 
 Note it **never** copies `state/state.json` or `config/program_announcements.json` — those
 belong to prod now.
+
+### Check the Python pin before you push the sync
+
+That `cp … monitor.yml` overwrites prod's workflow with dev's, **including its
+`python-version:` line**. Once prod becomes the repo that posts, two things make that
+dangerous:
+
+1. **GitHub disables a scheduled workflow after 60 days of repository inactivity.** A dev repo
+   that nobody has pushed to all quarter stops running its weekly bump, so dev's pin freezes
+   while prod's — if you copied the bump into prod — keeps moving.
+2. A blind sync then **silently downgrades production's interpreter**, and nothing fails: an
+   older pin still installs, still passes, still posts. You would only notice months later.
+
+One line, before `git add`:
+
+```bash
+diff <(grep -m1 "python-version:" /path/to/Game-Express/.github/workflows/monitor.yml) \
+     <(git show HEAD:.github/workflows/monitor.yml | grep -m1 "python-version:") \
+  && echo "pin unchanged — safe to sync"
+```
+
+If it prints a difference, read which way it goes. Dev **ahead** of prod is a normal upgrade:
+push it. Dev **behind** prod means dev went dormant — restore prod's line before committing, or
+drop `monitor.yml` from the sync entirely and copy only `gamexpress/` and the config files.
+
+A dormant dev repo is worth fixing at the source: open Actions in the dev repo and re-enable
+any workflow GitHub has greyed out, or push any commit to reset the 60-day clock.
 
 Tag the dev commit you shipped (`git tag prod-$(date +%F)`, then push the tag) so "what is
 running right now" is always answerable.
