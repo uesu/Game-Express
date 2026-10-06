@@ -268,7 +268,7 @@ Webhooks).
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA` | **set on dev** | |
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_HNA` | **set on dev** | |
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ANANTA` | **set on dev** | |
-| `NITTER_RSS_TOKEN` | optional | only unlocks `nitter.miningtcup.me` — but that mirror is **1 of your 2 proven answerers**, so treat it as required |
+| `NITTER_RSS_TOKEN` | optional | only unlocks `nitter.miningtcup.me`. Useful, not required: the 2026-10-06 audit had 8 mirrors answering and the fleet merges the first **two** of them, so the token adds a proven answerer rather than supplying one you cannot do without |
 | `BUMP_PAT` | yes, if you keep `python_version_bump.yml` | a PAT with **Workflows: read and write**. Without it the weekly bump validates fine and then fails on the push — see below |
 | `DISCORD_WEBHOOK_CODES` | optional | catch-all for games without their own channel |
 | `DISCORD_WEBHOOK_URL` | optional | global catch-all |

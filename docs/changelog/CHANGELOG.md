@@ -101,8 +101,14 @@ documentation accuracy sweep**
   behaviour change. `add-paths`, `permissions:`, the cron and `python-version: '3.14'` are
   untouched.
 - **Python 3.15.0 is dated exactly**: 2026-10-09 (PEP 790), in both the doc and the workflow.
+- **The nitter fleet count is now pinned to the code.** `docs/SECURITY.md` said 18 where the
+  live fleet is 17, `README.md` said a bare 18 and `docs/SOURCES.md` still said 15. All three
+  now read "18 entries, 17 live" (`xcancel.com` is suspended and kept last as a dead entry),
+  and a test asserts those numbers against `config.DEFAULT_NITTER` so they cannot rot again.
+  `docs/PROD-REPO-SETUP.md` no longer calls `NITTER_RSS_TOKEN` effectively required — with 8
+  mirrors answering on 2026-10-06 and only the first two merged, it is useful, not required.
 - **Stale facts fixed**: `docs/PYTHON_VERSION.md` no longer hard-codes News-Express's exact
-  patch pin; `docs/SECURITY.md` said 18 nitter mirrors where everything else says 17;
+  patch pin;
   `docs/CREDITS.md` linked to the suspended xcancel; `README.md` was missing three CLI flags
   (`--unlaunched --verbose --now`) and never linked `docs/ROLLOUT.md`.
 - **The prod manifest would have shipped a broken repo** — it did not name the new module.

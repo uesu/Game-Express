@@ -3015,6 +3015,28 @@ def test_python_bump_is_safe_in_a_docless_production_repo():
     assert "ALLOWED_WRITES" in src and '"ci.yml", "monitor.yml", "ruff.toml"' in src
 
 
+def test_the_documented_nitter_fleet_size_matches_the_code():
+    """Three docs quote a mirror count; the list they describe lives in config.py.
+
+    Those numbers rotted before (SECURITY.md said 18 after xcancel.com was suspended, SOURCES.md
+    still said 15). Pin them to the code so the next change to the fleet fails here instead of
+    in a reader's head.
+    """
+    from gamexpress.config import DEFAULT_NITTER
+
+    configured = len(DEFAULT_NITTER)
+    suspended = [u for u in DEFAULT_NITTER if "xcancel" in u]      # kept last, cannot answer
+    live = configured - len(suspended)
+    assert (configured, live) == (18, 17)
+
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    sources = (ROOT / "docs" / "SOURCES.md").read_text(encoding="utf-8")
+    security = (ROOT / "docs" / "SECURITY.md").read_text(encoding="utf-8")
+    assert f"{configured} entries, {live} live" in readme
+    assert f"{configured} entries, {live} live" in sources
+    assert f"{live} nitter mirrors" in security
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0
