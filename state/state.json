@@ -1997,14 +1997,9 @@
       "3.3": {
         "data": {
           "banners": {
-            "phase1": [
-              "Agent"
-            ],
-            "phase2": [
-              "Agent"
-            ],
-            "reruns": [
-              "Agent"
+            "confirmed": [
+              "Phoenix Reffaella",
+              "Severian Lowell"
             ]
           },
           "estimate_sources": [
@@ -2047,23 +2042,15 @@
         ],
         "first_seen": 1791172831,
         "message_id": "1556516427786096744",
-        "mirror_hash": "c3cc1762fac58dba",
+        "mirror_hash": "3f1719740e347a9b",
         "mirror_message_id": "1556585523047436341",
         "mirror_webhook_fp": "db5f4f8a75a5",
-        "payload_hash": "737a2a28133c554f",
+        "payload_hash": "67d55466d247a96c",
         "posted_at": 1791172831,
         "prov": {
-          "b_phase1": [
+          "b_confirmed": [
             6,
-            1791258399
-          ],
-          "b_phase2": [
-            6,
-            1791258399
-          ],
-          "b_reruns": [
-            6,
-            1791258399
+            1791262984
           ],
           "maint_end_ts": [
             9,
@@ -2075,7 +2062,7 @@
           ],
           "preinstall_ts": [
             9,
-            1791258399
+            1791262984
           ],
           "program_name": [
             50,
@@ -2091,7 +2078,7 @@
           ]
         },
         "status": "posted",
-        "updated_at": 1791258399,
+        "updated_at": 1791262984,
         "webhook_fp": "19991534cf6d"
       }
     }
