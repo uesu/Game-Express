@@ -458,9 +458,11 @@ existed, plus the wrong art, the wrong link and no air time***
 - **A version whose announcement never arrived is looked up once more**, from the tweet id
   already cached in `config/program_announcements.json` — one call that fixes picture, link and
   air time together.
-- **A deleted card for a version that is already out stays deleted**, in the schedule channel and
-  in the game-channel copy alike (`program_settled()` now reads the maintenance date too, and
-  TEST_MODE is no longer exempt). `REPOST=<game>:<version>` remains the way back.
+- **A stored id that stops resolving is not a deleted card.** `404`/`10008` only says the id no
+  longer resolves — it may never have existed on that webhook at all. For a version that is
+  already out, the id is simply dropped: no card is published in the schedule channel or the
+  game-channel copy (`program_settled()` now reads the maintenance date too, and TEST_MODE is no
+  longer exempt). `REPOST=<game>:<version>` remains the way back.
 - **Banner notices written as `"Banner Title" Character` now yield the character** — Genshin 7.1
   showed `Tasteful Excellence` where Escoffier belongs.
 - New `tests/test_schedule_epithet_and_settled.py` runs standalone; the offline suite covers the

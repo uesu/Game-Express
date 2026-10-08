@@ -842,7 +842,7 @@ def program_settled(data: dict, now: int, fresh_h: float = PROGRAM_FRESH_H) -> b
     """True once this version's special program has aired and stopped being news.
 
     The announcement already happened, so on a live run the version is historical: nothing about
-    it can surprise anyone, and posting -- or resurrecting -- a card for it is noise. Test runs
+    it can surprise anyone, and opening a card for it -- or re-creating one -- is noise. Test runs
     keep rendering it, because proving the fetch still resolves the real tweet is their purpose.
 
     In-place edits of an already-posted card are deliberately NOT covered. A settled program does
@@ -854,9 +854,9 @@ def program_settled(data: dict, now: int, fresh_h: float = PROGRAM_FRESH_H) -> b
     Details* notice never gets a program_ts at all, and only regains one if the cached
     announcement in config/program_announcements.json can be replayed — needs_program_lookup()
     switches the archived-announcement lookup off 12 h past maintenance. Reading only program_ts
-    therefore left every such version permanently "unsettled" -- Genshin 7.1 (first seen 2026-09-25, two days AFTER its 09-23
-    maintenance, with no program_ts in state) had its deleted card resurrected on 2026-10-08,
-    fifteen days after the version shipped. The 12 h horizon is the same one
+    therefore left every such version permanently "unsettled" -- Genshin 7.1 (first seen
+    2026-09-25, two days AFTER its 09-23 maintenance, with no program_ts in state) had a card
+    published for it on 2026-10-08, fifteen days after the version shipped. The 12 h horizon is the same one
     needs_program_lookup() uses to call the card history, so the two agree by construction.
     """
     pts = data.get("program_ts")
@@ -1489,21 +1489,26 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
             record["updated_at"] = now
             ctx.report.append(f"✏️ {game.short} {ver}: schedule card updated")
         elif res.status == 404 and settled:
-            # The version is already out, so it is historical. Discord 10008 means the message is
-            # gone for good; reposting would resurrect a card the channel no longer needs -- and
-            # would keep doing it after every delete, forever. Drop the dead id so nothing
-            # retries. Test runs are NOT exempt: the exemption is what put a fifteen-day-old
+            # The version is already out, so it is historical. Discord 10008 only says the id
+            # no longer resolves -- the message may have been removed, or it may never have
+            # existed on this webhook at all, which is exactly the Genshin 7.1 case: the card
+            # people actually had was posted by a different bot before this one was deployed.
+            # Either way, publishing is not a repair, it is a brand-new card for a programme
+            # that aired a month ago, and it would happen again on every single run. Drop the
+            # dead id so nothing retries. Test runs are NOT exempt: the exemption is what put a fifteen-day-old
             # Genshin 7.1 card back into #announcements on 2026-10-08. A test run that genuinely
             # wants the card rendered asks for it explicitly with REPOST=<game>:<version>, which
             # bypasses this whole branch. The data is still merged and saved either way.
             record["card_retired"] = now
             record.pop("message_id", None)
             ctx.report.append(
-                f"🗂 {game.short} {ver}: already out — the deleted card stays deleted "
-                f"(a settled version is never resurrected; repost with {game.key}:{ver})")
+                f"🗂 {game.short} {ver}: already out — its card is not re-created "
+                f"(a settled version is never posted again; repost with {game.key}:{ver})")
         elif res.status == 404:
-            # Discord 10008 means this message is permanently gone. Repeating the PATCH would
-            # fail forever, so post the current card once and adopt its new id. No other edit
+            # Discord 10008 means this id no longer resolves. Repeating the PATCH would fail
+            # forever, so post the current card once and adopt its new id. This arm is reached
+            # only when the version is NOT settled -- a programme still in the news, whose card
+            # genuinely belongs in the channel. No other edit
             # failure is reposted: a malformed payload or transient outage must not create spam.
             fresh = schedule_payload(game, data, s, ping)
             if s.test_mode:
@@ -1513,7 +1518,7 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
                 record.update({"message_id": reposted.message_id, "posted_at": now,
                                "updated_at": now, "webhook_fp": webhook_fingerprint(webhook),
                                "payload_hash": stable_hash(fresh["components"])})
-                ctx.report.append(f"♻️ {game.short} {ver}: deleted schedule card reposted "
+                ctx.report.append(f"♻️ {game.short} {ver}: schedule card re-created "
                                   f"after edit returned 404 {res.error}")
             else:
                 # Keep the dead id and old payload hash: the next run retries the same recovery.

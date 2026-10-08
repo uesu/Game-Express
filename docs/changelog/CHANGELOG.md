@@ -33,6 +33,9 @@ art, the wrong link and no air time**
   `program_ts` must not let a six-hour-wide maintenance notice promote it into a fresh post.
 - `mode=test` (which still renders the latest real card from an empty state) and
   `REPOST=<game>:<version>` remain the only two overrides — the rule is a default, not a cage.
+  The first card this bot genuinely published, the **Zenless Zone Zero 3.3 Special Program**,
+  was announced the day before it aired: never settled, so it posts exactly as before, and a
+  test pins that.
 
 ### The card that was built from the wrong post
 
@@ -49,11 +52,17 @@ art, the wrong link and no air time**
   `data`. With the id present in `config/program_announcements.json` the lookup now runs again —
   one `fxtwitter` call that succeeds and sets `media_from`, so it happens once and stops — until
   `CARD_FREEZE_D` closes the card. A version with no cached id behaves exactly as before.
-- **A deleted card for a version that is already out stays deleted.** `program_settled()` reads
-  the maintenance date as well as `program_ts` (the same 12 h horizon `needs_program_lookup()`
-  uses), because a record opened by a notice never has a `program_ts`. Without it, the deleted
-  7.1 card was reposted **and** a brand-new mirror copy dropped into `#gi-news`, fifteen days
-  after the version shipped.
+- **A stored id that stops resolving no longer produces a card for a version that is already
+  out.** `program_settled()` reads the maintenance date as well as `program_ts` (the same 12 h
+  horizon `needs_program_lookup()` uses), because a record opened by a notice never has a
+  `program_ts`. Without it, the 7.1 edit 404'd and the card was published **and** copied into
+  `#gi-news`, fifteen days after the version shipped.
+- **A `404`/`10008` is not evidence of a deletion.** It only says the stored id no longer
+  resolves — the message may have been removed, or it may never have existed on this webhook at
+  all, which is precisely the Genshin 7.1 case: the card players had was posted by a different
+  bot before this one was deployed. So on a settled version the id is dropped and nothing is
+  published (`its card is not re-created`); on a version still in the news the old behaviour
+  stands — one fresh post whose new id is adopted.
 - **TEST_MODE is no longer exempt from that rule** — the exemption is what resurrected the card.
   A test run that genuinely wants a card rendered asks for it with `REPOST=<game>:<version>`,
   which bypasses the branch entirely; the data correction is merged and saved either way.
@@ -82,8 +91,9 @@ art, the wrong link and no air time**
   (`python tests/test_schedule_epithet_and_settled.py`) in a checkout with no runtime
   dependencies installed, and under pytest.
 - **`tests/test_smoke.py`** — the notice-replacement test re-pointed at the new policy (the
-  announcement is now adopted *silently*), plus nine new tests: the notice guard in both
-  directions, the already-aired rule and its `REPOST` override, the cached recovery, the copy
+  announcement is now adopted *silently*), plus ten new tests: the notice guard in both
+  directions, the already-aired rule and its `REPOST` override, the ZZZ 3.3 over-fix guard
+  (an upcoming programme must still post, with its air time), the cached recovery, the copy
   retirement and the still-edited copy, the `REPOST` revival, three identical re-runs costing no
   request, and the real live 7.1 record healing end to end.
 

@@ -2553,6 +2553,31 @@ def test_an_already_aired_programme_never_opens_a_new_card():
         assert records["7.1"]["status"] == "posted"
 
 
+def test_a_genuine_upcoming_programme_still_opens_its_card():
+    """The settled guard must not become a cage. This bot's first real card was the Zenless Zone
+    Zero 3.3 Special Program, announced the day before it aired — exactly what the schedule
+    channel exists for. A programme that has not aired yet is never settled, so it posts
+    normally, carrying its air time."""
+    now = 1791446400                                    # 2026-10-08 16:00 +08
+    item = Item("hoyolab", "zzz", "47100000", "https://www.hoyolab.com/article/47100000",
+                "Zenless Zone Zero Version 3.3 Special Program Preview",
+                "The Version 3.3 Special Program will premiere on 2026/10/09 at 19:30 (UTC+8)!",
+                now - 3600)
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=now)
+        ctx.webhook = FanOutWebhook()
+        extracts = [e for e in [schedule.extract(GAMES["zzz"], item)] if e]
+        assert [e.kind for e in extracts] == ["program"]
+        assert not schedule.program_settled(extracts[0].fields, now)   # airs tomorrow
+        records: dict = {}
+        asyncio.run(schedule._handle_version(ctx, GAMES["zzz"], "3.3", extracts, records,
+                                             {}, {}, True))
+        sent = ctx.webhook.to(HOOK)
+        assert [m for m, _ in sent] == ["POST"]
+        assert "<t:1791545400:F>" in json.dumps(sent[0][1], ensure_ascii=False)
+        assert records["3.3"]["status"] == "posted"
+
+
 def test_a_maintenance_notice_still_fills_a_card_whose_program_was_seen():
     """The other direction: once the announcement is known, the notice must still post/fill it.
     Breaking this would stop every maintenance update the card exists to deliver."""
@@ -3352,7 +3377,7 @@ def test_a_settled_program_is_never_resurrected_on_a_live_run():
         assert ctx.webhook.sends == [] and ctx.errors == []      # nothing reappears in the channel
         assert records["4.6"].get("message_id") is None          # dead id dropped, no retry loop
         assert records["4.6"]["card_retired"] == ctx.now
-        assert any("the deleted card stays deleted" in line for line in ctx.report)
+        assert any("its card is not re-created" in line for line in ctx.report)
 
         # and it stays gone: the later data change adds no PATCH and no POST (the single edit
         # above is the one that 404'd and triggered the retirement)

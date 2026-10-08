@@ -45,12 +45,14 @@ Related: [SOURCES.md](SOURCES.md) (what each upstream serves) ·
 4. **Unknown values are TBA, and banners always carry (STC).** Countdown and learned pre-install
    values are explicitly labelled estimated; neither can overwrite an official value.
 5. **Post once** per game + version (`state/state.json`), then **edit silently** when data
-   changes. If a moderator deleted the original Discord message, a `404 Unknown Message` causes
-   one fresh post whose new message id is adopted — **except once the version is already out**
-   (its program aired, or its maintenance began more than 12 h ago): that card stays deleted,
-   and `REPOST=<game>:<version>` is the only way back. Every other edit failure remains an error
-   and never reposts. Announcements that are already stale (the program aired more than 36 h ago
-   with no pending maintenance) are recorded, not posted.
+   changes. A `404 Unknown Message` only says the stored id no longer resolves — the message may
+   have been removed, or it may never have existed on this webhook at all. For a version still
+   in the news that causes one fresh post whose new message id is adopted; **once the version is
+   already out** (its program aired, or its maintenance began more than 12 h ago) the id is
+   simply dropped and no card is published, in the schedule channel or the game-channel copy
+   alike. `REPOST=<game>:<version>` is the only way back. Every other edit failure remains an
+   error and never reposts. Announcements that are already stale (the program aired more than
+   36 h ago with no pending maintenance) are recorded, not posted.
    A maintenance notice is never enough to *open* a card: it fills in one the announcement
    opened, so a version whose announcement this bot has not seen waits (and one whose record
    somehow lost its announcement is looked up once more, from the tweet id already cached in
