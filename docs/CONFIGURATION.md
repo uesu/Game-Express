@@ -61,19 +61,25 @@ DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME>  →  DISCORD_WEBHOOK_<FEATURE>_MIRROR
 | Same URL as the primary | detected and skipped — one card, not two |
 | `FORCE_WEBHOOK` | switches the fan-out off entirely, so a test run can't reach a real game channel |
 
-Both copies are **sent in the same pass from the same data**, then edited together for the life
-of the version — as TBA banners fill in and estimated maintenance times are replaced by the
-official notice, the copy is corrected too. This is a fan-out, not a Discord "follow": nothing
-lags, and nothing drifts. The card body is identical in both channels; the ping is the only
-difference (see below).
+Both copies are **sent in the same pass from the same data**, then edited together while the
+primary card remains editable (up to the 45-day freeze) — as TBA banners fill in and estimated
+maintenance times are replaced by the official notice, the copy is corrected too. This is a
+fan-out, not a Discord "follow": nothing lags, and nothing drifts. The card body is identical in
+both channels; the ping is the only difference (see below).
 
 The copy is a convenience, so it never blocks the real card. A broken game-channel webhook is
 reported in the run summary (`⚠️ … copy failed`) and retried next run; it is never a run error,
 and the schedule channel is served either way.
 
-Adding the secret **backfills**: every version whose card is still live (posted, not retired,
-maintenance under 45 days old) is copied across on the next run, not just future ones.
-Removing the secret forgets the copy's message id, so re-adding it later posts a fresh one.
+Adding the secret **backfills eligible cards** on the next run, not just future ones. A version
+gets a brand-new copy only while `program_settled()` is false: the gate settles at 36 h past a
+known program time or 12 h past a known maintenance start. The card must also be before
+`CARD_FREEZE_D` (45 days past maintenance). An existing copy can still be edited while its
+primary card is maintained, but a settled version never gets a new copy automatically; use
+`repost = <game>:<version>` when you want one deliberately.
+
+Removing the secret forgets the copy's message id. Re-adding it restores copies only for eligible
+versions; it does not bypass the settled-version guard.
 
 **Only the primary card pings.** The role is mentioned once, in the schedule channel; the copy
 is built with no ping at all, so one announcement never notifies the same member twice. The

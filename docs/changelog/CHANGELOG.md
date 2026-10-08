@@ -13,6 +13,33 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ---
 
+## 2026-10-09
+
+**A deleted copy says it was deleted, and a retirement names the message it retired**
+
+The first live run on the merged code (`#1062`, 2026-10-09 02:26 UTC+8) found the Genshin 7.1 card
+and its `#gi-news` copy both deleted by hand, retired both records, and reported it — in two lines
+that read the same whether a message was removed or never existed. Those are different stories: one
+is a fan-out that stopped at a `404`, the other is a fan-out that may never have been wired.
+
+- `🗂 GI 7.1: … copy not created — copy <message id> was deleted (Discord 10008) and a settled
+  version is not re-posted`. A copy that never existed keeps the shorter `— already out` wording,
+  and both are asserted to print **once** (the retirement guard is what makes the second run quiet).
+- `🗂 GI 7.1: already out — its card is not re-created (message <message id> no longer resolves —
+  Discord 10008 — …)`: the retirement branch drops the stored id, so the summary is the only place
+  it will ever appear again.
+- Both clauses are load-bearing: remove either and its test fails.
+
+### The title link may come from X or HoYoLAB — whichever carries the announcement
+
+The ZZZ 3.3 card links `hoyolab.com/article/46972907`; the Genshin 7.1 card links
+`x.com/GenshinImpact/status/2096810691021689205`. Both are the announcement itself, so both are
+correct — the rule this changelog introduced says the link must be the announcement and never the
+*Update and Maintenance Notice*, and says nothing about which platform publishes it. ACCURACY.md and
+TESTING.md now state that explicitly, and TROUBLESHOOTING.md explains both `🗂` lines above.
+
+---
+
 ## 2026-10-08
 
 **One Genshin 7.1 card exposed five faults — a card that should never have existed, plus the wrong

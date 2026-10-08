@@ -2774,6 +2774,36 @@ def test_no_game_channel_copy_is_created_for_a_version_already_out():
         assert ctx.errors == []
 
 
+def test_a_deleted_game_channel_copy_says_which_message_vanished():
+    """A copy that was deleted is a different story from a copy that was never made.
+
+    Both refuse to create one for a settled version and both used to print the same sentence, so
+    the only way to tell "the fan-out never worked" from "somebody removed the copy" was to go
+    and look in the channel. Seen live on 2026-10-09: both the Genshin 7.1 card and its #gi-news
+    copy had been deleted, and the run could only say that no copy was being created."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790450000,
+                       DISCORD_WEBHOOK_SCHEDULE_MIRROR_STARRAIL=MIRROR)
+        ctx.webhook = FanOutWebhook(fail_fp=webhook_fingerprint(MIRROR), status=404)
+        rec = _posted_hsr_record()
+        rec.update({"mirror_message_id": "gone-copy",
+                    "mirror_webhook_fp": webhook_fingerprint(MIRROR), "mirror_hash": "old-copy"})
+        records = {"4.6": rec}
+        assert schedule.program_settled(rec["data"], ctx.now)
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {"compensation": "Stellar Jade ×301"}, {}, True))
+        assert [m for m, _ in ctx.webhook.to(MIRROR)] == ["PATCH"]   # the copy was tried first
+        assert records["4.6"]["mirror_retired"] == ctx.now
+        said = [r for r in ctx.report if "copy not created" in r]
+        assert len(said) == 1 and "gone-copy" in said[0] and "10008" in said[0], ctx.report
+        assert ctx.errors == []
+        # once is once: the retirement guard keeps the second run quiet
+        ctx.now += 600
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {"compensation": "Stellar Jade ×302"}, {}, True))
+        assert [r for r in ctx.report if "copy not created" in r] == said
+
+
 def test_a_test_run_still_posts_the_game_channel_copy_of_a_retired_card():
     """The fan-out is half of what the bench is for, so a retired copy must not silence it.
 
@@ -3553,7 +3583,11 @@ def test_a_settled_program_is_never_re_created_on_a_live_run():
         assert ctx.webhook.sends == [] and ctx.errors == []      # nothing reappears in the channel
         assert records["4.6"].get("message_id") is None          # dead id dropped, no retry loop
         assert records["4.6"]["card_retired"] == ctx.now
-        assert any("its card is not re-created" in line for line in ctx.report)
+        # ...and the line names the message that stopped resolving, because the id is dropped
+        # from the record immediately afterwards and the state alone would never say which one
+        # it was. An operator who did not delete that card themselves has nothing else to go on.
+        assert any("its card is not re-created" in line and "dead-message" in line
+                   for line in ctx.report)
 
         # and it stays gone: the later data change adds no PATCH and no POST (the single edit
         # above is the one that 404'd and triggered the retirement)

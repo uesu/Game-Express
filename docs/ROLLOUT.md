@@ -81,16 +81,21 @@ Two names to **avoid**:
 > **Run workflow** → ① `live` · ② `schedule` · ③ **`zzz`**
 
 1. `Show resolved config` → `🪞 also DISCORD_WEBHOOK_SCHEDULE_MIRROR_ZZZ` (table above).
-2. Summary → `🪞 ZZZ 3.3: also posted to DISCORD_WEBHOOK_SCHEDULE_MIRROR_ZZZ (no ping)`.
-3. `#zzz-news` → the card is identical to the one in `#schedule`, with **no** `@role` pill.
+2. For an eligible, not-yet-settled version, the summary says
+   `🪞 ZZZ 3.3: also posted to DISCORD_WEBHOOK_SCHEDULE_MIRROR_ZZZ (no ping)`.
+3. `#zzz-news` → the new copy matches `#schedule`, with **no** `@role` pill.
 
-> ⚠️ **The first run backfills.** Every ZZZ version whose card is still live — posted, not
-> retired, maintenance under 45 days old — is copied across at once, not just the newest one.
-> This is why you add one game first rather than all six.
+> ⚠️ **The first run backfills only eligible cards.** A tracked primary card gets a new copy
+> only while `program_settled()` is false (the gate settles 36 h past a known program time or
+> 12 h past a known maintenance start) and before the 45-day `CARD_FREEZE_D`. A settled version
+> is not given a brand-new copy; if its previously recorded copy returns Discord 10008, the
+> one-time retirement summary names its ID, while a version with no prior copy keeps the shorter
+> `— already out` wording. Existing copies can still receive their silent edits until freeze.
+> This is why you add one game at a time.
 
-**If you pointed it at a valid webhook for the *wrong* channel:** fix the secret and re-run. It
-self-heals — the stored fingerprint no longer matches, so a fresh copy is posted to the right
-channel. Delete the stray message by hand.
+**If you pointed it at a valid webhook for the *wrong* channel:** fix the secret and re-run. For
+an eligible, unsettled version, the changed fingerprint causes a fresh copy to be posted to the
+right channel; delete the stray message by hand. A settled version is not backfilled automatically.
 
 ## Step 5 — Add the remaining games
 
@@ -103,8 +108,9 @@ channel. Delete the stray message by hand.
 | `#ananta-news` | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ANANTA` |
 
 Either the key or the short name works (`_GI` or `_GENSHIN`, `_WUWA` or `_WW`, `_HNA` or
-`_NEXUSANIMA`). Then one run: ① `live` · ② `schedule` · ③ *(blank)*. Each game backfills on that
-run.
+`_NEXUSANIMA`). Then one run: ① `live` · ② `schedule` · ③ *(blank)*. Each game backfills its
+eligible, not-yet-settled cards on that run; settled versions stay silent unless deliberately
+reposted.
 
 `DISCORD_WEBHOOK_SCHEDULE` itself never changes. Games without a mirror secret keep taking the
 exact code path they always did — the two lookups are independent chains, and
@@ -137,8 +143,8 @@ Only after several clean cron runs.
 
 Delete the mirror secret. The next run drops the stored copy ids and stops copying;
 `#schedule` is untouched throughout. No code change, no redeploy. Re-adding the secret later
-posts a fresh copy rather than editing a message in a channel the run can no longer prove it
-owns.
+creates copies for eligible, not-yet-settled cards; it does not create a new copy for a settled
+version unless you deliberately use `repost = <game>:<version>`.
 
 ## Cost
 

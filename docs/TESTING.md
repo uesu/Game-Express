@@ -90,7 +90,7 @@ run would post:
 
 | On the card | What to check |
 |---|---|
-| **Title link** | it opens the **Special Program / Broadcast announcement itself** — not the *Update and Maintenance Notice*. If it opens a notice, the program article was not found; see below |
+| **Title link** | it opens the **Special Program / Broadcast announcement itself** — an official X post or a HoYoLAB / official-site article, both are correct — and **not** the *Update and Maintenance Notice*. If it opens a notice, the program article was not found; see below |
 | **Key art** | the program's own artwork, and a big one: a YouTube `maxresdefault` thumbnail (1280×720) or a full-size tweet photo — not a small cover from somebody else's post |
 | **Livestream line** | `… or in 3 days` — the date/time must be **your** local time and the right moment (compare with the announcement). For a programme that has already aired it reads `… a month ago`, which is correct: the bench renders the version that is out **now**, even when a live run would no longer open a card for it ([ACCURACY.md](ACCURACY.md) rule 6) |
 | **Maintenance block** | pre-install, start, end and compensation, each as a real Discord timestamp. `estimated from Gacha Countdown` means no official notice yet — correct, and it is replaced automatically when the notice is seen |
@@ -120,9 +120,10 @@ afterwards. Nothing live is touched: not the existing card, not its copy in the 
 Then run **`mode = live`** once. For a version this bot has already carded, the announcement is
 replayed from `config/program_announcements.json` and the existing card is **edited in place** —
 `✏️ GI 7.1: schedule card updated — livestream time, banners, key art, link`, no new message. If
-the card was deleted, that edit gets `404` and a settled version is never re-published: the dead
-id is dropped and the summary says `🗂 … its card is not re-created`. `repost = genshin:7.1` is
-the way back if you want one anyway.
+the stored card id no longer resolves (Discord `10008`), a settled version is never re-published:
+the dead id is dropped and the summary names it — `🗂 … its card is not re-created (message <id>
+no longer resolves — Discord 10008 — …)`. `repost = genshin:7.1` is the way back if you want one
+anyway.
 
 If the title link or the picture is wrong:
 

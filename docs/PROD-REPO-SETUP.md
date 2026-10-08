@@ -5,7 +5,7 @@ Target shape:
 | Repo | Visibility | Runs the monitor? | Holds |
 |---|---|---|---|
 | `uesu/Game-Express` | **private** | no (kill-switched) | everything: code, tests, docs, CI, Dependabot |
-| `uesu/<random-name>` | **public** | **yes**, every 5 min | 34 runtime files + state |
+| `uesu/<random-name>` | **public** | **yes**, every 5 min | 34-file runtime manifest (including state) + 2 policy files |
 
 ---
 
@@ -93,10 +93,14 @@ still manual: an agent cannot set your repository secrets or your cron-job.org s
 
 ---
 
-> **The schedule fan-out DOES change this guide.** It adds up to six new secrets — see §3 — and
-> they are already live on dev. Everything else that landed recently (timestamp speculation, the
-> card layout pass) adds no file, no secret and no variable: the per-game rhythm lives inside
-> `config/games.json`, which is already on the copy list, and the read-only
+> **The fan-out uses up to six optional per-game secrets** — already set on dev; see §3. The
+> settled-card safeguards and 10008 reporting are code changes in `gamexpress/schedule.py`, already
+> in the runtime package list below, so they add no runtime file, secret or variable. Settled
+> versions never receive a brand-new primary card or mirror copy without an explicit `repost`;
+> resolvable existing cards and copies may still receive silent edits until their normal freeze.
+> If a stored ID for a settled version no longer resolves, the retirement summary names it;
+> Discord 10008 does not establish who removed it.
+> The per-game rhythm remains in `config/games.json`, and the read-only
 > `python -m gamexpress speculate` command works in prod as soon as the files are there.
 
 ## 1. The file manifest — exactly 34 files
@@ -284,8 +288,9 @@ must be created separately in each one**. Full permission list and reasoning:
 **The six `_MIRROR_` secrets are what makes each game's schedule card also land in that game's
 own news channel**, while `#schedule` keeps receiving everything. Omit them in prod and you get
 the old single-channel behaviour with no code change; copy them and prod matches dev. Read
-[`ROLLOUT.md`](ROLLOUT.md) before adding them — **the first run after adding one back-fills
-every live card for that game**, so add them one game at a time rather than all six at once.
+[`ROLLOUT.md`](ROLLOUT.md) before adding them — the first run back-fills only eligible tracked
+cards for that game. A settled version never gets a brand-new mirror automatically (use
+`repost = <game>:<version>` deliberately), so add secrets one game at a time and check the summary.
 
 Two names to avoid: `DISCORD_WEBHOOK_SCHEDULE_<GAME>` *moves* that game out of `#schedule`
 instead of copying it, and `DISCORD_WEBHOOK_SCHEDULE_MIRROR` with no game suffix mirrors **every**
@@ -426,8 +431,8 @@ Discord" and "state committed", and cancelling there allows a re-post.
 
 ## 8. Keeping prod in sync afterwards
 
-Prod will drift from dev by one file: the workflow keeps committing `state/state.json` and
-`config/program_announcements.json`. So sync code **into** prod, never the reverse.
+Prod will drift from dev in two data files: the workflow keeps committing `state/state.json`
+and `config/program_announcements.json`. So sync code **into** prod, never the reverse.
 
 ```bash
 # in dev, on green main
