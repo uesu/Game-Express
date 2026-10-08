@@ -19,7 +19,8 @@ missing any one of them left the repo contradicting itself.
 
 Builds now identify themselves by commit: `build_id()` reports the short `GITHUB_SHA`, so a run
 summary reads `### Game-Express 03c1668 — …` and points at the exact code that posted the card.
-Adding an entry here is now the whole ritual.
+A dated entry, its index row and the README's latest summary are the whole ritual; no version
+number is bumped.
 
 Releases up to and including `1.9.0` keep their numbers — that is what they shipped as, and
 nothing is renumbered after the fact.
@@ -55,14 +56,14 @@ nothing is renumbered after the fact.
 
 ---
 
-## Adding a release
+## Adding an entry
 
-1. Bump `__version__` in [`gamexpress/__init__.py`](../../gamexpress/__init__.py) — it is printed
-   in every run summary.
-2. Add a `## x.y.z — YYYY-MM-DD` section at the **top** of [CHANGELOG.md](CHANGELOG.md), followed
-   by a bold one-line headline.
-3. Add the row to the table above.
-4. Grep the docs for any count, cadence or flag the release changed
+1. Add a `## YYYY-MM-DD` section at the **top** of [CHANGELOG.md](CHANGELOG.md), followed by a
+   bold one-line headline.
+2. Add its row to the table above, newest first.
+3. Update the project's README [Changelog summary](../../README.md#-changelog) to describe the
+   new latest entry.
+4. Grep the docs for any count, cadence or flag the change affects
    (`README.md`, `AGENTS.md`, `docs/*.md`) — see
    [AGENTS.md § Conventions](../../AGENTS.md#8-conventions).
 

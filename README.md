@@ -455,32 +455,20 @@ Index: **[docs/](docs/)**.
 
 ## 🗒 Changelog
 
-**Latest — [2026-10-08](docs/changelog/CHANGELOG.md#2026-10-08) · *a card that should never have
-existed, plus the wrong art, the wrong link and no air time***
+**Latest — [2026-10-09](docs/changelog/CHANGELOG.md#2026-10-09) · *a deleted copy says it was
+deleted, and a retirement names the message it retired***
 
-- **A programme that already aired never opens a card.** A version announced long before this bot
-  was deployed — Genshin 7.1, Wuthering Waves 3.7 — is history: it stays tracked and its record
-  stays current, but the creation gate now consults `program_settled()`, so no brand-new message
-  is ever opened for it. `mode=test` and `REPOST=<game>:<version>` remain the two overrides.
-- **A maintenance notice never opens a schedule card** — it fills in one the announcement opened.
-  Genshin 7.1 was created by its *Update Details* notice, so it shipped with the notice's cover
-  and URL and no air time; the notice-only path is gone, and the notice's data still lands on the
-  card.
-- **A version whose announcement never arrived is looked up once more**, from the tweet id
-  already cached in `config/program_announcements.json` — one call that fixes picture, link and
-  air time together.
-- **A stored id that stops resolving is not a deleted card.** `404`/`10008` only says the id no
-  longer resolves — it may never have existed on that webhook at all. For a version that is
-  already out, the id is simply dropped: no card is published in the schedule channel or the
-  game-channel copy (`program_settled()` now reads the maintenance date too, and TEST_MODE is no
-  longer exempt). `REPOST=<game>:<version>` remains the way back.
-- **Banner notices written as `"Banner Title" Character` now yield the character** — Genshin 7.1
-  showed `Tasteful Excellence` where Escoffier belongs.
-- **A test run renders, it never repairs.** `mode=test` now posts one new 🧪 TEST card to look at
-  and delete, instead of silently PATCHing the live card and stamping TEST onto its channel copy;
-  the summary says so, and names what each silent edit actually changed.
-- New `tests/test_schedule_epithet_and_settled.py` runs standalone; the offline suite covers the
-  whole ladder, including the real 7.1 record healing in place with no new message.
+- **A deleted copy says it was deleted.** When a run is told a game-channel copy no longer
+  resolves (Discord `10008`) it names the message that vanished — `🗂 … copy <id> was deleted
+  (Discord 10008) and a settled version is not re-posted` — while a copy that was never made keeps
+  the shorter `— already out` wording. Both print once.
+- **A retirement names the message it retired.** `🗂 … its card is not re-created (message <id> no
+  longer resolves — Discord 10008 — …)`: the id is dropped from the record one line later, so the
+  summary is the only place it will ever appear again.
+- **The title link may come from X or HoYoLAB**, whichever carries the announcement — ZZZ 3.3 links
+  the HoYoLAB article, Genshin 7.1 links the X post, both correct — and never the *Update and
+  Maintenance Notice*.
+- Both clauses are load-bearing: remove either and its test fails.
 
 **➡️ Full history: [docs/changelog/](docs/changelog/)** —
 [current entries](docs/changelog/CHANGELOG.md) (1.8.0 onward) ·
