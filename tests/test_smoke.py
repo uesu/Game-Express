@@ -2894,7 +2894,10 @@ def test_the_real_genshin_71_record_heals_in_place_with_no_new_message():
         ctx.media = {"genshin": {"7.1": dict(GI_71_ANNOUNCEMENT)}}
         ctx.state.schedule_records("genshin")["7.1"] = {
             "status": "posted", "first_seen": 1790371200, "data": dict(GI_71_LIVE_DATA),
-            "prov": {}, "message_id": "1557664007840731237",
+            # the live card id at the time of writing: the one the 404 arm published at
+            # 2026-10-08 21:20 UTC+8 (state.json). The point is that the repair PATCHes
+            # whatever id the record holds, so this only has to be a real one.
+            "prov": {}, "message_id": "1557744484790304889",
             "webhook_fp": webhook_fingerprint(HOOK), "payload_hash": "the-broken-card"}
         ctx.webhook = FanOutWebhook()
         live = {"data": ctx.state.schedule_records("genshin")["7.1"]["data"]}
