@@ -1671,18 +1671,22 @@ def test_the_program_announcement_replaces_the_maintenance_notice_on_the_card():
         ctx = make_ctx(sp, items={"starrail": [notice]}, now=1790000000)
         ctx.media = {"starrail": {"4.6": found}}
         asyncio.run(schedule.run(ctx))
-        # ...and now the card opens, already carrying the maintenance data the notice supplied
-        assert [x["method"] for x in ctx.webhook.sent] == ["POST"]
-        flat2 = json.dumps(ctx.webhook.sent[0]["payload"], ensure_ascii=False)
-        assert "hoyolab.com/article/46814308" not in flat2    # never the notice's link
-        assert "HR70hTAaoAA8Dzz" in flat2                     # the programme's key art, not the cover
-        # the title links the ANNOUNCEMENT, not the stream it happens to mention
-        assert "## [Honkai: Star Rail Version 4.6 Special Program](https://www.hoyolab.com/article/46691962) 📜" in flat2, flat2
-        assert "youtube.com/watch?v=EXAMPLE1234" in flat2                 # the stream stays in source_links
-        assert "pbs.twimg.com/media/HR70hTAaoAA8Dzz.jpg?name=orig" in flat2    # full-size key art
-        assert "<t:1789860600:F>" in flat2 and "<t:1789860600:R>" in flat2     # the air time, user's format
-        assert "🖼️" not in flat2
+        # The lookup finds it -- but this programme aired 39 h ago, and an already-aired
+        # programme is history, not an announcement. Game-Express was deployed after Genshin 7.1
+        # and Wuthering Waves 3.7 had already aired, and must not open cards for them. So the
+        # announcement is adopted SILENTLY: the record gains the real link, the real key art and
+        # the real air time, and not a single request is made.
+        assert ctx.webhook.sent == []
         rec = ctx.state.schedule_records("starrail")["4.6"]
+        assert rec["status"] == "tracked"
+        assert rec["data"]["title_url"] == "https://www.hoyolab.com/article/46691962"
+        assert "HR70hTAaoAA8Dzz" in rec["data"]["images"][0]   # the programme's key art
+        assert "upload-os-bbs" not in rec["data"]["images"][0]  # never the notice's cover
+        assert rec["data"]["program_ts"] == 1789860600          # the real air time
+        assert "46814308" not in rec["data"]["title_url"]       # never the notice's link
+        # the title would link the ANNOUNCEMENT, not the stream it happens to mention
+        assert rec["data"]["source_url"] == "https://www.hoyolab.com/article/46691962"
+        assert rec["data"]["youtube_video"] == "https://www.youtube.com/watch?v=EXAMPLE1234"
         assert rec["data"]["media_from"] == "HoYoLAB"
         assert "program_seen" not in rec["data"]                # the lookup never claims a real post
         assert not schedule.needs_media(ctx.state, "starrail", 1790000000)     # never looked up twice
@@ -2515,6 +2519,40 @@ def test_a_maintenance_notice_alone_never_opens_a_schedule_card():
         assert "program_ts" not in data
 
 
+def test_an_already_aired_programme_never_opens_a_new_card():
+    """THE main rule. This bot was deployed after Genshin 7.1 and Wuthering Waves 3.7 had already
+    aired their programmes; those versions were announced long ago, by somebody else. A version
+    whose programme is in the past is history, not an announcement — it is tracked and kept
+    current, never posted. Genshin 7.1 was announced 2026-09-07, aired 09-12 and shipped 09-23,
+    and still got a brand-new card on 2026-10-08."""
+    now = 1790118000                                    # 1 h after the 2026-09-23 maintenance
+    aired = 1789214400                                  # 2026-09-12 20:00 +08 — 10 days earlier
+    base = {"version": "7.1", "program_ts": aired, "program_seen": True}
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=now)
+        ctx.webhook = FanOutWebhook()
+        extracts = [e for e in [schedule.extract(GAMES["genshin"], _update_details_notice(now))] if e]
+        records = {"7.1": {"status": "new", "first_seen": now, "prov": {}, "data": dict(base)}}
+        asyncio.run(schedule._handle_version(ctx, GAMES["genshin"], "7.1", extracts, records,
+                                             {}, {}, True))
+        assert ctx.webhook.calls == []                   # the whole point: no new card
+        assert records["7.1"]["status"] == "tracked"
+        assert not any("schedule card posted" in line for line in ctx.report)
+        # ...yet the maintenance it carried is still recorded, ready for whoever owns the card
+        assert records["7.1"]["data"]["compensation"] == "Primogems ×300"
+
+    # REPOST stays the deliberate override — the rule is a default, not a cage.
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=now, REPOST="genshin:7.1")
+        ctx.webhook = FanOutWebhook()
+        extracts = [e for e in [schedule.extract(GAMES["genshin"], _update_details_notice(now))] if e]
+        records = {"7.1": {"status": "new", "first_seen": now, "prov": {}, "data": dict(base)}}
+        asyncio.run(schedule._handle_version(ctx, GAMES["genshin"], "7.1", extracts, records,
+                                             {}, {}, True))
+        assert [m for m, _ in ctx.webhook.to(HOOK)] == ["POST"]
+        assert records["7.1"]["status"] == "posted"
+
+
 def test_a_maintenance_notice_still_fills_a_card_whose_program_was_seen():
     """The other direction: once the announcement is known, the notice must still post/fill it.
     Breaking this would stop every maintenance update the card exists to deliver."""
@@ -2524,7 +2562,7 @@ def test_a_maintenance_notice_still_fills_a_card_whose_program_was_seen():
         ctx.webhook = FanOutWebhook()
         extracts = [e for e in [schedule.extract(GAMES["genshin"], _update_details_notice(now))] if e]
         records = {"7.1": {"status": "new", "first_seen": now, "prov": {},
-                           "data": {"version": "7.1", "program_ts": 1789905600,
+                           "data": {"version": "7.1", "program_ts": now - 12 * 3600,
                                     "program_seen": True}}}
         asyncio.run(schedule._handle_version(ctx, GAMES["genshin"], "7.1", extracts, records,
                                              {}, {}, True))

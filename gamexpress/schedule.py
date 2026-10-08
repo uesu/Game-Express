@@ -1536,6 +1536,18 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     fresh_maint = bool(s.post_on_maintenance and "maintenance" in kinds and maint_start
                        and int(maint_start) > now - 6 * 3600
                        and (pts or data.get("program_seen")))
+    # A schedule card ANNOUNCES. This bot was deployed after Genshin 7.1 and Wuthering Waves 3.7
+    # had already aired their programmes, and a version whose programme is already in the past is
+    # not an announcement — it is history, posted long ago by somebody else. Such a version is
+    # still TRACKED and its record kept current, and a card this bot genuinely posted still gets
+    # its corrections (the edit path returns long before here), but a NEW one must never be opened
+    # for it. program_settled() was previously consulted only on the 404 arm, so the creation gate
+    # below could not see it; that is how Genshin 7.1 — announced 2026-09-07, aired 09-12, shipped
+    # 09-23 — got a brand-new card on 2026-10-08. It also closes the hole that the cached recovery
+    # in needs_program_lookup() would otherwise open: supplying a long-past programme's program_ts
+    # must never let a six-hour-wide maintenance notice promote it into a fresh post.
+    if settled and not repost:
+        fresh_program = fresh_maint = False
     if s.test_mode and (pts or maint_start):
         fresh_program = True                  # TEST MODE: show the latest real card, even if older
     if not (fresh_program or fresh_maint or repost):

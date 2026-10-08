@@ -54,7 +54,9 @@ Related: [SOURCES.md](SOURCES.md) (what each upstream serves) ·
    A maintenance notice is never enough to *open* a card: it fills in one the announcement
    opened, so a version whose announcement this bot has not seen waits (and one whose record
    somehow lost its announcement is looked up once more, from the tweet id already cached in
-   `config/program_announcements.json`).
+   `config/program_announcements.json`). Nor is a programme that has already aired — a version
+   announced before this bot was deployed is tracked and kept current, but never given a new
+   card; `REPOST=<game>:<version>` is the deliberate way to post one anyway.
 
 ---
 

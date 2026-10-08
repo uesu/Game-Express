@@ -444,12 +444,17 @@ Index: **[docs/](docs/)**.
 
 ## 🗒 Changelog
 
-**Latest — [2026-10-08](docs/changelog/CHANGELOG.md#2026-10-08) · *a maintenance notice may
-fill a card but never open one***
+**Latest — [2026-10-08](docs/changelog/CHANGELOG.md#2026-10-08) · *a card that should never have
+existed, plus the wrong art, the wrong link and no air time***
 
-- **A notice never opens a schedule card** — it fills in one the announcement opened. Genshin 7.1
-  was created by its *Update Details* notice, so it shipped with the notice's cover and URL and
-  no air time; the notice-only path is gone, and the notice's data still lands on the card.
+- **A programme that already aired never opens a card.** A version announced long before this bot
+  was deployed — Genshin 7.1, Wuthering Waves 3.7 — is history: it stays tracked and its record
+  stays current, but the creation gate now consults `program_settled()`, so no brand-new message
+  is ever opened for it. `mode=test` and `REPOST=<game>:<version>` remain the two overrides.
+- **A maintenance notice never opens a schedule card** — it fills in one the announcement opened.
+  Genshin 7.1 was created by its *Update Details* notice, so it shipped with the notice's cover
+  and URL and no air time; the notice-only path is gone, and the notice's data still lands on the
+  card.
 - **A version whose announcement never arrived is looked up once more**, from the tweet id
   already cached in `config/program_announcements.json` — one call that fixes picture, link and
   air time together.
@@ -459,7 +464,7 @@ fill a card but never open one***
 - **Banner notices written as `"Banner Title" Character` now yield the character** — Genshin 7.1
   showed `Tasteful Excellence` where Escoffier belongs.
 - New `tests/test_schedule_epithet_and_settled.py` runs standalone; the offline suite covers the
-  whole ladder, including the real 7.1 record healing in place.
+  whole ladder, including the real 7.1 record healing in place with no new message.
 
 **➡️ Full history: [docs/changelog/](docs/changelog/)** —
 [current entries](docs/changelog/CHANGELOG.md) (1.8.0 onward) ·

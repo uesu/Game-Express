@@ -15,8 +15,24 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ## 2026-10-08
 
-**One Genshin 7.1 card exposed four faults — a maintenance notice may fill a card but never open
-one, and the announcement wins again**
+**One Genshin 7.1 card exposed five faults — a card that should never have existed, plus the wrong
+art, the wrong link and no air time**
+
+### A programme that already aired never opens a card
+
+- **The creation gate now consults `program_settled()`.** A schedule card *announces* — a version
+  whose programme is already in the past is history, posted long ago by somebody else. That is
+  every version this bot was deployed after (Genshin 7.1, Wuthering Waves 3.7, …). It is still
+  tracked and its record kept current, and a card the bot genuinely posted still receives its
+  silent corrections (the edit path returns long before the gate), but a **new** one is never
+  opened for it. Genshin 7.1 was announced 2026-09-07, aired 09-12 and shipped 09-23 — yet on
+  2026-10-08 a Phase II notice drove an edit of a message id that had never resolved, the edit
+  404'd, and a brand-new card was published. `settled` was previously consulted **only** on the
+  404 arm, so the gate could not see it.
+- **This is also what makes the cached recovery safe.** Handing a long-past programme its
+  `program_ts` must not let a six-hour-wide maintenance notice promote it into a fresh post.
+- `mode=test` (which still renders the latest real card from an empty state) and
+  `REPOST=<game>:<version>` remain the only two overrides — the rule is a default, not a cage.
 
 ### The card that was built from the wrong post
 
@@ -52,20 +68,24 @@ one, and the announcement wins again**
   "Coordinates of Clear Frost"]` instead of Escoffier / Dahlia, Candace, Mika. The bare name
   after a closing quote now wins; notices that really quote the character, and bare-name notices
   (HSR), are untouched.
-- **After merging**, the next scheduled run repairs the live 7.1 card in place: one `fxtwitter`
-  call for the cached tweet, then a silent `PATCH` of the existing message and its mirror. The
-  card gains its air time (`Saturday, September 12, 2026 8:00 PM` GMT+8) and the programme's own
-  key art, its title points at the announcement, and **no new message is posted**.
+- **After merging**, Genshin 7.1 keeps the card it already has and is repaired **in place**: one
+  `fxtwitter` call for the cached tweet, then a silent `PATCH` of the existing message and its
+  mirror. The card gains its air time (`Saturday, September 12, 2026 8:00 PM` GMT+8) and the
+  programme's own key art, its title points at the announcement, and **no new message is
+  posted**. No already-aired version — 7.1, Wuthering Waves 3.7 or any other — can produce a new
+  card again without an explicit `REPOST=`.
 
 ### Tests
 
-- **New: `tests/test_schedule_epithet_and_settled.py`** — 13 regression tests for the four
-  faults, runnable standalone (`python tests/test_schedule_epithet_and_settled.py`) in a
-  checkout with no runtime dependencies installed, and under pytest.
-- **`tests/test_smoke.py`** — the notice-replacement and repost tests re-pointed at the new
-  policy, plus eight new tests: the notice guard in both directions, the cached recovery, the
-  copy retirement, the `REPOST` revival, three identical re-runs costing no request, and the
-  real live 7.1 record healing end to end.
+- **New: `tests/test_schedule_epithet_and_settled.py`** — 13 regression tests for the parser, the
+  settled rule and the cached recovery, runnable standalone
+  (`python tests/test_schedule_epithet_and_settled.py`) in a checkout with no runtime
+  dependencies installed, and under pytest.
+- **`tests/test_smoke.py`** — the notice-replacement test re-pointed at the new policy (the
+  announcement is now adopted *silently*), plus nine new tests: the notice guard in both
+  directions, the already-aired rule and its `REPOST` override, the cached recovery, the copy
+  retirement and the still-edited copy, the `REPOST` revival, three identical re-runs costing no
+  request, and the real live 7.1 record healing end to end.
 
 ---
 
