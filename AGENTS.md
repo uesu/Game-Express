@@ -5,7 +5,7 @@ behaviours are deliberate (and must not be "fixed"), how to verify a change, and
 already cost a broken run. `README.md` is the user-facing manual and `docs/` is its reference
 material; this file is the maintainer's mental model.
 
-Last updated **2026-10-05**.
+Last updated **2026-10-08**.
 
 ---
 
@@ -43,7 +43,8 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 | `gamexpress/sources/*` | one module per upstream: `twitter` (nitter fleet + FxEmbed), `hoyolab`, `kuro`, `codes`, `launcher`, `bannerfeed`, `countdown`, `newspage` |
 | `gamexpress/{media,textutil,timeparse,samples,preview_html}.py` | image URL normalisation, HTML→text, date/time parsing, sample cards, local preview |
 | `config/games.json` | per-game config (see §4) · `config/overrides.json` human corrections · `config/program_announcements.json` discovered tweet ids |
-| `tests/test_smoke.py` | **the** test suite: every test offline — no network, no secrets |
+| `tests/test_smoke.py` | the main suite: every test offline — no network, no secrets |
+| `tests/test_schedule_epithet_and_settled.py` | the 2026-10-08 schedule regressions; also runs standalone in a checkout with no dependencies installed |
 | `docs/` | the manual, indexed in `docs/README.md`: `CONFIGURATION`, `ACCURACY`, `SOURCES`, `SCHEDULER`, `TESTING`, `TROUBLESHOOTING`, `SECURITY`, `TIMESTAMP-PATTERNS`, `DEPENDABOT`, `PYTHON_VERSION`, `PROD-REPO-SETUP`, `CREDITS` |
 | `docs/changelog/` | `CHANGELOG.md` (1.8.0 →) + `CHANGELOG_ARCHIVE.md` (1.0.0 – 1.7.0) + an index. **The changelog is no longer in the README.** |
 | `.github/workflows/` | `monitor.yml` (production), `ci.yml` (tests + advisory job), `python_version_bump.yml` |
@@ -67,13 +68,20 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    double-posted. cron-job.org is the single trigger.
 5. **The first run for a new game/feature seeds silently.** `BOOTSTRAP_POST` off = record what
    exists, post nothing. Never "fix" this into a backfill.
-6. **Posting is once per (game, version) / per code**, then *silent edits* of the same message id.
-   Two gates decide whether a card may be **opened** at all: a maintenance/pre-install/banner
-   notice may only **fill** a card the announcement opened, and a version whose programme already
-   aired (`program_settled()`, read by the creation gate *before* `TEST_MODE`) is never carded
-   again — `REPOST=<game>:<version>` is the only override. And a `404`/`10008` means an id stopped
-   resolving, not that a human deleted anything: a still-current card is re-created once, a
-   settled one is dropped and never published for again. The
+6. **Only an announcement opens a schedule card, and an already-aired programme never opens one.**
+   A *Special Program* / *Special Broadcast* creates the card; maintenance, pre-install and banner
+   notices may only fill in a card that already exists (`fresh_maint` requires a `program_ts` or
+   `program_seen`). A version whose programme is in the past is tracked and kept current but never
+   carded — the creation gate consults `program_settled()`, which settles on the air time **or** on
+   `maint_start_ts + 12 h`, because a record opened by a notice never has an air time. That is what
+   keeps every version released before this bot was deployed (Genshin 7.1, Wuthering Waves 3.7) out
+   of the channel. `mode=test` and `REPOST=<game>:<version>` are the only two overrides. Both gates
+   have tests that fail without them, in `tests/test_smoke.py` and
+   `tests/test_schedule_epithet_and_settled.py` — do not "simplify" either away.
+7. **Posting is once per (game, version) / per code**, then *silent edits* of the same message id.
+   A `404`/`10008` means an id stopped resolving, not that a human deleted anything: a
+   still-current card is re-created once, a settled one is dropped and never published for again.
+   A test run never edits a live card or its copy — it renders a new marked one. The
    optional fan-out copy (`DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME>`) obeys the same rule with its
    own `mirror_message_id`, and is edited in the same pass as the original so the two can never
    disagree. Three things about it are deliberate: it has **no `DISCORD_WEBHOOK_URL` fallback**
@@ -81,24 +89,24 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    into it); a failed copy is **reported, never an error** — the real card must not depend on a
    convenience channel; and the copy is built with an **empty `Ping()`** so one announcement
    never notifies the same role twice. Never "simplify" that by reusing the primary's payload.
-7. **The mention lives INSIDE the container.** A card payload is exactly one top-level
+8. **The mention lives INSIDE the container.** A card payload is exactly one top-level
    component. The ping rides on the legend line of a schedule card and the `… detected …` line
    of a codes card — never on a separate Text Display above the card. `_payload()` takes no
    top-line argument; if you find yourself adding one back, you are undoing this. Keep the
    empty-`Ping()` escape hatch working: it must strip the mention *text* as well as the
    `allowed_mentions` entry, or a copy renders a dead blue pill that notifies nobody.
-8. **Official times win; estimates are labelled.** Countdown sites and the banner feed may fill a
+9. **Official times win; estimates are labelled.** Countdown sites and the banner feed may fill a
    gap, but the card says so, and a real official time always replaces them.
-9. **Ranking beats speed in the nitter fleet.** `_probe_batch` may stop waiting early, but only
+10. **Ranking beats speed in the nitter fleet.** `_probe_batch` may stop waiting early, but only
    once enough *higher-ranked* mirrors have answered (plus the `NITTER_GRACE` cap). Do not
    "simplify" it to first-two-to-respond: mirror order is a quality ranking.
-10. **The advisory CI job must never gate a merge** (`continue-on-error: true` on every step). Only
+11. **The advisory CI job must never gate a merge** (`continue-on-error: true` on every step). Only
    the `test` job is a required check.
-11. **No new runtime dependencies** without a very good reason. The whole app runs on `aiohttp`,
+12. **No new runtime dependencies** without a very good reason. The whole app runs on `aiohttp`,
    `feedparser`, `python-dotenv`.
-12. **Never commit secrets.** Webhooks and the nitter token are repository secrets; the state file
+13. **Never commit secrets.** Webhooks and the nitter token are repository secrets; the state file
    stores only a 12-char non-reversible webhook fingerprint.
-13. **No LICENSE file is wanted** — this is a personal-use repository (owner's decision,
+14. **No LICENSE file is wanted** — this is a personal-use repository (owner's decision,
     2026-10-03). Do not add one "for completeness".
 
 ---

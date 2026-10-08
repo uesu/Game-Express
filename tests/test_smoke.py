@@ -2637,6 +2637,59 @@ def test_a_maintenance_notice_still_fills_a_card_whose_program_was_seen():
         assert records["7.1"]["data"]["compensation"] == "Primogems ×300"
 
 
+def test_a_lookup_that_found_nothing_reaches_the_summary():
+    """The announcement lookup is the repair; it used to report success to the job log only and
+    failure nowhere at all. A card stuck without an air time and without a link is then
+    indistinguishable from a rendering bug, which is how 7.1 stayed wrong for two weeks."""
+    from gamexpress import runner
+
+    async def _no_hit(*_a, **_k):
+        return None
+
+    now = 1791446400
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=now)
+        ctx.state.schedule_records("genshin")["7.1"] = {
+            "status": "posted", "data": {"version": "7.1", "maint_start_ts": 1790114400}}
+        real, runner.find_program = runner.find_program, _no_hit
+        try:
+            asyncio.run(runner.gather_program_media(ctx))
+        finally:
+            runner.find_program = real
+        said = [r for r in ctx.report if "no Special Program announcement found" in r]
+        assert len(said) == 1 and "7.1" in said[0], ctx.report
+
+
+def test_the_summary_says_why_a_notice_opened_no_card():
+    """Both gates are deliberately silent in Discord, which leaves the operator reading a run
+    that posted nothing and no way to tell "working as designed" from "broken". The step summary
+    is where they are told apart, and the line is keyed on the notice so it is written once, not
+    every ten minutes for the six hours the notice stays fresh."""
+    now = 1790118000
+    with tempfile.TemporaryDirectory() as tmp:
+        def run(data: dict):
+            ctx = make_ctx(Path(tmp) / "state.json", now=now)
+            ctx.webhook = FanOutWebhook()
+            extracts = [e for e in [schedule.extract(GAMES["genshin"], _update_details_notice(now))] if e]
+            records = {"7.1": {"status": "tracked", "first_seen": now, "prov": {}, "data": data}}
+            for _ in range(2):                       # a second run must not repeat the line
+                asyncio.run(schedule._handle_version(ctx, GAMES["genshin"], "7.1", extracts,
+                                                     records, {}, {}, False))
+            return ctx, records["7.1"]
+
+        ctx, rec = run({"version": "7.1"})                       # no announcement ever seen
+        assert ctx.webhook.calls == []
+        said = [r for r in ctx.report if "no Special Program announcement has been seen" in r]
+        assert len(said) == 1, ctx.report
+        assert rec["data"]["compensation"] == "Primogems ×300"   # the notice still landed
+
+        ctx, rec = run({"version": "7.1", "program_ts": 1789214400})   # aired a month ago
+        assert ctx.webhook.calls == []
+        said = [r for r in ctx.report if "already out" in r]
+        assert len(said) == 1, ctx.report
+        assert rec["data"]["maint_start_ts"]                     # and its data is still current
+
+
 def test_the_cached_announcement_is_replayed_for_a_card_that_lost_its_air_time():
     """config/program_announcements.json is the pattern that stops this recurring: a live version
     with no program_ts gets exactly one more lookup, and only when the tweet id is already
@@ -3428,23 +3481,47 @@ def test_a_settled_program_is_never_re_created_on_a_live_run():
         assert ctx.webhook.sends == [] and len(ctx.webhook.edits) == 1 and ctx.errors == []
 
 
-def test_not_even_a_test_run_re_creates_a_settled_card():
-    """A test run may RENDER a settled version (see test_test_mode_posts_latest_card_marked_test),
-    but it may not publish a replacement for an id that stopped resolving. That exemption is what
-    put a fifteen-day-old Genshin 7.1 card into #announcements on 2026-10-08 — for a programme
-    this bot had never carded at all. REPOST=<game>:<version> stays available when you really do
-    want a card for an old version."""
-    with tempfile.TemporaryDirectory() as tmp:
-        ctx = make_ctx(Path(tmp) / "state.json", now=1790450000, TEST_MODE="1")
+def test_a_test_run_renders_a_card_instead_of_touching_the_live_one():
+    """One rule, both sides of it, because they are the same fault seen from two directions.
+
+    LIVE: an id that stopped resolving is never republished. That exemption is what put a
+    fifteen-day-old Genshin 7.1 card into #announcements on 2026-10-08, for a programme this
+    bot had never carded at all. The dead id is dropped, the card is retired, and the
+    correction still reaches state. REPOST=<game>:<version> remains the deliberate override.
+
+    TEST: `mode=test` promises "the REAL schedule card for the version that is out now ...
+    exactly what a live run would post", as a throwaway to delete afterwards. So it must not
+    enter the edit path at all. Every version worth checking has already been posted, and for
+    those the edit path would PATCH the LIVE card (unlabelled -- only the repost arm marks it),
+    stamp a 🧪 TEST banner onto the production copy in the game's channel, and then return
+    without ever posting the card the operator asked to see. It renders one new marked message
+    instead, and writes neither a retirement nor the state file.
+    """
+    def run(tmp, **env):
+        ctx = make_ctx(Path(tmp) / f"state-{len(env)}.json", now=1790450000, **env)
         ctx.webhook = ScriptedWebhook([SendResult(False, 404, error=UNKNOWN_MESSAGE)],
-                                      [SendResult(True, 200, message_id="should-not-happen")])
+                                      [SendResult(True, 200, message_id="fresh-id")])
         records = {"4.6": _posted_hsr_record()}
         assert schedule.program_settled(records["4.6"]["data"], ctx.now)
         asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
                                              {"compensation": "Stellar Jade ×301"}, {}, True))
+        return ctx, records["4.6"]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx, rec = run(tmp)
         assert ctx.webhook.sends == [] and ctx.errors == []
-        assert records["4.6"].get("message_id") is None and records["4.6"]["card_retired"] == ctx.now
-        assert records["4.6"]["data"]["compensation"] == "Stellar Jade ×301"   # merged, then saved
+        assert rec.get("message_id") is None
+        assert rec["card_retired"] == ctx.now
+        assert rec["data"]["compensation"] == "Stellar Jade ×301"   # nothing posted, nothing lost
+
+        ctx, rec = run(tmp, TEST_MODE="1")
+        assert ctx.webhook.edits == []                              # the live card is untouched
+        assert len(ctx.webhook.sends) == 1
+        assert ctx.webhook.sends[0]["components"][0]["components"][0]["content"].startswith(
+            "-# 🧪 TEST CARD")
+        assert "card_retired" not in rec and rec["message_id"] == "fresh-id"
+        assert any("TEST card posted" in line for line in ctx.report)
+        assert rec["data"]["compensation"] == "Stellar Jade ×301"
 
 
 def test_a_settled_program_does_not_freeze_the_card_that_is_already_posted():
@@ -3458,7 +3535,7 @@ def test_a_settled_program_does_not_freeze_the_card_that_is_already_posted():
         asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
                                              {"compensation": "Stellar Jade ×301"}, {}, True))
         assert len(ctx.webhook.edits) == 1 and ctx.webhook.sends == []
-        assert any("schedule card updated" in line for line in ctx.report)
+        assert any("schedule card updated — compensation" in line for line in ctx.report)
         assert records["4.6"]["message_id"] == "dead-message"
 
 

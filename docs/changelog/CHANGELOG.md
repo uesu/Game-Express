@@ -85,6 +85,33 @@ art, the wrong link and no air time**
   posted**. No already-aired version — 7.1, Wuthering Waves 3.7 or any other — can produce a new
   card again without an explicit `REPOST=`.
 
+### The test bench, and seeing what a run actually did
+
+- **A test run renders a card; it never repairs one.** `mode = test` promises "the REAL schedule
+  card for the version that is out now … exactly what a live run would post", as a throwaway you
+  delete afterwards — but for any version that had already been posted it took the *edit* path:
+  it silently `PATCH`ed the **live** card (unlabelled — only the repost arm marks a card), stamped
+  a 🧪 TEST banner onto the production copy in the game's channel, and then returned without ever
+  posting the card the operator asked to see. The Actions dispatch escaped it (its `STATE_PATH`
+  starts empty); a local `TEST_MODE=1` did not. A test run now renders one **new** message marked
+  TEST, leaves every live card and copy untouched, and reports as much. A seeded version renders
+  on the bench too.
+- **A lookup that found nothing now reaches the summary.** Finding the announcement *is* the
+  repair, and it used to be reported to the job log only — so a card stuck with no air time and
+  no link looked exactly like a rendering bug, which is how 7.1 stayed wrong. Both outcomes are
+  now in the step summary: `🛰️ GI 7.1: announcement found — programme airs Sat 12 Sep 2026 20:00
+  UTC+8` and `🔍 GI 7.1: no Special Program announcement found …`. The lookup stops by itself the
+  moment a source answers.
+- **The two silent refusals say so.** A notice that correctly did **not** open a card, and a
+  notice merged into a version that is **already out**, both look identical from outside — a run
+  that posted nothing. Both now report once, keyed on the notice's own timestamp rather than
+  every ten minutes.
+- **An edit says what it edited.** `✏️ GI 7.1: schedule card updated` never said *what* changed,
+  in the one feature that is deliberately invisible; it now reads `— banners, maintenance end`,
+  so a silent edit can be confirmed from outside.
+- **A `404` comment no longer blames test mode.** The 2026-10-08 card was created by the
+  maintenance path, which had no settled check — test mode was never involved.
+
 ### Tests
 
 - **New: `tests/test_schedule_epithet_and_settled.py`** — 14 regression tests for the parser, the
@@ -92,12 +119,16 @@ art, the wrong link and no air time**
   (`python tests/test_schedule_epithet_and_settled.py`) in a checkout with no runtime
   dependencies installed, and under pytest.
 - **`tests/test_smoke.py`** — the notice-replacement test re-pointed at the new policy (the
-  announcement is now adopted *silently*), plus eleven new tests: the notice guard in both
+  announcement is now adopted *silently*), plus **fourteen new tests**: the notice guard in both
   directions, the already-aired rule and its `REPOST` override, the same rule proven on
   Wuthering Waves' Special Broadcast for both notice kinds, the ZZZ 3.3 over-fix guard
-  (an upcoming programme must still post, with its air time), the cached recovery, the copy
-  retirement and the still-edited copy, the `REPOST` revival, three identical re-runs costing no
-  request, and the real live 7.1 record healing end to end.
+  (an upcoming programme must still post, with its air time), the cached recovery and the lookup
+  that found nothing, the copy retirement and the still-edited copy, the `REPOST` revival, three
+  identical re-runs costing no request, the two summary lines that explain a silent refusal, the
+  two halves of the test-run rule (a live run never re-creates; a test run never edits) — and the
+  real live 7.1 record healing end to end. It replaced the old
+  `test_a_test_run_still_reposts_a_settled_version`, which asserted the half of the behaviour
+  this entry forbids.
 - **Docs restated for the two new rules**: the README's schedule-card section ("only an
   announcement opens one"), the `repost` note in *Then what?*, and the posting rules now split
   *only an announcement opens a card* / *a programme that already aired is history* /

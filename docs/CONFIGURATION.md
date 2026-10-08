@@ -139,7 +139,7 @@ being dropped. A codes drop split across several messages mentions the role on *
 | Name | Default | Meaning |
 |---|---|---|
 | `DRY_RUN` | off | build and log only |
-| `TEST_MODE` | off | cards get a 🧪 TEST label, the freshness/seed rules are skipped — a test run still renders a settled version's card, but it will not publish a replacement for an id that stopped resolving — and the state is never saved (the monitor's test modes set it) |
+| `TEST_MODE` | off | cards get a 🧪 TEST label, the freshness/seed rules are skipped — a test run renders a settled version's card as a **new** message and never edits a live card, its copy, or publishes a replacement for an id that stopped resolving — and the state is never saved (the monitor's test modes set it) |
 | `BOOTSTRAP_POST` | off | first run posts current items instead of seeding |
 | `FORCE_WEBHOOK` | — | send **every** card to this one webhook URL. Testing only; it wins over all routing above |
 | `STATE_PATH` | `state/state.json` | where the dedup state is read and written |

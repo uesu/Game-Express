@@ -13,6 +13,8 @@ That workflow:
   one — and delete it;
 - **never** commits and never touches `state/state.json`, so the live run still posts the real
   thing later (nothing is skipped as "already seen");
+- **never edits a live card or its copy** — every test card is a *new* message, so a test can
+  neither rewrite nor re-label what is already in the channel;
 - pings nobody unless you tick `ping`;
 - works on the development repo too.
 
@@ -90,7 +92,7 @@ run would post:
 |---|---|
 | **Title link** | it opens the **Special Program / Broadcast announcement itself** — not the *Update and Maintenance Notice*. If it opens a notice, the program article was not found; see below |
 | **Key art** | the program's own artwork, and a big one: a YouTube `maxresdefault` thumbnail (1280×720) or a full-size tweet photo — not a small cover from somebody else's post |
-| **Livestream line** | `… or in 3 days` — the date/time must be **your** local time and the right moment (compare with the announcement) |
+| **Livestream line** | `… or in 3 days` — the date/time must be **your** local time and the right moment (compare with the announcement). For a programme that has already aired it reads `… a month ago`, which is correct: the bench renders the version that is out **now**, even when a live run would no longer open a card for it ([ACCURACY.md](ACCURACY.md) rule 6) |
 | **Maintenance block** | pre-install, start, end and compensation, each as a real Discord timestamp. `estimated from Gacha Countdown` means no official notice yet — correct, and it is replaced automatically when the notice is seen |
 | **Banners** | the 5★ and 4★ names for each phase. **TBA** means no official banner post was in the 30-day window — the honest answer, and pinning the names in `config/overrides.json` fills it in |
 | **Buttons** | YouTube / Twitch / Source, inside the card |
@@ -101,6 +103,11 @@ If the title link or the picture is wrong:
   older than the lookback window, the monitor looks it up on the **official news page** (then the
   HoYoLAB list) and replaces the link, the key art and the air time — see
   [ACCURACY.md](ACCURACY.md#the-announcements-own-link-and-key-art). `PROGRAM_MEDIA=0` switches that off.
+- A version this monitor has carded before is repaired from `config/program_announcements.json`:
+  the announcement's tweet id is committed with the state, so a test run — which starts from an
+  empty state — resolves it by id and the air time, the link and the key art all come back
+  together. A missing **Livestream line** means that lookup found nothing, not that the card
+  chose to hide the date.
 - A `fastcdn.hoyoverse.com` cover instead of the livestream art means the article has no embedded
   YouTube player, so there is no 1280×720 thumbnail to prefer.
 - `⚠️ … 4★ shown as TBA — 2 name(s) found, 3 expected` → the uncertain 4★ list was correctly

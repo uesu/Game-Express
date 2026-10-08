@@ -49,7 +49,7 @@ Related: [SOURCES.md](SOURCES.md) (what each upstream serves) ·
    that already exists. This is what the channel is for — a maintenance notice is not an
    announcement, and on its own it never earns a post.
 6. **A programme that already aired is history.** Once it is over (more than 36 h past, or the
-   version's maintenance finished more than 12 h ago) the version is still tracked and its data
+   version's maintenance began more than 12 h ago) the version is still tracked and its data
    still saved, but no card is ever opened for it — including after a failed edit. That covers
    every version released before this bot was deployed. `repost` is the deliberate override.
 7. **Post once** per game + version (`state/state.json`), then **edit silently** when data

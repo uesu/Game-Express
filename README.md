@@ -218,8 +218,9 @@ Everything else:
 ### 5 · Test it
 
 *Actions → **Game-Express Monitor** → Run workflow → `mode` = **test***, then `webhooks` →
-`codes` → `schedule`. Each one posts **real** data labelled 🧪 TEST, never writes the state, and
-pings nobody by default. Walkthrough: **[docs/TESTING.md](docs/TESTING.md)**.
+`codes` → `schedule`. Each one posts **real** data labelled 🧪 TEST as new messages — it never
+edits a live card, never writes the state, and pings nobody by default. Walkthrough:
+**[docs/TESTING.md](docs/TESTING.md)**.
 
 ### 6 · Go live with cron-job.org
 
@@ -340,7 +341,9 @@ cards only**. A live run pings according to `PING_SCHEDULE` / `PING_ROLE_ID` wha
 says.
 
 > A test posts to the **real** channels and never writes the state — so the live run still posts
-> the real thing later. Delete the test cards when you are done with them.
+> the real thing later. Every test card is a **new** message: a test run never edits a live card
+> or its copy, so it can neither rewrite nor re-label what is already in the channel. Delete the
+> test cards when you are done with them.
 
 </details>
 
@@ -473,6 +476,9 @@ existed, plus the wrong art, the wrong link and no air time***
   longer exempt). `REPOST=<game>:<version>` remains the way back.
 - **Banner notices written as `"Banner Title" Character` now yield the character** — Genshin 7.1
   showed `Tasteful Excellence` where Escoffier belongs.
+- **A test run renders, it never repairs.** `mode=test` now posts one new 🧪 TEST card to look at
+  and delete, instead of silently PATCHing the live card and stamping TEST onto its channel copy;
+  the summary says so, and names what each silent edit actually changed.
 - New `tests/test_schedule_epithet_and_settled.py` runs standalone; the offline suite covers the
   whole ladder, including the real 7.1 record healing in place with no new message.
 
