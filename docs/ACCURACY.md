@@ -56,8 +56,11 @@ Related: [SOURCES.md](SOURCES.md) (what each upstream serves) ·
    changes. A `404 Unknown Message` means the stored id no longer resolves — the message may have
    been removed, or it may never have belonged to this webhook at all. For a version that is
    still current the card is re-created once and the new id adopted; for one that has already
-   aired, rule 6 wins and nothing is posted. Every other edit failure remains an error and never
-   reposts.
+   aired, rule 6 wins and nothing is posted; if the stored id no longer resolves, the
+   retirement summary still names it even though state drops it in the same pass. The optional
+   game-channel copy follows the same no-new-message rule for settled versions; a previously
+   recorded copy that returns 10008 is named in its one-time settled-retirement summary.
+   Every other edit failure remains an error and never reposts.
 
 ---
 

@@ -1597,7 +1597,7 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
             record.pop("message_id", None)
             # Name the message: "its card is not re-created" is the whole answer, but not the
             # whole story -- an operator who did not delete it themselves needs to know WHICH
-            # message failed to resolve, and the id is dropped from the record one line later.
+            # message failed to resolve. The record dropped the id above, so retain local `mid`.
             ctx.report.append(
                 f"🗂 {game.short} {ver}: already out — its card is not re-created "
                 f"(message {mid} no longer resolves — Discord 10008 — and a settled version is "

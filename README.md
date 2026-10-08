@@ -458,13 +458,13 @@ Index: **[docs/](docs/)**.
 **Latest — [2026-10-09](docs/changelog/CHANGELOG.md#2026-10-09) · *a deleted copy says it was
 deleted, and a retirement names the message it retired***
 
-- **A deleted copy says it was deleted.** When a run is told a game-channel copy no longer
-  resolves (Discord `10008`) it names the message that vanished — `🗂 … copy <id> was deleted
-  (Discord 10008) and a settled version is not re-posted` — while a copy that was never made keeps
-  the shorter `— already out` wording. Both print once.
+- **A settled copy that no longer resolves is identified.** A mirror edit returning `404` yields
+  `🗂 … copy <id> was deleted (Discord 10008) and a settled version is not re-posted`. “Was
+  deleted” is report wording for an id that stopped resolving, not proof of who removed it. If no
+  copy was ever made, the shorter `— already out` wording is used. Both print once.
 - **A retirement names the message it retired.** `🗂 … its card is not re-created (message <id> no
-  longer resolves — Discord 10008 — …)`: the id is dropped from the record one line later, so the
-  summary is the only place it will ever appear again.
+  longer resolves — Discord 10008 — …)`: the state drops the id in the retirement branch, so the
+  summary is the only place it will appear again.
 - **The title link may come from X or HoYoLAB**, whichever carries the announcement — ZZZ 3.3 links
   the HoYoLAB article, Genshin 7.1 links the X post, both correct — and never the *Update and
   Maintenance Notice*.

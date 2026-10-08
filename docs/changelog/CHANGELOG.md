@@ -26,8 +26,8 @@ is a fan-out that stopped at a `404`, the other is a fan-out that may never have
   version is not re-posted`. A copy that never existed keeps the shorter `— already out` wording,
   and both are asserted to print **once** (the retirement guard is what makes the second run quiet).
 - `🗂 GI 7.1: already out — its card is not re-created (message <message id> no longer resolves —
-  Discord 10008 — …)`: the record drops that id one line later, so the summary is the only place it
-  will ever appear again.
+  Discord 10008 — …)`: the retirement branch drops the stored id, so the summary is the only place
+  it will ever appear again.
 - Both clauses are load-bearing: remove either and its test fails.
 
 ### The title link may come from X or HoYoLAB — whichever carries the announcement

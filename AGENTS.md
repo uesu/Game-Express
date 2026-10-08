@@ -5,7 +5,7 @@ behaviours are deliberate (and must not be "fixed"), how to verify a change, and
 already cost a broken run. `README.md` is the user-facing manual and `docs/` is its reference
 material; this file is the maintainer's mental model.
 
-Last updated **2026-10-08**.
+Last updated **2026-10-09**.
 
 ---
 
@@ -40,13 +40,13 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 | `gamexpress/http.py` | shared `aiohttp` fetcher, `MAX_PARALLEL = 12`, per-source health counters |
 | `gamexpress/state.py` | `state/state.json` (`SCHEMA = 1`): posted keys, message ids, bootstrap flags, heartbeat |
 | `gamexpress/config.py` | `Settings` (env) + `Game` (games.json) + `game_is_on` / `active_games` |
-| `gamexpress/sources/*` | one module per upstream: `twitter` (nitter fleet + FxEmbed), `hoyolab`, `kuro`, `codes`, `launcher`, `bannerfeed`, `countdown`, `newspage` |
+| `gamexpress/sources/*` | one module per upstream: `twitter` (nitter fleet + FxEmbed), `hoyolab`, `kuro`, `codes`, `launcher`, `bannerfeed`, `gachawiki`, `countdown`, `newspage` |
 | `gamexpress/{media,textutil,timeparse,samples,preview_html}.py` | image URL normalisation, HTML→text, date/time parsing, sample cards, local preview |
 | `config/games.json` | per-game config (see §4) · `config/overrides.json` human corrections · `config/program_announcements.json` discovered tweet ids |
 | `tests/test_smoke.py` | the main suite: every test offline — no network, no secrets |
 | `tests/test_schedule_epithet_and_settled.py` | the 2026-10-08 schedule regressions; also runs standalone in a checkout with no dependencies installed |
-| `docs/` | the manual, indexed in `docs/README.md`: `CONFIGURATION`, `ACCURACY`, `SOURCES`, `SCHEDULER`, `TESTING`, `TROUBLESHOOTING`, `SECURITY`, `TIMESTAMP-PATTERNS`, `DEPENDABOT`, `PYTHON_VERSION`, `PROD-REPO-SETUP`, `CREDITS` |
-| `docs/changelog/` | `CHANGELOG.md` (1.8.0 →) + `CHANGELOG_ARCHIVE.md` (1.0.0 – 1.7.0) + an index. **The changelog is no longer in the README.** |
+| `docs/` | the manual, indexed in `docs/README.md`: `CONFIGURATION`, `ACCURACY`, `SOURCES`, `BANNER_DATABASE`, `SCHEDULER`, `ROLLOUT`, `TESTING`, `TROUBLESHOOTING`, `SECURITY`, `TIMESTAMP-PATTERNS`, `DEPENDABOT`, `PYTHON_VERSION`, `PROD-REPO-SETUP`, `CREDITS` |
+| `docs/changelog/` | `CHANGELOG.md` (1.8.0 →) + `CHANGELOG_ARCHIVE.md` (1.0.0 – 1.7.0) + an index; full history is here, while the README carries only the latest-entry summary. |
 | `.github/workflows/` | `monitor.yml` (production), `ci.yml` (tests + advisory job), `python_version_bump.yml` |
 
 ---
@@ -82,7 +82,14 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    The state's message ids are what make an edit possible — never clear them casually. A
    `404`/`10008` means an id stopped resolving, not that a human deleted anything: a
    still-current card is re-created once, a settled one is dropped and never published again.
-   A test run never edits a live card or its copy — it renders a new marked one. The
+   The settled-card branch drops the primary id from the record and still names it in the summary
+   using local `mid`. For a settled mirror,
+   a recorded copy id that returns 404 is named in `🗂 … copy <id> was deleted (Discord 10008)`;
+   if no copy id was recorded, the shorter `— already out` line is used. These are report
+   phrasings: the response establishes that the id no longer resolves, not who removed it. Keep
+   both lines covered by `test_a_settled_program_is_never_re_created_on_a_live_run` and
+   `test_a_deleted_game_channel_copy_says_which_message_vanished`. A test run never edits a live
+   card or its copy — it renders a new marked one. The
    optional fan-out copy (`DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME>`) obeys the same rule with its
    own `mirror_message_id`, and is edited in the same pass as the original so the two can never
    disagree. Three things about it are deliberate: it has **no `DISCORD_WEBHOOK_URL` fallback**
