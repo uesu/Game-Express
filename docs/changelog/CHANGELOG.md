@@ -96,6 +96,12 @@ art, the wrong link and no air time**
   (an upcoming programme must still post, with its air time), the cached recovery, the copy
   retirement and the still-edited copy, the `REPOST` revival, three identical re-runs costing no
   request, and the real live 7.1 record healing end to end.
+- **Docs restated for the two new rules**: the README's schedule-card section ("only an
+  announcement opens one"), the `repost` note in *Then what?*, and the posting rules now split
+  *only an announcement opens a card* / *a programme that already aired is history* /
+  *post once, then edit silently*. `docs/ACCURACY.md` carries the same three rules, the cached
+  recovery is spelled out under *The announcement's own link and key art*, and
+  `docs/TESTING.md`'s healthy-system checklist gains **nothing else ever opens a card**.
 
 ---
 

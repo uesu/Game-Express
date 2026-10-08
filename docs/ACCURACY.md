@@ -30,11 +30,9 @@ Related: [SOURCES.md](SOURCES.md) (what each upstream serves) ·
    - **Maintenance**: pre-install, start, and end (end comes from an explicit end time, a range
      like `04:00 - 11:00 (UTC+8)`, or "estimated to take 5 hours"). Compensation deadlines and
      event end dates are never mistaken for maintenance.
-   - **Banners**: only names that directly follow "5-star character" / "S-Rank Agent" /
-     "5-star Resonator" (and the 4★ equivalents) in official banner notices. Genshin titles the
-     banner and *then* names the character (the 5-star character `"Tasteful Excellence"
-     Escoffier`), so the bare name after a closing quote is the character and the quote is the
-     banner it is featured on. Weapons and banner titles never match.
+   - **Banners**: only quoted names that directly follow "5-star character" / "S-Rank Agent" /
+     "5-star Resonator" (and the 4★ equivalents) in official banner notices. Weapons never
+     match.
    - **4★ characters are TBA unless certain.** The names are shown only when the official
      notice lists exactly the expected number of rate-up 4★ (GI 3 · HSR 3 · ZZZ 2 · WW 3), every
      name looks like a real name, and no official source disagrees. Otherwise the card shows
@@ -44,21 +42,20 @@ Related: [SOURCES.md](SOURCES.md) (what each upstream serves) ·
    launcher signal > countdown estimate > learned pre-install fallback > banner feed*.
 4. **Unknown values are TBA, and banners always carry (STC).** Countdown and learned pre-install
    values are explicitly labelled estimated; neither can overwrite an official value.
-5. **Post once** per game + version (`state/state.json`), then **edit silently** when data
-   changes. A `404 Unknown Message` only says the stored id no longer resolves — the message may
-   have been removed, or it may never have existed on this webhook at all. For a version still
-   in the news that causes one fresh post whose new message id is adopted; **once the version is
-   already out** (its program aired, or its maintenance began more than 12 h ago) the id is
-   simply dropped and no card is published, in the schedule channel or the game-channel copy
-   alike. `REPOST=<game>:<version>` is the only way back. Every other edit failure remains an
-   error and never reposts. Announcements that are already stale (the program aired more than
-   36 h ago with no pending maintenance) are recorded, not posted.
-   A maintenance notice is never enough to *open* a card: it fills in one the announcement
-   opened, so a version whose announcement this bot has not seen waits (and one whose record
-   somehow lost its announcement is looked up once more, from the tweet id already cached in
-   `config/program_announcements.json`). Nor is a programme that has already aired — a version
-   announced before this bot was deployed is tracked and kept current, but never given a new
-   card; `REPOST=<game>:<version>` is the deliberate way to post one anyway.
+5. **Only an announcement opens a card.** A *Special Program* / *Special Broadcast* / livestream
+   post creates the card; maintenance, pre-install and banner notices may only fill in a card
+   that already exists. This is what the channel is for — a maintenance notice is not an
+   announcement, and on its own it never earns a post.
+6. **A programme that already aired is history.** Once it is over (more than 36 h past, or the
+   version's maintenance finished more than 12 h ago) the version is still tracked and its data
+   still saved, but no card is ever opened for it — including after a failed edit. That covers
+   every version released before this bot was deployed. `repost` is the deliberate override.
+7. **Post once** per game + version (`state/state.json`), then **edit silently** when data
+   changes. A `404 Unknown Message` means the stored id no longer resolves — the message may have
+   been removed, or it may never have belonged to this webhook at all. For a version that is
+   still current the card is re-created once and the new id adopted; for one that has already
+   aired, rule 6 wins and nothing is posted. Every other edit failure remains an error and never
+   reposts.
 
 ---
 
@@ -121,8 +118,12 @@ Program announcement had scrolled out. Since **1.3.0** the monitor looks the ann
 - images are always upgraded to the biggest rendition the source serves (tweet photo → `?name=orig`,
   YouTube → `maxresdefault`), and the card says where the key art came from
   (`🖼️ key art: HoYoLAB — the official announcement`);
-- one lookup per version that still needs it, never for a version that is already live, and
-  `PROGRAM_MEDIA=0` switches it off.
+- one lookup per version that still needs it. That normally ends 12 h after maintenance — the
+  card is history by then — with one exception: a version whose record never got an announcement
+  at all is looked up **once more** when its tweet id is already cached in
+  `config/program_announcements.json`, which is what makes the lookup a single call that succeeds
+  instead of an open-ended retry. `CARD_FREEZE_D` ends it for good, and `PROGRAM_MEDIA=0` switches
+  the whole thing off.
 
 ---
 

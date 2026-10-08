@@ -132,6 +132,9 @@ If the title link or the picture is wrong:
 - [ ] **Schedule cards appear** after an official *Special Program / Broadcast* post, and are
       **edited silently** once the maintenance notice arrives: pre-install, start, end and
       compensation fill in with no second ping.
+- [ ] **Nothing else ever opens a card.** A maintenance, pre-install or banner notice on its own
+      must never produce a post, and neither must a version whose programme already aired — those
+      show up in the summary as `🗂 … already out` or a silent `tracked`, never in the channel.
 - [ ] **No duplicates**: the same code or announcement is never posted twice, and an unchanged
       card is never re-sent (state keys + payload hashes).
 

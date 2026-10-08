@@ -66,9 +66,11 @@ It runs entirely on **GitHub Actions** (free and unlimited on public repos), tri
 
 ### 1 · Version schedule card
 
-One card per game + version, opened by an official *Special Program* / *Special Broadcast* /
-livestream announcement and then kept up to date by the update-maintenance notice — the notice
-fills a card in, it never opens one.
+One card per game + version. **Only an official *Special Program* / *Special Broadcast* /
+livestream announcement can open one** — maintenance, pre-install and banner notices fill in the
+card that announcement opened, silently, and never create one of their own. A programme that has
+already aired is recorded and kept current, but never carded: versions released before this bot
+existed stay out of the channel.
 
 ```
 ┌───────────────────────────────────────────────────────────── (accent 14922399)
@@ -235,9 +237,11 @@ very first run instead, set `BOOTSTRAP_POST=1` before that run.
 
 **Already seeded and want a current card now?** Run the Monitor with `repost = starrail:4.6` (any
 version shown in a summary). The card is posted as a new message and then kept up to date like
-any other. If the Special Program aired before the bot was running, its time isn't in the feeds
-any more, so the card leaves that line out — pin it in `config/overrides.json`
-(`"program_ts": "2026-09-20T19:30:00+08:00"`).
+any other. `repost` is the only way to card a version whose programme has already aired, and it
+is deliberate: the automatic path never does this. If the announcement scrolled out of the feeds,
+its tweet is replayed from `config/program_announcements.json`, so the air time, the key art and
+the announcement link come back anyway; a version that was never cached can still be pinned in
+`config/overrides.json` (`"program_ts": "2026-09-20T19:30:00+08:00"`).
 
 ---
 
@@ -278,10 +282,14 @@ Webhook routing, most specific first:
    countdown estimate > learned pre-install fallback > banner feed*.
 4. **Unknown is `TBA`**, banners always carry `(STC)`, and no estimate can overwrite an official
    value.
-5. **Post once, then edit silently.** A deleted Discord message (`404 Unknown Message`) is
-   re-posted once and the new id adopted — unless the version is already out, in which case the
-   card stays deleted (`REPOST=<game>:<version>` brings it back). Every other edit failure stays
-   an error and never reposts.
+5. **Only an announcement opens a card.** A *Special Program* / *Special Broadcast* creates it;
+   maintenance, pre-install and banner notices only fill it in. A programme that already aired is
+   tracked, never posted — so a version that shipped before the bot was deployed cannot surface
+   as new. `repost` remains the deliberate override.
+6. **Post once, then edit silently.** If the stored message id no longer resolves
+   (`404 Unknown Message`) the card is re-created once and the new id adopted — but never for a
+   version whose programme is already over. Every other edit failure stays an error and never
+   reposts.
 
 **The code gate.** A code posts when **any one** of these is true: it comes from an **official**
 source; a **redeem-validator** (seria or Hum-Bao, which try every code on a real account) says it
