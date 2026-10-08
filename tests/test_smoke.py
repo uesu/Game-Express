@@ -2556,9 +2556,9 @@ def test_an_already_aired_programme_never_opens_a_new_card():
 
 def test_a_genuine_upcoming_programme_still_opens_its_card():
     """The settled guard must not become a cage. This bot's first real card was the Zenless Zone
-    Zero 3.3 Special Program, announced the day before it aired — exactly what the schedule
-    channel exists for. A programme that has not aired yet is never settled, so it posts
-    normally, carrying its air time."""
+    Zero 3.3 Special Program — posted 2026-10-05 for a programme that airs on 10-09 — exactly
+    what the schedule channel exists for. A programme that has not aired yet is never settled, so
+    it posts normally, carrying its air time."""
     now = 1791446400                                    # 2026-10-08 16:00 +08
     item = Item("hoyolab", "zzz", "47100000", "https://www.hoyolab.com/article/47100000",
                 "Zenless Zone Zero Version 3.3 Special Program Preview",

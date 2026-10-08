@@ -34,8 +34,8 @@ art, the wrong link and no air time**
 - `mode=test` (which still renders the latest real card from an empty state) and
   `REPOST=<game>:<version>` remain the only two overrides — the rule is a default, not a cage.
   The first card this bot genuinely published, the **Zenless Zone Zero 3.3 Special Program**,
-  was announced the day before it aired: never settled, so it posts exactly as before, and a
-  test pins that.
+  was posted on 2026-10-05 for a programme that airs on 10-09: still ahead, so never settled, and
+  it posts exactly as before — a test pins that.
 
 ### The card that was built from the wrong post
 
