@@ -1424,6 +1424,7 @@ async def _sync_mirror(ctx, game: Game, ver: str, record: dict, data: dict, now:
     body = build()                                # no "Updated …" footer -> stable to hash
     h = stable_hash(body["components"])
     mid = record.get("mirror_message_id")
+    gone = None                                   # the copy existed, and Discord no longer has it
     if mid and record.get("mirror_webhook_fp") == fp:
         if record.get("mirror_hash") == h:
             return                                # copy already shows exactly this
@@ -1436,6 +1437,7 @@ async def _sync_mirror(ctx, game: Game, ver: str, record: dict, data: dict, now:
             ctx.report.append(f"⚠️ {game.short} {ver}: {name} copy not updated "
                               f"({res.status}) {res.error}")
             return
+        gone = mid
         record.pop("mirror_message_id", None)     # 10008: gone for good -> one replacement
     # The copy follows the original, so CREATING one is held to the same rule the original's
     # 404 path follows: a version that is already out never gets a brand-new message. Callers
@@ -1449,8 +1451,17 @@ async def _sync_mirror(ctx, game: Game, ver: str, record: dict, data: dict, now:
     # old Genshin 7.1 card straight into #gi-news.
     if settled and not repost:
         record["mirror_retired"] = now
-        ctx.report.append(f"🗂 {game.short} {ver}: {name} copy not created — already out "
-                          f"(repost with {game.key}:{ver} if you want it anyway)")
+        # "copy not created" reads identically whether the copy was never made or was deleted
+        # since, and those are different stories: the first is a fan-out that may never have
+        # been wired, the second is somebody deleting a message. When this run is the one that
+        # was told the copy is gone (10008), say which message vanished -- seen live on
+        # 2026-10-09, where the 21:20 Genshin 7.1 card and its #gi-news copy were both removed
+        # and the run could only report that no copy was being created, not that one had been.
+        ctx.report.append(
+            f"🗂 {game.short} {ver}: {name} copy not created — "
+            + (f"copy {gone} was deleted (Discord 10008) and a settled version is not re-posted"
+               if gone else "already out")
+            + f" (repost with {game.key}:{ver} if you want it anyway)")
         return
     res = await ctx.webhook.send(hook, body)
     if res.ok:
@@ -1584,9 +1595,13 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
             # saved either way.
             record["card_retired"] = now
             record.pop("message_id", None)
+            # Name the message: "its card is not re-created" is the whole answer, but not the
+            # whole story -- an operator who did not delete it themselves needs to know WHICH
+            # message failed to resolve, and the id is dropped from the record one line later.
             ctx.report.append(
                 f"🗂 {game.short} {ver}: already out — its card is not re-created "
-                f"(a settled version is never posted again; repost with {game.key}:{ver})")
+                f"(message {mid} no longer resolves — Discord 10008 — and a settled version is "
+                f"never posted again; repost with {game.key}:{ver})")
         elif res.status == 404:
             # Discord 10008 means this id no longer resolves. Repeating the PATCH would fail
             # forever, so post the current card once and adopt its new id. This arm is reached

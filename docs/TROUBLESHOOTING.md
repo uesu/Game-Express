@@ -23,6 +23,8 @@ why, and the health of every source.
 | An announcement was found but no card appeared | the programme has already aired (over 36 h ago, or its maintenance began over 12 h ago), so it is history, not news — the summary says `🗂 … already out`. This is why versions that shipped before the bot existed stay out of the channel. `repost = <game>:<version>` posts one deliberately |
 | A card that used to update stopped updating | the version is **frozen**: edits end `CARD_FREEZE_D` (45) days past maintenance, and the summary says `🧊 … card frozen` once. `repost = <game>:<version>` publishes a fresh card |
 | A card can never get its air time or link | the record was built from a notice and there is **no cached tweet id** to replay, so nothing can repair it. The summary says `🩹 …` and names the fix (see below) |
+| `🗂 … its card is not re-created` | the card that record points at no longer resolves (Discord `10008` — deleted, or posted by a webhook this bot does not hold) *and* the programme has already aired, so a new card would not be an announcement. The record stays tracked and silent; `repost = <game>:<version>` publishes one deliberately |
+| `🗂 … copy not created — copy <id> was deleted (10008)` | the same answer for the game-channel copy: it existed, someone removed it, and a settled version is not re-posted. Without that clause the line means no copy was ever made |
 | Runs are skipped (grey) | the variable `ENABLED_FEATURES=none` is set. That's only for a development copy; remove it on the repo that posts |
 | Workflow stopped after 60 days | GitHub pauses idle repos. The daily heartbeat commit prevents this; re-enable it in the Actions tab if it happened |
 

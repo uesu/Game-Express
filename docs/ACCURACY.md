@@ -117,6 +117,12 @@ Program announcement had scrolled out. Since **1.3.0** the monitor looks the ann
   announcement with its cover, and an article page carries the embedded stream — whose YouTube
   thumbnail is the program's own 1280×720 artwork;
 - failing that, the **HoYoLAB news list is paged back** past the lookback window;
+- the headline links the announcement **wherever it was published** — an official **X post**
+  (Genshin 7.1: `x.com/GenshinImpact/status/2096810691021689205`) and an official **HoYoLAB /
+  official-site article** (ZZZ 3.3: `hoyolab.com/article/46972907`) are equally correct, and the
+  card says which one it used (`🛰️ … key art and link from HoYoLAB`). What the link must never be
+  is the *Update and Maintenance Notice* — a different post that happens to carry the maintenance
+  times, and the reason the first 7.1 card had no air time and the notice's cover;
 - images are always upgraded to the biggest rendition the source serves (tweet photo → `?name=orig`,
   YouTube → `maxresdefault`), and the card says where the key art came from
   (`🖼️ key art: HoYoLAB — the official announcement`);
