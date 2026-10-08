@@ -168,9 +168,9 @@ async def gather_program_media(ctx: Ctx) -> None:
         records = ctx.state.schedule_records(g.key) or {}
         by_version = schedule.version_extracts(ctx, g)
         todo = [v for v in by_version
-                if schedule.needs_program_lookup(by_version[v], records.get(v, {}), ctx.now)]
+                if schedule.needs_program_lookup(by_version[v], records.get(v, {}), ctx.now, g.key)]
         for ver, rec in records.items():
-            if ver not in by_version and schedule.needs_program_lookup([], rec, ctx.now):
+            if ver not in by_version and schedule.needs_program_lookup([], rec, ctx.now, g.key):
                 todo.append(ver)
         jobs += [(g, v) for v in sorted(set(todo), key=version_key)]
     if not jobs:

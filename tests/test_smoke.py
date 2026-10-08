@@ -1657,12 +1657,9 @@ def test_the_program_announcement_replaces_the_maintenance_notice_on_the_card():
         notice = hoyolab_item("hoyolab_starrail_46814308_full.json", "starrail")
         ctx = make_ctx(sp, items={"starrail": [notice]}, now=1790000000, BOOTSTRAP_POST=1)
         asyncio.run(schedule.run(ctx))
-        posts = [x for x in ctx.webhook.sent if x["method"] == "POST"]
-        assert len(posts) == 1
-        flat = json.dumps(posts[0]["payload"], ensure_ascii=False)
-        assert "hoyolab.com/article/46814308" in flat          # all the run saw was the notice
-        assert "pompom" not in flat.lower()                    # ...but its cover is NOT the program's art
-        assert "🖼️" not in flat
+        # NEW POLICY: a maintenance notice may fill a card but must never open one, so this run
+        # posts nothing at all -- it only records what the notice said and flags the lookup.
+        assert ctx.webhook.sent == []
         assert schedule.needs_media(ctx.state, "starrail", 1790000000)     # -> worth one lookup
         ctx.state.save()
         # the lookup finds the Special Program preview: link + key art + air time
@@ -1674,8 +1671,11 @@ def test_the_program_announcement_replaces_the_maintenance_notice_on_the_card():
         ctx = make_ctx(sp, items={"starrail": [notice]}, now=1790000000)
         ctx.media = {"starrail": {"4.6": found}}
         asyncio.run(schedule.run(ctx))
-        assert [x["method"] for x in ctx.webhook.sent] == ["PATCH"]       # same card, edited silently
+        # ...and now the card opens, already carrying the maintenance data the notice supplied
+        assert [x["method"] for x in ctx.webhook.sent] == ["POST"]
         flat2 = json.dumps(ctx.webhook.sent[0]["payload"], ensure_ascii=False)
+        assert "hoyolab.com/article/46814308" not in flat2    # never the notice's link
+        assert "HR70hTAaoAA8Dzz" in flat2                     # the programme's key art, not the cover
         # the title links the ANNOUNCEMENT, not the stream it happens to mention
         assert "## [Honkai: Star Rail Version 4.6 Special Program](https://www.hoyolab.com/article/46691962) 📜" in flat2, flat2
         assert "youtube.com/watch?v=EXAMPLE1234" in flat2                 # the stream stays in source_links
@@ -1686,18 +1686,18 @@ def test_the_program_announcement_replaces_the_maintenance_notice_on_the_card():
         assert rec["data"]["media_from"] == "HoYoLAB"
         assert "program_seen" not in rec["data"]                # the lookup never claims a real post
         assert not schedule.needs_media(ctx.state, "starrail", 1790000000)     # never looked up twice
-    # PROGRAM_MEDIA=0 -> the lookup is skipped entirely, so the card keeps the notice link and
-    # stays "needs a lookup" (a fresh state, so this is a clean first post and not an edit)
+    # PROGRAM_MEDIA=0 -> the lookup is skipped entirely, so the announcement is never adopted.
+    # The notice alone may not open a card, so this run stays silent and keeps asking for the
+    # lookup. That is the guard: no programme known, no card -- never a card built on the notice.
     with tempfile.TemporaryDirectory() as tmp:
         sp2 = Path(tmp) / "state.json"
         notice = hoyolab_item("hoyolab_starrail_46814308_full.json", "starrail")
         ctx = make_ctx(sp2, items={"starrail": [notice]}, now=1790000000, PROGRAM_MEDIA=0, BOOTSTRAP_POST=1)
         ctx.media = {"starrail": {"4.6": found}}
         asyncio.run(schedule.run(ctx))
-        posts = [x for x in ctx.webhook.sent if x["method"] == "POST"]
-        assert len(posts) == 1
-        flat3 = json.dumps(posts[0]["payload"], ensure_ascii=False)
-        assert "46691962" not in flat3 and "🖼️" not in flat3
+        assert ctx.webhook.sent == []
+        rec = ctx.state.schedule_records("starrail")["4.6"]
+        assert "program_ts" not in rec["data"] and "media_from" not in rec["data"]
         assert schedule.needs_media(ctx.state, "starrail", 1790000000)
 
 
@@ -2473,6 +2473,253 @@ def test_force_webhook_keeps_the_fan_out_out_of_real_game_channels():
         assert ctx.webhook.to(MIRROR) == []
 
 
+# =========================================== 2026-10-08 Genshin 7.1: a notice may fill, never open
+# One live card showed three faults with a single cause. The record had been created by this
+# *Update Details* notice on 2026-09-25, two days after 7.1's own maintenance, so it never got a
+# program_ts: the card lost its air-time line, kept the notice's cover as key art and kept the
+# notice's URL as its title link, and when the user deleted the card the 404 arm rebuilt it --
+# fifteen days after the version shipped. A schedule card announces a Special Program; the
+# notice may only ever fill one in.
+def _update_details_notice(ts: int) -> Item:
+    """The real post that opened the Genshin 7.1 card — a maintenance notice, not an announcement."""
+    return Item("hoyolab", "genshin", "46791577",
+                "https://www.hoyolab.com/article/46791577",
+                '"A Rekviem for the Underworld" Version 7.1 Update Details',
+                "Dear Traveler,\nBelow are the details of the Version 7.1 update.\n"
+                "Maintenance Time: 2026/09/23 06:00 - 11:00 (UTC+8)\n"
+                "Compensation: Primogems ×300", ts)
+
+
+def test_a_maintenance_notice_alone_never_opens_a_schedule_card():
+    """The card announces a Special Program / Special Broadcast — nothing else may create one.
+
+    Genshin 7.1 was opened by its Update Details notice on 2026-09-25, two days after its own
+    maintenance, and so shipped with the notice's cover as key art, the notice's link in the
+    title and no air-time line at all. A notice must only ever FILL a card the announcement
+    opened."""
+    now = 1790118000                                    # 1 h after the 2026-09-23 maintenance
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=now)
+        ctx.webhook = FanOutWebhook()
+        extracts = [e for e in [schedule.extract(GAMES["genshin"], _update_details_notice(now))] if e]
+        assert [e.kind for e in extracts] == ["maintenance"]
+        records: dict = {}
+        asyncio.run(schedule._handle_version(ctx, GAMES["genshin"], "7.1", extracts, records,
+                                             {}, {}, True))
+        assert ctx.webhook.calls == []                   # nothing posted anywhere
+        assert records["7.1"]["status"] == "tracked"
+        assert not any("Special Program" in line for line in ctx.report)
+        # but the notice's data IS recorded, ready for the announcement to adopt
+        data = records["7.1"]["data"]
+        assert data["maint_start_ts"] == 1790114400 and data["compensation"] == "Primogems ×300"
+        assert "program_ts" not in data
+
+
+def test_a_maintenance_notice_still_fills_a_card_whose_program_was_seen():
+    """The other direction: once the announcement is known, the notice must still post/fill it.
+    Breaking this would stop every maintenance update the card exists to deliver."""
+    now = 1790118000
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=now)
+        ctx.webhook = FanOutWebhook()
+        extracts = [e for e in [schedule.extract(GAMES["genshin"], _update_details_notice(now))] if e]
+        records = {"7.1": {"status": "new", "first_seen": now, "prov": {},
+                           "data": {"version": "7.1", "program_ts": 1789905600,
+                                    "program_seen": True}}}
+        asyncio.run(schedule._handle_version(ctx, GAMES["genshin"], "7.1", extracts, records,
+                                             {}, {}, True))
+        assert [m for m, _ in ctx.webhook.to(HOOK)] == ["POST"]
+        assert records["7.1"]["status"] == "posted"
+        assert records["7.1"]["data"]["compensation"] == "Primogems ×300"
+
+
+def test_the_cached_announcement_is_replayed_for_a_card_that_lost_its_air_time():
+    """config/program_announcements.json is the pattern that stops this recurring: a live version
+    with no program_ts gets exactly one more lookup, and only when the tweet id is already
+    cached — so it is a single fxtwitter call that succeeds, not an open-ended retry."""
+    now, gi = 1791446400, {"maint_start_ts": 1790114400, "version": "7.1"}
+    look = schedule.needs_program_lookup
+    assert look([], {"data": gi}, now, "genshin") is True            # seeded -> recover it
+    assert look([], {"data": gi}, now) is False                      # no game key -> old behaviour
+    assert look([], {"data": dict(gi, version="9.9")}, now, "genshin") is False      # not cached
+    assert look([], {"data": dict(gi, program_ts=1789905600)}, now, "genshin") is False
+    assert look([], {"data": gi}, now + 45 * 86400, "genshin") is False              # frozen
+    assert look([], {"data": dict(gi, media_from="X Post")}, now, "genshin") is False  # ran already
+
+
+def test_rechecking_confirmed_data_costs_nothing_and_edits_nothing():
+    """'it only just reverify or re-check' — a second run over identical data must be silent:
+    no PATCH, no POST, in either channel."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "state.json"
+        env = {"DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA": MIRROR}
+        ctx = _wuwa_ctx(sp, FanOutWebhook(), BOOTSTRAP_POST="1", **env)
+        asyncio.run(schedule.run(ctx))
+        assert [m for m, _ in ctx.webhook.to(HOOK)] == ["POST"]
+        assert [m for m, _ in ctx.webhook.to(MIRROR)] == ["POST"]
+        ctx.state.save()
+        for _ in range(3):                                # re-verify, repeatedly
+            ctx = _wuwa_ctx(sp, FanOutWebhook(), now=1789303600, **env)
+            asyncio.run(schedule.run(ctx))
+            assert ctx.webhook.calls == [], ctx.webhook.calls
+            assert ctx.errors == []
+            ctx.state.save()
+
+
+def test_no_game_channel_copy_is_created_for_a_version_already_out():
+    """A settled version never gets a brand-new message in EITHER channel.
+
+    The primary card had a settled check to skip; the fan-out's send() had none, and dropped a
+    fifteen-day-old Genshin 7.1 card straight into #gi-news."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790450000,
+                       DISCORD_WEBHOOK_SCHEDULE_MIRROR_STARRAIL=MIRROR)
+        ctx.webhook = FanOutWebhook()
+        records = {"4.6": _posted_hsr_record()}
+        assert schedule.program_settled(records["4.6"]["data"], ctx.now)
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {"compensation": "Stellar Jade ×301"}, {}, True))
+        assert [m for m, _ in ctx.webhook.to(HOOK)] == ["PATCH"]     # the living card is edited
+        assert ctx.webhook.to(MIRROR) == []                          # no copy is born
+        assert records["4.6"]["mirror_retired"] == ctx.now
+        assert "mirror_message_id" not in records["4.6"]
+        assert any("copy not created" in line for line in ctx.report)
+        assert ctx.errors == []
+
+
+def test_an_existing_game_channel_copy_is_still_edited_after_the_version_ships():
+    """A settled program is not a finished version. The copy already sitting in the game channel
+    keeps receiving the same silent corrections as the original — only CREATING one is barred."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790450000,
+                       DISCORD_WEBHOOK_SCHEDULE_MIRROR_STARRAIL=MIRROR)
+        ctx.webhook = FanOutWebhook()
+        records = {"4.6": _posted_hsr_record()}
+        records["4.6"].update({"mirror_message_id": "living-copy",
+                               "mirror_webhook_fp": webhook_fingerprint(MIRROR),
+                               "mirror_hash": "stale-copy"})
+        assert schedule.program_settled(records["4.6"]["data"], ctx.now)
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {"compensation": "Stellar Jade ×301"}, {}, True))
+        assert [m for m, _ in ctx.webhook.to(HOOK)] == ["PATCH"]
+        assert [m for m, _ in ctx.webhook.to(MIRROR)] == ["PATCH"]
+        assert "mirror_retired" not in records["4.6"]
+        assert records["4.6"]["mirror_message_id"] == "living-copy"
+        assert ctx.errors == []
+
+
+def test_repost_revives_a_retired_card_and_its_copy():
+    """REPOST is the manual escape hatch. A retirement is a statement about a message that no
+    longer exists, so publishing a replacement lifts it — otherwise the guard at the top of the
+    edit path would return for the rest of the new card's life."""
+    with tempfile.TemporaryDirectory() as tmp:
+        env = {"DISCORD_WEBHOOK_SCHEDULE_MIRROR_STARRAIL": MIRROR}
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790450000, REPOST="starrail:4.6", **env)
+        ctx.webhook = FanOutWebhook()
+        records = {"4.6": _posted_hsr_record()}
+        records["4.6"].pop("message_id")                       # the user deleted both messages
+        records["4.6"]["card_retired"] = 1790400000
+        records["4.6"]["mirror_retired"] = 1790400000
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {"compensation": "Stellar Jade ×301"}, {}, True))
+        assert [m for m, _ in ctx.webhook.to(HOOK)] == ["POST"]
+        assert [m for m, _ in ctx.webhook.to(MIRROR)] == ["POST"]
+        assert "card_retired" not in records["4.6"] and "mirror_retired" not in records["4.6"]
+        assert records["4.6"]["message_id"] and records["4.6"]["mirror_message_id"]
+
+        # and the revived card keeps receiving its silent corrections on the next normal run
+        ctx.state.save()
+        nxt = make_ctx(Path(tmp) / "state.json", now=ctx.now + 600, **env)
+        nxt.webhook = FanOutWebhook()
+        nxt.state.schedule_records("starrail")["4.6"] = records["4.6"]
+        asyncio.run(schedule._handle_version(nxt, GAMES["starrail"], "4.6", [],
+                                             nxt.state.schedule_records("starrail"),
+                                             {"compensation": "Stellar Jade ×302"}, {}, True))
+        assert [m for m, _ in nxt.webhook.to(HOOK)] == ["PATCH"]
+        assert [m for m, _ in nxt.webhook.to(MIRROR)] == ["PATCH"]
+        assert nxt.errors == []
+
+
+# The live Genshin 7.1 record on 2026-10-08, verbatim from state.json: images = the "Version 7.1
+# Update Details" cover uploaded 2026-09-22, title_url = that same notice, maint_start_ts =
+# 2026-09-23 06:00 +08 — and no program_ts, program_seen or media_from at all.
+GI_71_NOW = 1791446400                   # 2026-10-08 16:00 +08 — the run that exposed all of it
+GI_71_LIVESTREAM = 1789214400            # 2026-09-12 20:00 +08: the premiere the tweet names
+GI_71_ANNOUNCEMENT = {
+    "url": "https://x.com/GenshinImpact/status/2096810691021689205",
+    "title": "Genshin Impact Version 7.1 Special Program",
+    "images": ["https://pbs.twimg.com/media/HRlONCqXcAUhgGD.jpg?name=orig"],
+    "program_ts": GI_71_LIVESTREAM,
+    "source": "X Post",
+}
+GI_71_LIVE_DATA = {
+    "version": "7.1",
+    "images": ["https://upload-os-bbs.hoyolab.com/upload/2026/09/22/0/769afb25a1c8e9f3.jpeg"],
+    "title_url": "https://www.hoyolab.com/article/46791577",
+    "source_url": "https://www.hoyolab.com/article/46791577",
+    "source_label": "HoYoLAB",
+    "maint_start_ts": 1790114400,        # 2026-09-23 06:00 +08, fifteen days before GI_71_NOW
+    "maint_end_ts": 1790132400,
+}
+
+
+def _gi_71_phase2_notice(ts: int = GI_71_NOW - 3600) -> Item:
+    """HoYoLAB 47010361, the notice that made the run look at 7.1 on 2026-10-08 — and the very
+    post whose banner titles the card was showing instead of the characters."""
+    return Item("hoyolab", "genshin", "47010361",
+                "https://www.hoyolab.com/article/47010361",
+                "Version 7.1 Event Wishes Notice - Phase II",
+                '〓Event Wish "La Chanson Cerise"〓\n'
+                '● During this event wish, the event-exclusive 5-star character '
+                '"Tasteful Excellence" Escoffier (Cryo) will receive a huge drop-rate boost!\n'
+                '● During this event wish, the 4-star characters "Ode and Oblation" Dahlia '
+                '(Hydro), "Golden Vow" Candace (Hydro), and "Coordinates of Clear Frost" Mika '
+                '(Cryo) will receive a huge drop-rate boost!\n', ts)
+
+
+def test_the_real_genshin_71_record_heals_in_place_with_no_new_message():
+    """End to end on the real live record and the real cached tweet, replayed as the one
+    fxtwitter call the recovery is gated on: the run swaps the notice's cover for the key art,
+    points the title at the announcement, restores the air time — and posts no new message,
+    because this card was only ever edited. The run after that has nothing left to do."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=GI_71_NOW,
+                       items={"genshin": [_gi_71_phase2_notice()]})
+        ctx.media = {"genshin": {"7.1": dict(GI_71_ANNOUNCEMENT)}}
+        ctx.state.schedule_records("genshin")["7.1"] = {
+            "status": "posted", "first_seen": 1790371200, "data": dict(GI_71_LIVE_DATA),
+            "prov": {}, "message_id": "1557664007840731237",
+            "webhook_fp": webhook_fingerprint(HOOK), "payload_hash": "the-broken-card"}
+        ctx.webhook = FanOutWebhook()
+        live = {"data": ctx.state.schedule_records("genshin")["7.1"]["data"]}
+        assert schedule.needs_program_lookup([], live, GI_71_NOW, "genshin")   # cached -> one call
+        asyncio.run(schedule.run(ctx))
+        assert [m for m, _ in ctx.webhook.to(HOOK)] == ["PATCH"]
+        assert len(ctx.webhook.calls) == 1                     # nothing posted anywhere
+        flat = json.dumps(ctx.webhook.to(HOOK)[0][1], ensure_ascii=False)
+        assert "<t:1789214400:F>" in flat                      # the air time the card had lost
+        assert "HRlONCqXcAUhgGD.jpg?name=orig" in flat         # the programme's key art
+        assert "x.com/GenshinImpact/status/2096810691021689205" in flat
+        assert "hoyolab.com/article/46791577" not in flat      # never the notice's link
+        assert "Escoffier" in flat                             # and the real phase-2 characters
+        assert "Tasteful Excellence" not in flat
+        data = ctx.state.schedule_records("genshin")["7.1"]["data"]
+        assert data["program_ts"] == GI_71_LIVESTREAM and data["media_from"] == "X Post"
+        assert "upload-os-bbs" not in flat                     # the notice's cover is gone
+
+        # the fixed data is committed to state, and the next run reports "nothing new"
+        ctx.state.save()
+        ctx2 = make_ctx(Path(tmp) / "state.json", now=GI_71_NOW + 600,
+                        items={"genshin": [_gi_71_phase2_notice()]})
+        ctx2.media = {"genshin": {"7.1": dict(GI_71_ANNOUNCEMENT)}}
+        ctx2.webhook = FanOutWebhook()
+        asyncio.run(schedule.run(ctx2))
+        assert ctx2.webhook.calls == []
+        assert ctx2.errors == []
+        healed = {"data": ctx2.state.schedule_records("genshin")["7.1"]["data"]}
+        assert schedule.needs_program_lookup([], healed, GI_71_NOW + 600, "genshin") is False
+
+
 def test_preinstall_cold_start_reproduces_four_real_notices():
     """Each shipped lead must reproduce a TYPICAL published notice, not the latest one.
 
@@ -3067,7 +3314,7 @@ def test_a_settled_program_is_never_resurrected_on_a_live_run():
         assert ctx.webhook.sends == [] and ctx.errors == []      # nothing reappears in the channel
         assert records["4.6"].get("message_id") is None          # dead id dropped, no retry loop
         assert records["4.6"]["card_retired"] == ctx.now
-        assert any("program already aired" in line for line in ctx.report)
+        assert any("the deleted card stays deleted" in line for line in ctx.report)
 
         # and it stays gone: the later data change adds no PATCH and no POST (the single edit
         # above is the one that 404'd and triggered the retirement)
@@ -3077,19 +3324,24 @@ def test_a_settled_program_is_never_resurrected_on_a_live_run():
         assert ctx.webhook.sends == [] and len(ctx.webhook.edits) == 1 and ctx.errors == []
 
 
-def test_a_test_run_still_reposts_a_settled_version():
-    """The whole point of a test run is to see the real card, however old the program is."""
+def test_not_even_a_test_run_resurrects_a_deleted_settled_card():
+    """A test run renders the card from an empty state; it does not get to overrule a delete.
+
+    TEST_MODE used to be exempt from the settled 404 rule, and that exemption is what put a
+    fifteen-day-old Genshin 7.1 card back into #announcements on 2026-10-08. A test run that
+    genuinely wants the card rendered asks for it explicitly with REPOST=<game>:<version>.
+    The data correction is still merged and saved -- only the message is left alone."""
     with tempfile.TemporaryDirectory() as tmp:
         ctx = make_ctx(Path(tmp) / "state.json", now=1790450000, TEST_MODE="1")
         ctx.webhook = ScriptedWebhook([SendResult(False, 404, error=UNKNOWN_MESSAGE)],
-                                      [SendResult(True, 200, message_id="test-card")])
+                                      [SendResult(True, 200, message_id="should-not-happen")])
         records = {"4.6": _posted_hsr_record()}
         assert schedule.program_settled(records["4.6"]["data"], ctx.now)
         asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
                                              {"compensation": "Stellar Jade ×301"}, {}, True))
-        assert len(ctx.webhook.sends) == 1 and ctx.errors == []
-        assert records["4.6"]["message_id"] == "test-card"
-        assert "card_retired" not in records["4.6"]
+        assert ctx.webhook.sends == [] and ctx.errors == []
+        assert records["4.6"].get("message_id") is None and records["4.6"]["card_retired"] == ctx.now
+        assert records["4.6"]["data"]["compensation"] == "Stellar Jade ×301"   # merged, then saved
 
 
 def test_a_settled_program_does_not_freeze_the_card_that_is_already_posted():
