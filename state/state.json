@@ -1809,12 +1809,42 @@
     "genshin": {
       "7.1": {
         "data": {
+          "banners": {
+            "phase1": [
+              "Vodyanitsa",
+              "Vesna"
+            ],
+            "phase1_4": [
+              "Diona",
+              "Faruzan",
+              "Chongyun"
+            ],
+            "phase2": [
+              "Tasteful Excellence"
+            ],
+            "phase2_4": [
+              "Ode and Oblation",
+              "Golden Vow",
+              "Coordinates of Clear Frost"
+            ],
+            "reruns": [
+              "Skirk",
+              "Escoffier"
+            ]
+          },
           "compensation": "Primogems ×300",
+          "estimate_sources": [
+            "version cadence"
+          ],
+          "estimated": [
+            "preinstall_ts"
+          ],
           "images": [
             "https://upload-os-bbs.hoyolab.com/upload/2026/09/22/0/769afb257533e1e3fc075b3262ba0623_8479938435863502783.jpeg"
           ],
           "maint_end_ts": 1790132400,
           "maint_start_ts": 1790114400,
+          "preinstall_ts": 1789959600,
           "source_label": "HoYoLAB",
           "source_links": [
             [
@@ -1826,11 +1856,37 @@
           "title_url": "https://www.hoyolab.com/article/46791577",
           "version": "7.1"
         },
+        "estimated_reported": [
+          "preinstall_ts"
+        ],
         "first_seen": 1790323161,
-        "message_id": "1552991119011479624",
-        "payload_hash": "22c1c3f167a67513",
-        "posted_at": 1790332321,
+        "message_id": "1557664007840731237",
+        "mirror_hash": "57acafec61f6ff54",
+        "mirror_message_id": "1557663997925392396",
+        "mirror_webhook_fp": "ee502f83bdf4",
+        "payload_hash": "b1aefb2649f78b2b",
+        "posted_at": 1791446431,
         "prov": {
+          "b_phase1": [
+            5,
+            1791446431
+          ],
+          "b_phase1_4": [
+            6,
+            1791446431
+          ],
+          "b_phase2": [
+            50,
+            1791446403
+          ],
+          "b_phase2_4": [
+            50,
+            1791446403
+          ],
+          "b_reruns": [
+            6,
+            1791446431
+          ],
           "compensation": [
             50,
             1790118002
@@ -1842,9 +1898,14 @@
           "maint_start_ts": [
             50,
             1790118002
+          ],
+          "preinstall_ts": [
+            9,
+            1791446431
           ]
         },
         "status": "posted",
+        "updated_at": 1791446431,
         "webhook_fp": "19991534cf6d"
       }
     },
