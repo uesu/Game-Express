@@ -1808,6 +1808,7 @@
     "ananta": {},
     "genshin": {
       "7.1": {
+        "card_retired": 1791483988,
         "data": {
           "banners": {
             "phase1": [
@@ -1820,12 +1821,13 @@
               "Chongyun"
             ],
             "phase2": [
-              "Tasteful Excellence"
+              "Skirk",
+              "Escoffier"
             ],
             "phase2_4": [
-              "Ode and Oblation",
-              "Golden Vow",
-              "Coordinates of Clear Frost"
+              "Dahlia",
+              "Candace",
+              "Mika"
             ],
             "reruns": [
               "Skirk",
@@ -1840,29 +1842,34 @@
             "preinstall_ts"
           ],
           "images": [
-            "https://upload-os-bbs.hoyolab.com/upload/2026/09/22/0/769afb257533e1e3fc075b3262ba0623_8479938435863502783.jpeg"
+            "https://pbs.twimg.com/media/HRlONCqXcAUhgGD.jpg?name=orig"
           ],
           "maint_end_ts": 1790132400,
           "maint_start_ts": 1790114400,
+          "media_from": "x",
           "preinstall_ts": 1789959600,
-          "source_label": "HoYoLAB",
+          "program_ts": 1789214400,
+          "source_label": "x",
           "source_links": [
+            [
+              "x",
+              "https://x.com/GenshinImpact/status/2096810691021689205"
+            ],
             [
               "HoYoLAB",
               "https://www.hoyolab.com/article/46791577"
             ]
           ],
-          "source_url": "https://www.hoyolab.com/article/46791577",
-          "title_url": "https://www.hoyolab.com/article/46791577",
+          "source_url": "https://x.com/GenshinImpact/status/2096810691021689205",
+          "title_url": "https://x.com/GenshinImpact/status/2096810691021689205",
           "version": "7.1"
         },
         "estimated_reported": [
           "preinstall_ts"
         ],
         "first_seen": 1790323161,
-        "message_id": "1557744484790304889",
         "mirror_hash": "57acafec61f6ff54",
-        "mirror_message_id": "1557663997925392396",
+        "mirror_retired": 1791483988,
         "mirror_webhook_fp": "ee502f83bdf4",
         "payload_hash": "57acafec61f6ff54",
         "posted_at": 1791465622,
@@ -1901,7 +1908,11 @@
           ],
           "preinstall_ts": [
             9,
-            1791483022
+            1791483988
+          ],
+          "program_ts": [
+            45,
+            1791483988
           ]
         },
         "status": "posted",
