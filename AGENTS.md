@@ -68,7 +68,12 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 5. **The first run for a new game/feature seeds silently.** `BOOTSTRAP_POST` off = record what
    exists, post nothing. Never "fix" this into a backfill.
 6. **Posting is once per (game, version) / per code**, then *silent edits* of the same message id.
-   The state's message ids are what make an edit possible — never clear them casually. The
+   Two gates decide whether a card may be **opened** at all: a maintenance/pre-install/banner
+   notice may only **fill** a card the announcement opened, and a version whose programme already
+   aired (`program_settled()`, read by the creation gate *before* `TEST_MODE`) is never carded
+   again — `REPOST=<game>:<version>` is the only override. And a `404`/`10008` means an id stopped
+   resolving, not that a human deleted anything: a still-current card is re-created once, a
+   settled one is dropped and never published for again. The
    optional fan-out copy (`DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME>`) obeys the same rule with its
    own `mirror_message_id`, and is edited in the same pass as the original so the two can never
    disagree. Three things about it are deliberate: it has **no `DISCORD_WEBHOOK_URL` fallback**

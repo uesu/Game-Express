@@ -2189,7 +2189,7 @@ def test_banner_feed_can_be_switched_off():
         assert ctx.settings.banner_feed is False
 
 
-# =========================================================================== 1.5/1.6 (deleted cards + learned pre-install lead)
+# ================================================== 1.5/1.6 (an unresolvable id + learned pre-install lead)
 UNKNOWN_MESSAGE = '{"message": "Unknown Message", "code": 10008}'
 
 
@@ -2481,8 +2481,9 @@ def test_force_webhook_keeps_the_fan_out_out_of_real_game_channels():
 # One live card showed three faults with a single cause. The record had been created by this
 # *Update Details* notice on 2026-09-25, two days after 7.1's own maintenance, so it never got a
 # program_ts: the card lost its air-time line, kept the notice's cover as key art and kept the
-# notice's URL as its title link, and when the user deleted the card the 404 arm rebuilt it --
-# fifteen days after the version shipped. A schedule card announces a Special Program; the
+# notice's URL as its title link. Fifteen days after the version shipped, an edit of a message
+# id that had never resolved returned 404 and the arm below published a brand-new card -- for a
+# programme this bot had never carded at all. A schedule card announces a Special Program; the
 # notice may only ever fill one in.
 def _update_details_notice(ts: int) -> Item:
     """The real post that opened the Genshin 7.1 card — a maintenance notice, not an announcement."""
@@ -2576,6 +2577,46 @@ def test_a_genuine_upcoming_programme_still_opens_its_card():
         assert [m for m, _ in sent] == ["POST"]
         assert "<t:1791545400:F>" in json.dumps(sent[0][1], ensure_ascii=False)
         assert records["3.3"]["status"] == "posted"
+
+
+def test_no_game_opens_a_card_for_a_broadcast_that_already_aired():
+    """The rule is not HoYoverse-specific. Wuthering Waves 3.7 broadcast on 2026-09-19, also
+    before this bot existed. Kuro calls it a Special Broadcast and serves its notices from its own
+    site, but the gate is one game-independent check, so both notice kinds that can still reach a
+    settled version — the update maintenance notice and a convene notice — must leave it alone."""
+    now = 1791446400                                    # 2026-10-08 16:00 +08
+    aired = 1789815600                                  # 2026-09-19 19:00 +08 — the broadcast
+    notices = {
+        "maintenance": ('Version 3.7 "Tides of War" Update Maintenance Notice',
+                        "Dear Rovers,\n\nVersion 3.7 update maintenance will begin on 2026/10/16 "
+                        "at 10:00 (UTC+8) and is estimated to last 5 hours. Pre-installation will "
+                        "be available from 2026/10/14 at 10:00 (UTC+8). Compensation: Astrite "
+                        "×600."),
+        "banner": ("Version 3.7 Convene Event Notice",
+                   'The 5-star Resonator "Tidebreaker" Cartethyia (Aero) rate-up Convene will be '
+                   "available from 2026/10/16 10:00 (UTC+8) to 2026/11/06 09:59 (UTC+8)."),
+    }
+    for kind, (title, text) in notices.items():
+        item = Item("kuro", "wuwa", f"wuwa-3-7-{kind}",
+                    "https://wutheringwaves.kurogames.com/en/main/news/detail/1",
+                    title, text, now - 3600)
+        extracts = [e for e in [schedule.extract(GAMES["wuwa"], item)] if e]
+        assert [e.kind for e in extracts] == [kind]     # the notice itself parses as expected
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_ctx(Path(tmp) / "state.json", now=now)
+            ctx.webhook = FanOutWebhook()
+            records = {"3.7": {"status": "new", "first_seen": now, "prov": {},
+                               "data": {"version": "3.7", "program_ts": aired,
+                                        "program_seen": True}}}
+            asyncio.run(schedule._handle_version(ctx, GAMES["wuwa"], "3.7", extracts, records,
+                                                 {}, {}, True))
+            assert ctx.webhook.calls == [], f"a {kind} notice opened a card for a settled broadcast"
+            assert records["3.7"]["status"] == "tracked"
+        # tracked, not ignored: whatever the notice carried is still written down
+        if kind == "maintenance":
+            stated = datetime(2026, 10, 16, 10, 0, tzinfo=timezone(timedelta(hours=8)))
+            assert records["3.7"]["data"]["maint_start_ts"] == int(stated.timestamp())
+            assert records["3.7"]["data"]["compensation"] == "Astrite ×600"
 
 
 def test_a_maintenance_notice_still_fills_a_card_whose_program_was_seen():
@@ -3365,7 +3406,7 @@ def main() -> int:
 # =========================================================================== settled programs
 # HSR 4.6's special program aired 2026-09-20; the version itself went live 2026-09-28. A live run
 # must stop announcing it, while a test run must keep rendering it so the fetch stays observable.
-def test_a_settled_program_is_never_resurrected_on_a_live_run():
+def test_a_settled_program_is_never_re_created_on_a_live_run():
     with tempfile.TemporaryDirectory() as tmp:
         ctx = make_ctx(Path(tmp) / "state.json", now=1790450000)
         ctx.webhook = ScriptedWebhook([SendResult(False, 404, error=UNKNOWN_MESSAGE)],
@@ -3387,13 +3428,12 @@ def test_a_settled_program_is_never_resurrected_on_a_live_run():
         assert ctx.webhook.sends == [] and len(ctx.webhook.edits) == 1 and ctx.errors == []
 
 
-def test_not_even_a_test_run_resurrects_a_deleted_settled_card():
-    """A test run renders the card from an empty state; it does not get to overrule a delete.
-
-    TEST_MODE used to be exempt from the settled 404 rule, and that exemption is what put a
-    fifteen-day-old Genshin 7.1 card back into #announcements on 2026-10-08. A test run that
-    genuinely wants the card rendered asks for it explicitly with REPOST=<game>:<version>.
-    The data correction is still merged and saved -- only the message is left alone."""
+def test_not_even_a_test_run_re_creates_a_settled_card():
+    """A test run may RENDER a settled version (see test_test_mode_posts_latest_card_marked_test),
+    but it may not publish a replacement for an id that stopped resolving. That exemption is what
+    put a fifteen-day-old Genshin 7.1 card into #announcements on 2026-10-08 — for a programme
+    this bot had never carded at all. REPOST=<game>:<version> stays available when you really do
+    want a card for an old version."""
     with tempfile.TemporaryDirectory() as tmp:
         ctx = make_ctx(Path(tmp) / "state.json", now=1790450000, TEST_MODE="1")
         ctx.webhook = ScriptedWebhook([SendResult(False, 404, error=UNKNOWN_MESSAGE)],

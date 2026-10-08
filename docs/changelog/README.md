@@ -30,7 +30,8 @@ nothing is renumbered after the fact.
 
 | Entry | Date | Headline |
 |---|---|---|
-| [2026-10-08](CHANGELOG.md#2026-10-08) | 2026-10-08 | a maintenance notice may fill a card but never open one — and the announcement wins again |
+| [2026-10-08](CHANGELOG.md#2026-10-08) | 2026-10-08 | a card that should never have existed, plus the wrong art, the wrong link and no air time |
+| [2026-10-06](CHANGELOG.md#2026-10-06) | 2026-10-06 | banner line-ups fill themselves in from the game wikis — plus a countdown fix and a documentation accuracy sweep |
 | [2026-10-05](CHANGELOG.md#2026-10-05) | 2026-10-05 | the README stops being a history book, and the version number retires |
 | [`1.9.0`](CHANGELOG.md#190--2026-10-02) | 2026-10-02 | the run stops waiting on a hung mirror, and the dead weight is gone |
 | [`1.8.1`](CHANGELOG.md#181--2026-10-01) | 2026-10-01 | Python 3.14 |

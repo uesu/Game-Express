@@ -126,7 +126,7 @@ being dropped. A codes drop split across several messages mentions the role on *
 | Name | Default | Meaning |
 |---|---|---|
 | `COUNTDOWN_ESTIMATES` | on | `0` = never fill program / maintenance times from countdown sites |
-| `PROGRAM_MEDIA` | on | `0` = never look the program announcement up on the official news page (the card then keeps whatever the run's own feed showed) |
+| `PROGRAM_MEDIA` | on | `0` = never look the program announcement up — neither the official news page nor the tweet already cached in `config/program_announcements.json` (the card then keeps whatever the run's own feed showed) |
 | `BANNER_FEED` | on | `0` = never fill banner lineups from `hub.json` |
 | `GACHA_WIKI` | on | `0` = never fill banner line-ups from the game wikis ([BANNER_DATABASE.md](BANNER_DATABASE.md)) |
 | `CODES_MIN_SOURCES` | 2 | independent community sources needed for an unverified code |
@@ -139,7 +139,7 @@ being dropped. A codes drop split across several messages mentions the role on *
 | Name | Default | Meaning |
 |---|---|---|
 | `DRY_RUN` | off | build and log only |
-| `TEST_MODE` | off | cards get a 🧪 TEST label, the freshness/seed rules are skipped and the state is never saved (the monitor's test modes set it) |
+| `TEST_MODE` | off | cards get a 🧪 TEST label, the freshness/seed rules are skipped — a test run still renders a settled version's card, but it will not publish a replacement for an id that stopped resolving — and the state is never saved (the monitor's test modes set it) |
 | `BOOTSTRAP_POST` | off | first run posts current items instead of seeding |
 | `FORCE_WEBHOOK` | — | send **every** card to this one webhook URL. Testing only; it wins over all routing above |
 | `STATE_PATH` | `state/state.json` | where the dedup state is read and written |

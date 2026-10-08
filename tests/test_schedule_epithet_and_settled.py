@@ -13,10 +13,14 @@ Program announcement was never attached to it.
      phase2_4 = ["Ode and Oblation", "Golden Vow", "Coordinates of Clear Frost"]
                                                             (should be Dahlia, Candace, Mika)
 
-  B. program_settled() read only program_ts, so a version whose record was created from an
-     *Update Details* notice -- which never has a program_ts -- was never "settled". Its deleted
-     card was reposted and a brand-new mirror copy created, fifteen days after the version
-     shipped.
+  B. A card was opened at all for a version announced a month earlier. Genshin 7.1 was announced
+     2026-09-07, aired 09-12 and shipped 09-23. This bot was deployed afterwards and had never
+     posted a 7.1 card -- the one players actually had came from a different bot entirely. Two
+     things let it publish one anyway: program_settled() read only program_ts, which a record
+     built from an *Update Details* notice never has, so 7.1 never counted as settled; and the
+     creation gate never consulted program_settled() at all. A Phase II notice on 2026-10-08
+     made the bot PATCH a message id that no longer resolved, the edit returned 404, and it
+     published a brand-new card and a brand-new mirror copy.
 
   C. That same missing program_ts left the card with no air time at all (cards.py prints nothing
      rather than a misleading TBA), while `data = dict(prev)` kept the notice's cover as key art
@@ -259,6 +263,24 @@ def test_every_live_version_has_a_cached_announcement():
         assert seed.get("image", "").startswith("https://pbs.twimg.com/"), f"{game_key} {version} art"
     assert program_seed("genshin", "9.9") == {}          # an unknown version is simply absent
     assert program_seed("nosuchgame", "1.0") == {}
+
+
+def test_every_game_treats_an_aired_programme_the_same_way():
+    """One rule, four games. program_settled takes no game key and the creation gate has no
+    per-game branch, so the four reference records must all answer identically: history once the
+    programme is over, announceable while it is still ahead. Driven off the real sample data so
+    a future version cannot drift away from the rule unnoticed."""
+    from gamexpress.samples import SCHEDULE_SAMPLES
+    assert set(SCHEDULE_SAMPLES) == {"genshin", "starrail", "zzz", "wuwa"}
+    for key, sample in SCHEDULE_SAMPLES.items():
+        aired, starts = int(sample["program_ts"]), int(sample["maint_start_ts"])
+        assert schedule.program_settled(sample, aired - 3600) is False, f"{key}: airs in an hour"
+        assert schedule.program_settled(sample, aired + 3600) is False, f"{key}: just aired"
+        assert schedule.program_settled(sample, aired + 37 * 3600) is True, f"{key}: old news"
+        # and the record a notice would have built instead — no program_ts, the 7.1 shape
+        notice_built = {k: v for k, v in sample.items() if k != "program_ts"}
+        assert schedule.program_settled(notice_built, starts - DAY) is False, f"{key}: pre-patch"
+        assert schedule.program_settled(notice_built, starts + 13 * 3600) is True, f"{key}: shipped"
 
 
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]

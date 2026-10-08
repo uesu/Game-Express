@@ -63,9 +63,10 @@ art, the wrong link and no air time**
   bot before this one was deployed. So on a settled version the id is dropped and nothing is
   published (`its card is not re-created`); on a version still in the news the old behaviour
   stands — one fresh post whose new id is adopted.
-- **TEST_MODE is no longer exempt from that rule** — the exemption is what resurrected the card.
-  A test run that genuinely wants a card rendered asks for it with `REPOST=<game>:<version>`,
-  which bypasses the branch entirely; the data correction is merged and saved either way.
+- **TEST_MODE is no longer exempt from that rule** — the exemption is what put the card into
+  `#announcements` on 2026-10-08, for a programme this bot had never carded at all. A test run
+  that genuinely wants a card rendered asks for it with `REPOST=<game>:<version>`, which bypasses
+  the branch entirely; the data correction is merged and saved either way.
 - **The game-channel copy obeys the same rule.** `_sync_mirror()` refuses to *create* a copy for
   a settled version (editing an existing one still works, as always), records the refusal in
   `mirror_retired`, and a successful `REPOST` lifts both retirements so the new card keeps
@@ -86,22 +87,27 @@ art, the wrong link and no air time**
 
 ### Tests
 
-- **New: `tests/test_schedule_epithet_and_settled.py`** — 13 regression tests for the parser, the
+- **New: `tests/test_schedule_epithet_and_settled.py`** — 14 regression tests for the parser, the
   settled rule and the cached recovery, runnable standalone
   (`python tests/test_schedule_epithet_and_settled.py`) in a checkout with no runtime
   dependencies installed, and under pytest.
 - **`tests/test_smoke.py`** — the notice-replacement test re-pointed at the new policy (the
-  announcement is now adopted *silently*), plus ten new tests: the notice guard in both
-  directions, the already-aired rule and its `REPOST` override, the ZZZ 3.3 over-fix guard
+  announcement is now adopted *silently*), plus eleven new tests: the notice guard in both
+  directions, the already-aired rule and its `REPOST` override, the same rule proven on
+  Wuthering Waves' Special Broadcast for both notice kinds, the ZZZ 3.3 over-fix guard
   (an upcoming programme must still post, with its air time), the cached recovery, the copy
   retirement and the still-edited copy, the `REPOST` revival, three identical re-runs costing no
   request, and the real live 7.1 record healing end to end.
 - **Docs restated for the two new rules**: the README's schedule-card section ("only an
   announcement opens one"), the `repost` note in *Then what?*, and the posting rules now split
   *only an announcement opens a card* / *a programme that already aired is history* /
-  *post once, then edit silently*. `docs/ACCURACY.md` carries the same three rules, the cached
-  recovery is spelled out under *The announcement's own link and key art*, and
-  `docs/TESTING.md`'s healthy-system checklist gains **nothing else ever opens a card**.
+  *post once, then edit silently*. `docs/ACCURACY.md` carries the same three rules (and the
+  `"Epithet" Name` banner wording its parser needs), the cached recovery is spelled out under
+  *The announcement's own link and key art*, `docs/TESTING.md`'s healthy-system checklist gains
+  **nothing else ever opens a card** and its *Already seeded?* step now says `repost` is the
+  override that cards an already-out version, `docs/CONFIGURATION.md` says what `TEST_MODE` and
+  `PROGRAM_MEDIA` really do, and the index row for this entry matches its headline. The wording
+  that called a `10008` a deletion is gone from the tests and comments too.
 
 ---
 

@@ -30,9 +30,11 @@ Related: [SOURCES.md](SOURCES.md) (what each upstream serves) ·
    - **Maintenance**: pre-install, start, and end (end comes from an explicit end time, a range
      like `04:00 - 11:00 (UTC+8)`, or "estimated to take 5 hours"). Compensation deadlines and
      event end dates are never mistaken for maintenance.
-   - **Banners**: only quoted names that directly follow "5-star character" / "S-Rank Agent" /
-     "5-star Resonator" (and the 4★ equivalents) in official banner notices. Weapons never
-     match.
+   - **Banners**: only names that directly follow "5-star character" / "S-Rank Agent" /
+     "5-star Resonator" (and the 4★ equivalents) in official banner notices. Genshin titles the
+     banner and *then* names the character (the 5-star character `"Tasteful Excellence"
+     Escoffier`), so the bare name after a closing quote is the character and the quote is the
+     banner it is featured on. Weapons and banner titles never match.
    - **4★ characters are TBA unless certain.** The names are shown only when the official
      notice lists exactly the expected number of rate-up 4★ (GI 3 · HSR 3 · ZZZ 2 · WW 3), every
      name looks like a real name, and no official source disagrees. Otherwise the card shows

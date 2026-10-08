@@ -114,10 +114,11 @@ If the title link or the picture is wrong:
    **silently** (`🌱 … seeded silently`, no posts). This is correct.
    - To post what's current on that first run instead, set `BOOTSTRAP_POST=1` **before** it,
      then delete it.
-   - **Already seeded?** Run the Monitor with `repost` set to an upcoming version from the
-     summary (e.g. `starrail:4.6`). A card for a version that's already out (`genshin:7.1` after
-     its update) is old news. A version that hasn't been announced yet (`genshin:7.2`) can't be
-     reposted, and the summary explains why.
+   - **Already seeded?** Run the Monitor with `repost` set to a tracked version from the summary
+     (e.g. `starrail:4.6`). It is the deliberate override: it posts a card even for a version
+     that is already out (`genshin:7.1` after its update), which the automatic path never does.
+     A version that hasn't been announced yet (`genshin:7.2`) can't be reposted, and the summary
+     explains why.
 3. From then on, new codes and announcements are posted automatically.
 
 ## 5. Healthy-system checklist (check weekly, or when in doubt)
