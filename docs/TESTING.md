@@ -13,6 +13,8 @@ That workflow:
   one — and delete it;
 - **never** commits and never touches `state/state.json`, so the live run still posts the real
   thing later (nothing is skipped as "already seen");
+- **never edits a live card or its copy** — every test card is a *new* message, so a test can
+  neither rewrite nor re-label what is already in the channel;
 - pings nobody unless you tick `ping`;
 - works on the development repo too.
 
@@ -90,10 +92,37 @@ run would post:
 |---|---|
 | **Title link** | it opens the **Special Program / Broadcast announcement itself** — not the *Update and Maintenance Notice*. If it opens a notice, the program article was not found; see below |
 | **Key art** | the program's own artwork, and a big one: a YouTube `maxresdefault` thumbnail (1280×720) or a full-size tweet photo — not a small cover from somebody else's post |
-| **Livestream line** | `… or in 3 days` — the date/time must be **your** local time and the right moment (compare with the announcement) |
+| **Livestream line** | `… or in 3 days` — the date/time must be **your** local time and the right moment (compare with the announcement). For a programme that has already aired it reads `… a month ago`, which is correct: the bench renders the version that is out **now**, even when a live run would no longer open a card for it ([ACCURACY.md](ACCURACY.md) rule 6) |
 | **Maintenance block** | pre-install, start, end and compensation, each as a real Discord timestamp. `estimated from Gacha Countdown` means no official notice yet — correct, and it is replaced automatically when the notice is seen |
 | **Banners** | the 5★ and 4★ names for each phase. **TBA** means no official banner post was in the 30-day window — the honest answer, and pinning the names in `config/overrides.json` fills it in |
 | **Buttons** | YouTube / Twitch / Source, inside the card |
+
+### Checking a card for a version that is already out (e.g. Genshin 7.1)
+
+A live run never opens a card for a version whose programme has already aired (rule 6 above), so
+the bench is how you look at one. **Actions → Game-Express Monitor → Run workflow → `mode` =
+`test`, `test` = `schedule`, `game` = `genshin`, `ping` = off.**
+
+The step starts from an **empty state** with a **30-day lookback** and fetches everything live, so
+the card it builds is what a live run would post — posted as a **new** 🧪 TEST message you delete
+afterwards. Nothing live is touched: not the existing card, not its copy in the game channel.
+
+| On that TEST card | What it proves |
+|---|---|
+| **Livestream line** shows the real air time (e.g. `Saturday, September 12, 2026 8:00 PM`, `a month ago`) | the announcement was found — the thing a notice-built card loses |
+| **Title link** opens the Special Program announcement, not the maintenance article | same lookup |
+| **Key art** is the program's artwork, not the *Update Details* cover | same lookup |
+| **Maintenance block** shows pre-install / start / end / compensation | official values, unchanged |
+| **Banners** show the real characters per phase (e.g. `Escoffier`, not `Tasteful Excellence`) | the `"Banner Title" Character` reader, if the banner notice is inside the lookback |
+| **Your live card and its copy are untouched; the TEST card is a separate message** | a test renders, it never repairs |
+| Summary line `🛰️ GI 7.1: announcement found — programme airs …` | the repair, reported |
+
+Then run **`mode = live`** once. For a version this bot has already carded, the announcement is
+replayed from `config/program_announcements.json` and the existing card is **edited in place** —
+`✏️ GI 7.1: schedule card updated — livestream time, banners, key art, link`, no new message. If
+the card was deleted, that edit gets `404` and a settled version is never re-published: the dead
+id is dropped and the summary says `🗂 … its card is not re-created`. `repost = genshin:7.1` is
+the way back if you want one anyway.
 
 If the title link or the picture is wrong:
 
@@ -101,6 +130,11 @@ If the title link or the picture is wrong:
   older than the lookback window, the monitor looks it up on the **official news page** (then the
   HoYoLAB list) and replaces the link, the key art and the air time — see
   [ACCURACY.md](ACCURACY.md#the-announcements-own-link-and-key-art). `PROGRAM_MEDIA=0` switches that off.
+- A version this monitor has carded before is repaired from `config/program_announcements.json`:
+  the announcement's tweet id is committed with the state, so a test run — which starts from an
+  empty state — resolves it by id and the air time, the link and the key art all come back
+  together. A missing **Livestream line** means that lookup found nothing, not that the card
+  chose to hide the date.
 - A `fastcdn.hoyoverse.com` cover instead of the livestream art means the article has no embedded
   YouTube player, so there is no 1280×720 thumbnail to prefer.
 - `⚠️ … 4★ shown as TBA — 2 name(s) found, 3 expected` → the uncertain 4★ list was correctly
@@ -114,10 +148,11 @@ If the title link or the picture is wrong:
    **silently** (`🌱 … seeded silently`, no posts). This is correct.
    - To post what's current on that first run instead, set `BOOTSTRAP_POST=1` **before** it,
      then delete it.
-   - **Already seeded?** Run the Monitor with `repost` set to an upcoming version from the
-     summary (e.g. `starrail:4.6`). A card for a version that's already out (`genshin:7.1` after
-     its update) is old news. A version that hasn't been announced yet (`genshin:7.2`) can't be
-     reposted, and the summary explains why.
+   - **Already seeded?** Run the Monitor with `repost` set to a tracked version from the summary
+     (e.g. `starrail:4.6`). It is the deliberate override: it posts a card even for a version
+     that is already out (`genshin:7.1` after its update), which the automatic path never does.
+     A version that hasn't been announced yet (`genshin:7.2`) can't be reposted, and the summary
+     explains why.
 3. From then on, new codes and announcements are posted automatically.
 
 ## 5. Healthy-system checklist (check weekly, or when in doubt)
@@ -132,6 +167,9 @@ If the title link or the picture is wrong:
 - [ ] **Schedule cards appear** after an official *Special Program / Broadcast* post, and are
       **edited silently** once the maintenance notice arrives: pre-install, start, end and
       compensation fill in with no second ping.
+- [ ] **Nothing else ever opens a card.** A maintenance, pre-install or banner notice on its own
+      must never produce a post, and neither must a version whose programme already aired — those
+      show up in the summary as `🗂 … already out` or a silent `tracked`, never in the channel.
 - [ ] **No duplicates**: the same code or announcement is never posted twice, and an unchanged
       card is never re-sent (state keys + payload hashes).
 

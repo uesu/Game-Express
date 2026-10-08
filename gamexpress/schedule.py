@@ -133,6 +133,19 @@ NAME_SPLIT = re.compile(r",\s*(?:and\s+)?|\s+and\s+|\s*;\s*")
 NAME_FILLER = {"the", "a", "an", "and", "as", "of", "for", "will", "is", "are", "its", "both"}
 QUOTED_FIRST = re.compile(r"\s*[\"“「『]")
 OPEN_QUOTE = re.compile(r"[\"“「『]")
+# A wish notice TITLES the banner and then names the character:
+#     the event-exclusive 5-star character "Tasteful Excellence" Escoffier (Cryo)
+#     the 4-star characters "Ode and Oblation" Dahlia (Hydro), "Golden Vow" Candace (Hydro), ...
+# The quoted span is the BANNER's name; the character is the bare word straight after it. Because
+# the quote comes first, QUOTED_FIRST used to claim the whole clause and the real name was thrown
+# away -- Genshin 7.1 shipped phase2 = ["Tasteful Excellence"] and phase2_4 = ["Ode and Oblation",
+# "Golden Vow", "Coordinates of Clear Frost"] instead of Escoffier / Dahlia, Candace, Mika
+# (HoYoLAB 47010361, seen live 2026-10-08). Those strings pass plausible_name(), so no amount of
+# name screening can catch them; only the SHAPE of the sentence distinguishes them.
+# A closing quote followed immediately by a capitalised bare word is always this shape -- when the
+# quotes really do hold the character, what follows is punctuation, a conjunction, or prose.
+EPITHET_NAME = re.compile(
+    r"[\"“「『][^\"”」』\n]{2,40}[\"”」』]\s+([A-Z][\w'’.\-]*(?:[ •·&]+[A-Z0-9][\w'’.\-]*){0,3})")
 # A name list follows the star-tier phrase IMMEDIATELY. When prose comes first, the quoted span
 # that follows belongs to a DIFFERENT clause -- and in a HoYoverse notice that clause names a
 # BANNER, not a character:
@@ -421,9 +434,17 @@ def extract_banner(item: Item) -> dict:
             # Which style is this notice? HoYoverse writes characters bare and quotes the
             # weapons; other official posts quote the characters too. The first character after
             # the star-tier phrase decides, so a quoted name is never read as a bare one.
-            quoted = [_clean_name(q)
-                      for q in QUOTED.findall(TIER_STOP.split(tail, maxsplit=1)[0])]
-            if QUOTED_FIRST.match(tail):
+            run = TIER_STOP.split(tail, maxsplit=1)[0]
+            quoted = [_clean_name(q) for q in QUOTED.findall(run)]
+            # `"Epithet" Name` beats every other reading: the bare name after a closing quote is
+            # the character, and the quote is the banner it is featured on. Strictly additive --
+            # when no quote is followed by a usable name this list is empty and the original
+            # bare/quoted decision below runs exactly as before.
+            titled = [n for n in (_clean_name(p) for p in EPITHET_NAME.findall(run))
+                      if plausible_name(n) and n.lower() not in NAME_FILLER]
+            if titled:
+                names = titled
+            elif QUOTED_FIRST.match(tail):
                 names = quoted
             else:
                 names = [n for n in bare_names(tail) if plausible_name(n)]
@@ -821,16 +842,28 @@ def program_settled(data: dict, now: int, fresh_h: float = PROGRAM_FRESH_H) -> b
     """True once this version's special program has aired and stopped being news.
 
     The announcement already happened, so on a live run the version is historical: nothing about
-    it can surprise anyone, and posting -- or resurrecting -- a card for it is noise. Test runs
+    it can surprise anyone, and opening a card for it -- or re-creating one -- is noise. Test runs
     keep rendering it, because proving the fetch still resolves the real tweet is their purpose.
 
     In-place edits of an already-posted card are deliberately NOT covered. A settled program does
     not mean a finished version: HSR 4.6's program aired 2026-09-20 while its maintenance started
     2026-09-28, and its banners kept arriving from HoYoLAB in between. Those corrections still
     have to reach the card that is already sitting in the channel.
+
+    The maintenance date settles a version too, and it has to: a record created from an *Update
+    Details* notice never gets a program_ts at all, and only regains one if the cached
+    announcement in config/program_announcements.json can be replayed — needs_program_lookup()
+    switches the archived-announcement lookup off 12 h past maintenance. Reading only program_ts
+    therefore left every such version permanently "unsettled" -- Genshin 7.1 (first seen
+    2026-09-25, two days AFTER its 09-23 maintenance, with no program_ts in state) had a card
+    published for it on 2026-10-08, fifteen days after the version shipped. The 12 h horizon is the same one
+    needs_program_lookup() uses to call the card history, so the two agree by construction.
     """
     pts = data.get("program_ts")
-    return bool(pts and int(pts) < now - fresh_h * 3600)
+    if pts and TS_MIN <= int(pts) <= TS_MAX and int(pts) < now - fresh_h * 3600:
+        return True
+    start = data.get("maint_start_ts")
+    return bool(start and TS_MIN <= int(start) <= TS_MAX and now > int(start) + 12 * 3600)
 
 
 def needs_estimate(state, game_key: str, now: int) -> bool:
@@ -1024,11 +1057,66 @@ def version_extracts(ctx, game: Game, log_missing: bool = False) -> dict[str, li
     return by_version
 
 
-def needs_program_lookup(extracts: list[Extract], record: dict, now: int) -> bool:
+def _recoverable_announcement(data: dict, game_key: str, now: int, maint_start) -> bool:
+    """True when a live version's card is STILL missing its announcement and the tweet is cached.
+
+    A record built from an *Update Details* notice never gets a program_ts, and nothing else can
+    ever supply one. The card then drops its air-time line completely (cards.py prints nothing
+    rather than a misleading TBA), keeps the maintenance notice's cover as key art and links the
+    notice instead of the announcement — exactly the broken Genshin 7.1 card of 2026-10-08, whose
+    `images` had been carried forward in `data` since 2026-09-25 with nothing able to replace it.
+    The plain 12 h cutoff would leave every such version that way for ever.
+
+    Recovery is allowed only when config/program_announcements.json already holds the tweet id.
+    That makes the lookup one fxtwitter call which is going to succeed and set `media_from`, so it
+    happens once and then stops — rather than an open-ended retry every ten minutes. A version
+    with no cached id keeps the old behaviour and never retries, and a frozen card ends it either
+    way. The cache is also what makes this work on a `mode=test` run, whose state starts empty.
+    """
+    if data.get("program_ts") or not game_key or not data.get("version"):
+        return False
+    if now > int(maint_start) + CARD_FREEZE_D * 86400:
+        return False                       # frozen card: nothing the lookup finds can be shown
+    from .sources.twitter import program_seed  # deferred: sources.twitter imports schedule
+    return bool(program_seed(game_key, str(data["version"])).get("id"))
+
+
+def announcement_gap(record: dict, game_key: str, now: int) -> str:
+    """Why a live card can never get its announcement again, or "" when it can.
+
+    A record opened by an *Update Details* notice has no program_ts, and the ordinary lookup
+    stands down 12 h past maintenance; the cached-tweet recovery in needs_program_lookup() is
+    what repairs those cards. When the cache holds no id for the version there is nothing left
+    to try — and that state used to be completely silent, so a card kept the notice's cover and
+    link for ever while looking exactly like a rendering bug. This returns the one thing the
+    operator can act on, so the run summary can say it (once) instead.
+    """
+    data = (record or {}).get("data") or {}
+    if data.get("program_ts") or data.get("program_seen") or data.get("media_from"):
+        return ""                                  # the card has (or had) its announcement
+    start = data.get("maint_start_ts")
+    if not start or not TS_MIN <= int(start) <= TS_MAX:
+        return ""
+    if now <= int(start) + 12 * 3600:
+        return ""                                  # the ordinary lookup window is still open
+    if now > int(start) + CARD_FREEZE_D * 86400:
+        return ""                                  # frozen: nothing a lookup found could be shown
+    if not game_key or not data.get("version"):
+        return ""
+    if _recoverable_announcement(data, game_key, now, start):
+        return ""                                  # the cached recovery will run
+    return ("has no air time and no announcement link, and there is no cached tweet id to "
+            "replay — add one for this version in config/program_announcements.json and the "
+            "next run repairs the card in place")
+
+
+def needs_program_lookup(extracts: list[Extract], record: dict, now: int,
+                         game_key: str = "") -> bool:
     """Whether this version still needs its archived announcement looked up."""
     data = (record or {}).get("data") or {}
     start = data.get("maint_start_ts")
-    if start and now > int(start) + 12 * 3600:
+    if start and now > int(start) + 12 * 3600 \
+            and not _recoverable_announcement(data, game_key, now, start):
         return False
     # Having found the announcement once is normally enough -- but NOT while the air time is still
     # only an estimate. Without this, a version whose program_ts came from a countdown site keeps
@@ -1284,7 +1372,8 @@ async def gather_wiki_lineup(ctx, game: Game, ver: str, record: dict) -> dict | 
         return None
 
 
-async def _sync_mirror(ctx, game: Game, ver: str, record: dict, data: dict, now: int) -> None:
+async def _sync_mirror(ctx, game: Game, ver: str, record: dict, data: dict, now: int,
+                       settled: bool = False, repost: bool = False) -> None:
     """Deliver the same card to the game's own channel, in the same pass — but silently.
 
     This is a fan-out, not a Discord "follow": the copy is rebuilt from the same data and is
@@ -1307,6 +1396,8 @@ async def _sync_mirror(ctx, game: Game, ver: str, record: dict, data: dict, now:
     (The two hashes are over different bodies anyway, since only one of them carries a ping.)
     """
     s = ctx.settings
+    if record.get("mirror_retired") and not repost and not s.test_mode:
+        return                                    # settled, and the copy is gone for good
     name, hook = s.mirror_webhook_source("schedule", game.key)
     if not hook:
         # Switched off, or the secret was removed. Drop the ids so that re-adding it later
@@ -1314,6 +1405,13 @@ async def _sync_mirror(ctx, game: Game, ver: str, record: dict, data: dict, now:
         for key in ("mirror_message_id", "mirror_webhook_fp", "mirror_hash"):
             record.pop(key, None)
         return
+    if s.test_mode:
+        # Never PATCH a live copy from a test run. Dropping the ids (in memory -- a test never
+        # saves state) turns the branch below into a plain POST, so the bench still proves the
+        # fan-out works and still leaves you a copy to delete, instead of silently rewriting
+        # the production card in the game's channel and stamping a TEST banner on it.
+        for key in ("mirror_message_id", "mirror_webhook_fp", "mirror_hash"):
+            record.pop(key, None)
     primary = s.webhook("schedule", game.key)
     fp = webhook_fingerprint(hook)
     if primary and webhook_fingerprint(primary) == fp:
@@ -1339,14 +1437,40 @@ async def _sync_mirror(ctx, game: Game, ver: str, record: dict, data: dict, now:
                               f"({res.status}) {res.error}")
             return
         record.pop("mirror_message_id", None)     # 10008: gone for good -> one replacement
+    # The copy follows the original, so CREATING one is held to the same rule the original's
+    # 404 path follows: a version that is already out never gets a brand-new message. Callers
+    # pass settled=True only from the maintenance path, where the original is an old card being
+    # kept up to date; the post-success call site leaves it False because the original has just
+    # been published and the copy must land beside it. Editing an existing copy returned above,
+    # so living cards keep receiving their silent corrections either way.
+    #
+    # Without this the fan-out was the louder half of the 2026-10-08 regression: the primary card
+    # at least had a settled check to skip, while this send() had none and dropped a fifteen-day-
+    # old Genshin 7.1 card straight into #gi-news.
+    if settled and not repost:
+        record["mirror_retired"] = now
+        ctx.report.append(f"🗂 {game.short} {ver}: {name} copy not created — already out "
+                          f"(repost with {game.key}:{ver} if you want it anyway)")
+        return
     res = await ctx.webhook.send(hook, body)
     if res.ok:
+        record.pop("mirror_retired", None)        # a copy exists again -> the retirement is over
         record.update({"mirror_message_id": res.message_id, "mirror_webhook_fp": fp,
                        "mirror_hash": h})
         ctx.report.append(f"🪞 {game.short} {ver}: also posted to {name} (no ping)")
     else:
         ctx.report.append(f"⚠️ {game.short} {ver}: {name} copy failed "
                           f"({res.status}) {res.error}")
+
+
+# What a silent edit is allowed to be about, in the words the card uses. "Updated" on its own
+# is the one report line that never says what it did, which is awkward for the one feature that
+# is deliberately silent: a banner filling in, a guessed maintenance time being replaced by the
+# official one and a corrected key art all read identically. Order is the order they matter in.
+CARD_FIELDS = (("program_ts", "livestream time"), ("banners", "banners"),
+               ("preinstall_ts", "pre-install"), ("maint_start_ts", "maintenance start"),
+               ("maint_end_ts", "maintenance end"), ("compensation", "compensation"),
+               ("images", "key art"), ("title_url", "link"), ("version_name", "version name"))
 
 
 async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], records: dict,
@@ -1360,6 +1484,23 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     data = merge(game, ver, extracts, record, override, live_info, now, notes, estimates, media,
                  banner_feed, lead_h=observed_lead_h(records), records=records, wiki=wiki)
     ctx.report.extend(notes)
+    before = record.get("data") or {}      # merge() copies; record["data"] is reassigned below
+    changed_fields = [lbl for key, lbl in CARD_FIELDS if before.get(key) != data.get(key)] if before else []
+    # The three fields whose absence produced the wrong Genshin 7.1 card -- no air time, the
+    # maintenance article as the title link, the Update Details picture as the key art -- all
+    # arrive together, from the announcement. Finding them is the repair, and it used to happen
+    # in total silence, so there was no way to tell a run that fixed a card from one that did
+    # nothing. A card is never posted for it (the version may be settled); this is the receipt.
+    pts_now, media_now = data.get("program_ts"), data.get("media_from")
+    if pts_now and not before.get("program_ts"):
+        # UTC+8 by hand: every one of these games runs on it, and adding a tzinfo
+        # import for one summary line is not worth it.
+        when = (datetime(1970, 1, 1) + timedelta(seconds=int(pts_now) + 8 * 3600)
+                ).strftime("%a %d %b %Y %H:%M")
+        ctx.report.append(f"🛰️ {game.short} {ver}: announcement found — programme airs {when} UTC+8"
+                          + (f", key art and link from {media_now}" if media_now else ""))
+    elif media_now and media_now != before.get("media_from"):
+        ctx.report.append(f"🖼️ {game.short} {ver}: key art and title link now come from {media_now}")
     estimated = data.get("estimated") or []
     if estimated and estimated != record.get("estimated_reported"):
         record["estimated_reported"] = estimated
@@ -1386,8 +1527,26 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     frozen = bool(maint_start and now > int(maint_start) + CARD_FREEZE_D * 86400)
 
     settled = program_settled(data, now)
-    if status in ("posted", "live") and not repost:
-        if record.get("card_retired") or frozen or not s.edit_on_update:
+    # A test run RENDERS; it never repairs. Without `not s.test_mode` every version that has
+    # already been posted -- which is every version anyone would want to check -- takes the edit
+    # path below, so `mode=test` silently PATCHes the live card (unlabelled, because only the
+    # repost arm marks it) and stamps "🧪 TEST" onto the production copy in the game's channel,
+    # while the one thing the test bench promises -- a card you can look at and then delete --
+    # is never posted. Falling through to the creation path gives exactly that: one NEW message,
+    # marked TEST, built from this run's freshly fetched data, with the live card untouched.
+    if status in ("posted", "live") and not repost and not s.test_mode:
+        if record.get("card_retired") or not s.edit_on_update:
+            return
+        if frozen:
+            # A frozen card (CARD_FREEZE_D past maintenance) is no longer edited — deliberate,
+            # but invisible: the version simply stops appearing in the summary, so "why has my
+            # card stopped updating?" has no answer anywhere. Say it once, keyed on the
+            # maintenance date the freeze is measured from.
+            if record.get("frozen_noted") != int(maint_start):
+                record["frozen_noted"] = int(maint_start)
+                ctx.report.append(f"🧊 {game.short} {ver}: card frozen — no more edits "
+                                  f"{CARD_FREEZE_D} days past maintenance "
+                                  f"(repost with {game.key}:{ver} to publish a new one)")
             return
         payload = schedule_payload(game, data, s, ping)
         h = stable_hash(payload["components"])
@@ -1395,7 +1554,7 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
         # version was posted has to be backfilled, and "the card itself did not change" is
         # exactly the state that version is in. Putting this below the return would mean the
         # copy never appears until the card happens to be edited for some other reason.
-        await _sync_mirror(ctx, game, ver, record, data, now)
+        await _sync_mirror(ctx, game, ver, record, data, now, settled=settled)
         if h == record.get("payload_hash"):
             return
         mid = record.get("message_id")
@@ -1409,20 +1568,30 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
         if res.ok:
             record["payload_hash"] = h
             record["updated_at"] = now
-            ctx.report.append(f"✏️ {game.short} {ver}: schedule card updated")
-        elif res.status == 404 and settled and not s.test_mode:
-            # The program already aired, so this version is historical. Discord 10008 means the
-            # message is gone for good; reposting would resurrect a card the channel no longer
-            # needs -- and would keep doing it after every delete, forever. Drop the dead id so
-            # nothing retries. A test run still reposts: showing the real card is the whole point.
+            ctx.report.append(f"✏️ {game.short} {ver}: schedule card updated"
+                              + (f" — {', '.join(changed_fields)}" if changed_fields else ""))
+        elif res.status == 404 and settled:
+            # The version is already out, so it is historical. Discord 10008 only says the id
+            # no longer resolves -- the message may have been removed, or it may never have
+            # existed on this webhook at all, which is exactly the Genshin 7.1 case: the card
+            # people actually had was posted by a different bot before this one was deployed.
+            # Either way, publishing is not a repair, it is a brand-new card for a programme
+            # that aired a month ago, and it would happen again on every single run. Drop the
+            # dead id so nothing retries. A test run never reaches this arm: it does not edit
+            # live messages at all (see the test_mode check at the top of the edit path), it
+            # renders a new marked card instead. REPOST=<game>:<version> is the single
+            # deliberate override that re-creates a settled card. The data is still merged and
+            # saved either way.
             record["card_retired"] = now
             record.pop("message_id", None)
             ctx.report.append(
-                f"🗂 {game.short} {ver}: program already aired — the deleted card stays deleted "
-                f"(live runs never resurrect a settled version; repost with {game.key}:{ver})")
+                f"🗂 {game.short} {ver}: already out — its card is not re-created "
+                f"(a settled version is never posted again; repost with {game.key}:{ver})")
         elif res.status == 404:
-            # Discord 10008 means this message is permanently gone. Repeating the PATCH would
-            # fail forever, so post the current card once and adopt its new id. No other edit
+            # Discord 10008 means this id no longer resolves. Repeating the PATCH would fail
+            # forever, so post the current card once and adopt its new id. This arm is reached
+            # only when the version is NOT settled -- a programme still in the news, whose card
+            # genuinely belongs in the channel. No other edit
             # failure is reposted: a malformed payload or transient outage must not create spam.
             fresh = schedule_payload(game, data, s, ping)
             if s.test_mode:
@@ -1432,7 +1601,7 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
                 record.update({"message_id": reposted.message_id, "posted_at": now,
                                "updated_at": now, "webhook_fp": webhook_fingerprint(webhook),
                                "payload_hash": stable_hash(fresh["components"])})
-                ctx.report.append(f"♻️ {game.short} {ver}: deleted schedule card reposted "
+                ctx.report.append(f"♻️ {game.short} {ver}: schedule card re-created "
                                   f"after edit returned 404 {res.error}")
             else:
                 # Keep the dead id and old payload hash: the next run retries the same recovery.
@@ -1446,11 +1615,45 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     pts, fresh_program = data.get("program_ts"), False
     if "program" in kinds and pts:
         fresh_program = int(pts) > now - PROGRAM_FRESH_H * 3600
+    # A schedule card announces a Special Program / Special Broadcast. A maintenance notice may
+    # FILL one in — that is the whole point of the silent-edit design — but it must never be what
+    # opens one, or the card is built from the wrong post and shows the wrong title link, the
+    # wrong key art and no air time at all. Genshin 7.1 was created this way on 2026-09-25, two
+    # days after its own maintenance, and never recovered. So the version must already be one
+    # whose announcement this bot has actually seen.
     fresh_maint = bool(s.post_on_maintenance and "maintenance" in kinds and maint_start
-                       and int(maint_start) > now - 6 * 3600)
+                       and int(maint_start) > now - 6 * 3600
+                       and (pts or data.get("program_seen")))
+    # A schedule card ANNOUNCES. This bot was deployed after Genshin 7.1 and Wuthering Waves 3.7
+    # had already aired their programmes, and a version whose programme is already in the past is
+    # not an announcement — it is history, posted long ago by somebody else. Such a version is
+    # still TRACKED and its record kept current, and a card this bot genuinely posted still gets
+    # its corrections (the edit path returns long before here), but a NEW one must never be opened
+    # for it. program_settled() was previously consulted only on the 404 arm, so the creation gate
+    # below could not see it; that is how Genshin 7.1 — announced 2026-09-07, aired 09-12, shipped
+    # 09-23 — got a brand-new card on 2026-10-08. It also closes the hole that the cached recovery
+    # in needs_program_lookup() would otherwise open: supplying a long-past programme's program_ts
+    # must never let a six-hour-wide maintenance notice promote it into a fresh post.
+    if settled and not repost:
+        fresh_program = fresh_maint = False
     if s.test_mode and (pts or maint_start):
         fresh_program = True                  # TEST MODE: show the latest real card, even if older
     if not (fresh_program or fresh_maint or repost):
+        if status != "new" and not bootstrapped and "maintenance" in kinds and maint_start \
+                and int(maint_start) > now - 6 * 3600 \
+                and record.get("notice_only_at") != int(maint_start):
+            # A notice arrived and deliberately did NOT open a card. Both reasons are correct
+            # behaviour and both look identical from outside -- a run that posts nothing -- so
+            # the one place they can be told apart is here. Keyed on the notice's own timestamp:
+            # reported once, not every ten minutes for the six hours the notice stays fresh.
+            record["notice_only_at"] = int(maint_start)
+            if settled:
+                ctx.report.append(f"🗂 {game.short} {ver}: notice merged into a version that is "
+                                  f"already out — its card is kept current, no new card is opened")
+            else:
+                ctx.report.append(f"🗂 {game.short} {ver}: maintenance notice recorded — no Special "
+                                  f"Program announcement has been seen for this version, so it opens "
+                                  f"no card. The times appear on the card the moment one is found")
         if status == "new":
             record["status"] = "tracked"
             if not bootstrapped:
@@ -1461,8 +1664,8 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
         record["status"] = "seeded"
         ctx.report.append(f"🌱 {game.short} {ver}: seeded silently (first run — set BOOTSTRAP_POST=1 to post)")
         return
-    if status == "seeded" and not repost:
-        return
+    if status == "seeded" and not repost and not s.test_mode:
+        return                                    # a test run renders it; nothing is saved
     if not webhook:
         ctx.report.append(f"⚠️ {game.short} {ver}: no schedule webhook — add the secret "
                           f"{s.expected_webhook_names('schedule', game.key)}")
@@ -1472,13 +1675,23 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
         payload = mark_test(payload)
     res = await ctx.webhook.send(webhook, payload)
     if res.ok:
+        # A retirement is a statement about a message that no longer exists. This run has just
+        # published a replacement, so it has to be lifted -- otherwise the guard at the top of
+        # the edit path would see card_retired and return, and the brand-new card would never
+        # receive another correction for the rest of its life.
+        record.pop("card_retired", None)
         record.update({"status": "posted", "message_id": res.message_id, "posted_at": now,
                        "webhook_fp": webhook_fingerprint(webhook),
                        "payload_hash": stable_hash(payload["components"])})
-        ctx.report.append(f"📜 {game.short} {ver}: schedule card posted")
+        if s.test_mode:
+            ctx.report.append(f"🧪 {game.short} {ver}: TEST card posted as a NEW message — delete it "
+                              f"when you are done. The live card and its copy were not touched, and "
+                              f"the state file was not written")
+        else:
+            ctx.report.append(f"📜 {game.short} {ver}: schedule card posted")
         # Same run, same data, so the copy lands together with the original — only the ping is
         # left off. Strictly after the real card succeeded: if the schedule channel rejected
         # the post there is nothing worth copying anywhere.
-        await _sync_mirror(ctx, game, ver, record, data, now)
+        await _sync_mirror(ctx, game, ver, record, data, now, repost=repost)
     else:
         ctx.errors.append(f"{game.short} {ver}: post failed ({res.status}) {res.error}")

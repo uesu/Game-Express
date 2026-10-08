@@ -13,6 +13,155 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ---
 
+## 2026-10-08
+
+**One Genshin 7.1 card exposed five faults — a card that should never have existed, plus the wrong
+art, the wrong link and no air time**
+
+### A programme that already aired never opens a card
+
+- **The creation gate now consults `program_settled()`.** A schedule card *announces* — a version
+  whose programme is already in the past is history, posted long ago by somebody else. That is
+  every version this bot was deployed after (Genshin 7.1, Wuthering Waves 3.7, …). It is still
+  tracked and its record kept current, and a card the bot genuinely posted still receives its
+  silent corrections (the edit path returns long before the gate), but a **new** one is never
+  opened for it. Genshin 7.1 was announced 2026-09-07, aired 09-12 and shipped 09-23 — yet on
+  2026-10-08 a Phase II notice drove an edit of a message id that had never resolved, the edit
+  404'd, and a brand-new card was published. `settled` was previously consulted **only** on the
+  404 arm, so the gate could not see it.
+- **This is also what makes the cached recovery safe.** Handing a long-past programme its
+  `program_ts` must not let a six-hour-wide maintenance notice promote it into a fresh post.
+- `mode=test` (which still renders the latest real card from an empty state) and
+  `REPOST=<game>:<version>` remain the only two overrides — the rule is a default, not a cage.
+  The first card this bot genuinely published, the **Zenless Zone Zero 3.3 Special Program**,
+  was posted on 2026-10-05 for a programme that airs on 10-09: still ahead, so never settled, and
+  it posts exactly as before — a test pins that.
+
+### The card that was built from the wrong post
+
+- **A maintenance notice no longer opens a schedule card.** A card exists because an official
+  *Special Program* / *Special Broadcast* was announced; the notice then *fills it in* — that is
+  the whole silent-edit design. Genshin 7.1 was opened by its *Update Details* notice on
+  2026-09-25, two days after its own maintenance, so it shipped with the notice's cover as key
+  art, the notice's URL as its title link and **no air-time line at all** (`cards.py` prints
+  nothing rather than a misleading `TBA`). `fresh_maint` now requires a `program_ts` or a
+  `program_seen` before a notice may post anything.
+- **A version whose record never got its announcement is looked up once more — when the tweet is
+  already cached.** `needs_program_lookup()` stood down 12 h after maintenance, which left such
+  a version broken for ever: every run carried the wrong picture and the wrong link forward in
+  `data`. With the id present in `config/program_announcements.json` the lookup now runs again —
+  one `fxtwitter` call that succeeds and sets `media_from`, so it happens once and stops — until
+  `CARD_FREEZE_D` closes the card. A version with no cached id behaves exactly as before.
+- **A stored id that stops resolving no longer produces a card for a version that is already
+  out.** `program_settled()` reads the maintenance date as well as `program_ts` (the same 12 h
+  horizon `needs_program_lookup()` uses), because a record opened by a notice never has a
+  `program_ts`. Without it, the 7.1 edit 404'd and the card was published **and** copied into
+  `#gi-news`, fifteen days after the version shipped.
+- **A `404`/`10008` is not evidence of a deletion.** It only says the stored id no longer
+  resolves — the message may have been removed, or it may never have existed on this webhook at
+  all, which is precisely the Genshin 7.1 case: the card players had was posted by a different
+  bot before this one was deployed. So on a settled version the id is dropped and nothing is
+  published (`its card is not re-created`); on a version still in the news the old behaviour
+  stands — one fresh post whose new id is adopted.
+- **TEST_MODE is no longer exempt from that rule** — not because the exemption caused the
+  2026-10-08 card (it did not; see *A `404` comment no longer blames test mode* below), but
+  because an exemption that re-creates a card for a programme that aired a month ago has no
+  honest use. A test run that genuinely wants one asks with `REPOST=<game>:<version>`, which
+  bypasses the branch entirely — and after this release a test run never reaches that branch at
+  all, because it no longer edits live messages. The data correction is merged and saved either
+  way.
+- **The game-channel copy obeys the same rule.** `_sync_mirror()` refuses to *create* a copy for
+  a settled version (editing an existing one still works, as always), records the refusal in
+  `mirror_retired`, and a successful `REPOST` lifts both retirements so the new card keeps
+  receiving its silent corrections.
+- **`extract_banner` reads `"Epithet" Name`.** Genshin titles the wish banner and *then* names
+  the character — the 5-star character `"Tasteful Excellence" Escoffier` — so the quoted span is
+  the *banner's* name. `QUOTED_FIRST` used to claim the whole clause, and 7.1 shipped
+  `phase2 = ["Tasteful Excellence"]` and `phase2_4 = ["Ode and Oblation", "Golden Vow",
+  "Coordinates of Clear Frost"]` instead of Escoffier / Dahlia, Candace, Mika. The bare name
+  after a closing quote now wins; notices that really quote the character, and bare-name notices
+  (HSR), are untouched.
+- **After merging**, Genshin 7.1 keeps the card it already has and is repaired **in place**: one
+  `fxtwitter` call for the cached tweet, then a silent `PATCH` of the existing message and its
+  mirror. The card gains its air time (`Saturday, September 12, 2026 8:00 PM` GMT+8) and the
+  programme's own key art, its title points at the announcement, and **no new message is
+  posted**. No already-aired version — 7.1, Wuthering Waves 3.7 or any other — can produce a new
+  card again without an explicit `REPOST=`.
+
+### The test bench, and seeing what a run actually did
+
+- **A test run renders a card; it never repairs one.** `mode = test` promises "the REAL schedule
+  card for the version that is out now … exactly what a live run would post", as a throwaway you
+  delete afterwards — but for any version that had already been posted it took the *edit* path:
+  it silently `PATCH`ed the **live** card (unlabelled — only the repost arm marks a card), stamped
+  a 🧪 TEST banner onto the production copy in the game's channel, and then returned without ever
+  posting the card the operator asked to see. The Actions dispatch escaped it (its `STATE_PATH`
+  starts empty); a local `TEST_MODE=1` did not. A test run now renders one **new** message marked
+  TEST, leaves every live card and copy untouched, and reports as much. A seeded version renders
+  on the bench too.
+- **A lookup that found nothing now reaches the summary.** Finding the announcement *is* the
+  repair, and it used to be reported to the job log only — so a card stuck with no air time and
+  no link looked exactly like a rendering bug, which is how 7.1 stayed wrong. Both outcomes are
+  now in the step summary: `🛰️ GI 7.1: announcement found — programme airs Sat 12 Sep 2026 20:00
+  UTC+8` and `🔍 GI 7.1: no Special Program announcement found …`. The lookup stops by itself the
+  moment a source answers.
+- **The two silent refusals say so.** A notice that correctly did **not** open a card, and a
+  notice merged into a version that is **already out**, both look identical from outside — a run
+  that posted nothing. Both now report once, keyed on the notice's own timestamp rather than
+  every ten minutes.
+- **An edit says what it edited.** `✏️ GI 7.1: schedule card updated` never said *what* changed,
+  in the one feature that is deliberately invisible; it now reads `— banners, maintenance end`,
+  so a silent edit can be confirmed from outside.
+- **Two more silent states are now named.** A card that stops being edited because it is
+  **frozen** (`CARD_FREEZE_D` = 45 days past maintenance) simply vanished from the summary, which
+  is what "why has my card stopped updating?" looks like from outside — it now says
+  `🧊 GI 7.1: card frozen — no more edits 45 days past maintenance`, once. And a card that can
+  never be repaired — notice-built, past the 12 h lookup window, **no cached tweet id** to replay
+  — now says `🩹 GI 7.1: … add one for this version in config/program_announcements.json and the
+  next run repairs the card in place`, also once. That second one is the Genshin 7.1 state minus
+  the cache: previously nothing anywhere admitted it existed.
+- **`docs/TESTING.md` gained a worked example** for a version that is already out — which test to
+  run, what the 🧪 TEST card must show (air time, announcement link, key art, banner names), why
+  the live card and its copy stay untouched, and what the next live run will do.
+- **A `404` comment no longer blames test mode.** Test mode was involved in neither half of what
+  happened to Genshin 7.1. The record was opened by the maintenance path on 2026-09-25, which had
+  no settled check; every re-appearance since came from the `404` arm of an ordinary live run —
+  most recently run #1031 on 2026-10-08 at 13:20 UTC, whose summary line was
+  `♻️ GI 7.1: deleted schedule card reposted after edit returned 404` with Discord code `10008`.
+  That is the run this release makes impossible.
+
+### Tests
+
+- **New: `tests/test_schedule_epithet_and_settled.py`** — 14 regression tests for the parser, the
+  settled rule and the cached recovery, runnable standalone
+  (`python tests/test_schedule_epithet_and_settled.py`) in a checkout with no runtime
+  dependencies installed, and under pytest.
+- **`tests/test_smoke.py`** — the notice-replacement test re-pointed at the new policy (the
+  announcement is now adopted *silently*), plus **eighteen new tests**: the notice guard in both
+  directions, the already-aired rule and its `REPOST` override, the same rule proven on
+  Wuthering Waves' Special Broadcast for both notice kinds, the ZZZ 3.3 over-fix guard
+  (an upcoming programme must still post, with its air time), the cached recovery and the lookup
+  that found nothing; the frozen card and the card that can never be repaired; the copy
+  retirement, the copy that is still edited, the retired copy and the live copy a test run must
+  reproduce without ever PATCHing; the `REPOST` revival, three identical re-runs costing no
+  request, the summary lines that explain a silent refusal, the two halves of the test-run rule
+  (a live run never re-creates; a test run never edits) — and the real live 7.1 record healing
+  end to end. Two older tests were named better, so the file runs **205** where `main` ran 188 —
+  including `test_a_test_run_still_reposts_a_settled_version`, which asserted the half of the
+  behaviour this entry forbids.
+- **Docs restated for the two new rules**: the README's schedule-card section ("only an
+  announcement opens one"), the `repost` note in *Then what?*, and the posting rules now split
+  *only an announcement opens a card* / *a programme that already aired is history* /
+  *post once, then edit silently*. `docs/ACCURACY.md` carries the same three rules (and the
+  `"Epithet" Name` banner wording its parser needs), the cached recovery is spelled out under
+  *The announcement's own link and key art*, `docs/TESTING.md`'s healthy-system checklist gains
+  **nothing else ever opens a card** and its *Already seeded?* step now says `repost` is the
+  override that cards an already-out version, `docs/CONFIGURATION.md` says what `TEST_MODE` and
+  `PROGRAM_MEDIA` really do, and the index row for this entry matches its headline. The wording
+  that called a `10008` a deletion is gone from the tests and comments too.
+
+---
+
 ## 2026-10-06
 
 **Banner line-ups fill themselves in from the game wikis — plus a countdown fix and a

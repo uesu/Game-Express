@@ -40,7 +40,8 @@ name: Game-Express Monitor
 #
 #   A test posts to the REAL channels, labelled 🧪 TEST, and NEVER writes the state — so the
 #   live run still posts the real thing later, and nothing is ever skipped as "already seen".
-#   Delete the test cards afterwards.
+#   Every test card is a NEW message: a test run never edits a live card or its copy, so what
+#   you see is a throwaway and the real cards are untouched. Delete the test cards afterwards.
 # ────────────────────────────────────────────────────────────────────────────────────────
 
 concurrency:

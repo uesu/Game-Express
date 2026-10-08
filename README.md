@@ -66,8 +66,11 @@ It runs entirely on **GitHub Actions** (free and unlimited on public repos), tri
 
 ### 1 · Version schedule card
 
-One card per game + version, triggered by an official *Special Program* / *Special Broadcast* /
-livestream announcement or an update-maintenance notice.
+One card per game + version. **Only an official *Special Program* / *Special Broadcast* /
+livestream announcement can open one** — maintenance, pre-install and banner notices fill in the
+card that announcement opened, silently, and never create one of their own. A programme that has
+already aired is recorded and kept current, but never carded: versions released before this bot
+existed stay out of the channel.
 
 ```
 ┌───────────────────────────────────────────────────────────── (accent 14922399)
@@ -215,8 +218,9 @@ Everything else:
 ### 5 · Test it
 
 *Actions → **Game-Express Monitor** → Run workflow → `mode` = **test***, then `webhooks` →
-`codes` → `schedule`. Each one posts **real** data labelled 🧪 TEST, never writes the state, and
-pings nobody by default. Walkthrough: **[docs/TESTING.md](docs/TESTING.md)**.
+`codes` → `schedule`. Each one posts **real** data labelled 🧪 TEST as new messages — it never
+edits a live card, never writes the state, and pings nobody by default. Walkthrough:
+**[docs/TESTING.md](docs/TESTING.md)**.
 
 ### 6 · Go live with cron-job.org
 
@@ -234,9 +238,11 @@ very first run instead, set `BOOTSTRAP_POST=1` before that run.
 
 **Already seeded and want a current card now?** Run the Monitor with `repost = starrail:4.6` (any
 version shown in a summary). The card is posted as a new message and then kept up to date like
-any other. If the Special Program aired before the bot was running, its time isn't in the feeds
-any more, so the card leaves that line out — pin it in `config/overrides.json`
-(`"program_ts": "2026-09-20T19:30:00+08:00"`).
+any other. `repost` is the only way to card a version whose programme has already aired, and it
+is deliberate: the automatic path never does this. If the announcement scrolled out of the feeds,
+its tweet is replayed from `config/program_announcements.json`, so the air time, the key art and
+the announcement link come back anyway; a version that was never cached can still be pinned in
+`config/overrides.json` (`"program_ts": "2026-09-20T19:30:00+08:00"`).
 
 ---
 
@@ -277,8 +283,13 @@ Webhook routing, most specific first:
    countdown estimate > learned pre-install fallback > banner feed*.
 4. **Unknown is `TBA`**, banners always carry `(STC)`, and no estimate can overwrite an official
    value.
-5. **Post once, then edit silently.** A deleted Discord message (`404 Unknown Message`) is
-   re-posted once and the new id adopted; every other edit failure stays an error and never
+5. **Only an announcement opens a card.** A *Special Program* / *Special Broadcast* creates it;
+   maintenance, pre-install and banner notices only fill it in. A programme that already aired is
+   tracked, never posted — so a version that shipped before the bot was deployed cannot surface
+   as new. `repost` remains the deliberate override.
+6. **Post once, then edit silently.** If the stored message id no longer resolves
+   (`404 Unknown Message`) the card is re-created once and the new id adopted — but never for a
+   version whose programme is already over. Every other edit failure stays an error and never
    reposts.
 
 **The code gate.** A code posts when **any one** of these is true: it comes from an **official**
@@ -330,7 +341,9 @@ cards only**. A live run pings according to `PING_SCHEDULE` / `PING_ROLE_ID` wha
 says.
 
 > A test posts to the **real** channels and never writes the state — so the live run still posts
-> the real thing later. Delete the test cards when you are done with them.
+> the real thing later. Every test card is a **new** message: a test run never edits a live card
+> or its copy, so it can neither rewrite nor re-label what is already in the channel. Delete the
+> test cards when you are done with them.
 
 </details>
 
@@ -442,20 +455,32 @@ Index: **[docs/](docs/)**.
 
 ## 🗒 Changelog
 
-**Latest — [2026-10-05](docs/changelog/CHANGELOG.md#2026-10-05) · *the README stops being a
-history book, and the version number retires***
+**Latest — [2026-10-08](docs/changelog/CHANGELOG.md#2026-10-08) · *a card that should never have
+existed, plus the wrong art, the wrong link and no air time***
 
-- The README went from 958 lines to 483: the configuration reference, accuracy rules,
-  troubleshooting table and credits moved into [`docs/`](docs/), and the release history moved
-  into [`docs/changelog/`](docs/changelog/).
-- **No more version number.** `build_id()` reports the short `GITHUB_SHA` instead, so a run
-  summary reads `### Game-Express 03c1668 — alpha (primary)` and points at the exact code that
-  posted the card. A bump used to mean four files moving in lockstep; now there is nothing to
-  bump and nothing to go stale.
-- Dead fields removed (`Item.author`, `Settings.log_level`, `Game.publisher`, `FoundTime.has_tz`,
-  and `app_version` on the heartbeat) — all written, never read.
-- Stale facts swept repo-wide: the nitter fleet size, the 5-minute poll cadence, and every
-  cross-reference that still pointed at the README's old changelog.
+- **A programme that already aired never opens a card.** A version announced long before this bot
+  was deployed — Genshin 7.1, Wuthering Waves 3.7 — is history: it stays tracked and its record
+  stays current, but the creation gate now consults `program_settled()`, so no brand-new message
+  is ever opened for it. `mode=test` and `REPOST=<game>:<version>` remain the two overrides.
+- **A maintenance notice never opens a schedule card** — it fills in one the announcement opened.
+  Genshin 7.1 was created by its *Update Details* notice, so it shipped with the notice's cover
+  and URL and no air time; the notice-only path is gone, and the notice's data still lands on the
+  card.
+- **A version whose announcement never arrived is looked up once more**, from the tweet id
+  already cached in `config/program_announcements.json` — one call that fixes picture, link and
+  air time together.
+- **A stored id that stops resolving is not a deleted card.** `404`/`10008` only says the id no
+  longer resolves — it may never have existed on that webhook at all. For a version that is
+  already out, the id is simply dropped: no card is published in the schedule channel or the
+  game-channel copy (`program_settled()` now reads the maintenance date too, and TEST_MODE is no
+  longer exempt). `REPOST=<game>:<version>` remains the way back.
+- **Banner notices written as `"Banner Title" Character` now yield the character** — Genshin 7.1
+  showed `Tasteful Excellence` where Escoffier belongs.
+- **A test run renders, it never repairs.** `mode=test` now posts one new 🧪 TEST card to look at
+  and delete, instead of silently PATCHing the live card and stamping TEST onto its channel copy;
+  the summary says so, and names what each silent edit actually changed.
+- New `tests/test_schedule_epithet_and_settled.py` runs standalone; the offline suite covers the
+  whole ladder, including the real 7.1 record healing in place with no new message.
 
 **➡️ Full history: [docs/changelog/](docs/changelog/)** —
 [current entries](docs/changelog/CHANGELOG.md) (1.8.0 onward) ·

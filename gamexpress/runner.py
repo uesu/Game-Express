@@ -168,18 +168,35 @@ async def gather_program_media(ctx: Ctx) -> None:
         records = ctx.state.schedule_records(g.key) or {}
         by_version = schedule.version_extracts(ctx, g)
         todo = [v for v in by_version
-                if schedule.needs_program_lookup(by_version[v], records.get(v, {}), ctx.now)]
+                if schedule.needs_program_lookup(by_version[v], records.get(v, {}), ctx.now, g.key)]
         for ver, rec in records.items():
-            if ver not in by_version and schedule.needs_program_lookup([], rec, ctx.now):
+            if ver not in by_version and schedule.needs_program_lookup([], rec, ctx.now, g.key):
                 todo.append(ver)
         jobs += [(g, v) for v in sorted(set(todo), key=version_key)]
+        # Cards the lookup cannot help, said once. A version whose announcement never arrived
+        # and whose tweet id is not cached is otherwise unreachable: it keeps the notice's
+        # cover and link for ever, the lookup no longer runs, and the summary shows a card
+        # that looks merely stale. That is the Genshin 7.1 state minus the cache — the one
+        # thing the operator can fix, and only if somebody tells them.
+        for ver, rec in records.items():
+            reason = schedule.announcement_gap(rec, g.key, ctx.now)
+            if not reason:
+                rec.pop("announce_gap", None)      # repaired, or never needed one
+            elif rec.get("announce_gap") != reason:
+                rec["announce_gap"] = reason
+                ctx.report.append(f"🩹 {g.short} {ver}: {reason}")
     if not jobs:
         return
     hits = await asyncio.gather(*(find_program(ctx, g, ver) for g, ver in jobs))
     for (g, ver), hit in zip(jobs, hits):
         if hit:
             ctx.media.setdefault(g.key, {})[ver] = hit
-    for key in {g.key for g, _ in jobs}:
+    wanted: dict[str, list[str]] = {}
+    shorts = {}
+    for g, ver in jobs:
+        wanted.setdefault(g.key, []).append(ver)
+        shorts[g.key] = g.short
+    for key, vers in wanted.items():
         found = ctx.media.get(key) or {}
         if found:
             log.info("[%s] program announcement found for %s (source: %s)", key,
@@ -188,6 +205,16 @@ async def gather_program_media(ctx: Ctx) -> None:
         else:
             log.info("[%s] no program announcement found on X, HoYoLAB, the official news page "
                      "or its feed mirror — the card keeps its current link", key)
+        missed = [v for v in vers if v not in found]
+        if missed:
+            # A lookup only runs for a version that needs one, so this is never chatter: it is
+            # the other half of the "announcement found" line. Without it, a card with no air
+            # time and no link looks like a rendering bug, when what happened is that every
+            # source was asked and none answered. It stops by itself -- the moment one answers,
+            # media_from is set and needs_program_lookup() returns False for good.
+            ctx.report.append(f"🔍 {shorts[key]} {', '.join(sorted(missed))}: no Special Program "
+                              f"announcement found (X, HoYoLAB, official news page) — the card "
+                              f"keeps its current link; the lookup runs again next run")
 
 
 async def gather_items(ctx: Ctx) -> None:
@@ -266,7 +293,10 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
             if state.save():
                 log.info("state saved -> %s", settings.state_path)
         elif settings.test_mode:
-            ctx.report.insert(0, "🧪 TEST MODE — cards are marked TEST, the state file is NOT saved")
+            ctx.report.insert(0, "🧪 TEST MODE — every card below is a NEW message marked TEST, built "
+                                 "from this run's live data. No live card was edited, no copy was "
+                                 "touched and the state file was NOT saved. Delete the test cards "
+                                 "when you are done")
         log.info("sources: %s", fetcher.summary())
         ctx.elapsed = time.monotonic() - started
         write_summary(ctx)
@@ -282,7 +312,10 @@ def write_summary(ctx: Ctx) -> None:
         lines.append("> **DRY RUN** — nothing was posted or saved; \"posted\" below means *would post*. "
                      "The full card JSON is in the job log (paste it into discohook.app to see it).")
     elif ctx.settings.test_mode:
-        lines.append("> **TEST MODE** — cards are labelled 🧪 TEST and the state file is not saved.")
+        lines.append("> **TEST MODE** — real data, throwaway cards. Every card is a NEW message "
+                     "labelled 🧪 TEST, posted from the sources this run actually fetched; live cards "
+                     "and their copies are never edited and the state file is not saved. "
+                     "Delete the test cards afterwards.")
     lines += [f"- {r}" for r in ctx.report] or ["- nothing new (no matching announcements / codes)"]
     for w in ctx.warnings:
         lines.append(f"- ⚠️ {w}")
