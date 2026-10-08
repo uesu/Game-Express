@@ -283,6 +283,24 @@ def test_every_game_treats_an_aired_programme_the_same_way():
         assert schedule.program_settled(notice_built, starts + 13 * 3600) is True, f"{key}: shipped"
 
 
+def test_a_card_with_no_recoverable_announcement_says_so():
+    """The one unreachable state, in words: a notice-built record whose tweet id was never
+    cached. Nothing runs for it, the lookup never fires, and before this the summary was silent
+    — the card just kept the wrong cover and the wrong link for ever."""
+    gap = schedule.announcement_gap
+    live = {"data": dict(LIVE_71_DATA)}                      # no program_ts, maint 15 days past
+    assert "no cached tweet id" in gap(live, "nosuchgame", NOW)     # nothing cached for it
+    assert gap(live, "genshin", NOW) == ""                   # 7.1 IS cached -> the recovery runs
+    assert gap({"data": dict(LIVE_71_DATA, program_ts=LIVESTREAM_TS)}, "nosuchgame", NOW) == ""
+    assert gap({"data": dict(LIVE_71_DATA, program_seen=True)}, "nosuchgame", NOW) == ""
+    assert gap({"data": dict(LIVE_71_DATA, media_from="X Post")}, "nosuchgame", NOW) == ""
+    early = NOW - 20 * DAY + 6 * 3600                        # maintenance 6 h ago: window open
+    assert gap({"data": dict(LIVE_71_DATA, maint_start_ts=early)}, "nosuchgame", early) == ""
+    frozen = NOW - 60 * DAY                                  # frozen: nothing to show any more
+    assert gap({"data": dict(LIVE_71_DATA, maint_start_ts=frozen)}, "nosuchgame", NOW) == ""
+    assert gap({"data": {"version": "9.9"}}, "nogame", NOW) == ""   # no maintenance at all
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

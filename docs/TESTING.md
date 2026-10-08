@@ -97,6 +97,33 @@ run would post:
 | **Banners** | the 5★ and 4★ names for each phase. **TBA** means no official banner post was in the 30-day window — the honest answer, and pinning the names in `config/overrides.json` fills it in |
 | **Buttons** | YouTube / Twitch / Source, inside the card |
 
+### Checking a card for a version that is already out (e.g. Genshin 7.1)
+
+A live run never opens a card for a version whose programme has already aired (rule 6 above), so
+the bench is how you look at one. **Actions → Game-Express Monitor → Run workflow → `mode` =
+`test`, `test` = `schedule`, `game` = `genshin`, `ping` = off.**
+
+The step starts from an **empty state** with a **30-day lookback** and fetches everything live, so
+the card it builds is what a live run would post — posted as a **new** 🧪 TEST message you delete
+afterwards. Nothing live is touched: not the existing card, not its copy in the game channel.
+
+| On that TEST card | What it proves |
+|---|---|
+| **Livestream line** shows the real air time (e.g. `Saturday, September 12, 2026 8:00 PM`, `a month ago`) | the announcement was found — the thing a notice-built card loses |
+| **Title link** opens the Special Program announcement, not the maintenance article | same lookup |
+| **Key art** is the program's artwork, not the *Update Details* cover | same lookup |
+| **Maintenance block** shows pre-install / start / end / compensation | official values, unchanged |
+| **Banners** show the real characters per phase (e.g. `Escoffier`, not `Tasteful Excellence`) | the `"Banner Title" Character` reader, if the banner notice is inside the lookback |
+| **Your live card and its copy are untouched; the TEST card is a separate message** | a test renders, it never repairs |
+| Summary line `🛰️ GI 7.1: announcement found — programme airs …` | the repair, reported |
+
+Then run **`mode = live`** once. For a version this bot has already carded, the announcement is
+replayed from `config/program_announcements.json` and the existing card is **edited in place** —
+`✏️ GI 7.1: schedule card updated — livestream time, banners, key art, link`, no new message. If
+the card was deleted, that edit gets `404` and a settled version is never re-published: the dead
+id is dropped and the summary says `🗂 … its card is not re-created`. `repost = genshin:7.1` is
+the way back if you want one anyway.
+
 If the title link or the picture is wrong:
 
 - The card is built from whatever official post the run saw. When the Special Program preview is

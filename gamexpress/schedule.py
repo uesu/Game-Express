@@ -1081,6 +1081,35 @@ def _recoverable_announcement(data: dict, game_key: str, now: int, maint_start) 
     return bool(program_seed(game_key, str(data["version"])).get("id"))
 
 
+def announcement_gap(record: dict, game_key: str, now: int) -> str:
+    """Why a live card can never get its announcement again, or "" when it can.
+
+    A record opened by an *Update Details* notice has no program_ts, and the ordinary lookup
+    stands down 12 h past maintenance; the cached-tweet recovery in needs_program_lookup() is
+    what repairs those cards. When the cache holds no id for the version there is nothing left
+    to try — and that state used to be completely silent, so a card kept the notice's cover and
+    link for ever while looking exactly like a rendering bug. This returns the one thing the
+    operator can act on, so the run summary can say it (once) instead.
+    """
+    data = (record or {}).get("data") or {}
+    if data.get("program_ts") or data.get("program_seen") or data.get("media_from"):
+        return ""                                  # the card has (or had) its announcement
+    start = data.get("maint_start_ts")
+    if not start or not TS_MIN <= int(start) <= TS_MAX:
+        return ""
+    if now <= int(start) + 12 * 3600:
+        return ""                                  # the ordinary lookup window is still open
+    if now > int(start) + CARD_FREEZE_D * 86400:
+        return ""                                  # frozen: nothing a lookup found could be shown
+    if not game_key or not data.get("version"):
+        return ""
+    if _recoverable_announcement(data, game_key, now, start):
+        return ""                                  # the cached recovery will run
+    return ("has no air time and no announcement link, and there is no cached tweet id to "
+            "replay — add one for this version in config/program_announcements.json and the "
+            "next run repairs the card in place")
+
+
 def needs_program_lookup(extracts: list[Extract], record: dict, now: int,
                          game_key: str = "") -> bool:
     """Whether this version still needs its archived announcement looked up."""
@@ -1506,7 +1535,18 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     # is never posted. Falling through to the creation path gives exactly that: one NEW message,
     # marked TEST, built from this run's freshly fetched data, with the live card untouched.
     if status in ("posted", "live") and not repost and not s.test_mode:
-        if record.get("card_retired") or frozen or not s.edit_on_update:
+        if record.get("card_retired") or not s.edit_on_update:
+            return
+        if frozen:
+            # A frozen card (CARD_FREEZE_D past maintenance) is no longer edited — deliberate,
+            # but invisible: the version simply stops appearing in the summary, so "why has my
+            # card stopped updating?" has no answer anywhere. Say it once, keyed on the
+            # maintenance date the freeze is measured from.
+            if record.get("frozen_noted") != int(maint_start):
+                record["frozen_noted"] = int(maint_start)
+                ctx.report.append(f"🧊 {game.short} {ver}: card frozen — no more edits "
+                                  f"{CARD_FREEZE_D} days past maintenance "
+                                  f"(repost with {game.key}:{ver} to publish a new one)")
             return
         payload = schedule_payload(game, data, s, ping)
         h = stable_hash(payload["components"])

@@ -2690,6 +2690,36 @@ def test_the_summary_says_why_a_notice_opened_no_card():
         assert rec["data"]["maint_start_ts"]                     # and its data is still current
 
 
+def test_a_card_that_cannot_get_its_announcement_says_so_once():
+    """A version the lookup can never help — no program_ts, past the 12 h window, and no cached
+    tweet id to replay — is otherwise completely silent: the lookup never runs, so there is no
+    🔍 line either, and the card simply keeps the notice's cover and link. The summary now names
+    the one thing the operator can do, once per card rather than every five minutes."""
+    from gamexpress import runner
+
+    async def _no_hit(*_a, **_k):
+        return None
+
+    now = 1791446400
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=now)
+        recs = ctx.state.schedule_records("genshin")
+        stale = {"status": "posted", "message_id": "m", "webhook_fp": "fp", "payload_hash": "x"}
+        recs["9.9"] = {**stale, "data": {"version": "9.9", "maint_start_ts": now - 20 * 86400}}
+        recs["7.1"] = {**stale, "data": {"version": "7.1", "maint_start_ts": now - 20 * 86400}}
+        real, runner.find_program = runner.find_program, _no_hit
+        try:
+            for _ in range(2):                       # the second run must not repeat the line
+                asyncio.run(runner.gather_program_media(ctx))
+        finally:
+            runner.find_program = real
+        said = [r for r in ctx.report if "no cached tweet id" in r]
+        assert len(said) == 1 and "9.9" in said[0], ctx.report
+        assert recs["9.9"]["announce_gap"]
+        assert not any("7.1" in r and "no cached tweet id" in r for r in ctx.report)
+        assert "announce_gap" not in recs["7.1"]     # cached -> the recovery will run instead
+
+
 def test_the_cached_announcement_is_replayed_for_a_card_that_lost_its_air_time():
     """config/program_announcements.json is the pattern that stops this recurring: a live version
     with no program_ts gets exactly one more lookup, and only when the tweet id is already
@@ -3575,6 +3605,25 @@ def test_a_test_run_renders_a_card_instead_of_touching_the_live_one():
         assert "card_retired" not in rec and rec["message_id"] == "fresh-id"
         assert any("TEST card posted" in line for line in ctx.report)
         assert rec["data"]["compensation"] == "Stellar Jade ×301"
+
+
+def test_a_frozen_card_says_why_it_stopped_updating():
+    """CARD_FREEZE_D ends the edits, and the version then vanishes from the summary entirely —
+    which is precisely what "why has my card stopped updating?" looks like from outside. One
+    line, once, keyed on the maintenance date the freeze is measured from."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790450000)
+        ctx.webhook = ScriptedWebhook([SendResult(True, 200)])
+        record = _posted_hsr_record()
+        record["data"]["maint_start_ts"] = ctx.now - 60 * 86400     # frozen long ago
+        records = {"4.6": record}
+        for _ in range(2):                           # a second run must not repeat the line
+            asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                                 {"compensation": "Stellar Jade ×301"}, {}, True))
+        assert ctx.webhook.edits == [] and ctx.webhook.sends == []   # frozen means frozen
+        said = [r for r in ctx.report if "card frozen" in r]
+        assert len(said) == 1 and "45 days past maintenance" in said[0], ctx.report
+        assert records["4.6"]["frozen_noted"] == records["4.6"]["data"]["maint_start_ts"]
 
 
 def test_a_settled_program_does_not_freeze_the_card_that_is_already_posted():

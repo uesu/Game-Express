@@ -21,8 +21,16 @@ why, and the health of every source.
 | `repost` posted nothing | the version isn't tracked yet (not announced, or never seen). The summary says `version … isn't tracked` and lists the ones that are |
 | A maintenance / pre-install / banner notice appeared, but no card | Correct: only a *Special Program* / *Special Broadcast* opens a card. The notice's data is recorded and lands on the card the moment the announcement is seen; the version shows as `tracked` in the summary |
 | An announcement was found but no card appeared | the programme has already aired (over 36 h ago, or its maintenance began over 12 h ago), so it is history, not news — the summary says `🗂 … already out`. This is why versions that shipped before the bot existed stay out of the channel. `repost = <game>:<version>` posts one deliberately |
+| A card that used to update stopped updating | the version is **frozen**: edits end `CARD_FREEZE_D` (45) days past maintenance, and the summary says `🧊 … card frozen` once. `repost = <game>:<version>` publishes a fresh card |
+| A card can never get its air time or link | the record was built from a notice and there is **no cached tweet id** to replay, so nothing can repair it. The summary says `🩹 …` and names the fix (see below) |
 | Runs are skipped (grey) | the variable `ENABLED_FEATURES=none` is set. That's only for a development copy; remove it on the repo that posts |
 | Workflow stopped after 60 days | GitHub pauses idle repos. The daily heartbeat commit prevents this; re-enable it in the Actions tab if it happened |
+
+The 🩹 case is the one the bot cannot fix by itself: the record has no air time, no announcement
+link, and no cached tweet id to replay. Add the announcement's tweet id for that version to
+`config/program_announcements.json` (see
+[ACCURACY.md](ACCURACY.md#the-announcements-own-link-and-key-art)) and the next run edits the card
+in place — air time, link and key art all come back together.
 
 ---
 
@@ -34,7 +42,7 @@ why, and the health of every source.
 | No ping | `PING_ROLE_ID` unset or `none`; the role must be mentionable, or the webhook needs *Mention @everyone, @here and All Roles* |
 | Emojis show as `:name:` | the webhook's channel needs *Use External Emojis* for `@everyone`, or change `EMOJI_*` |
 | Card not edited after an override | the card must have been posted by a webhook with the same URL (the fingerprint is stored) |
-| No livestream date line | the record never got the announcement, so there is no air time to show (a misleading `TBA` would be worse). If the tweet id is in `config/program_announcements.json` the next run replays it once and the date, the key art and the title link all come back together |
+| No livestream date line | the record never got the announcement, so there is no air time to show (a misleading `TBA` would be worse). If the tweet id is cached, the next run replays it once and date, key art and title link come back together; if not, see the `🩹` line above |
 | `webhooks` test shows ✗ / `not a webhook URL` | the secret holds something else (a channel link, extra spaces). Copy the webhook URL again |
 
 ---

@@ -112,6 +112,17 @@ art, the wrong link and no air time**
 - **An edit says what it edited.** `✏️ GI 7.1: schedule card updated` never said *what* changed,
   in the one feature that is deliberately invisible; it now reads `— banners, maintenance end`,
   so a silent edit can be confirmed from outside.
+- **Two more silent states are now named.** A card that stops being edited because it is
+  **frozen** (`CARD_FREEZE_D` = 45 days past maintenance) simply vanished from the summary, which
+  is what "why has my card stopped updating?" looks like from outside — it now says
+  `🧊 GI 7.1: card frozen — no more edits 45 days past maintenance`, once. And a card that can
+  never be repaired — notice-built, past the 12 h lookup window, **no cached tweet id** to replay
+  — now says `🩹 GI 7.1: … add one for this version in config/program_announcements.json and the
+  next run repairs the card in place`, also once. That second one is the Genshin 7.1 state minus
+  the cache: previously nothing anywhere admitted it existed.
+- **`docs/TESTING.md` gained a worked example** for a version that is already out — which test to
+  run, what the 🧪 TEST card must show (air time, announcement link, key art, banner names), why
+  the live card and its copy stay untouched, and what the next live run will do.
 - **A `404` comment no longer blames test mode.** Test mode was involved in neither half of what
   happened to Genshin 7.1. The record was opened by the maintenance path on 2026-09-25, which had
   no settled check; every re-appearance since came from the `404` arm of an ordinary live run —
@@ -126,18 +137,18 @@ art, the wrong link and no air time**
   (`python tests/test_schedule_epithet_and_settled.py`) in a checkout with no runtime
   dependencies installed, and under pytest.
 - **`tests/test_smoke.py`** — the notice-replacement test re-pointed at the new policy (the
-  announcement is now adopted *silently*), plus **sixteen new tests**: the notice guard in both
+  announcement is now adopted *silently*), plus **eighteen new tests**: the notice guard in both
   directions, the already-aired rule and its `REPOST` override, the same rule proven on
   Wuthering Waves' Special Broadcast for both notice kinds, the ZZZ 3.3 over-fix guard
   (an upcoming programme must still post, with its air time), the cached recovery and the lookup
-  that found nothing, the copy retirement, the copy that is still edited, the retired copy and
-  the live copy a test run must reproduce without ever PATCHing, the `REPOST` revival, three
-  identical re-runs costing no request, the summary line that explains a silent refusal, the two
-  halves of the test-run rule (a live run never re-creates; a test run never edits) — and the
-  real live 7.1 record healing end to end. Two older tests were replaced or renamed, so the file
-  runs **203** where `main` ran 188 — including
-  `test_a_test_run_still_reposts_a_settled_version`, which asserted the half of the behaviour
-  this entry forbids.
+  that found nothing; the frozen card and the card that can never be repaired; the copy
+  retirement, the copy that is still edited, the retired copy and the live copy a test run must
+  reproduce without ever PATCHing; the `REPOST` revival, three identical re-runs costing no
+  request, the summary lines that explain a silent refusal, the two halves of the test-run rule
+  (a live run never re-creates; a test run never edits) — and the real live 7.1 record healing
+  end to end. Two older tests were named better, so the file runs **205** where `main` ran 188 —
+  including `test_a_test_run_still_reposts_a_settled_version`, which asserted the half of the
+  behaviour this entry forbids.
 - **Docs restated for the two new rules**: the README's schedule-card section ("only an
   announcement opens one"), the `repost` note in *Then what?*, and the posting rules now split
   *only an announcement opens a card* / *a programme that already aired is history* /

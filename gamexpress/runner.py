@@ -173,6 +173,18 @@ async def gather_program_media(ctx: Ctx) -> None:
             if ver not in by_version and schedule.needs_program_lookup([], rec, ctx.now, g.key):
                 todo.append(ver)
         jobs += [(g, v) for v in sorted(set(todo), key=version_key)]
+        # Cards the lookup cannot help, said once. A version whose announcement never arrived
+        # and whose tweet id is not cached is otherwise unreachable: it keeps the notice's
+        # cover and link for ever, the lookup no longer runs, and the summary shows a card
+        # that looks merely stale. That is the Genshin 7.1 state minus the cache — the one
+        # thing the operator can fix, and only if somebody tells them.
+        for ver, rec in records.items():
+            reason = schedule.announcement_gap(rec, g.key, ctx.now)
+            if not reason:
+                rec.pop("announce_gap", None)      # repaired, or never needed one
+            elif rec.get("announce_gap") != reason:
+                rec["announce_gap"] = reason
+                ctx.report.append(f"🩹 {g.short} {ver}: {reason}")
     if not jobs:
         return
     hits = await asyncio.gather(*(find_program(ctx, g, ver) for g, ver in jobs))
