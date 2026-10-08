@@ -1367,7 +1367,7 @@ async def _sync_mirror(ctx, game: Game, ver: str, record: dict, data: dict, now:
     (The two hashes are over different bodies anyway, since only one of them carries a ping.)
     """
     s = ctx.settings
-    if record.get("mirror_retired") and not repost:
+    if record.get("mirror_retired") and not repost and not s.test_mode:
         return                                    # settled, and the copy is gone for good
     name, hook = s.mirror_webhook_source("schedule", game.key)
     if not hook:

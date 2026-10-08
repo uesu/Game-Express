@@ -63,10 +63,13 @@ art, the wrong link and no air time**
   bot before this one was deployed. So on a settled version the id is dropped and nothing is
   published (`its card is not re-created`); on a version still in the news the old behaviour
   stands — one fresh post whose new id is adopted.
-- **TEST_MODE is no longer exempt from that rule** — the exemption is what put the card into
-  `#announcements` on 2026-10-08, for a programme this bot had never carded at all. A test run
-  that genuinely wants a card rendered asks for it with `REPOST=<game>:<version>`, which bypasses
-  the branch entirely; the data correction is merged and saved either way.
+- **TEST_MODE is no longer exempt from that rule** — not because the exemption caused the
+  2026-10-08 card (it did not; see *A `404` comment no longer blames test mode* below), but
+  because an exemption that re-creates a card for a programme that aired a month ago has no
+  honest use. A test run that genuinely wants one asks with `REPOST=<game>:<version>`, which
+  bypasses the branch entirely — and after this release a test run never reaches that branch at
+  all, because it no longer edits live messages. The data correction is merged and saved either
+  way.
 - **The game-channel copy obeys the same rule.** `_sync_mirror()` refuses to *create* a copy for
   a settled version (editing an existing one still works, as always), records the refusal in
   `mirror_retired`, and a successful `REPOST` lifts both retirements so the new card keeps
@@ -109,8 +112,12 @@ art, the wrong link and no air time**
 - **An edit says what it edited.** `✏️ GI 7.1: schedule card updated` never said *what* changed,
   in the one feature that is deliberately invisible; it now reads `— banners, maintenance end`,
   so a silent edit can be confirmed from outside.
-- **A `404` comment no longer blames test mode.** The 2026-10-08 card was created by the
-  maintenance path, which had no settled check — test mode was never involved.
+- **A `404` comment no longer blames test mode.** Test mode was involved in neither half of what
+  happened to Genshin 7.1. The record was opened by the maintenance path on 2026-09-25, which had
+  no settled check; every re-appearance since came from the `404` arm of an ordinary live run —
+  most recently run #1031 on 2026-10-08 at 13:20 UTC, whose summary line was
+  `♻️ GI 7.1: deleted schedule card reposted after edit returned 404` with Discord code `10008`.
+  That is the run this release makes impossible.
 
 ### Tests
 
@@ -119,11 +126,12 @@ art, the wrong link and no air time**
   (`python tests/test_schedule_epithet_and_settled.py`) in a checkout with no runtime
   dependencies installed, and under pytest.
 - **`tests/test_smoke.py`** — the notice-replacement test re-pointed at the new policy (the
-  announcement is now adopted *silently*), plus **fourteen new tests**: the notice guard in both
+  announcement is now adopted *silently*), plus **fifteen new tests**: the notice guard in both
   directions, the already-aired rule and its `REPOST` override, the same rule proven on
   Wuthering Waves' Special Broadcast for both notice kinds, the ZZZ 3.3 over-fix guard
   (an upcoming programme must still post, with its air time), the cached recovery and the lookup
-  that found nothing, the copy retirement and the still-edited copy, the `REPOST` revival, three
+  that found nothing, the copy retirement, the copy that is still edited, the retired copy a
+  test run still reproduces, the `REPOST` revival, three
   identical re-runs costing no request, the two summary lines that explain a silent refusal, the
   two halves of the test-run rule (a live run never re-creates; a test run never edits) — and the
   real live 7.1 record healing end to end. It replaced the old

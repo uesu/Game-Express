@@ -79,8 +79,9 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    have tests that fail without them, in `tests/test_smoke.py` and
    `tests/test_schedule_epithet_and_settled.py` — do not "simplify" either away.
 7. **Posting is once per (game, version) / per code**, then *silent edits* of the same message id.
-   A `404`/`10008` means an id stopped resolving, not that a human deleted anything: a
-   still-current card is re-created once, a settled one is dropped and never published for again.
+   The state's message ids are what make an edit possible — never clear them casually. A
+   `404`/`10008` means an id stopped resolving, not that a human deleted anything: a
+   still-current card is re-created once, a settled one is dropped and never published again.
    A test run never edits a live card or its copy — it renders a new marked one. The
    optional fan-out copy (`DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME>`) obeys the same rule with its
    own `mirror_message_id`, and is edited in the same pass as the original so the two can never

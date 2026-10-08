@@ -2744,6 +2744,30 @@ def test_no_game_channel_copy_is_created_for_a_version_already_out():
         assert ctx.errors == []
 
 
+def test_a_test_run_still_posts_the_game_channel_copy_of_a_retired_card():
+    """The fan-out is half of what the bench is for, so a retired copy must not silence it.
+
+    A live run that found a settled version retired the copy (`mirror_retired`, checked first
+    thing in `_sync_mirror`). A bench run against that record would then post the primary TEST
+    card and silently skip the game-channel copy — proving half the wiring and showing the
+    operator a run that looks like a fan-out failure. Test mode drops the retirement in memory
+    (it never saves state), so both halves are exercised and both copies are throwaways."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790450000, TEST_MODE="1",
+                       DISCORD_WEBHOOK_SCHEDULE_MIRROR_STARRAIL=MIRROR)
+        ctx.webhook = FanOutWebhook()
+        records = {"4.6": _posted_hsr_record()}
+        records["4.6"]["mirror_retired"] = 1790400000        # retired by an earlier live run
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {"compensation": "Stellar Jade ×301"}, {}, True))
+        assert [m for m, _ in ctx.webhook.to(HOOK)] == ["POST"]      # a fresh TEST card
+        assert [m for m, _ in ctx.webhook.to(MIRROR)] == ["POST"]    # ...and its copy
+        copy = json.dumps(ctx.webhook.to(MIRROR)[0][1], ensure_ascii=False)
+        assert "🧪 TEST CARD" in copy                                # marked, so it is deletable
+        assert "mirror_retired" not in records["4.6"]
+        assert records["4.6"]["mirror_message_id"] and ctx.errors == []
+
+
 def test_an_existing_game_channel_copy_is_still_edited_after_the_version_ships():
     """A settled program is not a finished version. The copy already sitting in the game channel
     keeps receiving the same silent corrections as the original — only CREATING one is barred."""
@@ -3484,10 +3508,11 @@ def test_a_settled_program_is_never_re_created_on_a_live_run():
 def test_a_test_run_renders_a_card_instead_of_touching_the_live_one():
     """One rule, both sides of it, because they are the same fault seen from two directions.
 
-    LIVE: an id that stopped resolving is never republished. That exemption is what put a
-    fifteen-day-old Genshin 7.1 card into #announcements on 2026-10-08, for a programme this
-    bot had never carded at all. The dead id is dropped, the card is retired, and the
-    correction still reaches state. REPOST=<game>:<version> remains the deliberate override.
+    LIVE: an id that stopped resolving is never republished for a version that is already out.
+    Republishing it is what put a fifteen-day-old Genshin 7.1 card into #announcements on
+    2026-10-08 -- and again on run #1031 the same day -- for a programme this bot had never
+    carded at all. The dead id is dropped, the card is retired, and the correction still
+    reaches state. REPOST=<game>:<version> remains the deliberate override.
 
     TEST: `mode=test` promises "the REAL schedule card for the version that is out now ...
     exactly what a live run would post", as a throwaway to delete afterwards. So it must not
