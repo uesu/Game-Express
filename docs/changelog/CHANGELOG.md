@@ -126,15 +126,16 @@ art, the wrong link and no air time**
   (`python tests/test_schedule_epithet_and_settled.py`) in a checkout with no runtime
   dependencies installed, and under pytest.
 - **`tests/test_smoke.py`** — the notice-replacement test re-pointed at the new policy (the
-  announcement is now adopted *silently*), plus **fifteen new tests**: the notice guard in both
+  announcement is now adopted *silently*), plus **sixteen new tests**: the notice guard in both
   directions, the already-aired rule and its `REPOST` override, the same rule proven on
   Wuthering Waves' Special Broadcast for both notice kinds, the ZZZ 3.3 over-fix guard
   (an upcoming programme must still post, with its air time), the cached recovery and the lookup
-  that found nothing, the copy retirement, the copy that is still edited, the retired copy a
-  test run still reproduces, the `REPOST` revival, three
-  identical re-runs costing no request, the two summary lines that explain a silent refusal, the
-  two halves of the test-run rule (a live run never re-creates; a test run never edits) — and the
-  real live 7.1 record healing end to end. It replaced the old
+  that found nothing, the copy retirement, the copy that is still edited, the retired copy and
+  the live copy a test run must reproduce without ever PATCHing, the `REPOST` revival, three
+  identical re-runs costing no request, the summary line that explains a silent refusal, the two
+  halves of the test-run rule (a live run never re-creates; a test run never edits) — and the
+  real live 7.1 record healing end to end. Two older tests were replaced or renamed, so the file
+  runs **203** where `main` ran 188 — including
   `test_a_test_run_still_reposts_a_settled_version`, which asserted the half of the behaviour
   this entry forbids.
 - **Docs restated for the two new rules**: the README's schedule-card section ("only an

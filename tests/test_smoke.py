@@ -2768,6 +2768,31 @@ def test_a_test_run_still_posts_the_game_channel_copy_of_a_retired_card():
         assert records["4.6"]["mirror_message_id"] and ctx.errors == []
 
 
+def test_a_test_run_posts_a_fresh_copy_instead_of_editing_the_live_one():
+    """The copy is where the bench hole was most visible.
+
+    A posted version with a live copy in the game channel: dropping the copy's ids in memory
+    turns that branch into a plain POST, so a test run leaves a throwaway beside the real
+    message instead of PATCHing the production copy and stamping a 🧪 TEST banner on it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790450000, TEST_MODE="1",
+                       DISCORD_WEBHOOK_SCHEDULE_MIRROR_STARRAIL=MIRROR)
+        ctx.webhook = FanOutWebhook()
+        records = {"4.6": _posted_hsr_record()}
+        records["4.6"].update({"mirror_message_id": "live-copy",
+                               "mirror_webhook_fp": webhook_fingerprint(MIRROR),
+                               "mirror_hash": "old-mirror-hash"})
+        asyncio.run(schedule._handle_version(ctx, GAMES["starrail"], "4.6", [], records,
+                                             {"compensation": "Stellar Jade ×301"}, {}, True))
+        assert [m for m, _ in ctx.webhook.to(HOOK)] == ["POST"]      # a fresh TEST card
+        assert [m for m, _ in ctx.webhook.to(MIRROR)] == ["POST"]    # and a fresh TEST copy
+        assert not any(m == "PATCH" for m, _, _ in ctx.webhook.calls)   # nothing live was edited
+        copy = json.dumps(ctx.webhook.to(MIRROR)[0][1], ensure_ascii=False)
+        assert "🧪 TEST CARD" in copy
+        assert records["4.6"]["mirror_message_id"].startswith("msg-")   # the throwaway's own id
+        assert ctx.errors == []
+
+
 def test_an_existing_game_channel_copy_is_still_edited_after_the_version_ships():
     """A settled program is not a finished version. The copy already sitting in the game channel
     keeps receiving the same silent corrections as the original — only CREATING one is barred."""
