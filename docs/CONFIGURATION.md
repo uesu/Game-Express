@@ -132,7 +132,7 @@ being dropped. A codes drop split across several messages mentions the role on *
 | `CODES_MIN_SOURCES` | 2 | independent community sources needed for an unverified code |
 | `CODES_MARK_EXPIRED` | on | strike through posted codes once every source lists them as expired |
 | `EDIT_ON_UPDATE` | on | silent in-place edits when official info arrives |
-| `POST_ON_MAINTENANCE_NOTICE` | on | if the program announcement was missed, post from the maintenance notice |
+| `POST_ON_MAINTENANCE_NOTICE` | on | a maintenance notice may also post the card — only for a version whose announcement is already known |
 
 ### Run behaviour
 

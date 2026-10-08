@@ -30,9 +30,11 @@ Related: [SOURCES.md](SOURCES.md) (what each upstream serves) ·
    - **Maintenance**: pre-install, start, and end (end comes from an explicit end time, a range
      like `04:00 - 11:00 (UTC+8)`, or "estimated to take 5 hours"). Compensation deadlines and
      event end dates are never mistaken for maintenance.
-   - **Banners**: only quoted names that directly follow "5-star character" / "S-Rank Agent" /
-     "5-star Resonator" (and the 4★ equivalents) in official banner notices. Weapons never
-     match.
+   - **Banners**: only names that directly follow "5-star character" / "S-Rank Agent" /
+     "5-star Resonator" (and the 4★ equivalents) in official banner notices. Genshin titles the
+     banner and *then* names the character (the 5-star character `"Tasteful Excellence"
+     Escoffier`), so the bare name after a closing quote is the character and the quote is the
+     banner it is featured on. Weapons and banner titles never match.
    - **4★ characters are TBA unless certain.** The names are shown only when the official
      notice lists exactly the expected number of rate-up 4★ (GI 3 · HSR 3 · ZZZ 2 · WW 3), every
      name looks like a real name, and no official source disagrees. Otherwise the card shows
@@ -44,9 +46,15 @@ Related: [SOURCES.md](SOURCES.md) (what each upstream serves) ·
    values are explicitly labelled estimated; neither can overwrite an official value.
 5. **Post once** per game + version (`state/state.json`), then **edit silently** when data
    changes. If a moderator deleted the original Discord message, a `404 Unknown Message` causes
-   one fresh post whose new message id is adopted; every other edit failure remains an error and
-   never reposts. Announcements that are already stale (the program aired more than 36 h ago with
-   no pending maintenance) are recorded, not posted.
+   one fresh post whose new message id is adopted — **except once the version is already out**
+   (its program aired, or its maintenance began more than 12 h ago): that card stays deleted,
+   and `REPOST=<game>:<version>` is the only way back. Every other edit failure remains an error
+   and never reposts. Announcements that are already stale (the program aired more than 36 h ago
+   with no pending maintenance) are recorded, not posted.
+   A maintenance notice is never enough to *open* a card: it fills in one the announcement
+   opened, so a version whose announcement this bot has not seen waits (and one whose record
+   somehow lost its announcement is looked up once more, from the tweet id already cached in
+   `config/program_announcements.json`).
 
 ---
 

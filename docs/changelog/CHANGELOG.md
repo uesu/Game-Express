@@ -13,6 +13,62 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ---
 
+## 2026-10-08
+
+**One Genshin 7.1 card exposed four faults — a maintenance notice may fill a card but never open
+one, and the announcement wins again**
+
+### The card that was built from the wrong post
+
+- **A maintenance notice no longer opens a schedule card.** A card exists because an official
+  *Special Program* / *Special Broadcast* was announced; the notice then *fills it in* — that is
+  the whole silent-edit design. Genshin 7.1 was opened by its *Update Details* notice on
+  2026-09-25, two days after its own maintenance, so it shipped with the notice's cover as key
+  art, the notice's URL as its title link and **no air-time line at all** (`cards.py` prints
+  nothing rather than a misleading `TBA`). `fresh_maint` now requires a `program_ts` or a
+  `program_seen` before a notice may post anything.
+- **A version whose record never got its announcement is looked up once more — when the tweet is
+  already cached.** `needs_program_lookup()` stood down 12 h after maintenance, which left such
+  a version broken for ever: every run carried the wrong picture and the wrong link forward in
+  `data`. With the id present in `config/program_announcements.json` the lookup now runs again —
+  one `fxtwitter` call that succeeds and sets `media_from`, so it happens once and stops — until
+  `CARD_FREEZE_D` closes the card. A version with no cached id behaves exactly as before.
+- **A deleted card for a version that is already out stays deleted.** `program_settled()` reads
+  the maintenance date as well as `program_ts` (the same 12 h horizon `needs_program_lookup()`
+  uses), because a record opened by a notice never has a `program_ts`. Without it, the deleted
+  7.1 card was reposted **and** a brand-new mirror copy dropped into `#gi-news`, fifteen days
+  after the version shipped.
+- **TEST_MODE is no longer exempt from that rule** — the exemption is what resurrected the card.
+  A test run that genuinely wants a card rendered asks for it with `REPOST=<game>:<version>`,
+  which bypasses the branch entirely; the data correction is merged and saved either way.
+- **The game-channel copy obeys the same rule.** `_sync_mirror()` refuses to *create* a copy for
+  a settled version (editing an existing one still works, as always), records the refusal in
+  `mirror_retired`, and a successful `REPOST` lifts both retirements so the new card keeps
+  receiving its silent corrections.
+- **`extract_banner` reads `"Epithet" Name`.** Genshin titles the wish banner and *then* names
+  the character — the 5-star character `"Tasteful Excellence" Escoffier` — so the quoted span is
+  the *banner's* name. `QUOTED_FIRST` used to claim the whole clause, and 7.1 shipped
+  `phase2 = ["Tasteful Excellence"]` and `phase2_4 = ["Ode and Oblation", "Golden Vow",
+  "Coordinates of Clear Frost"]` instead of Escoffier / Dahlia, Candace, Mika. The bare name
+  after a closing quote now wins; notices that really quote the character, and bare-name notices
+  (HSR), are untouched.
+- **After merging**, the next scheduled run repairs the live 7.1 card in place: one `fxtwitter`
+  call for the cached tweet, then a silent `PATCH` of the existing message and its mirror. The
+  card gains its air time (`Saturday, September 12, 2026 8:00 PM` GMT+8) and the programme's own
+  key art, its title points at the announcement, and **no new message is posted**.
+
+### Tests
+
+- **New: `tests/test_schedule_epithet_and_settled.py`** — 13 regression tests for the four
+  faults, runnable standalone (`python tests/test_schedule_epithet_and_settled.py`) in a
+  checkout with no runtime dependencies installed, and under pytest.
+- **`tests/test_smoke.py`** — the notice-replacement and repost tests re-pointed at the new
+  policy, plus eight new tests: the notice guard in both directions, the cached recovery, the
+  copy retirement, the `REPOST` revival, three identical re-runs costing no request, and the
+  real live 7.1 record healing end to end.
+
+---
+
 ## 2026-10-06
 
 **Banner line-ups fill themselves in from the game wikis — plus a countdown fix and a

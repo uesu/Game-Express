@@ -66,8 +66,9 @@ It runs entirely on **GitHub Actions** (free and unlimited on public repos), tri
 
 ### 1 · Version schedule card
 
-One card per game + version, triggered by an official *Special Program* / *Special Broadcast* /
-livestream announcement or an update-maintenance notice.
+One card per game + version, opened by an official *Special Program* / *Special Broadcast* /
+livestream announcement and then kept up to date by the update-maintenance notice — the notice
+fills a card in, it never opens one.
 
 ```
 ┌───────────────────────────────────────────────────────────── (accent 14922399)
@@ -278,8 +279,9 @@ Webhook routing, most specific first:
 4. **Unknown is `TBA`**, banners always carry `(STC)`, and no estimate can overwrite an official
    value.
 5. **Post once, then edit silently.** A deleted Discord message (`404 Unknown Message`) is
-   re-posted once and the new id adopted; every other edit failure stays an error and never
-   reposts.
+   re-posted once and the new id adopted — unless the version is already out, in which case the
+   card stays deleted (`REPOST=<game>:<version>` brings it back). Every other edit failure stays
+   an error and never reposts.
 
 **The code gate.** A code posts when **any one** of these is true: it comes from an **official**
 source; a **redeem-validator** (seria or Hum-Bao, which try every code on a real account) says it
@@ -442,20 +444,22 @@ Index: **[docs/](docs/)**.
 
 ## 🗒 Changelog
 
-**Latest — [2026-10-05](docs/changelog/CHANGELOG.md#2026-10-05) · *the README stops being a
-history book, and the version number retires***
+**Latest — [2026-10-08](docs/changelog/CHANGELOG.md#2026-10-08) · *a maintenance notice may
+fill a card but never open one***
 
-- The README went from 958 lines to 483: the configuration reference, accuracy rules,
-  troubleshooting table and credits moved into [`docs/`](docs/), and the release history moved
-  into [`docs/changelog/`](docs/changelog/).
-- **No more version number.** `build_id()` reports the short `GITHUB_SHA` instead, so a run
-  summary reads `### Game-Express 03c1668 — alpha (primary)` and points at the exact code that
-  posted the card. A bump used to mean four files moving in lockstep; now there is nothing to
-  bump and nothing to go stale.
-- Dead fields removed (`Item.author`, `Settings.log_level`, `Game.publisher`, `FoundTime.has_tz`,
-  and `app_version` on the heartbeat) — all written, never read.
-- Stale facts swept repo-wide: the nitter fleet size, the 5-minute poll cadence, and every
-  cross-reference that still pointed at the README's old changelog.
+- **A notice never opens a schedule card** — it fills in one the announcement opened. Genshin 7.1
+  was created by its *Update Details* notice, so it shipped with the notice's cover and URL and
+  no air time; the notice-only path is gone, and the notice's data still lands on the card.
+- **A version whose announcement never arrived is looked up once more**, from the tweet id
+  already cached in `config/program_announcements.json` — one call that fixes picture, link and
+  air time together.
+- **A deleted card for a version that is already out stays deleted**, in the schedule channel and
+  in the game-channel copy alike (`program_settled()` now reads the maintenance date too, and
+  TEST_MODE is no longer exempt). `REPOST=<game>:<version>` remains the way back.
+- **Banner notices written as `"Banner Title" Character` now yield the character** — Genshin 7.1
+  showed `Tasteful Excellence` where Escoffier belongs.
+- New `tests/test_schedule_epithet_and_settled.py` runs standalone; the offline suite covers the
+  whole ladder, including the real 7.1 record healing in place.
 
 **➡️ Full history: [docs/changelog/](docs/changelog/)** —
 [current entries](docs/changelog/CHANGELOG.md) (1.8.0 onward) ·
