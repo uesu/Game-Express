@@ -124,6 +124,23 @@ TESTING.md now state that explicitly, and TROUBLESHOOTING.md explains both `🗂
 
 ---
 
+**Banner notices are found by title for every game and version; WuWa and ZZZ 4★ extraction fixed**
+
+The lookback window (72 h) could not see HSR 4.6 Phase I, posted 2026-09-27, so its names stayed on the hub
+feed. The title search now asks the official sources for the card's own version whatever the notice's age.
+
+- **Title templates per game** (`banner_titles` in `config/games.json`) and an exact matcher (`sources/banner_search.py`):
+  `7.1` ≠ `7.10`, Phase I ≠ Phase II, `V3.2` = `Version 3.2`, and fan reposts never count.
+- **Official sources only**: HoYoLAB search for Genshin, Star Rail and ZZZ (by `official_uid`), falling back to the
+  paged official news list; Kuro's article menu for Wuthering Waves, with the GitHub mirror as the last fallback.
+- **Budget**: `schedule.banner_search_due()`, with its own clock (`banners_search_ts`). Settled never; frozen never;
+  incomplete every 3 h; unconfirmed every 6 h. `BANNER_SEARCH=0` switches it off.
+- **Extraction**: WuWa's *receive boosted* and ZZZ's *have significantly boosted* now end the name list, so Sanhua and
+  Nicole are read; the default-agent pair `Name (…) & Name (…)` splits into two names.
+- **Verified** against the real posts: WuWa 3.6 Phase I, ZZZ 3.2 Phase I and II, Genshin 7.1 Phase I and II, and HSR 4.6
+  Phase I by title. HSR 4.6 Phase II (Mortenax Blade) stays hub-sourced and unlocked; no official post yet.
+- **Tests**: 249 in the CI runner (`tests/test_smoke.py`), 267 under `pytest`.
+
 ## 2026-10-08
 
 **One Genshin 7.1 card exposed five faults — a card that should never have existed, plus the wrong

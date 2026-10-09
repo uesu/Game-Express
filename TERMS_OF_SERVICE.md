@@ -12,7 +12,7 @@ By deploying, running or modifying an instance of the Service, you agree to thes
 ## 2. What the Service is
 A set of open-source Python scripts that read **public official announcements** (HoYoLAB,
 official X accounts, Kuro Games' website, official launcher APIs), **community and wiki pages** used
-for banner lineups and estimated dates (a community banner feed, game wikis, countdown sites), and
+for banner lineups and estimated dates (official banner notices found by title, a community banner feed, game wikis, countdown sites), and
 **public redemption-code lists**, then post formatted cards to Discord channels that **you** control. There is no hosted
 service operated by the author on your behalf. Each operator runs their own instance.
 
@@ -43,7 +43,7 @@ Schedules, banners, maintenance times and codes come from official and community
 If you run an instance, you are responsible for:
 - **Using webhooks and tokens you own**, and keeping them secret.
 - **Following the rules of every service involved**: the [Discord Terms of Service](https://discord.com/terms), the [Discord Developer Policy](https://discord.com/developers/docs/policies-and-agreements/developer-policy), the X/Twitter terms, and the terms of the APIs the Service reads.
-- **Respecting sources**: keep the default low request rate (a run every ~5 minutes, with only a few requests per source; a wiki banner lookup is repeated at most every three hours while a banner is still TBA, and at most every six hours while it is unconfirmed) and do not use the Service to overload, scrape at high frequency, or resell data.
+- **Respecting sources**: keep the default low request rate (a run every ~5 minutes, with only a few requests per source; a wiki banner lookup and a title search are each repeated at most every three hours while a banner is still TBA, and at most every six hours while it is unconfirmed) and do not use the Service to overload, scrape at high frequency, or resell data.
 - **Your server's content**: ping roles, channels, and who can see the posts.
 
 ## 6. Acceptable use

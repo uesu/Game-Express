@@ -20,9 +20,42 @@ how ZZZ 3.3 kept the slot word `Agent` on the card for a full day in October 202
 |---|---|---|
 | 100 | `config/overrides.json` | anything — the human is always right |
 | 50 / 45 / 40 | HoYoLAB · Kuro · news page · X | the official line-up |
+| 50 / 45 | title search (HoYoLAB search, Kuro menu) | the official notice of the card's own version, any age; a hit is a candidate, the lock rules still apply |
 | 9 | cadence patterns | timestamps only |
 | **6** | **the game wikis (this doc)** | **fill a banner slot that is still TBA, confirm a name another source gave, and revise or withdraw its own unconfirmed entries** |
 | 5 | `hub.json` banner feed | fill a 5★ phase that is still TBA |
+
+## Finding the notice by title
+
+The wiki and the hub read the banner the community already knows. The title search asks the official
+sources for the banner notice of the card's own version, whatever its age, so a notice older than the
+72-hour lookback can still confirm a name. That is how HSR 4.6 Phase I (posted 2026-09-27) is found.
+Code: `sources/banner_search.py`; templates: `banner_titles` in `config/games.json`.
+
+| game | keyword template (filled with the version and the phase) |
+|---|---|
+| genshin | `Version {v} Event Wishes Notice - Phase {p}` |
+| starrail | `Version {v} Event Warp: Phase {p}` |
+| zzz | `V{v} Limited-Time Channels (Phase {p})` |
+| wuwa | `Version {v} Featured Resonator/Weapon Convene: Phase {p}` |
+
+- **Exact match.** `7.1` does not match `7.10`; Phase I never matches Phase II or III; `V3.2` and `Version 3.2`
+  both match; a weapon-only Convene title does not match the resonator template.
+- **Official only.** A HoYoLAB hit must come from the game's `official_uid` (Genshin `1015537`, Star Rail
+  `172534910`, ZZZ `219270333`). A fan repost is ignored. Wuthering Waves reads Kuro's own article menu, and the
+  GitHub mirror (`TheLovinator1/wutheringwaves`) is read only when that menu gives nothing.
+- **Order.** HoYoLAB keyword search first. When the search endpoint does not answer, the official news list is
+  paged with `getNewsList` instead. The search is one request per phase per run.
+- **Only a candidate.** A hit goes into the same merge as every other official post. Names come from the
+  body (`extract_banner()`), and the lock rules above decide what may change.
+- **When it runs.** `banner_search_due()`: a settled block never; a frozen card never; an incomplete block every
+  3 hours; a complete unconfirmed block every 6 hours. Its own stamp is `banners_search_ts`, so it does not reset
+  the wiki clock (`banners_checked_ts`). A failed search is still stamped and retried only when due again.
+- **Off switch.** `BANNER_SEARCH=0`. With no fetcher (a dry test) there is no request and no stamp.
+
+**Tentative values.** A hub or wiki name stays changeable until it is confirmed (a second source agreeing, or an
+official notice). An official notice locks alone. Nothing in this section locks a value earlier than that:
+HSR 4.6 Phase II (Mortenax Blade) is hub-sourced and stays unlocked until an official post exists.
 
 ## The four dialects
 
@@ -162,7 +195,7 @@ official sources and the banner feed provide. See [CONFIGURATION.md](CONFIGURATI
 | zzz | 3.2 | Claret Flint, Nangong Yu | Roxy Ifrita Pryce, Promeia |
 | wuwa | 3.7 | Hsin, Chisa, Iuno | Suoming, Lucilla, Lynae |
 
-Re-checked on 2026-10-09 against the community hub (`hub.json`): Genshin 7.1 and Star Rail 4.6 phase 1 and 2 names match the table, and the hub already lists the Star Rail 4.6 phase 2 banner (Mortenax Blade) with a start date of 2026-10-21.
+Re-checked on 2026-10-09 against the community hub (`hub.json`). The hub's `startsAt` values run about seven hours later than the official start times (Star Rail 4.6 Phase II: the hub's value is 2026-10-21 19:00 UTC+8). This only moves the phase split, never a name: Genshin 7.1 and Star Rail 4.6 phase 1 and 2 names match the table, and the hub already lists the Star Rail 4.6 phase 2 banner (Mortenax Blade) with a start date of 2026-10-21.
 
 ZZZ 3.3 was the early tier on that date: `Phoenix Reffaella`, `Severian Lowell`, releasing
 2026-10-21. The fixtures behind `tests/fixtures/gachawiki/` are trimmed copies of those pages.

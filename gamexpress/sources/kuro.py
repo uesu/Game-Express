@@ -28,10 +28,8 @@ LAUNCHER_INDEX = ("https://prod-alicdn-gamestarter.kurogame.com/launcher/game/G1
                   "50004_obOHXFrFanqsaIEOmuKroCcbZkQRBC7c/index.json")
 
 
-async def fetch_items(fetcher: Fetcher, game: Game, want: Callable[[str], bool],
-                      since_ts: int) -> list[Item]:
-    if not game.kuro_news:
-        return []
+async def menu_articles(fetcher: Fetcher) -> dict[int, dict]:
+    """Every article in the English JSON menus, keyed by articleId (newest menu entry wins)."""
     articles: dict[int, dict] = {}
     menus = await asyncio.gather(*(fetcher.get_json(BASE + m, source="kuro", retries=1) for m in MENUS))
     for data in menus:
@@ -39,6 +37,14 @@ async def fetch_items(fetcher: Fetcher, game: Game, want: Callable[[str], bool],
         for a in rows or []:
             if isinstance(a, dict) and a.get("articleId"):
                 articles.setdefault(int(a["articleId"]), a)
+    return articles
+
+
+async def fetch_items(fetcher: Fetcher, game: Game, want: Callable[[str], bool],
+                      since_ts: int) -> list[Item]:
+    if not game.kuro_news:
+        return []
+    articles = await menu_articles(fetcher)
     picked = []
     for aid, a in sorted(articles.items(), reverse=True):
         ts = parse_kuro_time(a.get("createTime") or "") or 0

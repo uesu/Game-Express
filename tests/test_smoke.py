@@ -38,8 +38,14 @@ from gamexpress.discord import SendResult, WebhookClient, _split, webhook_finger
 from gamexpress.models import CodeHit, Item  # noqa: E402
 from gamexpress.runner import Ctx, failover_check  # noqa: E402
 from gamexpress.samples import CODE_SAMPLES, SCHEDULE_SAMPLES  # noqa: E402
+from gamexpress.sources import (  # noqa: E402
+    banner_search,  # noqa: E402
+    countdown,
+    gachawiki,
+    hoyolab,
+    newspage,
+)
 from gamexpress.sources import codes as csrc  # noqa: E402
-from gamexpress.sources import countdown, gachawiki, hoyolab, newspage  # noqa: E402
 from gamexpress.sources.hoyolab import _post_text  # noqa: E402
 from gamexpress.sources.kuro import parse_launcher_index  # noqa: E402
 from gamexpress.sources.launcher import parse_branches  # noqa: E402
@@ -4255,6 +4261,219 @@ def test_the_wiki_corrects_a_feed_value_but_never_an_official_one():
     assert rec["data"]["banners"]["phase1"] == ["Seele"]              # official replaces the wiki value
     schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase1": ["Pearl"]}, now + 900)
     assert rec["data"]["banners"]["phase1"] == ["Seele"]              # and the wiki never overrides official
+
+
+# =========================================================================== banner search by title
+# Discovery by TITLE, for any version (sources/banner_search.py). A notice older than the lookback
+# window used to be invisible to the card; these tests pin the matching, the official-account rule,
+# the fallbacks and the budget. Fixtures are the verbatim HoYoLAB / Kuro bodies checked on 2026-10-09.
+class _RouteFetch:
+    """Serves canned JSON by predicate; a text route serves the Atom mirror. Records every call."""
+
+    def __init__(self, json_routes=(), text_routes=()):
+        self.json_routes, self.text_routes, self.calls = list(json_routes), list(text_routes), []
+
+    async def get_json(self, url, source="", params=None, **kw):
+        self.calls.append((url, dict(params or {})))
+        for pred, body in self.json_routes:
+            if pred(url, params or {}):
+                return body(url, params or {}) if callable(body) else body
+        return None
+
+    async def get_text(self, url, source="", **kw):
+        self.calls.append((url, {}))
+        for pred, body in self.text_routes:
+            if pred(url):
+                return body
+        return None
+
+
+def _hoyolab_row(pid, subject, uid, created, content=""):
+    return {"post": {"post_id": pid, "subject": subject, "uid": uid, "created_at": created,
+                     "content": content, "desc": content},
+            "user": {"uid": uid}}
+
+
+def _hoyolab_full(body):
+    return {"retcode": 0, "data": {"post": {"post": {"content": body, "structured_content": ""},
+                                            "image_list": [], "cover_list": []}}}
+
+
+def _search_route(by_phrase):
+    """Search endpoint: the rows whose keyword contains the given phrase; anything else is empty."""
+    def pred(url, params):
+        return url == banner_search.SEARCH_API
+    def body_for(url, params):
+        kw = params.get("keyword", "")
+        for phrase, rows in by_phrase.items():
+            if phrase in kw:
+                return {"retcode": 0, "data": {"list": rows}}
+        return {"retcode": 0, "data": {"list": []}}
+    return pred, body_for
+
+
+def test_banner_title_match_is_exact_on_version_phase_and_prefix():
+    gi = "Version {v} Event Wishes Notice - Phase {p}"
+    assert banner_search.phase_of("Version 7.1 Event Wishes Notice - Phase I", gi, "7.1") == 1
+    assert banner_search.phase_of("Version 7.1 Event Wishes Notice - Phase II", gi, "7.1") == 2
+    assert banner_search.phase_of("Version 7.10 Event Wishes Notice - Phase I", gi, "7.1") is None   # 7.1 != 7.10
+    assert banner_search.phase_of("Version 7.1 Event Wishes Notice - Phase I", gi, "7.10") is None
+    assert banner_search.phase_of("Version 7.1 Event Wishes Notice - Phase III", gi, "7.1") is None
+    assert banner_search.phase_of("Version 7.1 Event Wishes Notice", gi, "7.1") is None            # no phase
+    zzz = "V{v} Limited-Time Channels (Phase {p})"
+    assert banner_search.phase_of("V3.2 Limited-Time Channels (Phase I)", zzz, "3.2") == 1
+    assert banner_search.phase_of("V3.2 Limited-Time Channels (Phase II)", zzz, "3.2") == 2
+    assert banner_search.phase_of("V3.2 Limited-Time Channels (Phase II)", zzz, "3.3") is None
+    hsr = "Version {v} Event Warp: Phase {p}"
+    assert banner_search.phase_of("<hoyolab>Version</hoyolab> 4.6 <hoyolab>Event</hoyolab> <hoyolab>Warp</hoyolab>: <hoyolab>Phase</hoyolab> I", hsr, "4.6") == 1
+    wuwa = "Version {v} Featured Resonator/Weapon Convene: Phase {p}"
+    assert banner_search.phase_of("[Version 3.6 Featured Resonator/Weapon Convene: Phase I]", wuwa, "3.6") == 1
+    assert banner_search.phase_of("Version 3.6 Featured Weapon Convene: Phase I", wuwa, "3.6") is None   # weapon-only title
+    assert banner_search.keyword_for(zzz, "3.2", 2) == "V3.2 Limited-Time Channels (Phase II)"
+
+
+def test_banner_search_finds_hsr_phase1_outside_the_lookback_by_title():
+    game = GAMES["starrail"]
+    row = _hoyolab_row("46851682", "<hoyolab>Version</hoyolab> 4.6 <hoyolab>Event</hoyolab> <hoyolab>Warp</hoyolab>: <hoyolab>Phase</hoyolab> I",
+                       "172534910", 1790488804)                                 # 2026-09-27, 12 days old
+    pred, body = _search_route({"Phase I": [row], "Phase II": []})
+    fetch = _RouteFetch(json_routes=[(pred, body),
+                                     (lambda u, p: "getPostFull" in u, _hoyolab_full(HSR_46_WARP_PHASE1))])
+    items = asyncio.run(banner_search.find(fetch, game, "4.6"))
+    assert [i.id for i in items] == ["46851682"], items
+    assert items[0].title == "Version 4.6 Event Warp: Phase I" and items[0].published_ts == 1790488804
+    b = schedule.extract_banner(items[0])
+    assert b["banner_five"] == ["Pearl", "Evanescia"] and b["banner_phase"] == 1
+    # Phase II is not out yet: it was asked for by title, found nothing, and nothing is invented.
+    asked = {p["keyword"] for u, p in fetch.calls if u == banner_search.SEARCH_API}
+    assert asked == {"Version 4.6 Event Warp: Phase I", "Version 4.6 Event Warp: Phase II"}, asked
+    assert [i.kind if hasattr(i, "kind") else i.source for i in items] == ["hoyolab"]
+
+
+def test_banner_search_ignores_fan_reposts_and_other_versions():
+    game = GAMES["genshin"]
+    fan = _hoyolab_row("900001", "Version 7.1 Event Wishes Notice - Phase I", "555555", 1790000000)
+    other_version = _hoyolab_row("900002", "Version 7.10 Event Wishes Notice - Phase I", "1015537", 1790000000)
+    pred, body = _search_route({"Phase I": [fan, other_version], "Phase II": []})
+    fetch = _RouteFetch(json_routes=[(pred, body)])
+    assert asyncio.run(banner_search.find(fetch, game, "7.1")) == []        # a repost is not an announcement
+
+
+def test_banner_search_falls_back_to_the_official_news_list_when_search_is_down():
+    game = GAMES["zzz"]
+    notice = _hoyolab_row("46604530", "V3.2 <hoyolab>Limited</hoyolab>-<hoyolab>Time</hoyolab> <hoyolab>Channels</hoyolab> (Phase I)",
+                          "219270333", 1788755408)
+    news_page = {"retcode": 0, "data": {"list": [{"post": notice["post"]}]}}
+
+    def search_down(url, params):
+        return url == banner_search.SEARCH_API
+
+    def news(url, params):
+        return url.endswith("getNewsList") and params.get("type") == 1
+
+    fetch = _RouteFetch(json_routes=[
+        (search_down, {"retcode": 1, "message": "down"}),
+        (news, news_page),
+        (lambda u, p: "getPostFull" in u, _hoyolab_full("Dear Proxies, ..."))])
+    items = asyncio.run(banner_search.find(fetch, game, "3.2"))
+    assert [i.id for i in items] == ["46604530"]
+    assert any(u.endswith("getNewsList") for u, _ in fetch.calls)           # the fallback really ran
+
+
+def test_banner_search_budget_settled_never_frozen_never_and_two_clocks():
+    game = GAMES["starrail"]
+    now = 1790500000
+    keys = list(schedule.BANNER_KEYS)
+    full = {k: ["Name"] for k in keys}
+    full.update({"phase1_4": ["A", "B", "C"], "phase2_4": ["A", "B", "C"]})
+    settled = {"banners": full, "banners_settled": keys, "maint_start_ts": now - 86400}
+    assert schedule.banner_search_due(game, settled, now + 999999) is False       # settled: never
+    partial = {"banners": {"phase1": ["Pearl"]}, "maint_start_ts": now - 86400}
+    assert schedule.banner_search_due(game, partial, now) is True                  # incomplete, never searched
+    partial["banners_search_ts"] = now
+    assert schedule.banner_search_due(game, partial, now + 2 * 3600) is False      # incomplete: 3 h clock
+    assert schedule.banner_search_due(game, partial, now + 3 * 3600) is True
+    unconfirmed = {"banners": full, "maint_start_ts": now - 86400, "banners_search_ts": now}
+    assert schedule.banner_search_due(game, unconfirmed, now + 5 * 3600) is False  # complete: 6 h clock
+    assert schedule.banner_search_due(game, unconfirmed, now + 6 * 3600) is True
+    frozen = {"banners": {}, "maint_start_ts": now - (schedule.CARD_FREEZE_D + 1) * 86400}
+    assert schedule.banner_search_due(game, frozen, now) is False                  # frozen card: never
+    assert schedule.banner_search_due(GAMES["wuwa"], {}, now) is True              # WW has templates too
+
+
+def test_gather_banner_search_feeds_the_merge_once_and_stamps_the_clock():
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790500000, versions={"starrail": {"live": "4.6"}})
+        row = _hoyolab_row("46851682", "Version 4.6 Event Warp: Phase I", "172534910", 1790488804)
+        pred, body = _search_route({"Phase I": [row], "Phase II": []})
+        ctx.fetcher = _RouteFetch(json_routes=[(pred, body),
+                                               (lambda u, p: "getPostFull" in u, _hoyolab_full(HSR_46_WARP_PHASE1))])
+        records = {"4.6": {"status": "posted", "data": {"maint_start_ts": ctx.now - 2 * 86400}}}
+        by_version: dict = {}
+        asyncio.run(schedule.gather_banner_search(ctx, GAMES["starrail"], records, by_version))
+        extracts = by_version.get("4.6") or []
+        assert [e.kind for e in extracts] == ["banner"] and extracts[0].fields["banner_five"] == ["Pearl", "Evanescia"]
+        assert records["4.6"]["data"]["banners_search_ts"] == ctx.now
+        calls = len(ctx.fetcher.calls)
+        asyncio.run(schedule.gather_banner_search(ctx, GAMES["starrail"], records, by_version))   # 5 min later
+        assert len(ctx.fetcher.calls) == calls                                  # throttled: no request
+        # With the banner search switched off nothing is asked and nothing is stamped.
+        ctx2 = make_ctx(Path(tmp) / "state2.json", now=1790500000, BANNER_SEARCH="0")
+        ctx2.fetcher = _RouteFetch()
+        recs2 = {"4.6": {"status": "posted", "data": {"maint_start_ts": ctx2.now - 86400}}}
+        asyncio.run(schedule.gather_banner_search(ctx2, GAMES["starrail"], recs2, {}))
+        assert ctx2.fetcher.calls == [] and "banners_search_ts" not in recs2["4.6"]["data"]
+
+
+def test_wuwa_banner_comes_from_the_kuro_menu_by_title_with_its_body():
+    game = GAMES["wuwa"]
+    menu = [{"articleId": 5318, "articleTitle": "[Version 3.6 Featured Resonator/Weapon Convene: Phase I]",
+             "createTime": "2026-08-17 17:35:40", "suggestCover": ""},
+            {"articleId": 5220, "articleTitle": "[Version 3.5 Featured Resonator/Weapon Convene: Phase II]",
+             "createTime": "2026-07-28 15:50:35", "suggestCover": ""}]
+    detail = {"articleContent": WUWA_36_PHASE1_BODY}
+    fetch = _RouteFetch(json_routes=[
+        (lambda u, p: u.endswith("ArticleMenu.json"), menu),
+        (lambda u, p: u.endswith("article/5318.json"), detail)])
+    items = asyncio.run(banner_search.find(fetch, game, "3.6"))
+    assert [i.id for i in items] == ["5318"], items           # the 3.5 notice is another version
+    b = schedule.extract_banner(items[0])
+    assert b["banner_five"] == ["Denia"]
+    assert b["banner_four"] == ["Yangyang", "Baizhi", "Sanhua"] and b["banner_four_unsure"] is False
+
+
+WUWA_36_PHASE1_BODY = (
+    "[False Promise for Tomorrow] Featured Resonator Convene\n"
+    "During the event, 5-Star Resonator: Denia, 4-Star Resonators: Yangyang, Baizhi, and Sanhua receive "
+    "boosted drop rates!✦Duration✦Version 3.6 update - 2026-09-10 09:59 (server time)✦Convene Rules✦"
+    "- [False Promise for Tomorrow] is a Featured Resonator Convene event banner.\n"
+    "[Forged Dwarf Star] Featured Weapon Convene\n"
+    "During the event, 5-Star Weapon: Forged Dwarf Star, 4-Star Weapons: Commando of Conviction, Fusion "
+    "Accretion, and Lunar Cutter receive boosted drop rates!✦Duration✦Version 3.6 update✦"
+)
+
+
+def test_zzz_and_wuwa_four_star_lists_are_read_whole():
+    zzz = Item("hoyolab", "zenless", "46604530", "u", "V3.2 Limited-Time Channels (Phase I)",
+               ZZZ_32_PHASE1_TEXT, 1788755408)
+    b = schedule.extract_banner(zzz)
+    assert b["banner_five"] == ["Claret", "Nangong Yu"]
+    assert b["banner_four"] == ["Anton", "Nicole"] and b["banner_four_unsure"] is False
+    ww = Item("kuro", "wuwa", "5318", "u", "Version 3.6 Featured Resonator/Weapon Convene: Phase I",
+              WUWA_36_PHASE1_BODY, 1787000000)
+    assert schedule.extract_banner(ww)["banner_four"] == ["Yangyang", "Baizhi", "Sanhua"]
+    # "Topaz & Numby" (no bracket before the ampersand) stays one name.
+    assert schedule.bare_names(" Topaz & Numby (Destruction: Fire), Bailu will receive") == ["Topaz & Numby", "Bailu"]
+
+
+ZZZ_32_PHASE1_TEXT = (
+    '"Bloodmoon Rising" Signal Search Details\n'
+    "During the event, the limited S-Rank Agent Claret (Electric - Armorer) and default A-Rank Agents "
+    "Anton (Electric - Attack) & Nicole (Ether - Support) have significantly boosted reception rates!\n"
+    '"Axiom of Captivation" Signal Search Details\n'
+    "During the event, the limited S-Rank Agent Nangong Yu (Ether - Stun) and default A-Rank Agents "
+    "Anton (Electric - Attack) & Nicole (Ether - Support) have significantly boosted reception rates!\n"
+)
 
 
 def main() -> int:

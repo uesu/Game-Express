@@ -16,6 +16,7 @@ What each endpoint actually serves, and why it was chosen or rejected, is in
 ## Data sources
 
 - [seriaati/hoyo-codes](https://github.com/seriaati/hoyo-codes) and [hoyo-update-notifier](https://github.com/seriaati/hoyo-update-notifier) (the verified code API and the Sophon/launcher endpoints)
+- [TheLovinator1/wutheringwaves](https://github.com/TheLovinator1/wutheringwaves) — a GitHub Atom mirror of the Wuthering Waves news list, read only as a fallback for WuWa banner notices. The repository declares no license (checked 2026-10-09).
 - [Ertezy/Kitsudock-data](https://github.com/Ertezy/Kitsudock-data) — the hourly `hub.json` behind the 5★ banner lineups (formerly *Gacha-hub-info*; collector MIT, banner data assembled from the fandom wikis under CC BY-SA 3.0 — Endfield from endfield.wiki.gg, CC BY-SA 4.0), and the [Kitsudock](https://github.com/Ertezy/Kitsudock) launcher it is built for
 - [c3kay/hoyolab-rss-feeds](https://github.com/c3kay/hoyolab-rss-feeds) — the HoYoLAB mirror that covers for the API when it bot-checks a CI runner
 - [api.ennead.cc](https://api.ennead.cc/) and [Open Gacha Codes](https://github.com/torikushiii/OpenGachaCodes)

@@ -308,6 +308,34 @@ A posted code that every source now lists as expired is struck through on the po
 All code sources are fetched **in parallel, each URL once per run**, even when several games
 share it.
 
+## Banner notices by title (2026-10-09)
+
+The title search (`sources/banner_search.py`, [BANNER_DATABASE.md → Finding the notice by title](BANNER_DATABASE.md#finding-the-notice-by-title))
+reads these, in order:
+
+| source | used for | verified on 2026-10-09 |
+|---|---|---|
+| HoYoLAB `bbs-api-os.hoyolab.com` keyword search (`community/search/wapi/search/post`) | the official notice of the card's version, by title | answers for `gids=2` (Genshin), `6` (Star Rail), `8` (ZZZ); `size=10` |
+| HoYoLAB `getNewsList` (official news list) | fallback when the search does not answer | yes (`type=2`) |
+| Kuro `ArticleMenu` JSON (`G152/en`) and `article/<id>.json` | Wuthering Waves notices, the official menu and body | `5318` (3.6 Phase I) read |
+| GitHub `TheLovinator1/wutheringwaves` Atom mirror | fallback only, when Kuro's menu gives nothing | list read; the repository declares **no license** |
+
+Facts the searches confirmed: Genshin 7.1 Phase I (`46771531`) and Phase II (`47010361`), Star Rail 4.6 Phase I
+(`46851682`), ZZZ 3.2 Phase I (`46604530`) and Phase II (`46863847`). **No** Star Rail 4.6 Phase II official post and
+**no** ZZZ 3.3 official post existed on 2026-10-09; both stay hub-sourced and unlocked.
+
+The sandbox cannot reach `bbs-api-os.hoyolab.com` with `curl` (TLS reset); the endpoint was checked through the
+page fetcher. The production reachability of the search endpoint is therefore verified only by the first live run
+(see the log line below), and the `getNewsList` fallback covers it if the search is refused.
+
+**Evaluated for banners, not integrated (2026-10-09):**
+
+- `hakush.in` (`hakushin-py`, Python wrapper): game data, not a live banner schedule; Wuthering Waves is not
+  supported by the wrapper; the host is not reachable from the sandbox, so nothing could be verified.
+- `torikushiii/hoyoverse-api` (fan-made): a `calendar` endpoint with banners for Genshin, Star Rail and ZZZ. Useful
+  as a cross-check, but a third-party relay with no stated uptime, and not reachable from the sandbox, so not used.
+- `Ertezy/Gacha-hub-info` (= `Kitsudock-data`): already the hub feed (`hub.json`), used since v1.3.0.
+
 ## Evaluated but not integrated (and why)
 
 | Candidate | Verdict |

@@ -340,6 +340,8 @@ into `gamexpress/config.py`, which is where your current values already live.
   2026-10-09 giveaway post took over is restored to the 3.3 announcement by the first monitor run after this code
   reaches the live branch: one edit to the card and one to the mirror, then nothing. Until that run, the live card
   still shows the wrong key art.
+- The title-search clock (`banners_search_ts`, see [BANNER_DATABASE.md](BANNER_DATABASE.md#finding-the-notice-by-title)) comes
+  with the state too. Copying the state therefore keeps the search from re-asking every banner at once after cutover.
 - Copy it **after** pausing the scheduler (§6), so it cannot go stale between copy and cutover.
 
 `config/program_announcements.json` matters for the same reason — it holds discovered tweet

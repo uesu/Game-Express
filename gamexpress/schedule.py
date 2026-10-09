@@ -13,6 +13,7 @@ Accuracy rules:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import re
@@ -126,7 +127,8 @@ PHASE2 = re.compile(r"phase\s*(?:II|2)\b|second\s+(?:half|phase)|2nd\s+(?:half|p
 # guard that was supposed to cut the weapon clause off did not fire at all.
 TIER_STOP = re.compile(
     r"\b(?:light\s+cones?|weapons?|w-engines?|as\s+well\s+as|will\s+(?:be|return|receive)|"
-    r"and\s+the\s+limited|drop[-\s]rates?)\b", re.I)
+    r"and\s+the\s+limited|drop[-\s]rates?|receives?|significantly|(?:have|has)\s+(?:significantly\s+)?boosted)\b",
+    re.I)                       # \"Sanhua receive boosted\" (WuWa), \"Nicole have significantly boosted\" (ZZZ)
 NAME_SPLIT = re.compile(r",\s*(?:and\s+)?|\s+and\s+|\s*;\s*")
 # A star-tier phrase is often followed by an article before the name ("5-star character \"Pearl\"",
 # "…and the 4-star characters …"), and truncating at the NEXT tier leaves a dangling "the". Those
@@ -179,6 +181,10 @@ NAME_CAPPED = re.compile(r"[A-Z0-9]")
 def bare_names(tail: str) -> list[str]:
     """Character names written WITHOUT quotes after a star-tier phrase, in order."""
     run = TIER_STOP.split(tail, maxsplit=1)[0]
+    # ZZZ writes two default agents as "Anton (Electric - Attack) & Nicole (Ether - Support)". A
+    # ')' before the '&' means two annotated names, so it is split. "Topaz & Numby" has no ')'
+    # and stays one name.
+    run = re.sub(r"\)\s*&\s*", "), ", run)
     out: list[str] = []
     for piece in NAME_SPLIT.split(run):
         n = _clean_name(piece)
@@ -1616,6 +1622,7 @@ async def run(ctx) -> None:
             if rg == game.key and rv in records and rv not in by_version:
                 by_version[rv] = []
 
+        await gather_banner_search(ctx, game, records, by_version)
         bootstrapped = ctx.state.is_bootstrapped("schedule", game.key)
         est = (ctx.estimates.get(game.key) or {}) if s.countdown_estimates else {}
         media = (ctx.media.get(game.key) or {}) if s.program_media else {}
@@ -1658,6 +1665,65 @@ async def gather_wiki_lineup(ctx, game: Game, ver: str, record: dict) -> dict | 
     if out is None:
         data["banners_checked_ts"] = ctx.now                 # asked and failed: no retry until the interval passes
     return out
+
+
+def banner_search_due(game: Game, data: dict, now: int) -> bool:
+    """Whether the title search runs for this card now. Same budget as the wiki: a settled block is
+    never searched, a frozen card is never searched, an incomplete block every WIKI_INCOMPLETE_H hours
+    and a complete-but-unconfirmed block every WIKI_RECHECK_H hours. It has its own stamp
+    (`banners_search_ts`), so the two sources do not reset each other's clock."""
+    if not game.banner_titles or banner_block_settled(game, data):
+        return False
+    start = data.get("maint_start_ts")
+    if start and now > int(start) + CARD_FREEZE_D * 86400:
+        return False
+    interval = WIKI_RECHECK_H if banner_block_complete(game, data) else WIKI_INCOMPLETE_H
+    return now - int(data.get("banners_search_ts") or 0) >= interval * 3600
+
+
+async def gather_banner_search(ctx, game: Game, records: dict, by_version: dict) -> None:
+    """Find each live or upcoming card's banner notices BY TITLE, whatever their age, and feed the
+    hits into the same merge as every other official post. This is what lets a Phase I notice that
+    is older than the lookback window still lock its names (HSR 4.6 Phase I, 2026-09-27).
+
+    Only cards that still hold a TBA or an unconfirmed name are asked, and only when due. A hit only
+    adds a candidate: the names are still read from the body by extract_banner(), and the normal
+    lock rules decide what they may overwrite."""
+    if not ctx.settings.banner_search or not game.banner_titles or ctx.fetcher is None:
+        return                                        # no lookup possible -> no request and no stamp
+    from .sources import banner_search  # noqa: I001 — lazy: banner_search -> hoyolab -> this module
+    live = (ctx.versions.get(game.key) or {}).get("live")
+    due = []
+    for ver, rec in records.items():
+        if live and version_key(ver) < version_key(live):
+            continue                                  # older cards are frozen history
+        data = rec.get("data")
+        if data is None:
+            data = rec["data"] = {}                   # keep the stamp on a brand-new record
+        _sync_official_locks(data, rec.get("prov") or {})
+        if banner_search_due(game, data, ctx.now):
+            due.append((ver, data))
+    if not due:
+        return
+    found = await asyncio.gather(*(banner_search.find(ctx.fetcher, game, ver) for ver, _ in due),
+                                 return_exceptions=True)
+    for (ver, data), items in zip(due, found):
+        data["banners_search_ts"] = ctx.now           # asked (answered or not): no retry until due again
+        if isinstance(items, BaseException):
+            log.warning("%s banner search failed for %s: %s", game.key, ver, items)
+            continue
+        have = {e.item.id for e in by_version.get(ver, [])}
+        added = 0
+        for item in items:
+            if item.id in have:
+                continue
+            fields = extract_banner(item)
+            if not fields:
+                continue
+            by_version.setdefault(ver, []).append(Extract(item=item, kind="banner", version=ver, fields=fields))
+            have.add(item.id)
+            added += 1
+        log.info("[%s] %s banner search: %d notice(s) by title, %d new", game.key, ver, len(items), added)
 
 
 async def _sync_mirror(ctx, game: Game, ver: str, record: dict, data: dict, now: int,

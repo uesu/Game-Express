@@ -477,6 +477,11 @@ retired***
   keeps updating as before. An incomplete banner block is read at most every three hours, and a complete one
   with an unconfirmed name at most every six hours
   for a block that is complete but not yet confirmed.
+- **Banner notices are found by title.** For the card's own version, the monitor looks the official banner
+  notice up by its title (`Version 7.1 Event Wishes Notice - Phase I`, `Version 4.6 Event Warp: Phase I`,
+  `V3.2 Limited-Time Channels (Phase I)`, Wuthering Waves' `Featured Resonator/Weapon Convene`), whatever its
+  age, through HoYoLAB's official search and Kuro's article menu. Only the game's official account counts, a
+  fan repost never does, and the templates live in `config/games.json`. `BANNER_SEARCH=0` turns it off.
 - **A settled copy that no longer resolves is identified.** A mirror edit returning `404` yields
   `🗂 … copy <id> was deleted (Discord 10008) and a settled version is not re-posted`. “Was
   deleted” is report wording for an id that stopped resolving, not proof of who removed it. If no

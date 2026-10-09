@@ -146,6 +146,15 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    every answered read is stamped (`banners_checked_ts`), so the state file changes at most once per interval.
    Do not put a per-run wiki read back: an incomplete block read on every five-minute run was 288 requests
    a day for the pinned ZZZ 3.3 card.
+17. **Banner notices are found by title, for the card's version, whatever their age.** `sources/banner_search.py`
+   fills the title templates in `config/games.json` (`banner_titles`, `{v}` = version, `{p}` = phase). HoYoLAB
+   keyword search answers first (one request per phase, only posts by `official_uid`), and the paged official
+   news list is the fallback; Wuthering Waves reads Kuro's own article menu, with the GitHub Atom mirror only as a
+   fallback. Matching is exact on version and phase (`7.1` is not `7.10`, Phase I is not Phase II), and a fan
+   repost never counts. A hit is only a candidate for the normal merge: the names are still read from the body,
+   and invariant 16 still decides. It runs only through `schedule.banner_search_due()`: a settled block never, a
+   frozen card never, an incomplete block every 3 h, a complete unconfirmed block every 6 h, stamped in
+   `banners_search_ts` (its own clock). `BANNER_SEARCH=0` switches it off. No fetcher means no request and no stamp.
 ---
 
 ## 4. Config model you must understand

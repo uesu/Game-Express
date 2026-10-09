@@ -44,7 +44,8 @@ The Service sends ordinary HTTPS requests (no personal data) to:
 - hoyo-codes.seria.moe, api.ennead.cc (Open Gacha Codes), wuthering.gg, the Fandom game wikis (MediaWiki
   API: code lists and banner lineups), and GitHub / jsDelivr (PromoGacha and Hum-Bao code lists, the
   optional peer-instance state file);
-- the community banner feed (`ertezy.github.io`, Kitsudock data), and countdown sites
+- the official banner notices, found by title through HoYoLAB's search endpoint and Kuro's article menu (for
+  Wuthering Waves, a GitHub mirror as a fallback), the community banner feed (`ertezy.github.io`, Kitsudock data), and countdown sites
   (`gachacountdown.online`, `*-countdown.gengamer.in`) for estimated dates;
 - Discord (to post and edit the operator's cards through the operator's webhooks).
 

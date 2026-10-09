@@ -189,6 +189,26 @@ air time took the card over (ZZZ 3.3, 2026-10-09). Nothing remembered which post
 - **Not decided:** HoYoverse moving a programme does not move the air time of a locked card. Until
   that is decided, pin `program_ts` in `config/overrides.json`.
 
+## Banner names: the reader fixes and the title search (2026-10-09)
+
+Checked against the real posts (fixtures in `tests/test_smoke.py`):
+
+- **WuWa 3.6 Phase I** (Kuro `5318`): 5★ Denia; 4★ Yangyang, Baizhi, Sanhua. The reader had dropped Sanhua,
+  whose line says *receive boosted* — fixed (the stop-words now include `receives?`, `significantly`,
+  `have/has (significantly) boosted`).
+- **ZZZ 3.2 Phase I**: 5★ Claret, Nangong Yu; 4★ Anton, Nicole. Nicole's line says *have significantly boosted*
+  — fixed. The default-agent pair `Anton (Electric - Attack) & Nicole (Ether - Support)` reads as two names, while
+  `Topaz & Numby` stays one name.
+- **ZZZ 3.2 Phase II**: 5★ Roxy, Promeia; 4★ Corin, Billy.
+- **Genshin 7.1 Phase I**: 5★ Vesna, Vodyanitsa; 4★ Diona, Faruzan, Chongyun. **Phase II**: 5★ Skirk, Escoffier;
+  4★ Dahlia, Candace, Mika.
+- **Star Rail 4.6 Phase I** (`46851682`, outside the lookback): 5★ Pearl, Evanescia; 4★ Qingque, Xueyi, Misha.
+  Found by title, so it locks the official names.
+- **Star Rail 4.6 Phase II** (Mortenax Blade, 2026-10-21): hub-sourced, unlocked, until an official post exists.
+
+Fan reposts are ignored, and a title that matches the wrong version or phase is ignored. See
+[BANNER_DATABASE.md → Finding the notice by title](BANNER_DATABASE.md#finding-the-notice-by-title).
+
 ## The code gate
 
 A code is posted when **any one** of these is true:

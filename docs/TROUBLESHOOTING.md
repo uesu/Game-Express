@@ -75,6 +75,21 @@ Full scheduler setup, the classic token and the response codes: **[SCHEDULER.md]
 
 ---
 
+## A banner stays TBA although its notice is out
+
+Look for these lines in the run log:
+
+- `[<game>] <version> banner search: N notice(s) by title, M new` — the search ran. `N = 0` means the notice
+  is not out yet, or its title differs from the template in `config/games.json` (`banner_titles`).
+- `[<game>] HoYoLAB search unavailable — paging the official news list` — the keyword search did not answer, so
+  the official news list was read instead. Harmless unless the banner never appears.
+- `Kuro banner menu failed` / `Kuro banner menu gave nothing — trying the GitHub mirror` — Wuthering Waves only;
+  the GitHub mirror is a fallback.
+- `<game> banner search failed for <version>` — the request raised; the search is retried only when due again.
+
+A banner is not searched when its block is settled, when the card is frozen (past `CARD_FREEZE_D` days), or when
+`BANNER_SEARCH=0`. A notice that is out but was not matched can be pinned in `config/overrides.json`, which always wins.
+
 ## Still stuck
 
 Reproduce it offline before changing anything — none of these posts to Discord or writes state:
