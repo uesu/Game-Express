@@ -3560,9 +3560,6 @@ def test_the_documented_nitter_fleet_size_matches_the_code():
 # The texts below are the real fxtwitter bodies of both posts.
 ZZZ33_ANN_URL = "https://x.com/ZZZ_EN/status/2106957553435312559"
 ZZZ33_ANN_IMG = "https://pbs.twimg.com/media/HTxU4O3W4AAGolV.jpg?name=orig"
-ZZZ33_HOY_URL = "https://www.hoyolab.com/article/46972907"      # the article the card was built from
-ZZZ33_HOY_IMG = ("https://upload-os-bbs.hoyolab.com/upload/2026/09/30/"
-                 "c32ff7216961efbcd3fc83ef9f256f36_7613960778498299818.jpg")   # its 16:9 cover
 ZZZ33_GIVE_URL = "https://x.com/ZZZ_EN/status/2108422202974499088"
 ZZZ33_GIVE_IMG = "https://pbs.twimg.com/media/HUGjhQZWUAAiOJd.jpg?name=orig"
 ZZZ33_AIRS = 1791545400                      # 2026-10-09 11:30 UTC = 19:30 UTC+8
@@ -3698,9 +3695,7 @@ def test_a_title_override_pins_the_link_and_the_source_button_together():
 
 def test_the_shipped_zzz_33_override_repairs_the_card_that_was_switched():
     """The card as it stood after the 05:00 UTC run: a record from before the flag existed, locked
-    to the giveaway. config/overrides.json must restore the link and key art the card was built
-    from — the HoYoLAB article 46972907, whose created_at is the program_ts the card recorded — and
-    the button must say HoYoLAB, not the giveaway's X Post."""
+    to the giveaway. config/overrides.json must restore the announcement's own X post and its photo."""
     from gamexpress.sources.twitter import program_seed
     assert program_seed("zzz", "3.3").get("id") == "2106957553435312559"   # the seed agrees
     broken = {"data": {"version": "3.3", "title_url": ZZZ33_GIVE_URL, "source_url": ZZZ33_GIVE_URL,
@@ -3708,10 +3703,10 @@ def test_the_shipped_zzz_33_override_repairs_the_card_that_was_switched():
                        "images": [ZZZ33_GIVE_IMG], "program_seen": True, "program_ts": ZZZ33_AIRS}}
     override = load_overrides()["zzz"]["3.3"]
     fixed = _merge_zzz33(broken, [_zzz33_giveaway()], now=1791522200, override=override)
-    assert fixed["title_url"] == ZZZ33_HOY_URL and fixed["source_url"] == ZZZ33_HOY_URL
-    assert fixed["source_links"] == [("HoYoLAB", ZZZ33_HOY_URL)]           # no stale X Post button
-    assert fixed["source_label"] == "HoYoLAB"
-    assert fixed["images"] == [ZZZ33_HOY_IMG]
+    assert fixed["title_url"] == ZZZ33_ANN_URL and fixed["source_url"] == ZZZ33_ANN_URL
+    assert fixed["source_links"] == [("X Post", ZZZ33_ANN_URL)]            # no stale giveaway button
+    assert fixed["source_label"] == "X Post"
+    assert fixed["images"] == [ZZZ33_ANN_IMG]
     assert fixed["program_ts"] == ZZZ33_AIRS                                # the air time was never wrong
 
 
@@ -3855,6 +3850,125 @@ def test_without_an_account_nitter_is_not_asked():
     c = tw.XClient(f, settings())
     asyncio.run(c.tweet(NIT_ID))
     assert f.calls == ["fxtwitter"]
+
+
+# ---- source preference and the lock (2026-10-09, the X-first rule) ------------------------------
+HOY_ANN_URL = "https://www.hoyolab.com/article/46972907"        # the fallback announcement
+
+
+def _zzz33_hoyolab_announcement() -> Item:
+    """The same announcement from HoYoLAB, published three seconds after the X post."""
+    return Item("hoyolab", "zzz", "46972907", HOY_ANN_URL, "Zenless Zone Zero Version 3.3 Announcement",
+                ZZZ33_ANN_TEXT, 1791172803, ["https://upload-os-bbs.hoyolab.com/upload/2026/09/30/"
+                                              "c32ff7216961efbcd3fc83ef9f256f36_7613960778498299818.jpg"])
+
+
+def test_when_x_and_hoyolab_both_carry_the_announcement_the_lock_goes_to_x():
+    """X is the preferred source, so when both posts are visible in the same run, the card's link
+    and key art are X's post and its photo, and HoYoLAB is only the second button."""
+    record: dict = {}
+    data = _merge_zzz33(record, [_zzz33_hoyolab_announcement(), _zzz33_announcement()], now=1791172900)
+    assert data["title_url"] == ZZZ33_ANN_URL and data["images"] == [ZZZ33_ANN_IMG]
+    assert data["announcement_source"] == "x"
+    assert [lbl for lbl, _ in data["source_links"]][0] == "X Post"
+
+
+def test_a_hoyolab_lock_taken_while_x_was_down_is_upgraded_once_to_the_same_x_announcement():
+    """X was unreadable when the card was first seen, so HoYoLAB held it. Once X can be read again,
+    its announcement (published first, same air time) takes the link and key art -- once."""
+    record: dict = {}
+    first = _merge_zzz33(record, [_zzz33_hoyolab_announcement()], now=1791172900)
+    assert first["title_url"] == HOY_ANN_URL and first["announcement_source"] == "hoyolab"
+    later = _merge_zzz33(record, [_zzz33_hoyolab_announcement(), _zzz33_announcement()], now=1791180000)
+    assert later["title_url"] == ZZZ33_ANN_URL and later["images"] == [ZZZ33_ANN_IMG]
+    assert later["announcement_source"] == "x"
+    # the giveaway appears afterwards with the same air time: it is published later, so it never upgrades
+    # and never re-pins -- the X announcement stays
+    after = _merge_zzz33(record, [_zzz33_hoyolab_announcement(), _zzz33_announcement(), _zzz33_giveaway()],
+                         now=1791530000)
+    assert after["title_url"] == ZZZ33_ANN_URL and after["images"] == [ZZZ33_ANN_IMG]
+
+
+def test_a_giveaway_never_upgrades_a_hoyolab_lock():
+    """The incident in the other direction: a later X post repeating the air time cannot upgrade a
+    card that is locked to HoYoLAB, because it was published after that lock."""
+    record: dict = {}
+    _merge_zzz33(record, [_zzz33_hoyolab_announcement()], now=1791172900)
+    after = _merge_zzz33(record, [_zzz33_hoyolab_announcement(), _zzz33_giveaway()], now=1791530000)
+    assert after["title_url"] == HOY_ANN_URL and after["announcement_source"] == "hoyolab"
+    assert after["images"] != [ZZZ33_GIVE_IMG]
+
+
+def test_the_lock_holds_in_every_game_the_incident_can_reach():
+    """The lock lives in merge(), shared by all games. For each game with a programme pattern, an
+    announcement with an air time locks the card, and a same-air-time giveaway that arrives after the
+    announcement has aged out cannot move the link or the key art."""
+    for key, game in GAMES.items():
+        if not game.enabled:
+            continue
+        word = game.program_patterns[0].title()
+        ann_text = (f"{game.short} Version 9.9 {word} Announcement\n\nThe Version 9.9 {word} will begin on "
+                    "October 20 at 19:30 (UTC+8)!")
+        gw_text = (f"Share to win! The Version 9.9 {word} begins on October 20 at 19:30 (UTC+8). "
+                   "Retweet and reply to join the giveaway.")
+        now0 = 1792000000 - 3 * 86400
+        ann = Item("x", key, "1000000000000000001", "https://x.com/A/status/1000000000000000001", "",
+                   ann_text, now0 - 3600, ["https://pbs.twimg.com/media/ANN.jpg?name=orig"])
+        gw = Item("x", key, "1000000000000000002", "https://x.com/A/status/1000000000000000002", "",
+                  gw_text, now0 + 5 * 86400, ["https://pbs.twimg.com/media/GIVE.jpg?name=orig"])
+        record: dict = {}
+        for items, now in (([ann], now0), ([gw], now0 + 5 * 86400)):
+            extracts = [e for e in (schedule.extract(game, it) for it in items) if e]
+            data = schedule.merge(game, "9.9", extracts, record, {}, {}, now, [])
+            record["data"] = data
+        assert data["title_url"] == ann.url and data["images"] == ann.images, key
+
+
+def test_a_dead_nitter_status_mirror_is_not_waited_on_for_every_tweet():
+    """With nitter.cf and xitter.cf both down, each tweet used to wait on both before FxTwitter.
+    After STATUS_FAIL_LIMIT failures the mirrors are skipped for the run."""
+    from gamexpress.sources import twitter as tw
+
+    class Dead:
+        def __init__(self):
+            self.calls = []
+
+        async def get_text(self, url, source="", **k):
+            self.calls.append(source)
+            return None                                      # every status mirror is down
+
+        async def get_json(self, url, source="", **k):
+            self.calls.append(source)
+            return _fx_body() if source == "fxtwitter" else None
+
+    f = Dead()
+    c = tw.XClient(f, settings())
+    for n in range(5):
+        asyncio.run(c.tweet(str(1000 + n), "ZZZ_EN"))
+    assert f.calls.count("nitter") == tw.STATUS_FAIL_LIMIT * len(tw.STATUS_MIRRORS)
+    assert f.calls.count("fxtwitter") == 5
+
+
+def test_a_countdown_estimate_is_replaced_by_the_official_notice_in_every_game():
+    """The speculation / countdown mechanism is native and game-independent: a maintenance start that is
+    only a countdown estimate is labelled as one, and an official notice replaces it and clears the
+    label, whichever game the card belongs to."""
+    now = 1791522000
+    for key, game in GAMES.items():
+        if not game.enabled:
+            continue
+        estimate = 1792300000
+        official = 1792380000
+        record = {"data": {"version": "9.9", "maint_start_ts": estimate, "estimated": ["maint_start_ts"],
+                           "estimate_sources": ["version cadence"]},
+                  "prov": {"maint_start_ts": [schedule.PRIORITY["countdown"], now - 3600]}}
+        notice = schedule.Extract(
+            Item("hoyolab", key, "notice-9.9", f"https://www.hoyolab.com/article/{key}-9.9-notice",
+                 "Version 9.9 Update Maintenance Notice", "official", now),
+            "maintenance", "9.9", fields={"maint_start_ts": official})
+        data = schedule.merge(game, "9.9", [notice], record, {}, {}, now, [])
+        assert data["maint_start_ts"] == official, key
+        assert "maint_start_ts" not in (data.get("estimated") or []), key
 
 
 def main() -> int:

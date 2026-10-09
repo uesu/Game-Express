@@ -78,6 +78,9 @@ VXTWITTER_URL = "https://api.vxtwitter.com/Twitter/status/{id}"
 # is only the second try. Both serve a per-status RSS feed (…/<account>/status/<id>/rss) that reaches
 # back weeks, not days: nitter.cf returned the ZZZ 3.2 announcement from 2026-08-24 on 2026-10-09.
 STATUS_MIRRORS = ("https://nitter.cf", "https://xitter.cf")
+# After this many failed requests in one run a status mirror is skipped for the rest of the run. Without
+# this a dead nitter.cf costs a full NITTER_TIMEOUT on EVERY tweet before FxTwitter is asked.
+STATUS_FAIL_LIMIT = 2
 TCO_WRAPPED = re.compile(r"/t\.co/", re.I)   # nitter leaves t.co links unexpanded in its RSS
 X_UA = "Game-Express"
 
@@ -121,6 +124,7 @@ class XClient:
         self._tweets: dict[str, dict | None] = {}
         self.avatars: dict[str, str] = {}     # account (lower) -> current avatar url
         self.source_used: dict[str, int] = {}  # tweet-data service that answered, per run
+        self.status_fails: dict[str, int] = {}  # failed status-feed requests per mirror, this run
         self.reachable: set[str] = set()      # accounts with >= 1 working instance this run
 
     async def _probe(self, inst: str, account: str) -> list | None:
@@ -240,10 +244,13 @@ class XClient:
     async def _tweet_from_nitter(self, tweet_id: str, account: str) -> dict | None:
         """One tweet from a nitter status feed, in the same shape as _from_fx. nitter.cf first."""
         for inst in STATUS_MIRRORS:
+            if self.status_fails.get(inst, 0) >= STATUS_FAIL_LIMIT:
+                continue                              # down for this run: do not wait on it again
             body = await self.fetcher.get_text(f"{inst}/{account}/status/{tweet_id}/rss", source="nitter",
                                                headers={"User-Agent": "Mozilla/5.0"}, retries=0,
                                                timeout=NITTER_TIMEOUT)
             if not body:
+                self.status_fails[inst] = self.status_fails.get(inst, 0) + 1
                 continue
             feed = await asyncio.to_thread(feedparser.parse, body)
             for e in feed.entries:

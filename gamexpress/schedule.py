@@ -204,6 +204,11 @@ LABEL_NO_TIME = re.compile(r"storage|space|GB|file\s+size|download\s+size", re.I
 # estimates; the banner feed is the lowest (5). Any official source or override replaces both.
 PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "news": 45, "x": 40, "launcher": 20,
             "countdown": 10, "pattern": 9, "gachawiki": 6, "bannerfeed": 5}
+# Which program post may HOLD the card's link and key art (the lock). X first: its post carries the
+# announcement's own URL and its photo at full size. HoYoLAB and the official sites hold the card
+# when X cannot be read (nitter and the tweet-data services all down). A card locked to one of
+# them is upgraded once X shows the same announcement -- see _upgrade_announcement().
+LOCK_RANK = {"x": 3, "hoyolab": 2, "kuro": 2, "news": 1}
 ESTIMATED_KEYS = ("program_ts", "preinstall_ts", "maint_start_ts", "maint_end_ts")
 MAINT_HOURS_ESTIMATE = 5          # typical HoYoverse / Kuro maintenance window
 CARD_FREEZE_D = 45                 # after this many days past maintenance a card is never edited
@@ -1183,6 +1188,45 @@ def _link_label(url: str, fallback: str) -> str:
     return fallback
 
 
+def _pin_announcement(data: dict, e: Extract, others: list[tuple[str, str]]) -> None:
+    """Point the card's link, source buttons and key art at ONE program post, and remember which
+    post that was (source and time) so a later, better-ranked post can upgrade it once."""
+    lf, item = e.fields, e.item
+    data["title_url"] = item.url                   # the announcement, never the stream it mentions
+    data["source_url"] = item.url
+    data["source_label"] = item.source_label
+    if lf.get("images"):
+        data["images"] = rank(lf["images"])
+    elif data.get("youtube_video"):
+        data["images"] = [youtube_thumb(data["youtube_video"])]
+    links = [(item.source_label, item.url)]
+    for label, url in others:                      # the other program posts, as extra buttons
+        if label not in [lbl for lbl, _ in links]:
+            links.append((label, url))
+    data["source_links"] = links[:3]
+    data["announcement_source"] = item.source
+    data["announcement_ts"] = item.published_ts
+
+
+def _upgrade_announcement(data: dict, program_items: list) -> None:
+    """A card locked to HoYoLAB (because X was down when the card was first seen) moves to X ONCE,
+    and only when X's post is the same announcement: same air time, and published no later than the
+    post the card is locked to. A giveaway repeating the air time is always published later, so it
+    can never take the card -- the incident this lock exists to stop."""
+    cur_rank = LOCK_RANK.get(data.get("announcement_source"), 0)
+    cur_ts = data.get("announcement_ts")
+    if "announcement_source" not in data or not cur_ts or not data.get("program_ts"):
+        return                                     # legacy record, or no air time to match on
+    better = [e for e in program_items
+              if LOCK_RANK.get(e.item.source, 0) > cur_rank
+              and e.item.published_ts <= cur_ts
+              and e.fields.get("program_ts") == data.get("program_ts")]
+    if better:
+        best = sorted(better, key=lambda e: (-LOCK_RANK.get(e.item.source, 0), e.item.published_ts))[0]
+        _pin_announcement(data, best, [(e.item.source_label, e.item.url) for e in program_items])
+        log.info("announcement upgraded to %s: %s", best.item.source, best.item.url)
+
+
 def merge(game: Game, version: str, extracts: list[Extract], record: dict, override: dict,
           launcher: dict, now: int, notes: list[str] | None = None,
           estimates: dict | None = None, media: dict | None = None,
@@ -1271,26 +1315,17 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
             # for now (as it always did) but stays unlocked, so the real announcement can still
             # take the card -- and its air time, which the teaser never had.
             timed = [e for e in program_items if e.fields.get("program_ts")]
-            lock = sorted(timed or program_items, key=lambda e: (-PRIORITY.get(e.item.source, 0),
-                                                                 e.item.published_ts))[0]
+            # X first (LOCK_RANK), then the earliest post: the announcement precedes any reminder
+            lock = sorted(timed or program_items,
+                          key=lambda e: (-LOCK_RANK.get(e.item.source, 0), e.item.published_ts))[0]
             lf, lsrc, lts = lock.fields, lock.item.source, lock.item.published_ts
             for k in ("program_ts", "program_name", "version_name", "youtube_video"):
                 put(k, lf.get(k), lsrc, lts)
             # the link and the key art come from the SAME post -- never one from each
-            data["title_url"] = lock.item.url           # the announcement, never the stream it mentions
-            data["source_url"] = lock.item.url
-            data["source_label"] = lock.item.source_label
-            if lf.get("images"):
-                data["images"] = rank(lf["images"])
-            elif data.get("youtube_video"):
-                data["images"] = [youtube_thumb(data["youtube_video"])]
-            links = [(lock.item.source_label, lock.item.url)]
-            for e in program_items:
-                label = e.item.source_label
-                if label not in [lbl for lbl, _ in links]:
-                    links.append((label, e.item.url))
-            data["source_links"] = links[:3]
+            _pin_announcement(data, lock, [(e.item.source_label, e.item.url) for e in program_items])
             data["announcement_locked"] = bool(timed)
+        elif data.get("announcement_locked"):
+            _upgrade_announcement(data, program_items)
     else:
         # nobody in the lookback window announced the program: look the article up on the
         # official news page / HoYoLAB news list (link + full-size key art + air time).
