@@ -25,5 +25,14 @@
       "title_url": "https://x.com/ZZZ_EN/status/2106957553435312559",
       "image": "https://pbs.twimg.com/media/HTxU4O3W4AAGolV.jpg?name=orig"
     }
+  },
+
+  "wuwa": {
+    "3.7": {
+      "_why": "2026-10-09: Phase 1 was locked on two names (Chisa, Iuno) without Hsin, and a locked phase never grows. Hsin is in the hub (As Full as Tonight, Forever, 2026-09-30) and on game8's 3.7 page (archives/616859, Phase 1 = Hsin, Chisa, Iuno), so the phase is pinned to all three. Phase 2 is left to the sources.",
+      "banners": {
+        "phase1": ["Hsin", "Chisa", "Iuno"]
+      }
+    }
   }
 }

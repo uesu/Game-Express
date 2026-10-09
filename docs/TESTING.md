@@ -216,8 +216,8 @@ tests: `test_a_community_lock_is_corrected_by_a_later_official_notice`,
 itself. If one of them fails after a change to `merge()`, `apply_banner_feed()` or `apply_gacha_wiki()`, the lock is
 what you broke.
 
-Counts: the CI runner `python tests/test_smoke.py` runs 262 tests (all must pass). `pytest -q tests` runs 280:
-those 262, the 15 in `test_schedule_epithet_and_settled.py` and the 3 in `test_gachawiki_placeholder.py`.
+Counts: the CI runner `python tests/test_smoke.py` runs 266 tests (all must pass). `pytest -q tests` runs 284:
+those 266, the 15 in `test_schedule_epithet_and_settled.py` and the 3 in `test_gachawiki_placeholder.py`.
 The title-search tests sit in `tests/test_smoke.py` before `main()`: title matching (`test_banner_title_match_is_exact_on_version_phase_and_prefix`),
 the HSR 4.6 Phase I outside-lookback case, fan-repost rejection, the HoYoLAB search versus `getNewsList` fallback,
 the budget and throttle (`test_banner_search_budget_settled_never_frozen_never_and_two_clocks`), the `gather_banner_search` integration, WuWa's Kuro discovery

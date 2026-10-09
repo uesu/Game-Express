@@ -26,7 +26,13 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 - **HSR 4.6 Phase II (Mortenax Blade)** is filled from the hub and the calendar, and locks once both name her.
   It no longer waits for an official post. The earlier "hub-only until an official post" line is superseded.
 - **Stop rule.** The title search and the calendar stop watching a card once its phases are final: phase 1 and phase 2 each have their 5★ and 4★ lists locked. A card with no phase-2 names yet keeps being watched, and the freeze still applies. Re-runs and the 4★ summary stay on the wiki's own schedule.
-- Tests: 262 in the CI runner, 280 under `pytest`.
+- **Wuthering Waves 3.7 Phase 1 is pinned to all three names** (Hsin, Chisa, Iuno) in `config/overrides.json`, human-verified
+  against the hub and game8's 3.7 page. Phase 1 locked on two names without Hsin, and a locked phase never grows.
+  Phase 2 (Suoming, Lynae, Lucilla) is not pinned and still comes from the sources.
+- **The announcement lock is written down.** A card locked by the legacy markers (`program_seen` / `media_from`) now stores `announcement_locked`, so the lock no longer rests on a marker that could be cleared.
+- **Quieter Kuro log.** An empty Kuro banner menu is logged at info. Only when the GitHub mirror is also empty is it a warning.
+- **Calendar log** now counts the 4★ lists it read as well as the 5★ banners.
+- Tests: 266 in the CI runner, 284 under `pytest`.
 
 ---
 
