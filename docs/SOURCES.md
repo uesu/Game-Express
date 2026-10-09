@@ -334,6 +334,8 @@ page fetcher, and so were the ennead calendars. The production reachability of t
   endpoints return the in-game event calendar with banners: `version`, the characters or weapons, and start and end times.
   Checked through the page fetcher: `genshin/calendar`, `starrail/calendar` and `zenless/calendar` all answer. The
   root `/mihoyo` lists only the code endpoints, so the calendar is not in its endpoint list.
+  - **Used since 2026-10-09** as a banner source (`sources/calendarfeed.py`): 5★ and 4★ (A-rank) names per phase,
+    names only, asked on the title-search budget. Any two of hub, calendar and wiki that agree lock a name.
   - Genshin 7.1 Phase I: both banners (`Character Event Wish` Vesna, `Character Event Wish 2` Vodyanitsa; Diona, Faruzan, Chongyun at 4★) match the post. End 2026-10-13 17:59 UTC+8, matching the post.
   - ZZZ 3.2 Phase II (Roxy, Promeia; Corin, Billy): start 2026-09-30 12:00 and end 2026-10-20 14:59 UTC+8, matching the post.
   - Star Rail 4.6: Pearl and Evanescia, and the Qingque/Xueyi/Misha 4★ lists match the posts. **Mortenax Blade (4.6 Phase II) is already listed** with start 1792580400 (2026-10-21 19:00 UTC+8, the same stamp as the hub). Star Rail stamps run about 7 hours later than the posts' "server time".

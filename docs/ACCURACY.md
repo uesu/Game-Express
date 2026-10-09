@@ -147,7 +147,7 @@ time sets `announcement_locked`, and from then on:
 |---|---|
 | title link, source button(s), key art | fixed to the post that opened the card |
 | air time, programme name, version name, YouTube link | fixed. Only an *estimated* air time can still be replaced by an official one |
-| banners (5★ and 4★ names, re-runs) | an official notice locks its name on its own; a hub name and a wiki name lock once they agree. A locked name is final against the hub and the wiki, and an official name is final against later official notices (a conflict is logged, not applied). Until then a name stays open and keeps updating |
+| banners (5★ and 4★ names, re-runs) | an official notice locks its name on its own; any two of a hub name, a calendar name and a wiki name lock once they agree (5★ and 4★, every game). A locked name is final against the hub and the wiki, and an official name is final against later official notices (a conflict is logged, not applied). Until then a name stays open and keeps updating |
 | maintenance: pre-install, start, end, compensation | keep updating. An official value replaces the `🕒 estimated from version cadence` line and its countdown |
 
 Why: until this rule, every run rebuilt the link and key art from whatever program posts were still
@@ -180,7 +180,7 @@ air time took the card over (ZZZ 3.3, 2026-10-09). Nothing remembered which post
   for all six: it is a documented limit, not a fixed one. Correct it with `title_url` and `image` in
   `config/overrides.json`.
 - **Banners settle once confirmed.** Each banner name has a witness list, one entry per group (`official`,
-  `feed`, `wiki`). An official notice locks its name on its own; a hub name and a wiki name lock once they
+  `feed`, `calendar`, `wiki`). An official notice locks its name on its own; any two of a hub, calendar or wiki name lock once they
   agree, and they cannot change a locked name. Two copies of one notice (HoYoLAB and X) are one group, not
   two. An override confirms alone. Re-runs and the 4★ summary come only from the wiki, so they lock only once
   the wiki names them and their phase lists are already locked. A name that only the wiki gives stays open

@@ -15,6 +15,20 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ## 2026-10-09
 
+**Banner names lock on any two reputable sources, the official calendar is a source, and 4★ / A-rank lists follow the same rule**
+
+- **Any two sources agree and the name locks**, for every game and for 4★ and A-rank lists as well as 5★. The
+  sources are the community hub, the official game calendar (new), and the game wiki. Official notices still lock alone.
+- **Official calendar** (`sources/calendarfeed.py`, `api.ennead.cc/mihoyo/{genshin,starrail,zenless}/calendar`).
+  It fills empty phases with names only, never times, and it is asked on the title search's budget (`calendar_due()`,
+  stamp `calendar_ts`, one request per game per run). The 4★ rule is the wiki's: exactly the game's rate-up count, else TBA.
+  `BANNER_CALENDAR=0` switches it off.
+- **HSR 4.6 Phase II (Mortenax Blade)** is filled from the hub and the calendar, and locks once both name her.
+  It no longer waits for an official post. The earlier "hub-only until an official post" line is superseded.
+- Tests: 261 in the CI runner, 279 under `pytest`.
+
+---
+
 **A posted Special Program card keeps its announcement: link, key art and air time are locked**
 
 ZZZ 3.3's card was rebuilt at 05:00 UTC on 2026-10-09 from whatever program posts were still in the

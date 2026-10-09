@@ -113,7 +113,7 @@ existed stay out of the channel.
   Once the card is posted, its link, key art and air time are locked to the announcement that opened
   it. When X and HoYoLAB both carry the announcement, the lock goes to the X post, and a card that was
   locked to HoYoLAB while X could not be read moves once to the X post. Banners settle once confirmed (an official
-  notice, or the community hub and the wiki agreeing), and the maintenance details keep updating
+  notice, or any two reputable sources agreeing (the community hub, the official calendar, the wiki)), and the maintenance details keep updating
   ([ACCURACY.md → Once posted](docs/ACCURACY.md#once-posted-the-card-keeps-its-announcement)).
 
 ### 2 · Redemption code card
@@ -471,7 +471,7 @@ retired***
   twice in a run is skipped for the rest of it. A wrong link on a live card is corrected by pinning
   `title_url` and `image` in `config/overrides.json`.
 - **Banners settle once confirmed.** An official notice locks its 5★ or 4★ name on its own. A community hub
-  name and a wiki name lock once they agree. An override locks alone. A locked name is final against the hub
+  name, a calendar name and a wiki name lock once any two of them agree (5★ and 4★, every game). An override locks alone. A locked name is final against the hub
   and the wiki, and an official name is final against later official notices. Until a name locks, it can still
   change: the hub follows itself, the wiki corrects the hub, and an official notice corrects both. Maintenance
   keeps updating as before. An incomplete banner block is read at most every three hours, and a complete one

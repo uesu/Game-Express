@@ -53,9 +53,18 @@ Code: `sources/banner_search.py`; templates: `banner_titles` in `config/games.js
   the wiki clock (`banners_checked_ts`). A failed search is still stamped and retried only when due again.
 - **Off switch.** `BANNER_SEARCH=0`. With no fetcher (a dry test) there is no request and no stamp.
 
-**Tentative values.** A hub or wiki name stays changeable until it is confirmed (a second source agreeing, or an
-official notice). An official notice locks alone. Nothing in this section locks a value earlier than that:
-HSR 4.6 Phase II (Mortenax Blade) is hub-sourced and stays unlocked until an official post exists.
+**The official calendar (`calendar`).** `sources/calendarfeed.py` reads `api.ennead.cc/mihoyo/{genshin,starrail,zenless}/calendar`
+for the card's version (Genshin, Star Rail and ZZZ; WuWa has no calendar here). It keeps each banner's 5★
+characters, and its 4★ (A-rank in Zenless) characters, and splits the phases by the card's release timestamp
+the way the hub does. A 4★ list is written only when it has exactly the game's rate-up count
+(`four_star_count`); any other count stays TBA. Light cones, weapons and W-Engines are never read. Only names
+are written, never times. It is asked on the title search's budget (`calendar_due()`, its own stamp
+`calendar_ts`): one request per game per run, and none when nothing is due. `BANNER_CALENDAR=0` switches it off.
+Example: HSR 4.6 Phase II, Mortenax Blade, is filled from the calendar and the hub when they agree, and it locks
+then. It does not wait for an official post.
+
+**Tentative values.** A hub, calendar or wiki name fills an empty phase and stays changeable until a second source
+agrees (or an official notice names it). An official notice locks alone. Nothing locks earlier than that.
 
 ## The four dialects
 
@@ -149,8 +158,10 @@ A banner name (a 5★ phase, its 4★ list, the re-runs and the 4★ summary) is
 
 - **An official notice locks it on its own.** A HoYoverse, Kuro, news-page or X notice that parses cleanly
   is the strongest source the bot reads, so its name locks at once.
-- **Two community groups agree.** The community hub (`feed`) and this wiki reader (`wiki`) name the same
-  value. Two copies of one notice (HoYoLAB and X) are one group, not two.
+- **Any two sources agree.** Each reputable source is one group: the community hub (`feed`), the official
+  calendar (`calendar`, see below) and this wiki reader (`wiki`). When any two of them name the same value, it
+  locks. This is the same for every game, and for 4★ and A-rank lists as well as 5★. Two copies of one notice
+  (HoYoLAB and X) are one group, not two.
 - **An override** in `config/overrides.json` locks it alone.
 
 A **locked** name is recorded in `banners_settled`. The feed and the wiki never change it. An official name

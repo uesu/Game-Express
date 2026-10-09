@@ -250,6 +250,7 @@ class Settings:
     program_media: bool = True         # PROGRAM_MEDIA=0 -> never look an announcement up on the news page
     banner_feed: bool = True           # BANNER_FEED=0 -> never fill banner lineups from hub.json
     banner_search: bool = True         # BANNER_SEARCH=0 -> never look up banner notices by title
+    banner_calendar: bool = True       # BANNER_CALENDAR=0 -> never read the official calendar (api.ennead.cc) for banner names
     gacha_wiki: bool = True            # GACHA_WIKI=0 -> never fill banner lineups from the game wikis
 
     # -- routing ---------------------------------------------------------------
@@ -401,6 +402,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         program_media=_bool(env, "PROGRAM_MEDIA", True),
         banner_feed=_bool(env, "BANNER_FEED", True),
         banner_search=_bool(env, "BANNER_SEARCH", True),
+        banner_calendar=_bool(env, "BANNER_CALENDAR", True),
         gacha_wiki=_bool(env, "GACHA_WIKI", True),
         show_legend=_bool(env, "SHOW_LEGEND", True),
         repost=_env(env, "REPOST").replace(" ", "").lower(),

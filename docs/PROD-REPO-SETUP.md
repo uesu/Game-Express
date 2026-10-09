@@ -103,17 +103,17 @@ still manual: an agent cannot set your repository secrets or your cron-job.org s
 > The per-game rhythm remains in `config/games.json`, and the read-only
 > `python -m gamexpress speculate` command works in prod as soon as the files are there.
 
-## 1. The file manifest — exactly 34 files
+## 1. The file manifest — exactly 36 files
 
 ### Copy to prod (runtime)
 
 ```
-gamexpress/                      26 .py files — the whole package
+gamexpress/                      28 .py files — the whole package
   __init__.py  __main__.py  cards.py  codeposter.py  config.py  discord.py
   http.py  media.py  models.py  preview_html.py  runner.py  samples.py
   schedule.py  state.py  textutil.py  timeparse.py
-  sources/__init__.py  bannerfeed.py  codes.py  countdown.py  gachawiki.py
-          hoyolab.py  kuro.py  launcher.py  newspage.py  twitter.py
+  sources/__init__.py  banner_search.py  bannerfeed.py  calendarfeed.py  codes.py
+          countdown.py  gachawiki.py  hoyolab.py  kuro.py  launcher.py  newspage.py  twitter.py
 config/games.json                game definitions, X accounts, code sources
 config/overrides.json            manual corrections
 config/program_announcements.json  discovered tweet ids — the workflow commits to this
@@ -317,6 +317,10 @@ here does not multiply the notification across six more channels.
 
 Emojis need no variables — `EMOJI_YOUTUBE` / `EMOJI_TWITCH` fall back to the defaults baked
 into `gamexpress/config.py`, which is where your current values already live.
+
+The banner switches (`BANNER_FEED`, `BANNER_SEARCH`, `BANNER_CALENDAR`, `GACHA_WIKI`) are all on by default,
+so prod needs no variable for them. `BANNER_CALENDAR` reads `api.ennead.cc`, the same host the codes source
+already uses, with no key and no secret. Set `BANNER_CALENDAR=0` only to switch the calendar off.
 
 ---
 

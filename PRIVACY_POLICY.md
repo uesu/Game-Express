@@ -41,7 +41,7 @@ The Service sends ordinary HTTPS requests (no personal data) to:
 - nitter instances (`nitter.cf` and `xitter.cf` first, for single posts and timelines; a token-gated
   instance is used only when the operator sets a token, and the token is sent only to that instance),
   FxTwitter, fixupx and vxTwitter (public X posts);
-- hoyo-codes.seria.moe, api.ennead.cc (Open Gacha Codes), wuthering.gg, the Fandom game wikis (MediaWiki
+- hoyo-codes.seria.moe, api.ennead.cc (Open Gacha Codes and the official game calendars for banner names), wuthering.gg, the Fandom game wikis (MediaWiki
   API: code lists and banner lineups), and GitHub / jsDelivr (PromoGacha and Hum-Bao code lists, the
   optional peer-instance state file);
 - the official banner notices, found by title through HoYoLAB's search endpoint and Kuro's article menu (for

@@ -29,8 +29,8 @@ Schedules, banners, maintenance times and codes come from official and community
   show a community **estimate** (countdown sites, the community banner feed) — always labelled as such
   on the card itself, and replaced automatically the moment the official notice appears.
 - **Locks.** Once a card is posted, its title link and key art stay on the announcement it was built
-  from. A banner name locks when an official notice confirms it, or when the community feed and the game
-  wiki agree. A locked name is not changed by the feed or the wiki, and an official name is not changed by a
+  from. A banner name locks when an official notice confirms it, or when any two reputable sources agree
+  (the community feed, the official game calendar, the game wiki), for 5★ and 4★ alike. A locked name is not changed by the feed or the wiki, and an official name is not changed by a
   later official notice either (a conflict is recorded, not applied). Until a name locks, it may change as
   sources update, and an official notice corrects a feed or wiki value. A lock can keep an error in place
   when the sources agreed on it; an operator can correct it through `config/overrides.json`. Maintenance

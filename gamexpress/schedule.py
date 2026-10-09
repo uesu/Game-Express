@@ -27,7 +27,7 @@ from .config import Game, Ping
 from .discord import webhook_fingerprint
 from .media import rank, youtube_thumb
 from .models import Item
-from .sources import gachawiki
+from .sources import calendarfeed, gachawiki
 from .sources.bannerfeed import banner_feed_for
 from .sources.codes import extract_codes_from_text
 from .state import stable_hash
@@ -977,31 +977,74 @@ def _confirm(data: dict, prov: dict, key: str, group: str, current, value, banne
         data["banners_settled"] = sorted(settled | {key})
 
 
-def apply_banner_feed(data: dict, prov: dict, feed: dict | None, now: int) -> None:
-    """Fill 5★ banner phases from the community banner feed (hub.json), but ONLY when that
-    phase is currently empty (PRIORITY['bannerfeed'] is 5, the lowest in the bot).
+def _fill_phase(data: dict, prov: dict, banners: dict, key: str, group: str, value, other, now: int) -> bool:
+    """One fill source (the hub `feed` or the `calendar`) for one 5★ phase. Returns True when it wrote.
 
-    One exception, and it is a cross-check rather than an override: the hub is the only source
-    that separates a banner's NAME from the character featured on it. If a phase is holding
-    something the hub knows as a banner title, the notice was mis-read -- the hub's own featured
-    list replaces it even though its priority is the lowest. That is what caught HSR 4.6 phase1
-    carrying "An Ocean in a Pearl" (a banner) instead of Pearl (the character).
+    - Same names as the card: one more witness (_confirm). Two groups agreeing lock the phase.
+    - Empty phase: the source fills it (PRIORITY['bannerfeed'], the lowest writer), still unlocked.
+    - The source changed its mind about a phase it filled itself: it follows, still unlocked.
+      When the OTHER fill source also backs the card's current names, the phase is shared and
+      this source leaves it alone, so the two never overwrite each other run after run.
+    - Anything else (an official or wiki name, or a disagreement) is left as it is.
+    `other` is the other source's current value for the phase, or None."""
+    if not value:
+        return False
+    have = banners.get(key)
+    if have and _names(have) == _names(value):
+        _confirm(data, prov, key, group, have, value, banners)
+        return False
+    owner = prov.get(f"b_{key}", [0])[0]
+    if not have:
+        if owner <= PRIORITY["bannerfeed"]:
+            banners[key] = value
+            prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
+            prov[f"b_{key}_by"] = [group]
+            return True
+        return False
+    if owner != PRIORITY["bannerfeed"]:
+        return False
+    by = prov.get(f"b_{key}_by")
+    if not by:                                   # written before the per-group record: it was the hub
+        by = ["feed"]
+    fill = {g for g in by if g in ("feed", "calendar")}
+    if group not in fill:
+        return False
+    other_backs_card = bool(other) and _names(other) == _names(have)
+    if fill == {group} or not other_backs_card:
+        banners[key] = value
+        prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
+        prov[f"b_{key}_by"] = [group]
+        return True
+    return False
 
-    A phase the hub names exactly as the card holds it is one more confirmation (see _confirm).
-    A locked phase is never changed here, except by the title correction above.
-    """
-    if not feed:
+
+def apply_banner_feed(data: dict, prov: dict, feed: dict | None, now: int, calendar: dict | None = None) -> None:
+    """Fill 5★ banner phases from the community hub (`feed`, hub.json) and the official calendar
+    (`calendar`, api.ennead.cc). Both are fill sources at the lowest writer priority, so they only
+    fill an EMPTY phase, or follow their own later change (see _fill_phase).
+
+    Exception, and it is a cross-check: the hub is the only source that separates a banner's NAME from
+    the character featured on it. If a phase holds something the hub knows as a banner title, the
+    notice was mis-read -- the hub's featured list replaces it even though its priority is the lowest.
+    That is what caught HSR 4.6 phase1 carrying "An Ocean in a Pearl" (a banner) instead of Pearl.
+
+    Two fill sources that name the same phase confirm it (_confirm, two groups = lock). A locked phase
+    is never changed here, except by the title correction above."""
+    if not feed and not calendar:
         return
+    feed = feed or {}
+    calendar = calendar or {}
     banners = dict(data.get("banners") or {})
     titles = {str(t).lower() for t in feed.get("titles") or []}
     changed = False
-    for key in ("phase1", "phase2"):
+    for key in ("phase1", "phase2", "phase1_4", "phase2_4"):
         have = banners.get(key)
-        if have and titles and feed.get(key) and any(str(n).lower() in titles for n in have):
+        hub, cal = feed.get(key), calendar.get(key)
+        if key in ("phase1", "phase2") and have and titles and hub and any(str(n).lower() in titles for n in have):
             # A banner title is never a character, whoever wrote it, so this is a mis-read to correct --
             # even a locked one. The hub's value is unconfirmed, so the phase is unlocked again.
             log.info("banner %s held a banner TITLE, not a character — replaced from the feed", key)
-            banners[key] = feed[key]
+            banners[key] = hub
             prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
             prov[f"b_{key}_by"] = ["feed"]
             if key in banner_settled(data):
@@ -1010,21 +1053,8 @@ def apply_banner_feed(data: dict, prov: dict, feed: dict | None, now: int) -> No
             continue
         if key in banner_settled(data):
             continue
-        owner = prov.get(f"b_{key}", [0])[0]
-        if have and feed.get(key) and owner == PRIORITY["bannerfeed"] and _names(have) != _names(feed[key]):
-            banners[key] = feed[key]                     # the hub changed its mind: follow it, still unlocked
-            prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
-            prov[f"b_{key}_by"] = ["feed"]
-            changed = True
-            continue
-        if have and feed.get(key):
-            _confirm(data, prov, key, "feed", have, feed[key], banners)
-            continue
-        if feed.get(key) and not have and prov.get(f"b_{key}", [0])[0] <= PRIORITY["bannerfeed"]:
-            banners[key] = feed[key]
-            prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
-            prov[f"b_{key}_by"] = ["feed"]
-            changed = True
+        changed |= _fill_phase(data, prov, banners, key, "feed", hub, cal, now)
+        changed |= _fill_phase(data, prov, banners, key, "calendar", cal, hub, now)
     if changed:
         data["banners"] = banners
 
@@ -1384,7 +1414,8 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
           launcher: dict, now: int, notes: list[str] | None = None,
           estimates: dict | None = None, media: dict | None = None,
           banner_feed: list[dict] | None = None, lead_h: float | None = None,
-          records: dict | None = None, wiki: dict | None = None) -> dict:
+          records: dict | None = None, wiki: dict | None = None,
+          calendar: list[dict] | None = None) -> dict:
     """Return the merged card data (record['data'] is the previous state).
     4★ rule: no data or ANY doubt (wrong count, odd name, sources disagree) -> TBA;
     config/overrides.json is always trusted."""
@@ -1529,11 +1560,12 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
     # countdown sites: an ESTIMATE for every field no official source has given yet
     apply_estimates(data, prov, estimates, now)
 
-    # banner feed: fill empty banner phases from hub.json
-    if banner_feed:
+    # banner feed: fill empty banner phases from hub.json, and from the official calendar (names only)
+    if banner_feed or calendar:
         rel_ts = data_release_ts(data)
-        lineup = banner_feed_for(banner_feed, rel_ts) if rel_ts else {}
-        apply_banner_feed(data, prov, lineup, now)
+        lineup = banner_feed_for(banner_feed, rel_ts) if (banner_feed and rel_ts) else {}
+        cal = calendarfeed.lineup(calendar, rel_ts, game.four_star_count) if calendar else {}
+        apply_banner_feed(data, prov, lineup, now, calendar=cal)
 
     # the game's own wiki: fill whatever is still TBA (phases, 4★, re-runs, the early tier)
     apply_gacha_wiki(game, data, prov, wiki, now)
@@ -1623,6 +1655,7 @@ async def run(ctx) -> None:
                 by_version[rv] = []
 
         await gather_banner_search(ctx, game, records, by_version)
+        await gather_calendar(ctx, game, records, by_version)
         bootstrapped = ctx.state.is_bootstrapped("schedule", game.key)
         est = (ctx.estimates.get(game.key) or {}) if s.countdown_estimates else {}
         media = (ctx.media.get(game.key) or {}) if s.program_media else {}
@@ -1724,6 +1757,53 @@ async def gather_banner_search(ctx, game: Game, records: dict, by_version: dict)
             have.add(item.id)
             added += 1
         log.info("[%s] %s banner search: %d notice(s) by title, %d new", game.key, ver, len(items), added)
+
+
+async def gather_calendar(ctx, game: Game, records: dict, by_version: dict) -> None:
+    """Read the official calendar (api.ennead.cc) for each live or upcoming card whose banner block
+    still holds a TBA or an unconfirmed name, on the same budget as the title search (its own stamp,
+    `calendar_ts`). It keeps the version's 5★ banners on the record, and the merge fills and confirms
+    phases from them. One request per game per run, and none when nothing is due.
+
+    A calendar name only adds a witness: it fills an empty phase, and it locks a name once another
+    group (the hub, the wiki, an official notice) names the same character."""
+    if not ctx.settings.banner_calendar or ctx.fetcher is None:
+        return
+    if game.key not in calendarfeed.SLUGS:
+        return
+    live = (ctx.versions.get(game.key) or {}).get("live")
+    due = []
+    for ver, rec in records.items():
+        if live and version_key(ver) < version_key(live):
+            continue                                  # older cards are frozen history
+        data = rec.get("data") or {}
+        if calendar_due(game, data, ctx.now):
+            due.append((ver, rec))
+    if not due:
+        return
+    banners = await calendarfeed.fetch_banners(ctx.fetcher, game.key)
+    for ver, rec in due:
+        data = rec.setdefault("data", {})
+        data["calendar_ts"] = ctx.now                  # asked (answered or not): no retry until due again
+        if banners is None:
+            continue                                   # the request failed: keep what the card holds
+        mine = [b for b in banners if b.get("version") == ver]
+        rec["calendar"] = {"ts": ctx.now, "banners": mine}
+        if mine and ver not in by_version:
+            by_version[ver] = []                       # the merge must run for this version
+        log.info("[%s] %s calendar: %d banner(s) with a 5★ character", game.key, ver, len(mine))
+
+
+def calendar_due(game: Game, data: dict, now: int) -> bool:
+    """Same budget as the title search: a settled block never, a frozen card never, an incomplete block
+    every WIKI_INCOMPLETE_H hours and a complete-but-unconfirmed block every WIKI_RECHECK_H hours."""
+    if banner_block_settled(game, data):
+        return False
+    start = data.get("maint_start_ts")
+    if start and now > int(start) + CARD_FREEZE_D * 86400:
+        return False
+    interval = WIKI_RECHECK_H if banner_block_complete(game, data) else WIKI_INCOMPLETE_H
+    return now - int(data.get("calendar_ts") or 0) >= interval * 3600
 
 
 async def _sync_mirror(ctx, game: Game, ver: str, record: dict, data: dict, now: int,
@@ -1847,7 +1927,8 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     notes: list[str] = []
     wiki = await gather_wiki_lineup(ctx, game, ver, record)
     data = merge(game, ver, extracts, record, override, live_info, now, notes, estimates, media,
-                 banner_feed, lead_h=observed_lead_h(records), records=records, wiki=wiki)
+                 banner_feed, lead_h=observed_lead_h(records), records=records, wiki=wiki,
+                 calendar=(record.get("calendar") or {}).get("banners"))
     ctx.report.extend(notes)
     before = record.get("data") or {}      # merge() copies; record["data"] is reassigned below
     changed_fields = [lbl for key, lbl in CARD_FIELDS if before.get(key) != data.get(key)] if before else []

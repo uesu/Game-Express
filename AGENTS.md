@@ -133,8 +133,10 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    card, so a same-window giveaway seen before the announcement still wins. It is documented in
    `docs/ACCURACY.md`, not fixed.
 16. **Banners lock on confirmation, and the lock is final against the weaker source.** An official notice
-   (`official`) locks its 5★ or 4★ name alone when it parses cleanly. A hub name (`feed`) and a wiki name
-   (`wiki`) lock once they agree. An override locks alone. The confirmation is `schedule._confirm()`, the
+   (`official`) locks its 5★ or 4★ name alone when it parses cleanly. A hub name (`feed`), an official-calendar name
+   (`calendar`, `sources/calendarfeed.py`) and a wiki name (`wiki`) lock once any two of them agree, for 5★ and 4★
+   (A-rank) alike and for every game. The calendar is names only, its 4★ lists need the exact rate-up count,
+   and `calendar_due()` / `calendar_ts` / `BANNER_CALENDAR=0` govern its requests. An override locks alone. The confirmation is `schedule._confirm()`, the
    lock is `data["banners_settled"]`, and the rule lives in `_official_owned` and `_official_may_write`
    (the owner is the priority that wrote the name). Official names are final against later official notices:
    a different one is logged as a conflict, not applied, and two clean official 4★ lists that disagree

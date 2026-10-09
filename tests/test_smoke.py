@@ -40,6 +40,7 @@ from gamexpress.runner import Ctx, failover_check  # noqa: E402
 from gamexpress.samples import CODE_SAMPLES, SCHEDULE_SAMPLES  # noqa: E402
 from gamexpress.sources import (  # noqa: E402
     banner_search,  # noqa: E402
+    calendarfeed,
     countdown,
     gachawiki,
     hoyolab,
@@ -4514,6 +4515,180 @@ def test_zzz_bare_phase_one_is_found_and_only_phase_one_is_asked_for():
     assert "V3.1 Limited-Time Channels (Phase I)" in asked                  # the templated Phase I query
     assert set(asked) == {"V3.1 Limited-Time Channels", "V3.1 Limited-Time Channels (Phase I)",
                           "V3.1 Limited-Time Channels (Phase II)"}, asked    # 3 queries, no phase-two bare query
+
+
+def test_the_calendar_keeps_only_five_star_characters_in_each_games_shape():
+    """api.ennead.cc: Genshin and Star Rail list `characters` with integer rarity, Zenless lists `agents`
+    with S/A. Weapons, light cones and W-Engines are never banner characters, and 4★ names are not read."""
+    gi = {"banners": [
+        {"id": 231, "name": "Character Event Wish", "version": "7.1",
+         "characters": [{"name": "Vesna", "rarity": 5}, {"name": "Diona", "rarity": 4}], "weapons": [],
+         "start_time": 1790118000, "end_time": 1791885540},
+        {"id": 233, "name": "Weapon Event Wish", "version": "7.1", "characters": [],
+         "weapons": [{"name": "Hymn of the Maelstrom", "rarity": 5}], "start_time": 1790118000, "end_time": 1791885540}]}
+    assert calendarfeed.parse_banners(gi) == [
+        {"version": "7.1", "featured": ["Vesna"], "featured4": ["Diona"],
+         "startsAt": 1790118000, "endsAt": 1791885540, "title": ""}]
+    sr = {"banners": [
+        {"id": 97, "name": "", "version": "4.6",
+         "characters": [{"name": "Mortenax Blade", "rarity": 5}, {"name": "Qingque", "rarity": 4}],
+         "light_cones": [], "start_time": 1792580400, "end_time": 1794319200},
+        {"id": 99, "name": "", "version": "4.6", "characters": [],
+         "light_cones": [{"name": "Until the Flowers Bloom Again", "rarity": 5}],
+         "start_time": 1790560800, "end_time": 1792580340}]}
+    assert [(b["featured"], b["featured4"]) for b in calendarfeed.parse_banners(sr)] == [
+        (["Mortenax Blade"], ["Qingque"])]
+    zz = {"banners": [
+        {"banner_type": "GACHA_TYPE_CHARACTER_UP", "version": "3.2",
+         "agents": [{"name": "Roxy", "rarity": "S"}, {"name": "Promeia", "rarity": "S"}, {"name": "Corin", "rarity": "A"}],
+         "w_engines": [{"name": "Sleepless Eternal Night", "rarity": "S"}],
+         "start_time": 1790740800, "end_time": 1792479599}]}
+    assert calendarfeed.parse_banners(zz)[0]["featured"] == ["Roxy", "Promeia"]
+    assert calendarfeed.parse_banners(zz)[0]["featured4"] == ["Corin"]
+    assert calendarfeed.parse_banners({}) == [] and calendarfeed.parse_banners({"banners": [None]}) == []
+
+
+def test_the_calendar_lineup_writes_four_star_lists_only_at_the_rate_up_count():
+    """A-rank and 4★ lists follow the wiki's rule: exactly four_star_count names per phase, else TBA."""
+    sr = calendarfeed.parse_banners({"banners": [
+        {"version": "4.6", "start_time": 1790560800, "end_time": 1792580340,
+         "characters": [{"name": "Evanescia", "rarity": 5}, {"name": "Qingque", "rarity": 4},
+                        {"name": "Xueyi", "rarity": 4}, {"name": "Misha", "rarity": 4}]}]})
+    assert calendarfeed.lineup(sr, 1790560800, 3) == {
+        "phase1": ["Evanescia"], "phase1_4": ["Qingque", "Xueyi", "Misha"]}
+    assert calendarfeed.lineup(sr, 1790560800, 2) == {"phase1": ["Evanescia"]}   # 3 != 2 -> TBA, never half-right
+    zz = calendarfeed.parse_banners({"banners": [
+        {"version": "3.2", "start_time": 1790740800, "end_time": 1792479599,
+         "agents": [{"name": "Roxy", "rarity": "S"}, {"name": "Promeia", "rarity": "S"},
+                    {"name": "Corin", "rarity": "A"}, {"name": "Billy", "rarity": "A"}]}]})
+    assert calendarfeed.lineup(zz, 1790740800, 2) == {"phase1": ["Roxy", "Promeia"],
+                                                      "phase1_4": ["Corin", "Billy"]}
+
+
+def test_a_calendar_four_star_name_locks_only_with_a_second_source_and_fills_otherwise_blank():
+    """The same rule for 4★ / A-rank: the calendar fills an empty 4★ list, and a second source confirms it."""
+    game, now, rec = GAMES["zzz"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "3.2", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {}, now, calendar={"phase2_4": ["Corin", "Billy"]})
+    assert rec["data"]["banners"]["phase2_4"] == ["Corin", "Billy"]
+    assert "banners_settled" not in rec["data"]                                  # one source: not locked
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase2_4": ["Corin", "Billy"]}, now + 60)
+    assert rec["data"]["banners_settled"] == ["phase2_4"]                        # wiki agrees -> locked
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {}, now + 600, calendar={"phase2_4": ["Anby", "Ben"]})
+    assert rec["data"]["banners"]["phase2_4"] == ["Corin", "Billy"]              # locked: unchanged
+
+
+def test_a_calendar_name_alone_fills_an_empty_phase_and_never_locks_it():
+    """One group is not confirmation: the calendar fills the empty phase, unlocked, like the hub does."""
+    game, now, rec = GAMES["starrail"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "4.6", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {}, now, calendar={"phase1": ["Pearl", "Evanescia"]})
+    assert rec["data"]["banners"]["phase1"] == ["Pearl", "Evanescia"]
+    assert rec["prov"]["b_phase1_by"] == ["calendar"]
+    assert "banners_settled" not in rec["data"]
+
+
+def test_a_calendar_name_that_the_hub_agrees_with_locks_the_phase_for_every_game():
+    """Any two sources agreeing lock a name: calendar + hub is that pair (here Star Rail 4.6 Phase II)."""
+    game, now, rec = GAMES["starrail"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "4.6", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"],
+                               {"phase1": [], "phase2": ["Mortenax Blade"], "titles": []}, now,
+                               calendar={"phase2": ["Mortenax Blade"]})
+    assert rec["data"]["banners"]["phase2"] == ["Mortenax Blade"]
+    assert rec["data"]["banners_settled"] == ["phase2"]
+    assert rec["prov"]["b_phase2_by"] == ["calendar", "feed"]
+    later = {"phase2": ["Someone Else"], "titles": []}
+    schedule.apply_banner_feed(rec["data"], rec["prov"], later, now + 600, calendar={"phase2": ["Someone Else"]})
+    assert rec["data"]["banners"]["phase2"] == ["Mortenax Blade"]          # locked: neither source may move it
+
+
+def test_a_calendar_that_disagrees_with_the_hub_neither_locks_nor_overwrites():
+    game, now, rec = GAMES["zzz"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "3.2", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase1": ["Roxy"], "phase2": [], "titles": []}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase1": ["Roxy"], "phase2": [], "titles": []}, now + 60,
+                               calendar={"phase1": ["Promeia"]})
+    assert rec["data"]["banners"]["phase1"] == ["Roxy"]                    # held by the hub: calendar may not take it
+    assert "banners_settled" not in rec["data"]
+    assert rec["prov"]["b_phase1_by"] == ["feed"]
+
+
+def test_the_calendar_follows_its_own_correction_and_the_hub_never_takes_it_over():
+    game, now, rec = GAMES["starrail"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "4.6", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {}, now, calendar={"phase1": ["Pela"]})
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase1": ["Pearl"], "phase2": [], "titles": []}, now + 600)
+    assert rec["data"]["banners"]["phase1"] == ["Pela"]                    # the hub does not take a calendar name
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {}, now + 1200, calendar={"phase1": ["Pearl"]})
+    assert rec["data"]["banners"]["phase1"] == ["Pearl"]                   # calendar follows its own change
+    assert "banners_settled" not in rec["data"]                            # one group so far: not locked
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase1": ["Pearl"], "phase2": [], "titles": []}, now + 1800)
+    assert rec["data"]["banners_settled"] == ["phase1"]                    # the hub now agrees with it -> locked
+
+
+def test_the_calendar_never_changes_a_name_an_official_notice_wrote():
+    game, now, rec = GAMES["zzz"], 1791522000, {}
+    notice = _banner_notice("zzz", "hoyolab", "https://www.hoyolab.com/article/55", 1, ["Soukaku"], now - 3600)
+    rec["data"] = schedule.merge(game, "9.9", [notice], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {}, now + 60, calendar={"phase1": ["Lycaon"]})
+    assert rec["data"]["banners"]["phase1"] == ["Soukaku"]
+    assert rec["data"]["banners_settled"] == ["phase1"]                    # the official notice locks alone, as before
+
+
+def test_the_calendar_reaches_merge_and_only_fills_the_phases_it_names():
+    """merge(calendar=...) splits the calendar's banners by the card's own release timestamp, as the hub's."""
+    game, now, rec = GAMES["starrail"], 1791522000, {}
+    maint = Item("hoyolab", "starrail", "maint", "https://www.hoyolab.com/article/sr-m",
+                 "Version 4.6 Maintenance", "", now)
+    extract = schedule.Extract(maint, "maintenance", "4.6", fields={"maint_start_ts": now})
+    cal = [{"version": "4.6", "featured": ["Pearl"], "startsAt": now + 3600, "endsAt": now + 90 * 86400, "title": ""},
+           {"version": "4.6", "featured": ["Mortenax Blade"], "startsAt": now + 23 * 86400,
+            "endsAt": now + 60 * 86400, "title": ""}]
+    rec["data"] = schedule.merge(game, "4.6", [extract], rec, {}, {}, now, calendar=cal)
+    assert rec["data"]["banners"]["phase1"] == ["Pearl"]
+    assert rec["data"]["banners"]["phase2"] == ["Mortenax Blade"]
+    assert rec["prov"]["b_phase2_by"] == ["calendar"]
+
+
+def test_the_calendar_is_one_request_per_game_per_run_and_only_when_due():
+    """gather_calendar: asked only for a block that still has a TBA or unconfirmed name, once per run,
+    stamped so the next run does not ask again; a settled block and a switched-off setting ask nothing."""
+    from types import SimpleNamespace
+    game, now = GAMES["starrail"], 1791522000
+    calls = []
+
+    async def fake_fetch(fetcher, key):
+        calls.append(key)
+        return [{"version": "4.6", "featured": ["Pearl"], "startsAt": now, "endsAt": now + 9999, "title": ""},
+                {"version": "4.5", "featured": ["Old"], "startsAt": now, "endsAt": now + 9999, "title": ""}]
+
+    orig = calendarfeed.fetch_banners
+    calendarfeed.fetch_banners = fake_fetch
+    try:
+        records = {"4.6": {"status": "tracked", "data": {"version": "4.6", "maint_start_ts": now}}}
+        ctx = SimpleNamespace(settings=SimpleNamespace(banner_calendar=True), fetcher=object(), versions={},
+                              now=now)
+        by_version = {}
+        asyncio.run(schedule.gather_calendar(ctx, game, records, by_version))
+        assert calls == ["starrail"] and by_version == {"4.6": []}
+        assert records["4.6"]["calendar"]["banners"] == [
+            {"version": "4.6", "featured": ["Pearl"], "startsAt": now, "endsAt": now + 9999, "title": ""}]
+        ctx.now = now + 600
+        asyncio.run(schedule.gather_calendar(ctx, game, records, {}))
+        assert calls == ["starrail"]                                       # stamped: not due again this soon
+        full = {k: ["Pearl"] for k in schedule.BANNER_KEYS}
+        keys = list(schedule.BANNER_KEYS) + (["four_star"] if game.card.four_star_summary else [])
+        settled = {"4.6": {"status": "tracked", "data": {"version": "4.6", "maint_start_ts": now,
+                                                          "banners": full, "banners_settled": keys}}}
+        assert schedule.banner_block_settled(game, settled["4.6"]["data"])
+        asyncio.run(schedule.gather_calendar(ctx, game, settled, {}))
+        assert calls == ["starrail"]                                       # a settled block asks nothing
+        ctx.settings.banner_calendar = False
+        asyncio.run(schedule.gather_calendar(ctx, game, {"4.6": {"status": "tracked", "data": {}}}, {}))
+        assert calls == ["starrail"]                                       # BANNER_CALENDAR=0
+    finally:
+        calendarfeed.fetch_banners = orig
 
 
 def main() -> int:
