@@ -117,7 +117,34 @@ Each version from the 5th onward was predicted using only prior versions, then c
 
 Weekday snapping wins everywhere and never loses. Note that a short window (last 3 gaps) is *worse*
 than the full history — a holiday compression poisons a short window, while the full-history median
-stays locked on the 42-day intent. Within ±3 days: Genshin 100 %, HSR 82 %, WuWa 71 %, ZZZ 54 %.
+stays locked on the 42-day intent.
+
+The table above starts at the 5th version (the rule needs four earlier dates). The test that pins the
+shipped rule (`test_predict_cycle_backtests_the_published_history`) starts earlier, at
+`SPECULATE_MIN_HISTORY` = 2, so it counts more versions and reports lower numbers. Re-measured on
+2026-10-09 with the same rule, both windows:
+
+| game | from the 5th version: exact / within 3 d | from the 3rd version (the test): exact / within 3 d | median abs error | mean signed error | worst miss |
+|---|---|---|---|---|---|
+| Genshin | 16/16 · 16/16 | 18/18 · 18/18 | 0 h | 0 h | none |
+| Star Rail | 13/17 · 14/17 | 14/19 · 16/19 | 0 h | +12.6 h | −16 d (2026-02-13), +14 d (2026-04-22), +9 d (2026-09-28) |
+| ZZZ | 6/11 · 6/11 | 6/13 · 7/13 | 48 h | +20.3 h | −8 d (2025-09-04), +8 d (2025-12-30) |
+| WuWa | 8/14 · 10/14 | 9/16 · 11/16 | 0 h | +70.5 h | +13 d (2026-07-10), +9 d (2025-04-29) |
+
+(Signed error: positive = the prediction is later than the published date. Genshin and Star Rail were
+measured to the minute; WuWa publishes at 04:00 and ZZZ at 06:00 and the test uses those times.)
+
+Reading the table: Genshin is the only game that never misses. Star Rail lands within a day in 15 of 19
+versions and WuWa in 10 of 16, and their misses are whole-cycle shifts, not drift. ZZZ is the least reliable
+(within a day in 6 of 13), and its card says so with the cadence label. The most recent published dates were
+Genshin 7.1 (exact), ZZZ 3.2 (exact), WuWa 3.7 (+1 d) and Star Rail 4.6 (+9 d). Star Rail's worst miss is 16 d,
+so its 4.7 forecast (2026-11-11) is an estimate with a week or more of uncertainty, not a date.
+
+**Maintenance length and pre-install, as observed (not backtested beyond these):** the maintenance
+end came 5 h after the start for Genshin 7.1 and Star Rail 4.6, and 7 h for WuWa 3.7. ZZZ has no official
+end in the state yet, so its 5 h is still the estimate. The official pre-install for Star Rail 4.6 came
+88 h before the start, not the 40 h the rule uses, so the Star Rail pre-install estimate is the least
+certain of the four.
 
 **Forecast produced by the winning rule from the latest data in the corpus:**
 

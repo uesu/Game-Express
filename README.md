@@ -112,8 +112,8 @@ existed stay out of the channel.
   Details: **[docs/ACCURACY.md → Filling the gaps](docs/ACCURACY.md#filling-the-gaps-before-the-official-notice)**.
   Once the card is posted, its link, key art and air time are locked to the announcement that opened
   it. When X and HoYoLAB both carry the announcement, the lock goes to the X post, and a card that was
-  locked to HoYoLAB while X could not be read moves once to the X post. Banners settle once two sources
-  confirm them, and the maintenance details keep updating
+  locked to HoYoLAB while X could not be read moves once to the X post. Banners settle once confirmed (an official
+  notice, or the community hub and the wiki agreeing), and the maintenance details keep updating
   ([ACCURACY.md → Once posted](docs/ACCURACY.md#once-posted-the-card-keeps-its-announcement)).
 
 ### 2 · Redemption code card
@@ -466,13 +466,16 @@ retired***
 
 - **A posted card keeps its announcement.** Its title link, source buttons, key art and air time are
   locked to the post that opened the card, so a later giveaway or reminder cannot move them. Banners
-    settle once two sources confirm them, and maintenance details keep updating. X is the preferred post: a card locked to HoYoLAB while X was
+  settle once confirmed, and maintenance details keep updating. X is the preferred post: a card locked to HoYoLAB while X was
   unreadable moves once to the X post when X carries the same announcement. A status mirror that fails
   twice in a run is skipped for the rest of it. A wrong link on a live card is corrected by pinning
   `title_url` and `image` in `config/overrides.json`.
-- **Banners settle once confirmed.** A 5★ or 4★ name locks when two sources agree: the official notice,
-  the community hub, or the game wiki. An override locks it alone. A locked name is not changed by a later
-  notice or wiki reading. Maintenance keeps updating as before. The wiki is read at most every six hours
+- **Banners settle once confirmed.** An official notice locks its 5★ or 4★ name on its own. A community hub
+  name and a wiki name lock once they agree. An override locks alone. A locked name is final against the hub
+  and the wiki, and an official name is final against later official notices. Until a name locks, it can still
+  change: the hub follows itself, the wiki corrects the hub, and an official notice corrects both. Maintenance
+  keeps updating as before. An incomplete banner block is read at most every three hours, and a complete one
+  with an unconfirmed name at most every six hours
   for a block that is complete but not yet confirmed.
 - **A settled copy that no longer resolves is identified.** A mirror edit returning `404` yields
   `🗂 … copy <id> was deleted (Discord 10008) and a settled version is not re-posted`. “Was

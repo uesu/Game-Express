@@ -147,7 +147,7 @@ time sets `announcement_locked`, and from then on:
 |---|---|
 | title link, source button(s), key art | fixed to the post that opened the card |
 | air time, programme name, version name, YouTube link | fixed. Only an *estimated* air time can still be replaced by an official one |
-| banners (5★ and 4★ names, re-runs) | a name stays open, and keeps updating, until two sources confirm it. Then it locks: no later notice or wiki reading changes it. An override confirms alone |
+| banners (5★ and 4★ names, re-runs) | an official notice locks its name on its own; a hub name and a wiki name lock once they agree. A locked name is final against the hub and the wiki, and an official name is final against later official notices (a conflict is logged, not applied). Until then a name stays open and keeps updating |
 | maintenance: pre-install, start, end, compensation | keep updating. An official value replaces the `🕒 estimated from version cadence` line and its countdown |
 
 Why: until this rule, every run rebuilt the link and key art from whatever program posts were still
@@ -180,11 +180,12 @@ air time took the card over (ZZZ 3.3, 2026-10-09). Nothing remembered which post
   for all six: it is a documented limit, not a fixed one. Correct it with `title_url` and `image` in
   `config/overrides.json`.
 - **Banners settle once confirmed.** Each banner name has a witness list, one entry per group (`official`,
-  `feed`, `wiki`). Two different groups that name the same value confirm it, and a confirmed name is locked
-  in `banners_settled`. Two copies of one notice (HoYoLAB and X) are one group, not two. An override
-  confirms alone. Re-runs and the 4★ summary come only from the wiki, so they lock only once the wiki names
-  them and their phase lists are already locked. A name that only one source gives stays open, and it keeps
-  updating as it always did. The full rule is in [BANNER_DATABASE.md](BANNER_DATABASE.md#confirmation-and-the-lock).
+  `feed`, `wiki`). An official notice locks its name on its own; a hub name and a wiki name lock once they
+  agree, and they cannot change a locked name. Two copies of one notice (HoYoLAB and X) are one group, not
+  two. An override confirms alone. Re-runs and the 4★ summary come only from the wiki, so they lock only once
+  the wiki names them and their phase lists are already locked. A name that only the wiki gives stays open
+  until the freeze, and it keeps updating. The full rule is in
+  [BANNER_DATABASE.md](BANNER_DATABASE.md#confirmation-and-the-lock).
 - **Not decided:** HoYoverse moving a programme does not move the air time of a locked card. Until
   that is decided, pin `program_ts` in `config/overrides.json`.
 

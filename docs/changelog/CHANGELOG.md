@@ -67,28 +67,37 @@ A status mirror that fails twice in one run (`STATUS_FAIL_LIMIT = 2`) is skipped
 dead `nitter.cf` used to be waited on for every tweet. Two dead mirrors and five tweets now make 4 requests
 instead of 10.
 
-**Banners settle once two sources confirm them**
+**Banners lock on confirmation; until then the feed and the wiki can still correct them**
 
-Banner names kept changing after they looked right, because any later notice or wiki reading could overwrite a
-name. Now a name is confirmed when two different groups agree (the official notice, the community hub, or the
-game wiki), and a confirmed name is locked. An override confirms alone.
+Banner names kept changing after they looked right, and an official notice could not settle a name on its own.
+Now an official notice locks its 5★ or 4★ name when it parses cleanly. A community hub name and a wiki name
+lock once they agree. An override locks alone.
 
-- **Locked names do not move.** A confirmed 5★ or 4★ name is recorded in `banners_settled`. No later notice,
-  hub update or wiki reading changes it. Unconfirmed names keep updating as before.
+- **Locked names do not move.** A locked name is recorded in `banners_settled`. The hub and the wiki
+  never change it. An official name is final against later official notices too: a different one is logged once
+  as a conflict and not applied. The one exception is a 4★ list: two clean official lists that disagree become
+  TBA with a warning. A doubtful 4★ reading never blanks a locked list. Re-reading the same post after a parser
+  fix still heals its own name.
+- **Unlocked names can still change.** The hub follows its own later reading. The wiki corrects a hub name but
+  never an official one. An official notice replaces a hub or wiki name and locks it. A hub title held in a
+  phase (a banner name, never a character) is corrected even when locked, and the correction is unlocked again.
+  A silent source never erases a value it did not write.
 - **The wiki-derived fields lock with their inputs.** Re-runs and the 4★ summary lock only once the wiki names
-  them and their phase lists are already locked. The 4★ summary must equal both phases' lists, and a re-run
-  must be a name featured in a phase. The early-tier `※ Confirmed:` line never locks.
-- **The wiki is read less while a block is complete.** A complete block with an unconfirmed name is read at
-  most every six hours (`WIKI_RECHECK_H`). An incomplete block is read every run, as before. A fully
-  confirmed block is never read again. A read that fails counts as a read, so a wiki that is down is not
-  retried on every run either.
+  them and their phase lists are already locked. The 4★ summary must equal both phases' lists, and a re-run must
+  be a name featured in a phase. The early-tier `※ Confirmed:` line never locks.
+- **The wiki is read on a budget.** An incomplete banner block (still TBA) is read at most every three hours
+  (`WIKI_INCOMPLETE_H`). Before this it was read on every five-minute run: the ZZZ 3.3 card, which the override
+  pins, cost 288 wiki requests a day. It now costs 8. A complete block with an unconfirmed name is read at most
+  every six hours (`WIKI_RECHECK_H`), a fully locked block is never read, and a card past its freeze is never
+  read. Every answered read is stamped in the state, and so is a failed one, so a wiki that is down is not
+  retried on every run.
 - **Maintenance is unchanged.** Official maintenance times still replace the estimate, as before. A later
   official notice can still correct them.
 - **Fixed: an unchanged derived pre-install was re-stamped on every run.** `derive_preinstall()` wrote a new
-  provenance clock each run, so the state file changed, and committed, every five minutes for nothing. It
-  now rewrites nothing when the value is unchanged. The wiki read also stamps the state only for a complete block.
+  provenance clock each run, so the state file changed, and committed, every five minutes for nothing. Measured
+  on the same simulated day, the state file was rewritten on 287 of 288 runs before this and on none after.
 - **Known limit:** a 4★ or re-run name that only the wiki gives stays open until an official notice or the hub
-  confirms it. It is read every six hours until the freeze in the meantime.
+  confirms it. Genshin 7.1 is in that state, so the wiki is read every six hours until the freeze.
 
 **A deleted copy says it was deleted, and a retirement names the message it retired**
 

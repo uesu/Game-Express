@@ -332,8 +332,14 @@ into `gamexpress/config.py`, which is where your current values already live.
   you would lose the ability to edit existing cards, and the seed boundary could swallow an
   announcement that was mid-flight.
 - **The locks come with it.** A posted card records `announcement_locked`, with `announcement_source` and
-  `announcement_ts`, and a confirmed banner records `banners_settled`. Copying the state keeps those locks, so
-  a card stays on the announcement that opened it, and its confirmed banners do not move, after cutover.
+  `announcement_ts`, and a banner name that is locked records it in `banners_settled`. Copying the state keeps
+  those locks, so a card stays on the announcement that opened it, and its locked banners do not move, after
+  cutover. The wiki read stamp (`banners_checked_ts`) comes with the state too, so cutover does not re-read every
+  open banner at once. An official name already on a card is locked by the first merge after cutover.
+- **The first run repairs ZZZ 3.3 once.** The 3.3 Special Program card (and its `#zzz-news` mirror) that the
+  2026-10-09 giveaway post took over is restored to the 3.3 announcement by the first monitor run after this code
+  reaches the live branch: one edit to the card and one to the mirror, then nothing. Until that run, the live card
+  still shows the wrong key art.
 - Copy it **after** pausing the scheduler (§6), so it cannot go stale between copy and cutover.
 
 `config/program_announcements.json` matters for the same reason — it holds discovered tweet

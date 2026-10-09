@@ -202,13 +202,22 @@ The announcement lock and the X-first source order are pinned by the regression 
 `test_a_dead_nitter_status_mirror_is_not_waited_on_for_every_tweet`, and the countdown test
 `test_a_countdown_estimate_is_replaced_by_the_official_notice_in_every_game` that follows them.
 
-The banner lock is pinned by the tests from `test_an_official_banner_alone_is_not_locked_and_still_follows_the_newest_notice`
-to `test_a_banner_lock_holds_in_every_game_and_maintenance_still_moves`, plus
+The banner lock is pinned by the tests from `test_an_official_notice_locks_on_its_own_and_a_later_different_one_is_logged_not_applied`
+to `test_a_banner_lock_holds_in_every_game_and_maintenance_still_moves`. The correction rules have their own
+tests: `test_a_community_lock_is_corrected_by_a_later_official_notice`,
+`test_the_feed_follows_its_own_correction_and_a_silent_wiki_never_withdraws_it`,
+`test_the_wiki_corrects_a_feed_value_but_never_an_official_one` and
+`test_a_locked_phase_holding_a_banner_title_is_corrected_and_unlocked`. The traffic rules are
+`test_an_incomplete_block_is_stamped_and_read_at_most_hourly_so_the_state_changes_once_an_hour` and
+`test_a_complete_but_unconfirmed_block_is_rechecked_every_six_hours_and_a_settled_one_never`, plus
 `test_an_unchanged_derived_preinstall_is_not_re_stamped_every_run`, which keeps the state file still, and
-`test_a_failed_wiki_read_is_not_retried_every_run_for_a_complete_block`, which keeps a down wiki from being hit on every run. The last of them,
-`test_the_shipped_zzz_33_override_repairs_the_card_that_was_switched`, loads `config/overrides.json`
-itself. If one of them fails after a change to `merge()` or `apply_program_media()`, the lock is
+`test_a_failed_wiki_read_is_not_retried_every_run_for_a_complete_block`, which keeps a down wiki from being hit on every run.
+`test_the_shipped_zzz_33_override_repairs_the_card_that_was_switched` loads `config/overrides.json`
+itself. If one of them fails after a change to `merge()`, `apply_banner_feed()` or `apply_gacha_wiki()`, the lock is
 what you broke.
+
+Counts: the CI runner `python tests/test_smoke.py` runs 241 tests (all must pass). `pytest -q tests` runs 259:
+those 241, the 15 in `test_schedule_epithet_and_settled.py` and the 3 in `test_gachawiki_placeholder.py`.
 
 `TEST_MODE=1` labels the cards 🧪 TEST and skips the state file; `DRY_RUN=1` builds and logs them
 without posting. Locally the two are the equivalent of the workflow's test modes.

@@ -132,14 +132,20 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    `tests/test_smoke.py`, listed in `docs/TESTING.md`. Known limit: the first program post seen locks the
    card, so a same-window giveaway seen before the announcement still wins. It is documented in
    `docs/ACCURACY.md`, not fixed.
-16. **A banner name locks once two sources confirm it.** The groups are `official` (a notice), `feed`
-   (the hub names that phase exactly as the card holds it) and `wiki`. Overrides confirm alone. The
-   confirmation is `schedule._confirm()`, the lock is `data["banners_settled"]`, and no later run,
-   notice or wiki reading changes a locked name. `reruns` and the 4★ summary lock only with the wiki
-   and their phase inputs. Maintenance is not part of this and keeps its native behaviour. Two rules
-   guard the traffic and the state: `wiki_recheck_due()` reads a complete but unconfirmed block at
-   most every `WIKI_RECHECK_H` hours, and nothing is stamped on a read unless the block is complete,
-   because a stamp that changes every run would commit the state every run.
+16. **Banners lock on confirmation, and the lock is final against the weaker source.** An official notice
+   (`official`) locks its 5★ or 4★ name alone when it parses cleanly. A hub name (`feed`) and a wiki name
+   (`wiki`) lock once they agree. An override locks alone. The confirmation is `schedule._confirm()`, the
+   lock is `data["banners_settled"]`, and the rule lives in `_official_owned` and `_official_may_write`
+   (the owner is the priority that wrote the name). Official names are final against later official notices:
+   a different one is logged as a conflict, not applied, and two clean official 4★ lists that disagree
+   become TBA. The hub corrects only the hub, the wiki corrects the hub but never an official name, and a
+   silent source never erases a value it did not write. A hub title in a phase is corrected even when locked.
+   `reruns` and the 4★ summary lock only with the wiki and their phase inputs. Maintenance is not part of this
+   and keeps its native behaviour. Traffic: `wiki_recheck_due()` reads an incomplete block (still TBA) at most
+   every `WIKI_INCOMPLETE_H` (3) hours, a complete unconfirmed block at most every `WIKI_RECHECK_H` (6), and
+   every answered read is stamped (`banners_checked_ts`), so the state file changes at most once per interval.
+   Do not put a per-run wiki read back: an incomplete block read on every five-minute run was 288 requests
+   a day for the pinned ZZZ 3.3 card.
 ---
 
 ## 4. Config model you must understand

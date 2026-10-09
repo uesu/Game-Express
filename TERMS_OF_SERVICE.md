@@ -29,10 +29,12 @@ Schedules, banners, maintenance times and codes come from official and community
   show a community **estimate** (countdown sites, the community banner feed) — always labelled as such
   on the card itself, and replaced automatically the moment the official notice appears.
 - **Locks.** Once a card is posted, its title link and key art stay on the announcement it was built
-  from. A banner name locks once two sources agree (an official notice, the community feed or the game
-  wiki), and a locked name is not changed by a later notice or reading, even one that disagrees. A lock
-  can keep an error in place when the sources agreed on it; an operator can correct it through
-  `config/overrides.json`. Maintenance details keep updating as official times arrive.
+  from. A banner name locks when an official notice confirms it, or when the community feed and the game
+  wiki agree. A locked name is not changed by the feed or the wiki, and an official name is not changed by a
+  later official notice either (a conflict is recorded, not applied). Until a name locks, it may change as
+  sources update, and an official notice corrects a feed or wiki value. A lock can keep an error in place
+  when the sources agreed on it; an operator can correct it through `config/overrides.json`. Maintenance
+  details keep updating as official times arrive.
 - The Service provides **no guarantee** that any date, banner, reward or code is correct, valid
   in your region, or still active.
 - Always confirm in-game or through official channels.
@@ -41,7 +43,7 @@ Schedules, banners, maintenance times and codes come from official and community
 If you run an instance, you are responsible for:
 - **Using webhooks and tokens you own**, and keeping them secret.
 - **Following the rules of every service involved**: the [Discord Terms of Service](https://discord.com/terms), the [Discord Developer Policy](https://discord.com/developers/docs/policies-and-agreements/developer-policy), the X/Twitter terms, and the terms of the APIs the Service reads.
-- **Respecting sources**: keep the default low request rate (a run every ~5 minutes, with only a few requests per source; a wiki banner lookup is repeated at most every six hours) and do not use the Service to overload, scrape at high frequency, or resell data.
+- **Respecting sources**: keep the default low request rate (a run every ~5 minutes, with only a few requests per source; a wiki banner lookup is repeated at most every three hours while a banner is still TBA, and at most every six hours while it is unconfirmed) and do not use the Service to overload, scrape at high frequency, or resell data.
 - **Your server's content**: ping roles, channels, and who can see the posts.
 
 ## 6. Acceptable use

@@ -37,11 +37,15 @@ ANANTA and Honkai: Nexus Anima have no gacha data and are deliberately absent fr
 
 ## Two requests, and only while a name is open
 
-1. `schedule.wiki_recheck_due()` runs **before any fetch**. An incomplete banner block is read every run,
-   as before. A complete block with an unconfirmed name is read at most every 6 hours (`WIKI_RECHECK_H`).
-   A block whose every name is confirmed is never read again.
-   A version whose card is already frozen (its maintenance started more than 45 days ago, so
-   the card is never edited again) is skipped for the same reason.
+1. `schedule.wiki_recheck_due()` runs **before any fetch**:
+   - an incomplete block (still TBA) is read at most every `WIKI_INCOMPLETE_H` = **3 hours**;
+   - a complete block with an unconfirmed name at most every `WIKI_RECHECK_H` = **6 hours**;
+   - a block whose every name is locked is never read again;
+   - a card whose maintenance started more than 45 days ago (`CARD_FREEZE_D`) is never read.
+
+   Before the throttle, an incomplete block was read on every five-minute run. A version processed
+   every run (the ZZZ 3.3 override pins it) cost 288 wiki requests a day. It now costs 8. Each answered
+   read is stamped in the state (`banners_checked_ts`), so the state file changes at most once per interval.
 2. Request 1 — `action=parse&page=Version/<X.Y>&prop=wikitext`: the debut roster and the banner
    section, split into phases.
 3. Request 2 — one batched `action=query&prop=revisions` over the *dated* banner pages found in
@@ -108,29 +112,41 @@ card shows the debut roster instead of the slot word.
 
 ## Confirmation and the lock
 
-A banner name (a 5★ phase, its 4★ list, the re-runs and the 4★ summary) is **confirmed** when two different
-groups name the same value:
+A banner name (a 5★ phase, its 4★ list, the re-runs and the 4★ summary) is **locked** in one of three ways:
 
-- `official`: an official notice (HoYoLAB, Kuro, the news page or X);
-- `feed`: the community hub names that phase exactly as the card holds it;
-- `wiki`: this reader names it exactly as the card holds it.
+- **An official notice locks it on its own.** A HoYoverse, Kuro, news-page or X notice that parses cleanly
+  is the strongest source the bot reads, so its name locks at once.
+- **Two community groups agree.** The community hub (`feed`) and this wiki reader (`wiki`) name the same
+  value. Two copies of one notice (HoYoLAB and X) are one group, not two.
+- **An override** in `config/overrides.json` locks it alone.
 
-An entry in `config/overrides.json` confirms a name on its own. Two copies of one notice (HoYoLAB and X)
-are one group, not two.
+A **locked** name is recorded in `banners_settled`. The feed and the wiki never change it. An official name
+is final too: a later official notice that names someone else is logged once as a conflict, not applied
+(correct it through `config/overrides.json`). The one official exception is a 4★ list: two clean official
+lists that disagree become TBA with a warning. A doubtful 4★ reading (wrong count, odd names) never blanks a
+list that is already locked. Re-reading the same post after a parser fix does heal its own name.
 
-A confirmed name is **locked**: it is recorded in `banners_settled`, and no later notice, hub update or wiki
-reading changes it. A name that is not confirmed keeps updating exactly as it did before. To change a locked
-name, put the right one in `config/overrides.json`.
+A name that is **not** locked is tentative, and it can still change:
 
-Three details:
+- the hub follows its own later reading of a phase it wrote;
+- the wiki corrects a hub name (the wiki outranks the hub), but never an official name;
+- an official notice replaces a hub or wiki name, because an official notice outranks both, and locks it;
+- a hub title held in a phase (a banner name, never a character) is corrected even when it was locked, and
+  that correction is unlocked until another source agrees.
+
+A silent wiki or hub never erases a value it did not write. Only the wiki withdraws a value the wiki itself wrote.
+
+Details:
 
 - `reruns` and the 4★ summary come only from the wiki. They lock only when the wiki names them **and** the
   phase lists they come from are already locked. The 4★ summary must equal both phases' 4★ lists, and a
   re-run must be a name featured in a phase.
 - The early-tier `※ Confirmed:` line comes only from the wiki. It never locks, and it is removed when phase
   data arrives, as before.
-- A name only one source has stays open. The wiki reads it every six hours until the freeze, unless another
-  source confirms it.
+- A name only the wiki gives, with no official notice and no hub agreement, stays open. The wiki reads it every
+  six hours until the freeze. Genshin 7.1's 4★ list is in this state today.
+- Locks written by earlier versions of the bot are honoured: an official name already on a card is locked on
+  the next merge (`_sync_official_locks`), so it does not keep the wiki busy.
 
 ## Switching it off
 
@@ -145,6 +161,8 @@ official sources and the banner feed provide. See [CONFIGURATION.md](CONFIGURATI
 | starrail | 4.6 | Pearl, Evanescia | Mortenax Blade |
 | zzz | 3.2 | Claret Flint, Nangong Yu | Roxy Ifrita Pryce, Promeia |
 | wuwa | 3.7 | Hsin, Chisa, Iuno | Suoming, Lucilla, Lynae |
+
+Re-checked on 2026-10-09 against the community hub (`hub.json`): Genshin 7.1 and Star Rail 4.6 phase 1 and 2 names match the table, and the hub already lists the Star Rail 4.6 phase 2 banner (Mortenax Blade) with a start date of 2026-10-21.
 
 ZZZ 3.3 was the early tier on that date: `Phoenix Reffaella`, `Severian Lowell`, releasing
 2026-10-21. The fixtures behind `tests/fixtures/gachawiki/` are trimmed copies of those pages.
