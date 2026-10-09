@@ -36,7 +36,8 @@ public source pages and sends cards to the operator's configured webhooks.
 The Service sends ordinary HTTPS requests (no personal data) to:
 - HoYoLAB / HoYoverse (news API, livestream code module, HoYoPlay launcher API);
 - Kuro Games (official website JSON, launcher index);
-- nitter instances, FxTwitter and vxTwitter (public X posts);
+- nitter instances (`nitter.cf` and `xitter.cf` first, for single posts and timelines), FxTwitter, fixupx and
+  vxTwitter (public X posts);
 - hoyo-codes.seria.moe, api.ennead.cc (Open Gacha Codes), wuthering.gg, Fandom (MediaWiki API),
   and GitHub / jsDelivr (PromoGacha and Hum-Bao code lists, the optional peer-instance state
   file);

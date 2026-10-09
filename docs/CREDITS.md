@@ -26,7 +26,7 @@ What each endpoint actually serves, and why it was chosen or rejected, is in
 - [wuthering.gg](https://wuthering.gg/codes)
 - The **Fandom wikis** read directly for redemption codes — [Genshin Impact](https://genshin-impact.fandom.com/), [Honkai: Star Rail](https://honkai-star-rail.fandom.com/), [Zenless Zone Zero](https://zenless-zone-zero.fandom.com/) and [Wuthering Waves](https://wutheringwaves.fandom.com/) — and their editors. Wiki text is CC BY-SA 3.0.
 - [nitter](https://github.com/zedeus/nitter) (and forks / instances: [git.kareem.one/shaquille/nitter](https://git.kareem.one/shaquille/nitter), [tw.eir-nya.gay](https://tw.eir-nya.gay/), [Cynosphere/nitter](https://gitlab.com/Cynosphere/nitter)), xcancel (*service suspended — kept here as thanks, no longer in the fleet*) and **every operator who keeps a public instance online** — they are the reason an announcement is seen minutes after it is tweeted
-- [FxTwitter / FixTweet](https://github.com/FixTweet/FxTwitter) (the fallback that resolves a tweet when no mirror answers)
+- [FxTwitter / FixTweet](https://github.com/FixTweet/FxTwitter) (the fallback that resolves a tweet when no nitter mirror answers; fixupx and vxTwitter follow it)
 
 ---
 

@@ -28,7 +28,7 @@ it returns the same posts as structured JSON, with no HTML or JavaScript to scra
 | HoYoLAB post (official) | `…/getPostFull?gids={gid}&post_id={id}` | full body (`content` HTML, or `structured_content` when `content == "en-us"`) + images | ✅ HSR 46814308 (quirk), GI 46604275 |
 | c3kay JSON-Feed (mirror, fallback) | `https://feeds.c3kay.de/{genshin,starrail,zenless}.json` | JSON Feed 1.1 with full `content_html`, refreshed every 30 min | ✅ |
 | Official X accounts | nitter RSS fleet `https://<instance>/<account>/rss` (18 entries, 17 live — `xcancel.com` is suspended; originally from News-Express round 13/14) | timeline (first 2 working instances merged) | fleet taken from News-Express |
-| Tweet details | `https://api.fxtwitter.com/status/{id}` → `https://api.fixupx.com/status/{id}` → `https://api.vxtwitter.com/Twitter/status/{id}` | full text with expanded links, photos, exact timestamp; the winner is logged | ✅ all 4 reference tweets |
+| Tweet details | `https://nitter.cf/<account>/status/{id}/rss` (then `xitter.cf`, when the account is known) → `https://api.fxtwitter.com/status/{id}` → `https://api.fixupx.com/status/{id}` → `https://api.vxtwitter.com/Twitter/status/{id}` | full text with expanded links, photos, exact timestamp; the winner is logged | ✅ all 4 reference tweets |
 | Kuro official site (WW) | `https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/json/G152/en/{ArticleMenu,MainMenu}.json` + `…/article/{id}.json` | official articles incl. *Featured Resonator/Weapon Convene* banner notices; times are UTC+8 | ✅ (English menus are homepage **subsets**, so X stays primary for WW) |
 | HoYoPlay launcher | `https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGameBranches?launcher_id=VYTpXlbWo8` | exact live version (`main.tag`) + pre-install availability (`pre_download`) | ✅ ZZZ `3.2.0` |
 | Kuro launcher (WW) | `https://prod-alicdn-gamestarter.kurogame.com/launcher/game/G153/50004_obOHXFrFanqsaIEOmuKroCcbZkQRBC7c/index.json` | live version (`default.version`) + `predownload` | structure from WW downloader configs |
@@ -83,7 +83,12 @@ a demoted mirror costs no requests at all until the mirrors ahead of it degrade.
 to `nitter.netbub.com`, `nitter.meowing.monster`, `xcancel.com` and `x.yuuki.sh`: a host may
 simply be blocking GitHub's runners while answering fine from a VPS.
 
-Tweet data uses the fallback chain **fxtwitter → fixupx → vxtwitter**. FxTwitter and fixupx are
+Single tweets are read **from nitter.cf first** when the account is known: `XClient.tweet()` asks the
+nitter status feed (`nitter.cf`, then `xitter.cf`, the same backend) for that post. FxTwitter is asked
+only when nitter cannot answer, or when the post carries a `t.co` link that nitter leaves unexpanded (the
+YouTube link is read from the expanded URL). The chain after that is **fxtwitter → fixupx → vxtwitter**,
+and the nitter text is the last resort. A status mirror that fails `STATUS_FAIL_LIMIT` (2) times in one run
+is skipped for the rest of that run, so a dead mirror costs two timeouts instead of one per tweet. FxTwitter and fixupx are
 normalized to the same shape, while vxtwitter is the last fallback. `fixupx` intentionally uses
 zero retries because it is an optional public host and should fail over immediately when DNS is
 unavailable. Tweet responses are cached once per run, and `XClient.source_used` records which
@@ -137,6 +142,11 @@ never asked. `runner.find_program` now runs X first; everything below it is a ba
 | 3 | **HoYoLAB** news list | official text + timestamps, paged back past the lookback window | its image list is often a small article cover, not the key art |
 | 4 | **Official news page** | archives every announcement | image can be a page rendition; Kuro's page is a JS build |
 | 5 | **Feed mirror** (WW) | RSS/Atom mirror of Kuro's news list | last resort for the one site the scraper cannot read |
+
+**Lookup order and the lock.** `runner.find_program` asks X first (the seed, then the X timeline), then
+HoYoLAB, then the official news page, then the feed mirror. The card's lock follows
+`schedule.LOCK_RANK` (X 3, HoYoLAB and Kuro 2, news 1), so an X post wins when both carry the
+announcement. See [ACCURACY.md → Once posted](ACCURACY.md#once-posted-the-card-keeps-its-announcement).
 
 **Positive matching** (`schedule.is_program_announcement`): a post qualifies only when it carries
 the game's own livestream phrase AND a stated air time (`will premiere / is scheduled to air /

@@ -45,6 +45,7 @@ in place — air time, link and key art all come back together.
 | Emojis show as `:name:` | the webhook's channel needs *Use External Emojis* for `@everyone`, or change `EMOJI_*` |
 | Card not edited after an override | the card must have been posted by a webhook with the same URL (the fingerprint is stored) |
 | Title link or key art changed to a different post after posting | a posted Special Program card is locked to the post that opened it ([ACCURACY.md](ACCURACY.md#once-posted-the-card-keeps-its-announcement)). It can only switch if its record has neither `announcement_locked` nor `program_seen`, so check that in `state/state.json`. Pin the right post with `title_url` and `image` in `config/overrides.json`; the next run edits the card back, and the log names the change (`schedule card updated — key art, link`) |
+| Title link came from HoYoLAB although X has the post | a card that opened while X could not be read is upgraded **once**, to the X post, when X answers with the same air time (the log says `schedule card updated — key art, link`). If X is still unreadable, the HoYoLAB link stays until then |
 | No livestream date line | the record never got the announcement, so there is no air time to show (a misleading `TBA` would be worse). If the tweet id is cached, the next run replays it once and date, key art and title link come back together; if not, see the `🩹` line above |
 | `webhooks` test shows ✗ / `not a webhook URL` | the secret holds something else (a channel link, extra spaces). Copy the webhook URL again |
 

@@ -120,10 +120,10 @@ Program announcement had scrolled out. Since **1.3.0** the monitor looks the ann
   announcement with its cover, and an article page carries the embedded stream — whose YouTube
   thumbnail is the program's own 1280×720 artwork;
 - failing that, the **HoYoLAB news list is paged back** past the lookback window;
-- the headline links the announcement **wherever it was published** — an official **X post**
-  (Genshin 7.1: `x.com/GenshinImpact/status/2096810691021689205`) and an official **HoYoLAB /
-  official-site article** (ZZZ 3.3: `hoyolab.com/article/46972907`) are equally correct, and the
-  card says which one it used (`🛰️ … key art and link from HoYoLAB`). What the link must never be
+- the headline links the announcement **wherever it was published** — an official **X post** is preferred (ZZZ 3.3:
+  `x.com/ZZZ_EN/status/2106957553435312559`; Genshin 7.1: `x.com/GenshinImpact/status/2096810691021689205`).
+  An official **HoYoLAB / official-site article** is equally correct, and is the fallback when X cannot be
+  read (ZZZ 3.3's card had been built from `hoyolab.com/article/46972907` before it was pinned to X). The card says which one it used (`🛰️ … key art and link from HoYoLAB`). What the link must never be
   is the *Update and Maintenance Notice* — a different post that happens to carry the maintenance
   times, and the reason the first 7.1 card had no air time and the notice's cover;
 - images are always upgraded to the biggest rendition the source serves (tweet photo → `?name=orig`,
@@ -161,6 +161,24 @@ air time took the card over (ZZZ 3.3, 2026-10-09). Nothing remembered which post
 - The human fix is `title_url` in `config/overrides.json`. It pins the link and the source button
   together, names the button after its host (`X Post` or `HoYoLAB`), and drops the post it replaces.
   `image` pins the key art. An override always wins, so a locked card can still be corrected by hand.
+- **Which post opens the lock.** `schedule.LOCK_RANK` ranks the candidates: X post 3, HoYoLAB and Kuro
+  official 2, official news page 1. The highest rank wins, then the earliest post. So the X post wins over
+  a HoYoLAB copy of the same announcement. This ranking is separate from `PRIORITY`, which still decides
+  which *value* wins (HoYoLAB 50 over X 40). The lock decides where the link points.
+- **One upgrade, never a giveaway.** A card locked to a lower rank (HoYoLAB taken while X could not be
+  read) moves **once** to a higher-rank post, and only when that post has the same air time and was
+  published no later than the lock's own announcement (`announcement_ts`). A later giveaway can never
+  upgrade a lock. Records without `announcement_source` / `announcement_ts` get no upgrade.
+- **Countdown estimates are unchanged, in all six games.** Before an official notice, maintenance
+  start and end still come from the countdown and version-cadence model, labelled as estimates. An
+  official value from X, HoYoLAB, Kuro or the launcher replaces it and removes the
+  `🕒 estimated from version cadence` line. `test_a_countdown_estimate_is_replaced_by_the_official_notice_in_every_game`
+  pins this.
+- **Known limit: the first program post seen locks the card.** If a program-titled post with an air time
+  (for example a same-window giveaway) is seen before the real announcement, it takes the lock. The
+  cross-game check covers the announcement-first order for all six games. The giveaway-first order fails
+  for all six: it is a documented limit, not a fixed one. Correct it with `title_url` and `image` in
+  `config/overrides.json`.
 - **Not decided:** HoYoverse moving a programme does not move the air time of a locked card. Until
   that is decided, pin `program_ts` in `config/overrides.json`.
 

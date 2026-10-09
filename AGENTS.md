@@ -108,6 +108,9 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 10. **Ranking beats speed in the nitter fleet.** `_probe_batch` may stop waiting early, but only
    once enough *higher-ranked* mirrors have answered (plus the `NITTER_GRACE` cap). Do not
    "simplify" it to first-two-to-respond: mirror order is a quality ranking.
+   By-id tweet lookups follow the same order: `XClient.tweet()` asks nitter.cf (then xitter.cf) first
+   when the account is known, and FxTwitter only after nitter cannot answer or the post has a `t.co`
+   link. A status mirror that fails `STATUS_FAIL_LIMIT` times in one run is skipped for the rest of it.
 11. **The advisory CI job must never gate a merge** (`continue-on-error: true` on every step). Only
    the `test` job is a required check.
 12. **No new runtime dependencies** without a very good reason. The whole app runs on `aiohttp`,
@@ -117,13 +120,19 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 14. **No LICENSE file is wanted** — this is a personal-use repository (owner's decision,
     2026-10-03). Do not add one "for completeness".
 15. **A posted Special Program card keeps its announcement.** The first post that gives an air time
-   sets `announcement_locked`. From then on `merge()` and `apply_program_media()` never move the
-   card's title link, source buttons, key art, air time or programme and version names. Only an
-   estimated air time may be replaced, and banners and maintenance keep updating. Records without
-   the flag are locked by `program_seen` or `media_from`. Do not restore a per-run rebuild from the
-   lookback window: that is how ZZZ 3.3's giveaway took the card on 2026-10-09. The tests that pin
-   this are the seven at the end of `tests/test_smoke.py` listed in `docs/TESTING.md`.
-
+   sets `announcement_locked`, and `announcement_source` / `announcement_ts` record which post. From
+   then on `merge()` and `apply_program_media()` never move the card's title link, source buttons, key
+   art, air time or programme and version names. Only an estimated air time may be replaced, and banners
+   and maintenance keep updating. The lock goes to the highest `LOCK_RANK` (X 3 over HoYoLAB / Kuro 2
+   over news 1), then the earliest post. A card locked to a lower rank moves **once**, to a higher-rank
+   post with the same air time that was published no later than the lock. A giveaway never upgrades.
+   Records without the flag are locked by `program_seen` or `media_from`, and get no upgrade. Do not
+   restore a per-run rebuild from the lookback window: that is how ZZZ 3.3's giveaway took the card on
+   2026-10-09. The tests that pin this run from `test_the_announcement_that_opened_a_card_keeps_its_link_and_key_art`
+   to `test_a_countdown_estimate_is_replaced_by_the_official_notice_in_every_game` in
+   `tests/test_smoke.py`, listed in `docs/TESTING.md`. Known limit: the first program post seen locks the
+   card, so a same-window giveaway seen before the announcement still wins. It is documented in
+   `docs/ACCURACY.md`, not fixed.
 ---
 
 ## 4. Config model you must understand

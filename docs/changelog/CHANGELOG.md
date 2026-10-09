@@ -34,15 +34,27 @@ had opened the card.
 - **Banners and maintenance keep updating.** Pre-install, start and end times, compensation and
   banner names still update, and an official value replaces the `🕒 estimated from version cadence`
   line as before.
-- **The ZZZ 3.3 repair is a human override.** The card was built from the HoYoLAB article `46972907`
-  (its air time was recorded from that article, at priority 50), so `config/overrides.json` pins that
-  article and its 16:9 cover. The next run edits the card in place, silently. A `title_url` override
+- **ZZZ 3.3 is pinned to the X post.** The card was built from the HoYoLAB article `46972907` (its air
+  time was recorded from that article, at priority 50). `config/overrides.json` now pins the official X
+  announcement `2106957553435312559` as the link, and its photo `HTxU4O3W4AAGolV` as the key art, because
+  the lock prefers X. The photo was not checked visually at the time (both image hosts returned HTTP 500
+  from the build sandbox), so check the card once. The next run edits the card in place, silently. A `title_url` override
   now names its button after the host it points to (`HoYoLAB`, not the broken record's `X Post`) and
   drops the post it replaces.
+- **X is the preferred lock.** When X and HoYoLAB both carry the announcement, the lock goes to the X
+  post (`schedule.LOCK_RANK`: X 3, HoYoLAB and Kuro 2, news 1). A HoYoLAB lock taken while X was unreadable
+  moves **once** to the X post, when that post has the same air time and was published no later than the
+  lock. A giveaway never upgrades a lock, and records without the new keys get no upgrade.
+- **Countdown estimates work the same in all six games.** The estimate-to-official replacement is pinned
+  for every game, not just ZZZ.
+- **Known limit: the first program post seen locks the card.** The cross-game check passes when the
+  announcement is seen first, in all six games. When a same-window giveaway is seen first, it locks the
+  card in all six. This is documented, not fixed.
 - **Open: a reschedule.** A locked card does not follow HoYoverse moving a programme. Pin
   `program_ts` in `config/overrides.json` by hand until that is decided.
 
-Seven regression tests in `tests/test_smoke.py` pin this, and each fails on the code before the change.
+The regression tests in `tests/test_smoke.py`, from `test_the_announcement_that_opened_a_card_keeps_its_link_and_key_art`
+to `test_a_countdown_estimate_is_replaced_by_the_official_notice_in_every_game`, pin this.
 
 **Single tweets are read from nitter.cf first.** A tweet fetched by id used to try FxTwitter first. It now asks
 `nitter.cf` (then `xitter.cf`) for the post's status feed, which reaches back weeks: the ZZZ 3.2 announcement from
@@ -50,6 +62,10 @@ Seven regression tests in `tests/test_smoke.py` pin this, and each fails on the 
 `t.co` link, because nitter leaves those unexpanded and the YouTube stream link is read from the expanded URL.
 A nitter photo address `/pic/https%3A%2F%2Fpbs…` now resolves to `pbs.twimg.com` as well as the older `/pic/media%2F…`
 form, so the key art is no longer served through a nitter proxy.
+
+A status mirror that fails twice in one run (`STATUS_FAIL_LIMIT = 2`) is skipped for the rest of that run. A
+dead `nitter.cf` used to be waited on for every tweet. Two dead mirrors and five tweets now make 4 requests
+instead of 10.
 
 **A deleted copy says it was deleted, and a retirement names the message it retired**
 
@@ -68,7 +84,7 @@ is a fan-out that stopped at a `404`, the other is a fan-out that may never have
 
 ### The title link may come from X or HoYoLAB — whichever carries the announcement
 
-The ZZZ 3.3 card links `hoyolab.com/article/46972907`; the Genshin 7.1 card links
+The ZZZ 3.3 card linked `hoyolab.com/article/46972907` (it now links the X post); the Genshin 7.1 card links
 `x.com/GenshinImpact/status/2096810691021689205`. Both are the announcement itself, so both are
 correct — the rule this changelog introduced says the link must be the announcement and never the
 *Update and Maintenance Notice*, and says nothing about which platform publishes it. ACCURACY.md and
