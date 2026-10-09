@@ -1641,8 +1641,15 @@
           1
         ],
         "posted_at": 1791546293,
-        "rewards": null,
+        "rewards": [
+          "Dennies ×30000",
+          "Polychrome ×300",
+          "W-Engine Energy Module ×3",
+          "Senior Investigator Logs ×2"
+        ],
         "sources": [
+          "ennead",
+          "fandom",
           "seria"
         ],
         "status": "posted",
@@ -2253,7 +2260,7 @@
           ],
           "b_phase1": [
             100,
-            1791546293
+            1791546620
           ],
           "b_phase1_4": [
             50,
@@ -2310,10 +2317,22 @@
             "confirmed": [
               "Phoenix Reffaella",
               "Severian Lowell"
+            ],
+            "phase1": [
+              "Into the Flames of Life",
+              "Graceful Gale"
+            ],
+            "phase2": [
+              "Answers in the Wind",
+              "Outlier of Prodigies"
             ]
           },
           "banners_checked_ts": 1791536841,
           "banners_search_ts": 1791536841,
+          "banners_settled": [
+            "phase1",
+            "phase2"
+          ],
           "calendar_ts": 1791536841,
           "estimate_sources": [
             "version cadence"
@@ -2351,10 +2370,10 @@
         ],
         "first_seen": 1791172831,
         "message_id": "1556516427786096744",
-        "mirror_hash": "281042a46aed2fee",
+        "mirror_hash": "daf77d3abe6f666f",
         "mirror_message_id": "1556585523047436341",
         "mirror_webhook_fp": "db5f4f8a75a5",
-        "payload_hash": "aae11c31dc4f6951",
+        "payload_hash": "a3e77b5ac895951c",
         "posted_at": 1791172831,
         "prov": {
           "b_confirmed": [
@@ -2363,6 +2382,20 @@
           ],
           "b_confirmed_by": [
             "wiki"
+          ],
+          "b_phase1": [
+            40,
+            1791546366
+          ],
+          "b_phase1_by": [
+            "official"
+          ],
+          "b_phase2": [
+            40,
+            1791546399
+          ],
+          "b_phase2_by": [
+            "official"
           ],
           "maint_end_ts": [
             9,
@@ -2390,7 +2423,7 @@
           ]
         },
         "status": "posted",
-        "updated_at": 1791536841,
+        "updated_at": 1791546620,
         "webhook_fp": "19991534cf6d"
       }
     }
