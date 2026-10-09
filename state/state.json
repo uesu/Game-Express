@@ -2218,7 +2218,7 @@
             ]
           },
           "banners_checked_ts": 1791576921,
-          "banners_search_ts": 1791569421,
+          "banners_search_ts": 1791580522,
           "banners_settled": [
             "phase1"
           ],
@@ -2262,7 +2262,7 @@
           ],
           "b_phase1": [
             100,
-            1791580219
+            1791580522
           ],
           "b_phase1_4": [
             50,
@@ -2326,7 +2326,7 @@
               "version": "3.3"
             }
           ],
-          "ts": 1791569421
+          "ts": 1791580522
         },
         "data": {
           "announcement_locked": true,
@@ -2344,13 +2344,13 @@
               "Norma"
             ]
           },
-          "banners_checked_ts": 1791569421,
-          "banners_search_ts": 1791569421,
+          "banners_checked_ts": 1791580522,
+          "banners_search_ts": 1791580522,
           "banners_settled": [
             "phase1",
             "phase2"
           ],
-          "calendar_ts": 1791569421,
+          "calendar_ts": 1791580522,
           "estimate_sources": [
             "version cadence"
           ],
