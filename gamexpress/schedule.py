@@ -212,6 +212,7 @@ LOCK_RANK = {"x": 3, "hoyolab": 2, "kuro": 2, "news": 1}
 ESTIMATED_KEYS = ("program_ts", "preinstall_ts", "maint_start_ts", "maint_end_ts")
 MAINT_HOURS_ESTIMATE = 5          # typical HoYoverse / Kuro maintenance window
 WIKI_RECHECK_H = 6                  # a complete banner block with unconfirmed names is re-read this often
+WIKI_INCOMPLETE_H = 3               # a banner block that still has TBA is re-read this often (not every run)
 CARD_FREEZE_D = 45                 # after this many days past maintenance a card is never edited
 PROGRAM_FRESH_H = 36              # how long after the air time a program still counts as news
 
@@ -922,10 +923,34 @@ def _derived_ok(key: str, value, banners: dict) -> bool:
     return bool(phase_names) and set(_names(value)) <= phase_names
 
 
+def _official_owned(prov: dict, key: str) -> bool:
+    """True when an official notice (HoYoverse, Kuro, X, news) wrote banner `key`. Such a name is
+    final: the feed and the wiki can never change it, and a later official notice that names someone
+    else is logged as a conflict instead of applied. Only a human override outranks it."""
+    return PRIORITY["gachawiki"] < prov.get(f"b_{key}", [0])[0] < PRIORITY["override"]
+
+
+def _sync_official_locks(data: dict, prov: dict) -> None:
+    """An official name that is on the card is locked. Records written before the official lock existed
+    hold official names that were never marked, so without this they would stay open (and be read by the
+    wiki) for ever. Idempotent: it only ever adds keys."""
+    banners = data.get("banners") or {}
+    keys = [k for k in BANNER_KEYS if banners.get(k) and _official_owned(prov, k)]
+    if keys:
+        data["banners_settled"] = sorted(banner_settled(data) | set(keys))
+
+
+def _official_may_write(prov: dict, key: str) -> bool:
+    """An official notice may write an empty name, or one the feed or the wiki wrote (an official
+    notice outranks both, so it corrects them). It never writes over an official name or an override."""
+    return prov.get(f"b_{key}", [0])[0] <= PRIORITY["gachawiki"]
+
+
 def _confirm(data: dict, prov: dict, key: str, group: str, current, value, banners: dict) -> None:
     """`group` names `value` for banner `key`, and the card currently holds `current` for it.
 
-    A matching name is one more witness, and two witnesses from different groups lock the key.
+    A matching name is one more witness. An official notice locks its name on its own; feed and wiki
+    names lock once they agree (two groups). The two derived 4★-summary keys keep their own rule.
     Nothing happens when the names differ: the caller decides what to write in that case."""
     if not value or _names(current) != _names(value):
         return
@@ -938,8 +963,10 @@ def _confirm(data: dict, prov: dict, key: str, group: str, current, value, banne
     if inputs is not None:
         locked = (group == "wiki" and _derived_ok(key, value, banners)
                   and all(k in settled for k in inputs))
+    elif group == "official":
+        locked = True                   # a clean official notice is the confirmation on its own
     else:
-        locked = len(groups) >= 2
+        locked = len(groups) >= 2       # feed and wiki must agree before they lock
     if locked:
         data["banners_settled"] = sorted(settled | {key})
 
@@ -955,7 +982,7 @@ def apply_banner_feed(data: dict, prov: dict, feed: dict | None, now: int) -> No
     carrying "An Ocean in a Pearl" (a banner) instead of Pearl (the character).
 
     A phase the hub names exactly as the card holds it is one more confirmation (see _confirm).
-    A confirmed phase is never changed here.
+    A locked phase is never changed here, except by the title correction above.
     """
     if not feed:
         return
@@ -963,12 +990,23 @@ def apply_banner_feed(data: dict, prov: dict, feed: dict | None, now: int) -> No
     titles = {str(t).lower() for t in feed.get("titles") or []}
     changed = False
     for key in ("phase1", "phase2"):
-        if key in banner_settled(data):
-            continue
         have = banners.get(key)
         if have and titles and feed.get(key) and any(str(n).lower() in titles for n in have):
+            # A banner title is never a character, whoever wrote it, so this is a mis-read to correct --
+            # even a locked one. The hub's value is unconfirmed, so the phase is unlocked again.
             log.info("banner %s held a banner TITLE, not a character — replaced from the feed", key)
             banners[key] = feed[key]
+            prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
+            prov[f"b_{key}_by"] = ["feed"]
+            if key in banner_settled(data):
+                data["banners_settled"] = sorted(banner_settled(data) - {key})
+            changed = True
+            continue
+        if key in banner_settled(data):
+            continue
+        owner = prov.get(f"b_{key}", [0])[0]
+        if have and feed.get(key) and owner == PRIORITY["bannerfeed"] and _names(have) != _names(feed[key]):
+            banners[key] = feed[key]                     # the hub changed its mind: follow it, still unlocked
             prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
             prov[f"b_{key}_by"] = ["feed"]
             changed = True
@@ -1003,15 +1041,14 @@ def banner_block_complete(game: Game, data: dict) -> bool:
 def wiki_recheck_due(game: Game, data: dict, now: int) -> bool:
     """Whether the wiki should be read for this version now.
 
-    An incomplete banner block is read every run, as it always was (it is still filling in). A
-    complete block with an unconfirmed name is read at most every WIKI_RECHECK_H hours: the wiki only
-    has to confirm it once, and a fixed-interval read keeps the traffic bounded. A settled block is
-    never read again."""
+    An incomplete banner block (still TBA) is read at most every WIKI_INCOMPLETE_H hours, and a
+    complete block with an unconfirmed name at most every WIKI_RECHECK_H hours. The wiki only has to
+    confirm a name once. A settled block is never read again. Before this throttle an incomplete block
+    was read on every five-minute run, which is 288 requests a day for one version."""
     if banner_block_settled(game, data):
         return False
-    if banner_block_complete(game, data):
-        return now - int(data.get("banners_checked_ts") or 0) >= WIKI_RECHECK_H * 3600
-    return True
+    interval = WIKI_RECHECK_H if banner_block_complete(game, data) else WIKI_INCOMPLETE_H
+    return now - int(data.get("banners_checked_ts") or 0) >= interval * 3600
 
 
 def banner_block_settled(game: Game, data: dict) -> bool:
@@ -1044,10 +1081,9 @@ def apply_gacha_wiki(game: Game, data: dict, prov: dict, wiki: dict | None, now:
     """
     if wiki is None:
         return                      # the wikis were not consulted this run -> touch nothing
-    if banner_block_complete(game, data):
-        # Only a complete block is throttled (see wiki_recheck_due). Stamping every read would change
-        # the state file on every run and commit it for nothing.
-        data["banners_checked_ts"] = now
+    # Stamp every read the wiki actually answered. The throttle (wiki_recheck_due) needs it, and a
+    # read happens at most once per WIKI_INCOMPLETE_H, so this writes the state file that rarely.
+    data["banners_checked_ts"] = now
     banners = dict(data.get("banners") or {})
     changed = False
     for key in list(BANNER_KEYS) + ["four_star", "confirmed"]:
@@ -1065,17 +1101,19 @@ def apply_gacha_wiki(game: Game, data: dict, prov: dict, wiki: dict | None, now:
             # official, and every human override, outranks this source and is never touched.
             # Without this a single bad read is permanent: ZZZ 3.3 sat on "Agent" because
             # "already filled" was treated as "already right".
-            if owner != PRIORITY["gachawiki"]:
-                continue
+            if owner > PRIORITY["gachawiki"]:
+                continue                        # official notices and overrides outrank the wiki
             if value:
                 banners[key] = value
                 prov[f"b_{key}"] = [PRIORITY["gachawiki"], now]
                 prov[f"b_{key}_by"] = ["wiki"]
                 _confirm(data, prov, key, "wiki", value, value, banners)   # the read itself is a witness
-            else:
+            elif owner == PRIORITY["gachawiki"]:
                 banners.pop(key, None)          # the wiki no longer says it -> back to TBA
                 prov.pop(f"b_{key}", None)
                 prov.pop(f"b_{key}_by", None)
+            else:
+                continue                        # the wiki is silent about a feed value: keep the feed's
             changed = True
             continue
         if not value or owner > PRIORITY["gachawiki"]:
@@ -1348,6 +1386,7 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
     prov = dict(record.get("prov") or {})
     data = dict(prev)
     data["version"] = version
+    _sync_official_locks(data, prov)
 
     def put(key, value, source, ts):
         if value in (None, "", []):
@@ -1374,22 +1413,31 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                 put(k, f.get(k), src, ts)
         elif e.kind == "banner":
             banners = dict(data.get("banners") or {})
-            settled = banner_settled(data)
             phase = f.get("banner_phase")
             if phase is None and data.get("maint_start_ts"):
                 phase = 1 if ts < int(data["maint_start_ts"]) + 7 * 86400 else 2
             if phase in (1, 2):
                 key5, key4 = f"phase{phase}", f"phase{phase}_4"
                 five = f.get("banner_five")
-                if five and key5 not in settled and prov.get(f"b_{key5}", [0])[0] < PRIORITY["override"]:
+                # Re-reading the SAME post after a parser fix heals its own name (see the 4★ note below).
+                same5 = prov.get(f"b_{key5}") == [PRIORITY.get(src, 10), ts]
+                if five and _official_owned(prov, key5) and not same5:
+                    # Final. A different 5★ from a later official post is logged once, not applied.
+                    if _names(banners.get(key5)) != _names(five):
+                        conflict = ", ".join(five)
+                        if prov.get(f"b_{key5}_conflict") != conflict and notes is not None:
+                            notes.append(f"⚠️ {game.short} {version} phase {phase}: a later notice names "
+                                         f"{conflict}, the locked official name is kept. Correct it via "
+                                         "config/overrides.json if the notice is right.")
+                        prov[f"b_{key5}_conflict"] = conflict
+                elif five and (same5 or _official_may_write(prov, key5)):
                     if _names(banners.get(key5)) != _names(five):
                         prov[f"b_{key5}_by"] = ["official"]           # a new name from the notice
-                    _confirm(data, prov, key5, "official", banners.get(key5), five, banners)
                     banners[key5] = five
                     prov[f"b_{key5}"] = [PRIORITY.get(src, 10), ts]
+                    _confirm(data, prov, key5, "official", five, five, banners)   # the notice locks it
                 four = list(f.get("banner_four") or [])
-                if ((four or f.get("banner_four_unsure")) and key4 not in settled
-                        and prov.get(f"b_{key4}", [0])[0] < PRIORITY["override"]):
+                if (four or f.get("banner_four_unsure")) and prov.get(f"b_{key4}", [0])[0] < PRIORITY["override"]:
                     flag = f"b_{key4}_tba"
                     # Re-reading the SAME post (same source, same timestamp) is not two official
                     # sources disagreeing -- it is this bot parsing one notice better than it did
@@ -1398,16 +1446,23 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                     # by post 46851682, and the corrected reader re-reads that very post.
                     # Disagreement only means something between DIFFERENT posts.
                     same_post = prov.get(f"b_{key4}") == [PRIORITY.get(src, 10), ts]
+                    owned = _official_owned(prov, key4)
+                    # Only a list an OFFICIAL notice wrote can disagree with a new official notice.
+                    # A list the feed and the wiki locked between them is corrected by the notice.
                     problem = _four_star_problem(
                         game, four,
-                        None if same_post else banners.get(key4),
+                        None if (same_post or not owned) else banners.get(key4),
                         None if same_post else prov.get(flag))
                     if same_post:
                         prov.pop(flag, None)
-                    prov[f"b_{key4}"] = [PRIORITY.get(src, 10), ts]
-                    if problem:
-                        banners[key4] = []                                # TBA
+                    held = (problem and key4 in banner_settled(data) and problem != "official sources disagree") \
+                        or (owned and not four)           # an empty reading never wipes an official list
+                    if held:
+                        pass        # a doubtful reading never blanks or replaces a locked list
+                    elif problem:
+                        banners[key4] = []                                    # TBA
                         prov.pop(f"b_{key4}_by", None)
+                        prov[f"b_{key4}"] = [PRIORITY.get(src, 10), ts]
                         if prov.get(flag) != problem and notes is not None:
                             notes.append(f"⚠️ {game.short} {version} phase {phase}: 4★ shown as TBA — {problem} "
                                          f"(found: {', '.join(four) or 'nothing usable'}). Confirm via "
@@ -1416,8 +1471,9 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                     else:
                         if _names(banners.get(key4)) != _names(four):
                             prov[f"b_{key4}_by"] = ["official"]
-                        _confirm(data, prov, key4, "official", banners.get(key4), four, banners)
                         banners[key4] = four
+                        prov[f"b_{key4}"] = [PRIORITY.get(src, 10), ts]
+                        _confirm(data, prov, key4, "official", four, four, banners)
             data["banners"] = banners
 
     # presentation: the announcement's link, key art, source and air time. Decided ONCE, from ONE
@@ -1584,7 +1640,10 @@ async def gather_wiki_lineup(ctx, game: Game, ver: str, record: dict) -> dict | 
     """
     if not ctx.settings.gacha_wiki or game.key not in gachawiki.WIKIS:
         return None
-    data = record.get("data") or {}
+    data = record.get("data")
+    if data is None:
+        data = record["data"] = {}          # a brand-new record: keep the read stamp (merge keeps it too)
+    _sync_official_locks(data, record.get("prov") or {})
     if not wiki_recheck_due(game, data, ctx.now):
         return None
     start = data.get("maint_start_ts")
@@ -1596,8 +1655,8 @@ async def gather_wiki_lineup(ctx, game: Game, ver: str, record: dict) -> dict | 
     except Exception as e:                                   # noqa: BLE001 — one wiki, never fatal
         log.warning("%s wiki lookup failed for %s: %s", game.key, ver, e)
         out = None
-    if out is None and banner_block_complete(game, data):
-        data["banners_checked_ts"] = ctx.now                 # asked and failed: no retry for WIKI_RECHECK_H
+    if out is None:
+        data["banners_checked_ts"] = ctx.now                 # asked and failed: no retry until the interval passes
     return out
 
 

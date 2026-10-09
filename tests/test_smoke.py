@@ -3983,14 +3983,32 @@ def _banner_notice(game_key: str, source: str, url: str, phase: int, five: list[
     return schedule.Extract(item, "banner", "9.9", fields=fields)
 
 
-def test_an_official_banner_alone_is_not_locked_and_still_follows_the_newest_notice():
+def test_an_official_notice_locks_on_its_own_and_a_later_different_one_is_logged_not_applied():
     game, now, rec = GAMES["zzz"], 1791522000, {}
     first = _banner_notice("zzz", "x", "https://x.com/ZZZ_EN/status/1", 1, ["Phoenix Reffaella"], now - 3600)
     rec["data"] = schedule.merge(game, "9.9", [first], rec, {}, {}, now)
-    assert "banners_settled" not in rec["data"]                  # one source is not confirmation
+    assert rec["data"]["banners_settled"] == ["phase1"]          # one OFFICIAL notice is the confirmation
     later = _banner_notice("zzz", "hoyolab", "https://www.hoyolab.com/article/2", 1, ["Severian Lowell"], now - 60)
-    rec["data"] = schedule.merge(game, "9.9", [later], rec, {}, {}, now + 600)
-    assert rec["data"]["banners"]["phase1"] == ["Severian Lowell"]
+    notes: list[str] = []
+    rec["data"] = schedule.merge(game, "9.9", [later], rec, {}, {}, now + 600, notes)
+    assert rec["data"]["banners"]["phase1"] == ["Phoenix Reffaella"]    # final: the conflict is logged
+    assert any("locked official name is kept" in n for n in notes)
+    rec["data"] = schedule.merge(game, "9.9", [later], rec, {}, {}, now + 1200, notes)
+    assert sum("locked official name is kept" in n for n in notes) == 1  # logged once, not every run
+
+
+def test_a_community_lock_is_corrected_by_a_later_official_notice():
+    """Feed and wiki agreement locks a name, but an official notice outranks both and replaces it."""
+    game, now, rec = GAMES["zzz"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "9.9", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"],
+                               {"phase1": ["Lycaon"], "phase2": [], "titles": []}, now)
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase1": ["Lycaon"]}, now + 60)
+    assert rec["data"]["banners_settled"] == ["phase1"]          # feed + wiki agree -> locked
+    official = _banner_notice("zzz", "hoyolab", "https://www.hoyolab.com/article/9", 1, ["Soukaku"], now + 120)
+    rec["data"] = schedule.merge(game, "9.9", [official], rec, {}, {}, now + 600)
+    assert rec["data"]["banners"]["phase1"] == ["Soukaku"]
+    assert rec["data"]["banners_settled"] == ["phase1"]
 
 
 def test_an_official_banner_locks_when_the_hub_confirms_it_and_never_changes_after():
@@ -4043,15 +4061,17 @@ def test_reruns_and_the_four_star_summary_lock_only_after_their_phase_lists_do()
         rec["data"] = schedule.merge(game, "2.5", notices, rec, {}, {}, now)
         return rec
 
-    # 1. the wiki disagrees on phase 1: phase 1 stays open, so the re-runs cannot lock
+    # 1. the wiki disagrees on phase 1: the official name is final (it stays and locks), and a re-run
+    #    the phase lists do not contain never locks
     rec = card(four2)
     schedule.apply_gacha_wiki(game, rec["data"], rec["prov"],
                               {"phase1": ["Someone Else"], "phase2": ["Lupa"], "phase1_4": four1,
-                               "phase2_4": four2, "reruns": ["Lupa"]}, now + 60)
-    assert "phase1" not in rec["data"]["banners_settled"]
+                               "phase2_4": four2, "reruns": ["Someone Else"]}, now + 60)
+    assert rec["data"]["banners"]["phase1"] == ["Verina"]
+    assert "phase1" in rec["data"]["banners_settled"]
     assert "reruns" not in rec["data"]["banners_settled"]
 
-    # 2. the wiki agrees on every name: phases lock, then re-runs follow
+    # 2. the wiki agrees on the re-runs: they lock now that their phase lists are settled
     schedule.apply_gacha_wiki(game, rec["data"], rec["prov"],
                               {"phase1": ["Verina"], "phase2": ["Lupa"], "phase1_4": four1,
                                "phase2_4": four2, "reruns": ["Lupa"]}, now + 120)
@@ -4125,7 +4145,8 @@ def test_a_complete_but_unconfirmed_block_is_rechecked_every_six_hours_and_a_set
     assert schedule.wiki_recheck_due(game, dict(full, banners_checked_ts=now - 7 * 3600), now)
     assert not schedule.wiki_recheck_due(game, full, now)                       # read an hour ago
     incomplete = {"banners": dict(full["banners"], reruns=[]), "banners_checked_ts": now - 60}
-    assert schedule.wiki_recheck_due(game, incomplete, now)                     # still filling in: every run
+    assert not schedule.wiki_recheck_due(game, incomplete, now)                 # still TBA: read hourly, not per run
+    assert schedule.wiki_recheck_due(game, dict(incomplete, banners_checked_ts=now - schedule.WIKI_INCOMPLETE_H * 3600), now)
     settled = dict(full, banners_settled=list(schedule.BANNER_KEYS))
     assert not schedule.wiki_recheck_due(game, dict(settled, banners_checked_ts=0), now)
 
@@ -4175,13 +4196,16 @@ def test_a_failed_wiki_read_is_not_retried_every_run_for_a_complete_block():
         gachawiki.fetch_lineup = old
 
 
-def test_an_incomplete_block_writes_no_timestamp_so_the_state_file_stays_still():
-    """The wiki is read every run for an incomplete block, so that read must not change the state."""
+def test_an_incomplete_block_is_stamped_and_read_at_most_hourly_so_the_state_changes_once_an_hour():
+    """An incomplete block (still TBA) is read at most every WIKI_INCOMPLETE_H hours. Each read stamps
+    the record, so the state file changes once an hour at most, never on every five-minute run."""
     game, now, rec = GAMES["genshin"], 1791522000, {}
     rec["data"], rec["prov"] = {"version": "9.9", "banners": {"phase1": ["A"]}}, {}
     schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase2": ["B"]}, now)
-    assert "banners_checked_ts" not in rec["data"]
+    assert rec["data"]["banners_checked_ts"] == now
     assert rec["data"]["banners"]["phase2"] == ["B"]
+    assert not schedule.wiki_recheck_due(game, rec["data"], now + 300)     # the next five-minute run: no read
+    assert schedule.wiki_recheck_due(game, rec["data"], now + schedule.WIKI_INCOMPLETE_H * 3600)
 
 
 def test_a_banner_lock_holds_in_every_game_and_maintenance_still_moves():
@@ -4203,6 +4227,34 @@ def test_a_banner_lock_holds_in_every_game_and_maintenance_still_moves():
         maint = schedule.Extract(notice, "maintenance", "9.9", fields={"maint_start_ts": now + 86400})
         rec["data"] = schedule.merge(game, "9.9", [maint], rec, {}, {}, now + 900)
         assert rec["data"]["maint_start_ts"] == now + 86400, key
+
+
+def test_the_feed_follows_its_own_correction_and_a_silent_wiki_never_withdraws_it():
+    """The hub is a single source: its own unlocked value follows a later hub reading. The wiki says
+    nothing about this phase, so the wiki must not erase the hub's value."""
+    game, now, rec = GAMES["starrail"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "9.9", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase1": ["Pela"], "phase2": [], "titles": []}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase1": ["Pearl"], "phase2": [], "titles": []}, now + 600)
+    assert rec["data"]["banners"]["phase1"] == ["Pearl"]              # feed-owned, unlocked: follows the hub
+    assert "banners_settled" not in rec["data"]
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase2": []}, now + 1200)
+    assert rec["data"]["banners"]["phase1"] == ["Pearl"]              # silent wiki: the feed's value stays
+
+
+def test_the_wiki_corrects_a_feed_value_but_never_an_official_one():
+    """Priority order: official (50) > wiki (6) > hub (5). The wiki may correct the hub, never HoYoverse."""
+    game, now, rec = GAMES["starrail"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "9.9", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase1": ["Pela"], "phase2": [], "titles": []}, now)
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase1": ["Pearl"]}, now + 60)
+    assert rec["data"]["banners"]["phase1"] == ["Pearl"]              # wiki outranks the hub
+    assert rec["prov"]["b_phase1"][0] == schedule.PRIORITY["gachawiki"]
+    official = _banner_notice("starrail", "hoyolab", "https://www.hoyolab.com/article/77", 1, ["Seele"], now + 120)
+    rec["data"] = schedule.merge(game, "9.9", [official], rec, {}, {}, now + 600)
+    assert rec["data"]["banners"]["phase1"] == ["Seele"]              # official replaces the wiki value
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase1": ["Pearl"]}, now + 900)
+    assert rec["data"]["banners"]["phase1"] == ["Seele"]              # and the wiki never overrides official
 
 
 def main() -> int:
@@ -4480,6 +4532,19 @@ def test_the_banner_feed_replaces_a_phase_that_holds_a_banner_title():
                                            "Now I Am Become Blade"]}, 1790500000)
     assert data["banners"]["phase1"] == ["Evanescia", "Pearl"]
     assert prov["b_phase1"][0] == 5                # now attributed to the feed
+
+
+def test_a_locked_phase_holding_a_banner_title_is_corrected_and_unlocked():
+    """An official misread (a title, not a character) is corrected by the hub, and the correction is
+    unconfirmed until another source agrees, so the phase is no longer locked."""
+    data = {"banners": {"phase1": ["An Ocean in a Pearl"]}, "banners_settled": ["phase1"]}
+    prov = {"b_phase1": [50, 1790488804], "b_phase1_by": ["official"]}
+    schedule.apply_banner_feed(data, prov,
+                               {"phase1": ["Pearl"], "titles": ["An Ocean in a Pearl"]}, 1790500000)
+    assert data["banners"]["phase1"] == ["Pearl"]
+    assert "phase1" not in data["banners_settled"]
+    schedule._sync_official_locks(data, prov)           # owner is the feed now: no official lock comes back
+    assert "phase1" not in data["banners_settled"]
 
 
 def test_the_banner_feed_still_never_overwrites_real_characters():
