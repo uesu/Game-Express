@@ -272,7 +272,7 @@ Webhooks).
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA` | **set on dev** | |
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_HNA` | **set on dev** | |
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ANANTA` | **set on dev** | |
-| `NITTER_RSS_TOKEN` | optional | only unlocks `nitter.miningtcup.me`. Useful, not required: the 2026-10-06 audit had 8 mirrors answering and the fleet merges the first **two** of them, so the token adds a proven answerer rather than supplying one you cannot do without |
+| `NITTER_RSS_TOKEN` | optional | only unlocks `nitter.miningtcup.me`. Useful, not required: the 2026-10-06 audit had 8 mirrors answering and the fleet merges the first **two** of them, so the token adds a proven answerer rather than supplying one you cannot do without. Single-tweet lookups by id do not need it: they go to `nitter.cf` and then `xitter.cf`, with no token |
 | `BUMP_PAT` | yes, if you keep `python_version_bump.yml` | a PAT with **Workflows: read and write**. Without it the weekly bump validates fine and then fails on the push — see below |
 | `DISCORD_WEBHOOK_CODES` | optional | catch-all for games without their own channel |
 | `DISCORD_WEBHOOK_URL` | optional | global catch-all |
@@ -331,10 +331,15 @@ into `gamexpress/config.py`, which is where your current values already live.
 - Starting empty would not spam (the first run silently seeds, it does not post history), but
   you would lose the ability to edit existing cards, and the seed boundary could swallow an
   announcement that was mid-flight.
+- **The locks come with it.** A posted card records `announcement_locked`, with `announcement_source` and
+  `announcement_ts`, and a confirmed banner records `banners_settled`. Copying the state keeps those locks, so
+  a card stays on the announcement that opened it, and its confirmed banners do not move, after cutover.
 - Copy it **after** pausing the scheduler (§6), so it cannot go stale between copy and cutover.
 
 `config/program_announcements.json` matters for the same reason — it holds discovered tweet
-IDs so a card can be re-rendered later, after the nitter timeline has rolled past it.
+IDs so a card can be re-rendered later, after the nitter timeline has rolled past it. The X seed is read first,
+by id, from `nitter.cf`'s status feed, so an announcement can be recovered from X even after the timeline has
+moved on.
 
 ---
 

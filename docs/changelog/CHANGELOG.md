@@ -31,9 +31,9 @@ had opened the card.
 - **A teaser with no air time does not lock.** The real announcement can still take the card, and
   its air time.
 - **The explicit flag wins** over the legacy keys.
-- **Banners and maintenance keep updating.** Pre-install, start and end times, compensation and
-  banner names still update, and an official value replaces the `🕒 estimated from version cadence`
-  line as before.
+- **Maintenance keeps updating; banners settle once confirmed.** Pre-install, start and end times and
+  compensation still update, and an official value replaces the `🕒 estimated from version cadence` line as
+  before. Banner names are covered by the next entry.
 - **ZZZ 3.3 is pinned to the X post.** The card was built from the HoYoLAB article `46972907` (its air
   time was recorded from that article, at priority 50). `config/overrides.json` now pins the official X
   announcement `2106957553435312559` as the link, and its photo `HTxU4O3W4AAGolV` as the key art, because
@@ -66,6 +66,29 @@ form, so the key art is no longer served through a nitter proxy.
 A status mirror that fails twice in one run (`STATUS_FAIL_LIMIT = 2`) is skipped for the rest of that run. A
 dead `nitter.cf` used to be waited on for every tweet. Two dead mirrors and five tweets now make 4 requests
 instead of 10.
+
+**Banners settle once two sources confirm them**
+
+Banner names kept changing after they looked right, because any later notice or wiki reading could overwrite a
+name. Now a name is confirmed when two different groups agree (the official notice, the community hub, or the
+game wiki), and a confirmed name is locked. An override confirms alone.
+
+- **Locked names do not move.** A confirmed 5★ or 4★ name is recorded in `banners_settled`. No later notice,
+  hub update or wiki reading changes it. Unconfirmed names keep updating as before.
+- **The wiki-derived fields lock with their inputs.** Re-runs and the 4★ summary lock only once the wiki names
+  them and their phase lists are already locked. The 4★ summary must equal both phases' lists, and a re-run
+  must be a name featured in a phase. The early-tier `※ Confirmed:` line never locks.
+- **The wiki is read less while a block is complete.** A complete block with an unconfirmed name is read at
+  most every six hours (`WIKI_RECHECK_H`). An incomplete block is read every run, as before. A fully
+  confirmed block is never read again. A read that fails counts as a read, so a wiki that is down is not
+  retried on every run either.
+- **Maintenance is unchanged.** Official maintenance times still replace the estimate, as before. A later
+  official notice can still correct them.
+- **Fixed: an unchanged derived pre-install was re-stamped on every run.** `derive_preinstall()` wrote a new
+  provenance clock each run, so the state file changed, and committed, every five minutes for nothing. It
+  now rewrites nothing when the value is unchanged. The wiki read also stamps the state only for a complete block.
+- **Known limit:** a 4★ or re-run name that only the wiki gives stays open until an official notice or the hub
+  confirms it. It is read every six hours until the freeze in the meantime.
 
 **A deleted copy says it was deleted, and a retirement names the message it retired**
 
@@ -226,7 +249,7 @@ art, the wrong link and no air time**
   request, the summary lines that explain a silent refusal, the two halves of the test-run rule
   (a live run never re-creates; a test run never edits) — and the real live 7.1 record healing
   end to end. Two older tests were named better, so the file runs **205** where `main` ran 188 —
-  including `test_a_test_run_still_reposts_a_settled_version`, which asserted the half of the
+  including `test_a_test_run_still_posts_the_game_channel_copy_of_a_retired_card`, which asserted the half of the
   behaviour this entry forbids.
 - **Docs restated for the two new rules**: the README's schedule-card section ("only an
   announcement opens one"), the `repost` note in *Then what?*, and the posting rules now split

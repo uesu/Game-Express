@@ -94,7 +94,7 @@ run would post:
 | **Key art** | the program's own artwork, and a big one: a YouTube `maxresdefault` thumbnail (1280×720) or a full-size tweet photo — not a small cover from somebody else's post |
 | **Livestream line** | `… or in 3 days` — the date/time must be **your** local time and the right moment (compare with the announcement). For a programme that has already aired it reads `… a month ago`, which is correct: the bench renders the version that is out **now**, even when a live run would no longer open a card for it ([ACCURACY.md](ACCURACY.md) rule 6) |
 | **Maintenance block** | pre-install, start, end and compensation, each as a real Discord timestamp. `estimated from Gacha Countdown` means no official notice yet — correct, and it is replaced automatically when the notice is seen |
-| **Banners** | the 5★ and 4★ names for each phase. **TBA** means no official banner post was in the 30-day window — the honest answer, and pinning the names in `config/overrides.json` fills it in |
+| **Banners** | the 5★ and 4★ names for each phase. **TBA** means no official banner post was in the 30-day window — the honest answer, and pinning the names in `config/overrides.json` fills it in. A name locks once two sources confirm it, and an override locks it alone |
 | **Buttons** | YouTube / Twitch / Source, inside the card |
 
 ### Checking a card for a version that is already out (e.g. Genshin 7.1)
@@ -200,7 +200,12 @@ DRY_RUN=1 TEST_MODE=1 BOOTSTRAP_POST=1 STATE_PATH=/tmp/s.json python -m gamexpre
 The announcement lock and the X-first source order are pinned by the regression tests at the end of
 `tests/test_smoke.py`, from `test_the_announcement_that_opened_a_card_keeps_its_link_and_key_art` to
 `test_a_dead_nitter_status_mirror_is_not_waited_on_for_every_tweet`, and the countdown test
-`test_a_countdown_estimate_is_replaced_by_the_official_notice_in_every_game` that follows them. The last of them,
+`test_a_countdown_estimate_is_replaced_by_the_official_notice_in_every_game` that follows them.
+
+The banner lock is pinned by the tests from `test_an_official_banner_alone_is_not_locked_and_still_follows_the_newest_notice`
+to `test_a_banner_lock_holds_in_every_game_and_maintenance_still_moves`, plus
+`test_an_unchanged_derived_preinstall_is_not_re_stamped_every_run`, which keeps the state file still, and
+`test_a_failed_wiki_read_is_not_retried_every_run_for_a_complete_block`, which keeps a down wiki from being hit on every run. The last of them,
 `test_the_shipped_zzz_33_override_repairs_the_card_that_was_switched`, loads `config/overrides.json`
 itself. If one of them fails after a change to `merge()` or `apply_program_media()`, the lock is
 what you broke.
@@ -214,7 +219,7 @@ without posting. Locally the two are the equivalent of the workflow's test modes
 
 | Idea | Why | Effort |
 |---|---|---|
-| **4★ / banner names from official notices only** (current) → fill gaps with `config/overrides.json` | HoYoverse often shows banners only as images; overrides are the reliable fix, and the card is edited silently | 1 min per version |
+| **4★ / banner names from official notices and the wiki** (current) → fill gaps with `config/overrides.json` | HoYoverse often shows banners only as images; overrides are the reliable fix, and the card is edited silently | 1 min per version |
 | Add **HNA / ANANTA code sources** at launch (seria / Open Gacha Codes add new games quickly) | only official posts and X feed them today | small (`games.json` only) |
 | Add a free uptime check (e.g. healthchecks.io) pinged at the end of each run | a second alarm besides cron-job.org emails | small |
 | Re-check the nitter fleet every few months (as in News-Express) | nitter instances come and go; X is the main WW source | small |

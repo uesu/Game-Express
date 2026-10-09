@@ -31,7 +31,7 @@ nothing is renumbered after the fact.
 
 | Entry | Date | Headline |
 |---|---|---|
-| [2026-10-09](CHANGELOG.md#2026-10-09) | 2026-10-09 | a posted Special Program card keeps its announcement (link, key art, air time) and prefers the X post, a single tweet is read from nitter.cf first, a deleted copy says it was deleted, and a retirement names the message it retired |
+| [2026-10-09](CHANGELOG.md#2026-10-09) | 2026-10-09 | a posted Special Program card keeps its announcement (link, key art, air time) and prefers the X post, banners settle once two sources confirm them, a single tweet is read from nitter.cf first, a deleted copy says it was deleted, and a retirement names the message it retired |
 | [2026-10-08](CHANGELOG.md#2026-10-08) | 2026-10-08 | a card that should never have existed, plus the wrong art, the wrong link and no air time |
 | [2026-10-06](CHANGELOG.md#2026-10-06) | 2026-10-06 | banner line-ups fill themselves in from the game wikis — plus a countdown fix and a documentation accuracy sweep |
 | [2026-10-05](CHANGELOG.md#2026-10-05) | 2026-10-05 | the README stops being a history book, and the version number retires |

@@ -112,7 +112,8 @@ existed stay out of the channel.
   Details: **[docs/ACCURACY.md → Filling the gaps](docs/ACCURACY.md#filling-the-gaps-before-the-official-notice)**.
   Once the card is posted, its link, key art and air time are locked to the announcement that opened
   it. When X and HoYoLAB both carry the announcement, the lock goes to the X post, and a card that was
-  locked to HoYoLAB while X could not be read moves once to the X post. Only the banners and the maintenance details keep updating
+  locked to HoYoLAB while X could not be read moves once to the X post. Banners settle once two sources
+  confirm them, and the maintenance details keep updating
   ([ACCURACY.md → Once posted](docs/ACCURACY.md#once-posted-the-card-keeps-its-announcement)).
 
 ### 2 · Redemption code card
@@ -442,7 +443,7 @@ python -m gamexpress preview                     # open previews/index.html
 | **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** | every secret, variable, `games.json` field and `overrides.json` key |
 | **[docs/ACCURACY.md](docs/ACCURACY.md)** | how a post becomes a card: detection, extraction, provenance, the code gate |
 | **[docs/SOURCES.md](docs/SOURCES.md)** | every verified endpoint, with why it was chosen or rejected |
-| **[docs/BANNER_DATABASE.md](docs/BANNER_DATABASE.md)** | where banner line-ups come from: the wiki readers, the precedence order, and how a TBA fills itself in |
+| **[docs/BANNER_DATABASE.md](docs/BANNER_DATABASE.md)** | where banner line-ups come from: the wiki readers, the precedence order, how a TBA fills itself in, and when a name locks |
 | **[docs/SCHEDULER.md](docs/SCHEDULER.md)** | the cron-job.org trigger, the classic token, how fast it can poll |
 | **[docs/TESTING.md](docs/TESTING.md)** | the manual test bench and the local commands |
 | **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** | symptom → fix |
@@ -465,10 +466,14 @@ retired***
 
 - **A posted card keeps its announcement.** Its title link, source buttons, key art and air time are
   locked to the post that opened the card, so a later giveaway or reminder cannot move them. Banners
-  and maintenance details keep updating. X is the preferred post: a card locked to HoYoLAB while X was
+    settle once two sources confirm them, and maintenance details keep updating. X is the preferred post: a card locked to HoYoLAB while X was
   unreadable moves once to the X post when X carries the same announcement. A status mirror that fails
   twice in a run is skipped for the rest of it. A wrong link on a live card is corrected by pinning
   `title_url` and `image` in `config/overrides.json`.
+- **Banners settle once confirmed.** A 5★ or 4★ name locks when two sources agree: the official notice,
+  the community hub, or the game wiki. An override locks it alone. A locked name is not changed by a later
+  notice or wiki reading. Maintenance keeps updating as before. The wiki is read at most every six hours
+  for a block that is complete but not yet confirmed.
 - **A settled copy that no longer resolves is identified.** A mirror edit returning `404` yields
   `🗂 … copy <id> was deleted (Discord 10008) and a settled version is not re-posted`. “Was
   deleted” is report wording for an id that stopped resolving, not proof of who removed it. If no

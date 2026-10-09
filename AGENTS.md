@@ -122,8 +122,7 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 15. **A posted Special Program card keeps its announcement.** The first post that gives an air time
    sets `announcement_locked`, and `announcement_source` / `announcement_ts` record which post. From
    then on `merge()` and `apply_program_media()` never move the card's title link, source buttons, key
-   art, air time or programme and version names. Only an estimated air time may be replaced, and banners
-   and maintenance keep updating. The lock goes to the highest `LOCK_RANK` (X 3 over HoYoLAB / Kuro 2
+   art, air time or programme and version names. Only an estimated air time may be replaced, and maintenance keeps updating. The lock goes to the highest `LOCK_RANK` (X 3 over HoYoLAB / Kuro 2
    over news 1), then the earliest post. A card locked to a lower rank moves **once**, to a higher-rank
    post with the same air time that was published no later than the lock. A giveaway never upgrades.
    Records without the flag are locked by `program_seen` or `media_from`, and get no upgrade. Do not
@@ -133,6 +132,14 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    `tests/test_smoke.py`, listed in `docs/TESTING.md`. Known limit: the first program post seen locks the
    card, so a same-window giveaway seen before the announcement still wins. It is documented in
    `docs/ACCURACY.md`, not fixed.
+16. **A banner name locks once two sources confirm it.** The groups are `official` (a notice), `feed`
+   (the hub names that phase exactly as the card holds it) and `wiki`. Overrides confirm alone. The
+   confirmation is `schedule._confirm()`, the lock is `data["banners_settled"]`, and no later run,
+   notice or wiki reading changes a locked name. `reruns` and the 4★ summary lock only with the wiki
+   and their phase inputs. Maintenance is not part of this and keeps its native behaviour. Two rules
+   guard the traffic and the state: `wiki_recheck_due()` reads a complete but unconfirmed block at
+   most every `WIKI_RECHECK_H` hours, and nothing is stamped on a read unless the block is complete,
+   because a stamp that changes every run would commit the state every run.
 ---
 
 ## 4. Config model you must understand

@@ -211,6 +211,7 @@ PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "news": 45, "x": 40, "la
 LOCK_RANK = {"x": 3, "hoyolab": 2, "kuro": 2, "news": 1}
 ESTIMATED_KEYS = ("program_ts", "preinstall_ts", "maint_start_ts", "maint_end_ts")
 MAINT_HOURS_ESTIMATE = 5          # typical HoYoverse / Kuro maintenance window
+WIKI_RECHECK_H = 6                  # a complete banner block with unconfirmed names is re-read this often
 CARD_FREEZE_D = 45                 # after this many days past maintenance a card is never edited
 PROGRAM_FRESH_H = 36              # how long after the air time a program still counts as news
 
@@ -635,6 +636,8 @@ def derive_preinstall(game: Game, data: dict, prov: dict, now: int,
     derived = int(round(int(start) - hours * 3600))
     if derived <= 0:
         return None
+    if own_estimate and current == derived:
+        return None         # an unchanged prediction rewrites nothing: no new clock, no state churn
     data["preinstall_ts"] = derived
     prov["preinstall_ts"] = [PRIORITY["pattern"], now]
     estimated = set(data.get("estimated") or [])
@@ -890,6 +893,57 @@ def data_release_ts(data: dict) -> int | None:
     return data.get("maint_end_ts") or data.get("maint_start_ts")
 
 
+# --- banner confirmation and lock (2026-10-09) ---------------------------------------------------
+# A banner name is CONFIRMED once two different groups name the same value: the official notice
+# ("official"), the community hub ("feed") or the game wiki ("wiki"). An override confirms alone.
+# A confirmed name is LOCKED: no later run changes it, so the card settles. The wiki-derived fields
+# (reruns, the 4★ summary) lock only once the wiki names them AND the phase lists they come from are
+# already locked. A banner the wiki names differently from the notice stays open, as before.
+# Maintenance is not part of this: official maintenance times already replace estimates natively.
+DERIVED_BANNER_INPUTS = {"reruns": ("phase1", "phase2"), "four_star": ("phase1_4", "phase2_4")}
+
+
+def _names(value) -> tuple[str, ...]:
+    """A comparable form of a list of names: case and surrounding spaces ignored."""
+    return tuple(str(n).strip().lower() for n in (value or []))
+
+
+def banner_settled(data: dict) -> set[str]:
+    """The banner keys that are confirmed and locked on this card."""
+    return set(data.get("banners_settled") or [])
+
+
+def _derived_ok(key: str, value, banners: dict) -> bool:
+    """A wiki-derived field must agree with the phase lists it comes from. The 4★ summary is the
+    list both phases share; re-runs are names featured in a phase, so they are a subset of them."""
+    if key == "four_star":
+        return all(_names(banners.get(k)) == _names(value) for k in DERIVED_BANNER_INPUTS[key])
+    phase_names = set(_names(banners.get("phase1"))) | set(_names(banners.get("phase2")))
+    return bool(phase_names) and set(_names(value)) <= phase_names
+
+
+def _confirm(data: dict, prov: dict, key: str, group: str, current, value, banners: dict) -> None:
+    """`group` names `value` for banner `key`, and the card currently holds `current` for it.
+
+    A matching name is one more witness, and two witnesses from different groups lock the key.
+    Nothing happens when the names differ: the caller decides what to write in that case."""
+    if not value or _names(current) != _names(value):
+        return
+    groups = set(prov.get(f"b_{key}_by") or []) | {group}
+    prov[f"b_{key}_by"] = sorted(groups)
+    settled = banner_settled(data)
+    if key in settled:
+        return
+    inputs = DERIVED_BANNER_INPUTS.get(key)
+    if inputs is not None:
+        locked = (group == "wiki" and _derived_ok(key, value, banners)
+                  and all(k in settled for k in inputs))
+    else:
+        locked = len(groups) >= 2
+    if locked:
+        data["banners_settled"] = sorted(settled | {key})
+
+
 def apply_banner_feed(data: dict, prov: dict, feed: dict | None, now: int) -> None:
     """Fill 5★ banner phases from the community banner feed (hub.json), but ONLY when that
     phase is currently empty (PRIORITY['bannerfeed'] is 5, the lowest in the bot).
@@ -899,6 +953,9 @@ def apply_banner_feed(data: dict, prov: dict, feed: dict | None, now: int) -> No
     something the hub knows as a banner title, the notice was mis-read -- the hub's own featured
     list replaces it even though its priority is the lowest. That is what caught HSR 4.6 phase1
     carrying "An Ocean in a Pearl" (a banner) instead of Pearl (the character).
+
+    A phase the hub names exactly as the card holds it is one more confirmation (see _confirm).
+    A confirmed phase is never changed here.
     """
     if not feed:
         return
@@ -906,16 +963,23 @@ def apply_banner_feed(data: dict, prov: dict, feed: dict | None, now: int) -> No
     titles = {str(t).lower() for t in feed.get("titles") or []}
     changed = False
     for key in ("phase1", "phase2"):
+        if key in banner_settled(data):
+            continue
         have = banners.get(key)
         if have and titles and feed.get(key) and any(str(n).lower() in titles for n in have):
             log.info("banner %s held a banner TITLE, not a character — replaced from the feed", key)
             banners[key] = feed[key]
             prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
+            prov[f"b_{key}_by"] = ["feed"]
             changed = True
+            continue
+        if have and feed.get(key):
+            _confirm(data, prov, key, "feed", have, feed[key], banners)
             continue
         if feed.get(key) and not have and prov.get(f"b_{key}", [0])[0] <= PRIORITY["bannerfeed"]:
             banners[key] = feed[key]
             prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
+            prov[f"b_{key}_by"] = ["feed"]
             changed = True
     if changed:
         data["banners"] = banners
@@ -928,12 +992,39 @@ what makes the line delete itself."""
 
 
 def banner_block_complete(game: Game, data: dict) -> bool:
-    """True when nothing in the banner block is TBA — then the wikis are never even asked."""
+    """True when nothing in the banner block is TBA."""
     if not game.card.show_banners:
         return True
     banners = data.get("banners") or {}
     keys = list(BANNER_KEYS) + (["four_star"] if game.card.four_star_summary else [])
     return all(banners.get(k) for k in keys)
+
+
+def wiki_recheck_due(game: Game, data: dict, now: int) -> bool:
+    """Whether the wiki should be read for this version now.
+
+    An incomplete banner block is read every run, as it always was (it is still filling in). A
+    complete block with an unconfirmed name is read at most every WIKI_RECHECK_H hours: the wiki only
+    has to confirm it once, and a fixed-interval read keeps the traffic bounded. A settled block is
+    never read again."""
+    if banner_block_settled(game, data):
+        return False
+    if banner_block_complete(game, data):
+        return now - int(data.get("banners_checked_ts") or 0) >= WIKI_RECHECK_H * 3600
+    return True
+
+
+def banner_block_settled(game: Game, data: dict) -> bool:
+    """True when the banner block is complete AND every name in it is confirmed and locked. Only
+    then is the wiki never asked. A complete block that still has an unconfirmed name keeps being
+    checked, until the card freezes, so the wiki can confirm it."""
+    if not banner_block_complete(game, data):
+        return False
+    if not game.card.show_banners:
+        return True
+    keys = list(BANNER_KEYS) + (["four_star"] if game.card.four_star_summary else [])
+    settled = banner_settled(data)
+    return all(k in settled for k in keys)
 
 
 def apply_gacha_wiki(game: Game, data: dict, prov: dict, wiki: dict | None, now: int) -> None:
@@ -944,44 +1035,62 @@ def apply_gacha_wiki(game: Game, data: dict, prov: dict, wiki: dict | None, now:
     and below config/overrides.json. A 4★ list the reader could not verify never arrives here —
     gachawiki.build_lineup drops it rather than publish a half-right line-up.
 
+    A name the wiki gives identically to the card is one more confirmation (see _confirm). A
+    confirmed name is never changed here.
+
     `wiki is None` means the wikis were not read (complete block, frozen card, failed request)
     and nothing is touched. A dict means the page WAS read, so an entry this source wrote and
     the wiki no longer supports is withdrawn rather than left on the card for ever.
     """
     if wiki is None:
         return                      # the wikis were not consulted this run -> touch nothing
+    if banner_block_complete(game, data):
+        # Only a complete block is throttled (see wiki_recheck_due). Stamping every read would change
+        # the state file on every run and commit it for nothing.
+        data["banners_checked_ts"] = now
     banners = dict(data.get("banners") or {})
     changed = False
     for key in list(BANNER_KEYS) + ["four_star", "confirmed"]:
+        if key in banner_settled(data):
+            continue
         value = [n for n in (wiki.get(key) or []) if gachawiki.publishable_name(n)]
         owner = prov.get(f"b_{key}", [0])[0]
         have = banners.get(key)
         if have:
+            if _names(have) == _names(value):
+                _confirm(data, prov, key, "wiki", have, value, banners)
+                continue
             # A value is only as good as the read it came from, so the wiki reader is allowed
             # to correct -- and to withdraw -- what the wiki reader itself wrote. Everything
             # official, and every human override, outranks this source and is never touched.
             # Without this a single bad read is permanent: ZZZ 3.3 sat on "Agent" because
             # "already filled" was treated as "already right".
-            if owner != PRIORITY["gachawiki"] or list(have) == value:
+            if owner != PRIORITY["gachawiki"]:
                 continue
             if value:
                 banners[key] = value
                 prov[f"b_{key}"] = [PRIORITY["gachawiki"], now]
+                prov[f"b_{key}_by"] = ["wiki"]
+                _confirm(data, prov, key, "wiki", value, value, banners)   # the read itself is a witness
             else:
                 banners.pop(key, None)          # the wiki no longer says it -> back to TBA
                 prov.pop(f"b_{key}", None)
+                prov.pop(f"b_{key}_by", None)
             changed = True
             continue
         if not value or owner > PRIORITY["gachawiki"]:
             continue
         banners[key] = value
         prov[f"b_{key}"] = [PRIORITY["gachawiki"], now]
+        prov[f"b_{key}_by"] = ["wiki"]
+        _confirm(data, prov, key, "wiki", value, value, banners)           # the read itself is a witness
         changed = True
     # The early-tier line is a stand-in for phase data. Once the phases are known it is noise,
     # so it goes on the same silent edit that brings the real line-up in.
     if banners.get("confirmed") and banners.get("phase1"):
         banners.pop("confirmed")
         prov.pop("b_confirmed", None)
+        prov.pop("b_confirmed_by", None)
         changed = True
     if changed:
         data["banners"] = banners
@@ -1265,16 +1374,21 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                 put(k, f.get(k), src, ts)
         elif e.kind == "banner":
             banners = dict(data.get("banners") or {})
+            settled = banner_settled(data)
             phase = f.get("banner_phase")
             if phase is None and data.get("maint_start_ts"):
                 phase = 1 if ts < int(data["maint_start_ts"]) + 7 * 86400 else 2
             if phase in (1, 2):
                 key5, key4 = f"phase{phase}", f"phase{phase}_4"
-                if f.get("banner_five") and prov.get(f"b_{key5}", [0])[0] < PRIORITY["override"]:
-                    banners[key5] = f["banner_five"]
+                five = f.get("banner_five")
+                if five and key5 not in settled and prov.get(f"b_{key5}", [0])[0] < PRIORITY["override"]:
+                    if _names(banners.get(key5)) != _names(five):
+                        prov[f"b_{key5}_by"] = ["official"]           # a new name from the notice
+                    _confirm(data, prov, key5, "official", banners.get(key5), five, banners)
+                    banners[key5] = five
                     prov[f"b_{key5}"] = [PRIORITY.get(src, 10), ts]
                 four = list(f.get("banner_four") or [])
-                if ((four or f.get("banner_four_unsure"))
+                if ((four or f.get("banner_four_unsure")) and key4 not in settled
                         and prov.get(f"b_{key4}", [0])[0] < PRIORITY["override"]):
                     flag = f"b_{key4}_tba"
                     # Re-reading the SAME post (same source, same timestamp) is not two official
@@ -1293,12 +1407,16 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                     prov[f"b_{key4}"] = [PRIORITY.get(src, 10), ts]
                     if problem:
                         banners[key4] = []                                # TBA
+                        prov.pop(f"b_{key4}_by", None)
                         if prov.get(flag) != problem and notes is not None:
                             notes.append(f"⚠️ {game.short} {version} phase {phase}: 4★ shown as TBA — {problem} "
                                          f"(found: {', '.join(four) or 'nothing usable'}). Confirm via "
                                          "config/overrides.json if you know the names.")
                         prov[flag] = problem
                     else:
+                        if _names(banners.get(key4)) != _names(four):
+                            prov[f"b_{key4}_by"] = ["official"]
+                        _confirm(data, prov, key4, "official", banners.get(key4), four, banners)
                         banners[key4] = four
             data["banners"] = banners
 
@@ -1392,6 +1510,8 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
             if isinstance(v, list):
                 banners[k] = v
                 prov[f"b_{k}"] = [PRIORITY["override"], now]
+                if v:                                  # a human-set name is confirmed and locked
+                    data["banners_settled"] = sorted(banner_settled(data) | {k})
         data["banners"] = banners
 
     # Last, derive only what every external source and human override left empty. This can use a
@@ -1458,23 +1578,27 @@ async def run(ctx) -> None:
 async def gather_wiki_lineup(ctx, game: Game, ver: str, record: dict) -> dict | None:
     """Ask the game's wiki for this version's line-up — only while a blank remains.
 
-    The short-circuit is the whole traffic budget: a version whose banner block is already
-    complete costs zero requests, for ever, no matter how often the monitor runs.
+    The short-circuit is the whole traffic budget: a version whose banner block is complete AND
+    confirmed costs zero requests, for ever, no matter how often the monitor runs. A complete block
+    with an unconfirmed name is still checked until the card freezes, because the wiki may confirm it.
     """
     if not ctx.settings.gacha_wiki or game.key not in gachawiki.WIKIS:
         return None
     data = record.get("data") or {}
-    if banner_block_complete(game, data):
+    if not wiki_recheck_due(game, data, ctx.now):
         return None
     start = data.get("maint_start_ts")
     if start and ctx.now > int(start) + CARD_FREEZE_D * 86400:
         return None            # the card is frozen (never edited again) -> asking is pure waste
     try:
-        return await gachawiki.fetch_lineup(ctx.fetcher, game.key, ver, game.four_star_count,
-                                            game.card.four_star_summary)
+        out = await gachawiki.fetch_lineup(ctx.fetcher, game.key, ver, game.four_star_count,
+                                           game.card.four_star_summary)
     except Exception as e:                                   # noqa: BLE001 — one wiki, never fatal
         log.warning("%s wiki lookup failed for %s: %s", game.key, ver, e)
-        return None
+        out = None
+    if out is None and banner_block_complete(game, data):
+        data["banners_checked_ts"] = ctx.now                 # asked and failed: no retry for WIKI_RECHECK_H
+    return out
 
 
 async def _sync_mirror(ctx, game: Game, ver: str, record: dict, data: dict, now: int,

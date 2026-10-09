@@ -21,7 +21,7 @@ how ZZZ 3.3 kept the slot word `Agent` on the card for a full day in October 202
 | 100 | `config/overrides.json` | anything — the human is always right |
 | 50 / 45 / 40 | HoYoLAB · Kuro · news page · X | the official line-up |
 | 9 | cadence patterns | timestamps only |
-| **6** | **the game wikis (this doc)** | **fill a banner slot that is still TBA — and revise or withdraw its own earlier entries** |
+| **6** | **the game wikis (this doc)** | **fill a banner slot that is still TBA, confirm a name another source gave, and revise or withdraw its own unconfirmed entries** |
 | 5 | `hub.json` banner feed | fill a 5★ phase that is still TBA |
 
 ## The four dialects
@@ -35,10 +35,11 @@ how ZZZ 3.3 kept the slot word `Agent` on the card for a full day in October 202
 
 ANANTA and Honkai: Nexus Anima have no gacha data and are deliberately absent from `WIKIS`.
 
-## Two requests, and only while a blank remains
+## Two requests, and only while a name is open
 
-1. `schedule.banner_block_complete()` runs **before any fetch**. A version whose banner block is
-   already complete costs zero traffic, for ever.
+1. `schedule.wiki_recheck_due()` runs **before any fetch**. An incomplete banner block is read every run,
+   as before. A complete block with an unconfirmed name is read at most every 6 hours (`WIKI_RECHECK_H`).
+   A block whose every name is confirmed is never read again.
    A version whose card is already frozen (its maintenance started more than 45 days ago, so
    the card is never edited again) is skipped for the same reason.
 2. Request 1 — `action=parse&page=Version/<X.Y>&prop=wikitext`: the debut roster and the banner
@@ -104,6 +105,32 @@ card shows the debut roster instead of the slot word.
 - **Category listings are not clean lists** — filter `ns == 0`.
 - **ZZZ's 4★ rate-ups are player-customisable** ("Custom Search", HoYoLAB post 46015688), so the
   ZZZ card renders that line as `4 Star Characters (Default)` — a default, not a guarantee.
+
+## Confirmation and the lock
+
+A banner name (a 5★ phase, its 4★ list, the re-runs and the 4★ summary) is **confirmed** when two different
+groups name the same value:
+
+- `official`: an official notice (HoYoLAB, Kuro, the news page or X);
+- `feed`: the community hub names that phase exactly as the card holds it;
+- `wiki`: this reader names it exactly as the card holds it.
+
+An entry in `config/overrides.json` confirms a name on its own. Two copies of one notice (HoYoLAB and X)
+are one group, not two.
+
+A confirmed name is **locked**: it is recorded in `banners_settled`, and no later notice, hub update or wiki
+reading changes it. A name that is not confirmed keeps updating exactly as it did before. To change a locked
+name, put the right one in `config/overrides.json`.
+
+Three details:
+
+- `reruns` and the 4★ summary come only from the wiki. They lock only when the wiki names them **and** the
+  phase lists they come from are already locked. The 4★ summary must equal both phases' 4★ lists, and a
+  re-run must be a name featured in a phase.
+- The early-tier `※ Confirmed:` line comes only from the wiki. It never locks, and it is removed when phase
+  data arrives, as before.
+- A name only one source has stays open. The wiki reads it every six hours until the freeze, unless another
+  source confirms it.
 
 ## Switching it off
 

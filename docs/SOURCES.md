@@ -261,7 +261,9 @@ release = Phase 1, `startsAt` ~3 weeks later = Phase 2).
 
 **Accuracy & limits:**
 - Sits at `PRIORITY["bannerfeed"] = 5` — the lowest priority in the bot. It only fills an empty
-  phase, and any official notice or override replaces it immediately.
+  phase, and any official notice or override replaces it immediately, until the phase is confirmed. A phase the hub names
+  exactly as the card holds it is one of the two confirmations that lock it (see
+  [BANNER_DATABASE.md](BANNER_DATABASE.md#confirmation-and-the-lock)).
 - 4★ rate-ups and re-run flags are not present in the feed and remain `TBA`.
 - Stale payloads (>14 days) are refused rather than serving outdated lineups.
 - `BANNER_FEED=0` switches the fill-in off completely.
