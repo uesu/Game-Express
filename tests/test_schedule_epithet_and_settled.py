@@ -301,6 +301,175 @@ def test_a_card_with_no_recoverable_announcement_says_so():
     assert gap({"data": {"version": "9.9"}}, "nogame", NOW) == ""   # no maintenance at all
 
 
+# --------------------------------------------------------------------------- E. ZZZ 3.3 X channels (2026-10-09)
+#
+# The fourth banner fault, found the same day on the live ZZZ 3.3 card: the two channel tweets
+# posted right after the Special Program read
+#
+#     V3.3 Limited-Time Channels (Phase I)
+#     S-Rank Agent Phoenix Signal Search "Into the Flames of Life"
+#     S-Rank Agent Velina Signal Search "Graceful Gale"
+#
+# In this dialect the quoted string is the CHANNEL's name and the bare word is the AGENT — the
+# opposite of the Genshin epithet shape ("\"Epithet\" Name"). The bare-name reader did not know
+# that "Signal Search" is prose that names the channel, so it rejected the whole run as too long
+# and the quoted fallback published the channel title as the 5-star: the card showed
+# "Into the Flames of Life, Graceful Gale" (Phase I) and "Answers in the Wind, Outlier of
+# Prodigies" (Phase II), both 4★ lines TBA. The fix is the CHANNEL_MODE cut in bare_names() plus
+# the same cut in the quoted fallback — for every game, not just ZZZ: the vocabulary is each
+# game's own banner-mode phrase (event wish, event warp, signal search, convene, …).
+#
+# The fixtures are the real api.fxtwitter.com responses captured 2026-10-09 (Phase I:
+# 2108524400761061839, Phase II: 2108524541022818638), plus the real HoYoLAB getPostFull bodies of
+# the V3.2 channels notices (46604530 / 46863847) that use the SAME dialect on the news page and
+# must keep reading exactly as before.
+
+import json as _json  # noqa: E402
+
+from gamexpress.config import load_games as _load_games  # noqa: E402
+from gamexpress.sources.hoyolab import _post_text as _post_text  # noqa: E402
+from gamexpress.sources.twitter import item_from_fx_json as _item_from_fx  # noqa: E402
+
+FIX = ROOT / "tests" / "fixtures"
+
+
+def _fx(name: str) -> dict:
+    return _json.loads((FIX / name).read_text(encoding="utf-8"))
+
+
+def _zzz33_tweet(name: str):
+    return _item_from_fx("zzz", _fx(name))
+
+
+def _hoyolab_item(name: str, pid: str):
+    post = _fx(name)["data"]["post"]
+    text, links, imgs = _post_text(post["post"])
+    return Item("hoyolab", "zzz", pid, f"https://www.hoyolab.com/article/{pid}",
+                post["post"]["subject"], text, int(post["post"]["created_at"]), imgs, links)
+
+
+def test_zzz_x_channels_tweets_yield_agents_not_channel_titles():
+    """The two real V3.3 channel tweets: Phoenix + Velina (Phase I), Severian + Norma (Phase II)."""
+    game = _load_games()["zzz"]
+    one = schedule.extract(game, _zzz33_tweet("fx_zzz_3_3_channels_phase1.json"))
+    two = schedule.extract(game, _zzz33_tweet("fx_zzz_3_3_channels_phase2.json"))
+    assert one.kind == "banner" and one.fields["banner_phase"] == 1
+    assert one.fields["banner_five"] == ["Phoenix", "Velina"], one.fields["banner_five"]
+    assert two.kind == "banner" and two.fields["banner_phase"] == 2
+    assert two.fields["banner_five"] == ["Severian", "Norma"], two.fields["banner_five"]
+    # the exact strings the live card was showing must be gone
+    for wrong in ("Into the Flames of Life", "Graceful Gale",
+                  "Answers in the Wind", "Outlier of Prodigies"):
+        assert wrong not in one.fields["banner_five"] + two.fields["banner_five"], wrong
+
+
+def test_zzz_hoyolab_channels_notices_keep_reading_bare_agents():
+    """The same dialect on the HoYoLAB news page (V3.2, posts 46604530 / 46863847): the quoted
+    string is still the channel and the bare word the agent — quoted channel titles must never
+    be published, and the A-rank defaults must survive the new cuts."""
+    one = schedule.extract_banner(_hoyolab_item("hoyolab_zzz_46604530_full.json", "46604530"))
+    assert one["banner_five"] == ["Claret", "Nangong Yu"], one["banner_five"]
+    assert one["banner_four"] == ["Anton", "Nicole"], one["banner_four"]
+    assert one["banner_four_unsure"] is False and one["banner_phase"] == 1
+    two = schedule.extract_banner(_hoyolab_item("hoyolab_zzz_46863847_full.json", "46863847"))
+    assert two["banner_five"] == ["Roxy", "Promeia"], two["banner_five"]
+    assert two["banner_four"] == ["Corin", "Billy"], two["banner_four"]
+    assert two["banner_four_unsure"] is False and two["banner_phase"] == 2
+    for wrong in ("Bloodmoon Rising", "Axiom of Captivation", "Cindernight Respite",
+                  "Cold Rain Wanes in the Night", "Crimson Thirst", "Neon Fantasies"):
+        assert wrong not in one["banner_five"] + one["banner_four"]
+        assert wrong not in two["banner_five"] + two["banner_four"]
+
+
+def test_channel_mode_phrase_never_publishes_a_channel_title():
+    """Every game's mode phrase, in the shape its own posts use. None of these may publish the
+    quoted channel title; the bare agent (or nothing, when the name is not readable) is all
+    that may come out."""
+    zzz = _load_games()["zzz"]
+    cases = [
+        # ZZZ X dialect: bare agent, then the mode phrase, then the quoted channel title
+        ("S-Rank Agent Phoenix Signal Search \"Into the Flames of Life\"",
+         ["Phoenix"]),
+        # the same dialect with the agent quoted — the quote right after the tier phrase is the agent
+        ("the S-Rank Agent \"Phoenix\" Signal Search \"Into the Flames of Life\" will receive a boost",
+         ["Phoenix"]),
+        # a name the bare reader cannot parse: the fallback must refuse the channel title too
+        ("the S-Rank Agent phoenix signal search \"Into the Flames of Life\" will receive a boost",
+         []),
+        # Genshin: the channel title quoted after prose that names the mode
+        ("the event-exclusive 5-star character Escoffier (Cryo) can be obtained from the "
+         "\"Tasteful Excellence\" Event Wish", []),
+        # Star Rail: the HSR 4.6 trap sentence, with the mode phrase spelled out
+        ("the limited 5-star character Pearl (Elation: Ice) can only be obtained from the "
+         "\"An Ocean in a Pearl\" Character Event Warp", []),
+        # WuWa: the convene notice shape — bare names, no quotes at all
+        ("During the event, 5-Star Resonator: Denia, 4-Star Resonators: Yangyang, Baizhi, "
+         "and Sanhua receive boosted drop rates!", ["Denia"]),
+    ]
+    for text, want in cases:
+        got = schedule.extract_banner(Item("x", zzz.key, "1", "u", "V3.3 Limited-Time Channels", text, 1))
+        assert (got.get("banner_five") or []) == want, (text, got.get("banner_five"))
+
+
+def test_zzz_and_wuwa_bare_lists_survive_the_channel_cut():
+    """The channel-mode cut must not eat real bare lists: ZZZ's two default A-rank agents and
+    WuWa's comma list read whole, and 'Topaz & Numby' stays one name."""
+    assert schedule.bare_names(" Anton (Electric - Attack) & Nicole (Ether - Support) have "
+                               "significantly boosted") == ["Anton", "Nicole"]
+    assert schedule.bare_names(" Yangyang, Baizhi, and Sanhua receive boosted") == \
+        ["Yangyang", "Baizhi", "Sanhua"]
+    assert schedule.bare_names(" Topaz & Numby (Destruction: Fire), Bailu will receive") == \
+        ["Topaz & Numby", "Bailu"]
+
+
+def _zzz33_live_record() -> dict:
+    """The record as the 2026-10-09 11:50 UTC run left it (state/state.json, shape verbatim):
+    the two channel tweets had written their quoted CHANNEL TITLES as the 5-star agents."""
+    return {
+        "status": "posted",
+        "message_id": "1556516427786096744",
+        "payload_hash": "a3e77b5ac895951c",
+        "posted_at": 1791172831,
+        "first_seen": 1791172831,
+        "updated_at": 1791546620,
+        "prov": {
+            "b_phase1": [40, 1791546366],
+            "b_phase1_by": ["official"],
+            "b_phase2": [40, 1791546399],
+            "b_phase2_by": ["official"],
+        },
+        "data": {
+            "version": "3.3",
+            "banners": {
+                "phase1": ["Into the Flames of Life", "Graceful Gale"],
+                "phase2": ["Answers in the Wind", "Outlier of Prodigies"],
+            },
+            "banners_settled": ["phase1", "phase2"],
+        },
+    }
+
+
+def test_the_wrong_zzz_33_banners_heal_from_the_same_posts():
+    """The 11:50 UTC run wrote channel titles onto the live card. Re-reading the SAME two tweets
+    (same source, same timestamps — still inside the 72 h lookback) through the fixed parser must
+    rewrite both phases in place, while the settled lock stays exactly where it was."""
+    game = _load_games()["zzz"]
+    rec = _zzz33_live_record()
+    extracts = [e for e in (schedule.extract(game, _zzz33_tweet(f)) for f in
+                            ("fx_zzz_3_3_channels_phase1.json", "fx_zzz_3_3_channels_phase2.json"))
+                if e]
+    assert [e.kind for e in extracts] == ["banner", "banner"]
+    notes: list[str] = []
+    data = schedule.merge(game, "3.3", extracts, rec, {}, {}, 1791550000, notes)
+    banners = data["banners"]
+    assert banners["phase1"] == ["Phoenix", "Velina"], banners
+    assert banners["phase2"] == ["Severian", "Norma"], banners
+    assert data["banners_settled"] == ["phase1", "phase2"]          # the lock never moved
+    assert rec["prov"]["b_phase1"] == [40, 1791546366]              # same post, re-read, not replaced
+    assert rec["prov"]["b_phase2"] == [40, 1791546399]
+    assert not notes                                                # the heal is silent, like any edit
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
 
 if __name__ == "__main__":

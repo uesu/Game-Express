@@ -283,7 +283,9 @@ Webhook routing, most specific first:
    per-game patterns. Recaps, replays, "has ended" and merch are ignored.
 2. **Extract from official text only** — times need an explicit offset (`UTC+8`; `(server time)`
    is never trusted), versions come from `Version 4.6` / `Ver.4.6` / `V4.6`, banners only from
-   quoted names following "5-star character" / "S-Rank Agent" / "5-star Resonator".
+   names following "5-star character" / "S-Rank Agent" / "5-star Resonator" — bare after the tier
+   phrase, or bare after a closing quote in the epithet shape, and never a quoted *channel* title
+   after the game's gacha-mode phrase (`Signal Search`, `Event Wish`, `Convene`, …).
 3. **Merge with provenance** — *overrides > official notice > official tweet > launcher signal >
    countdown estimate > learned pre-install fallback > banner feed*.
 4. **Unknown is `TBA`**, banners always carry `(STC)`, and no estimate can overwrite an official
@@ -443,7 +445,7 @@ python -m gamexpress preview                     # open previews/index.html
 | **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** | every secret, variable, `games.json` field and `overrides.json` key |
 | **[docs/ACCURACY.md](docs/ACCURACY.md)** | how a post becomes a card: detection, extraction, provenance, the code gate |
 | **[docs/SOURCES.md](docs/SOURCES.md)** | every verified endpoint, with why it was chosen or rejected |
-| **[docs/BANNER_DATABASE.md](docs/BANNER_DATABASE.md)** | where banner line-ups come from: the wiki readers, the precedence order, how a TBA fills itself in, and when a name locks |
+| **[docs/BANNER_DATABASE.md](docs/BANNER_DATABASE.md)** | where banner line-ups come from: the wiki readers, the precedence order, how an official notice is read, how a TBA fills itself in, and when a name locks |
 | **[docs/SCHEDULER.md](docs/SCHEDULER.md)** | the cron-job.org trigger, the classic token, how fast it can poll |
 | **[docs/TESTING.md](docs/TESTING.md)** | the manual test bench and the local commands |
 | **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** | symptom → fix |
@@ -460,10 +462,17 @@ Index: **[docs/](docs/)**.
 
 ## 🗒 Changelog
 
-**Latest — [2026-10-09](docs/changelog/CHANGELOG.md#2026-10-09) · *a posted Special Program card
-keeps its announcement, a deleted copy says it was deleted, and a retirement names the message it
-retired***
+**Latest — [2026-10-09](docs/changelog/CHANGELOG.md#2026-10-09) · *the banner reader learns the ZZZ X
+dialect (a quoted channel title is never a character), a posted Special Program card keeps its
+announcement, a deleted copy says it was deleted, and a retirement names the message it retired***
 
+- **The banner reader learns the ZZZ X dialect.** ZZZ posts its channels on X as
+  `S-Rank Agent Phoenix Signal Search "Into the Flames of Life"` — the bare word is the agent, the
+  quoted string the channel. The reader used to publish the channel title as the 5-star agent, so
+  the live 3.3 card showed `Into the Flames of Life, Graceful Gale` and `Answers in the Wind,
+  Outlier of Prodigies`. A bare name now ends where the game's gacha-mode phrase begins
+  (`CHANNEL_MODE`: signal search, event wish, event warp, convene, … — every game, not a ZZZ
+  override), and the live card heals itself on the next run by re-reading the same two tweets.
 - **A posted card keeps its announcement.** Its title link, source buttons, key art and air time are
   locked to the post that opened the card, so a later giveaway or reminder cannot move them. Banners
   settle once confirmed, and maintenance details keep updating. X is the preferred post: a card locked to HoYoLAB while X was

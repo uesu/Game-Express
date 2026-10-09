@@ -113,7 +113,7 @@ afterwards. Nothing live is touched: not the existing card, not its copy in the 
 | **Title link** opens the Special Program announcement, not the maintenance article | same lookup |
 | **Key art** is the program's artwork, not the *Update Details* cover | same lookup |
 | **Maintenance block** shows pre-install / start / end / compensation | official values, unchanged |
-| **Banners** show the real characters per phase (e.g. `Escoffier`, not `Tasteful Excellence`) | the `"Banner Title" Character` reader, if the banner notice is inside the lookback |
+| **Banners** show the real characters per phase (e.g. `Escoffier`, not `Tasteful Excellence`; `Phoenix`, not `Into the Flames of Life`) | the notice reader's dialect rules — the epithet shape and the channel shape (`CHANNEL_MODE`) — if the banner notice is inside the lookback |
 | **Your live card and its copy are untouched; the TEST card is a separate message** | a test renders, it never repairs |
 | Summary line `🛰️ GI 7.1: announcement found — programme airs …` | the repair, reported |
 
@@ -216,8 +216,20 @@ tests: `test_a_community_lock_is_corrected_by_a_later_official_notice`,
 itself. If one of them fails after a change to `merge()`, `apply_banner_feed()` or `apply_gacha_wiki()`, the lock is
 what you broke.
 
-Counts: the CI runner `python tests/test_smoke.py` runs 266 tests (all must pass). `pytest -q tests` runs 284:
-those 266, the 15 in `test_schedule_epithet_and_settled.py` and the 3 in `test_gachawiki_placeholder.py`.
+The notice reader's dialects are pinned in section E of `tests/test_schedule_epithet_and_settled.py`
+(the ZZZ 3.3 X-channel bug of 2026-10-09): `test_zzz_x_channels_tweets_yield_agents_not_channel_titles`
+(the two real tweets, via the trimmed `api.fxtwitter.com` fixtures `fx_zzz_3_3_channels_phase1/2.json`),
+`test_zzz_hoyolab_channels_notices_keep_reading_bare_agents` (the V3.2 HoYoLAB notices,
+fixtures `hoyolab_zzz_46604530/46863847_full.json`, reading exactly as before),
+`test_channel_mode_phrase_never_publishes_a_channel_title` (every game's mode phrase, quoted
+agent, unreadable-name fallback, the Genshin and Star Rail traps, the WuWa list),
+`test_zzz_and_wuwa_bare_lists_survive_the_channel_cut` and
+`test_the_wrong_zzz_33_banners_heal_from_the_same_posts` (the live record with the wrong channel
+titles, healed in place by re-reading the same two posts, lock unmoved). If one of them fails
+after a change to `extract_banner()` or `bare_names()`, the reader is what you broke.
+
+Counts: the CI runner `python tests/test_smoke.py` runs 266 tests (all must pass). `pytest -q tests` runs 289:
+those 266, the 20 in `test_schedule_epithet_and_settled.py` and the 3 in `test_gachawiki_placeholder.py`.
 The title-search tests sit in `tests/test_smoke.py` before `main()`: title matching (`test_banner_title_match_is_exact_on_version_phase_and_prefix`),
 the HSR 4.6 Phase I outside-lookback case, fan-repost rejection, the HoYoLAB search versus `getNewsList` fallback,
 the budget and throttle (`test_banner_search_budget_settled_never_frozen_never_and_two_clocks`), the `gather_banner_search` integration, WuWa's Kuro discovery
