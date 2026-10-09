@@ -132,7 +132,7 @@ never asked. `runner.find_program` now runs X first; everything below it is a ba
 
 | # | Stage | What it reaches | Why it is where it is |
 |---|---|---|---|
-| 1 | **X seed** — `config/program_announcements.json` → `api.fxtwitter.com/status/<id>` | a tweet of ANY age by id (the ZZZ 3.2 announcement from 2026-08-24 — 34 days old — resolved fine on 2026-09-27, full key art) | the card is re-rendered for the whole 6-week version, and `mode=test` starts from an empty state — the committed id is what makes both show the real link and the real `?name=orig` key art |
+| 1 | **X seed** — `config/program_announcements.json` → `nitter.cf/<account>/status/<id>/rss` (then `xitter.cf`), with `api.fxtwitter.com/status/<id>` as the expander for `t.co` links | a tweet of ANY age by id (the ZZZ 3.2 announcement from 2026-08-24 — 34 days old — resolved fine on 2026-09-27, full key art) | the card is re-rendered for the whole 6-week version, and `mode=test` starts from an empty state — the committed id is what makes both show the real link and the real `?name=orig` key art |
 | 2 | **X timeline** — nitter RSS fleet (`nitter.cf` first) | only the last few days (`nitter.cf` on 2026-09-27 stopped at 2026-09-23) | that is exactly when an announcement first appears — it is discovered here once and written back to the seed file by the monitor workflow |
 | 3 | **HoYoLAB** news list | official text + timestamps, paged back past the lookback window | its image list is often a small article cover, not the key art |
 | 4 | **Official news page** | archives every announcement | image can be a page rendition; Kuro's page is a JS build |

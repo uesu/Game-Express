@@ -3733,7 +3733,7 @@ def test_the_timeline_seed_is_the_first_announcement_not_a_later_reminder():
     async def timeline(account):
         return [reminder, ann]                                 # newest first, as in production
 
-    async def tweet(tweet_id):
+    async def tweet(tweet_id, account=None):
         return None                                            # fall back to the timeline entry
 
     client.timeline, client.tweet = timeline, tweet
@@ -3745,6 +3745,116 @@ def test_the_timeline_seed_is_the_first_announcement_not_a_later_reminder():
         tw.save_program_seed = real_save
     assert item is not None and item.id == ann["id"]
     assert saved and saved[0]["id"] == ann["id"]
+
+
+# ---- nitter.cf first for single tweets (2026-10-09) -------------------------------------------
+NIT_ID = "2091737263398862915"                         # ZZZ 3.2 announcement, 2026-08-24 04:00 UTC
+
+
+def _nit_rss(description: str, status_id: str = NIT_ID) -> str:
+    """A per-status feed in nitter's shape: the status link, pubDate, creator and HTML description."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel>'
+        "<title>Thread by @ZZZ_EN</title><item>"
+        "<title>Zenless Zone Zero Version 3.2 announcement</title>"
+        f"<link>https://nitter.cf/ZZZ_EN/status/{status_id}#m</link>"
+        "<dc:creator>@ZZZ_EN</dc:creator>"
+        "<pubDate>Mon, 24 Aug 2026 04:00:00 GMT</pubDate>"
+        f"<guid>https://nitter.cf/ZZZ_EN/status/{status_id}#m</guid>"
+        f"<description>{description}</description>"
+        "</item></channel></rss>"
+    )
+
+
+NIT_PLAIN = (
+    "&lt;p&gt;Zenless Zone Zero Version 3.2 &quot;Their Secret Histories&quot; Special Program Announcement"
+    "&lt;/p&gt;&lt;p&gt;The Version 3.2 Special Program will begin on August 28 at 19:30 (UTC+8)!&lt;/p&gt;"
+    "&lt;p&gt;#zzzSpecialProgram&lt;/p&gt;"
+    '&lt;img src="https://nitter.cf/pic/https%3A%2F%2Fpbs%2Etwimg%2Ecom%2Fmedia%2FHQZWs%2D3WAAEj32y%2Ejpg"/&gt;'
+)
+NIT_TCO = NIT_PLAIN.replace(
+    "#zzzSpecialProgram&lt;/p&gt;",
+    '#zzzSpecialProgram&lt;/p&gt;&lt;p&gt;YouTube&amp;gt;&amp;gt; '
+    '&lt;a href="https://nitter.cf/t.co/x1mTuVPngd"&gt;https://nitter.cf/t.co/x1mTuVPngd&lt;/a&gt;&lt;/p&gt;')
+
+
+class _NitterThenFx:
+    """Fetcher stand-in: nitter.cf serves `nitter_body` (xitter.cf serves nothing), FxTwitter serves
+    `fx`. It records the source of every request in order, which is what these tests check."""
+    def __init__(self, nitter_body=None, fx=None):
+        self.nitter_body, self.fx, self.calls = nitter_body, fx, []
+
+    async def get_text(self, url, source="", **k):
+        self.calls.append(source)
+        return self.nitter_body if "nitter.cf/" in url else None
+
+    async def get_json(self, url, source="", **k):
+        self.calls.append(source)
+        return self.fx if source == "fxtwitter" else None
+
+
+def _fx_body(links=()):
+    return {"tweet": {"id": NIT_ID, "text": "fxtwitter's text", "created_timestamp": 1787544000,
+                      "author": {"screen_name": "ZZZ_EN"}, "url": f"https://x.com/ZZZ_EN/status/{NIT_ID}",
+                      "raw_text": {"facets": [{"type": "url", "replacement": u} for u in links]}}}
+
+
+def test_a_single_tweet_is_read_from_nitter_before_fxtwitter():
+    """With the account known, nitter.cf answers first and FxTwitter is not asked at all."""
+    from gamexpress.sources import twitter as tw
+
+    f = _NitterThenFx(nitter_body=_nit_rss(NIT_PLAIN), fx=_fx_body())
+    c = tw.XClient(f, settings())
+    t = asyncio.run(c.tweet(NIT_ID, "ZZZ_EN"))
+    assert f.calls == ["nitter"]
+    assert c.source_used == {"nitter": 1}
+    assert t["text"].startswith("Zenless Zone Zero Version 3.2") and t["ts"] == 1787544000
+    assert t["author"] == "ZZZ_EN" and t["url"] == f"https://x.com/ZZZ_EN/status/{NIT_ID}"
+    assert t["photos"] == ["https://pbs.twimg.com/media/HQZWs-3WAAEj32y.jpg"]
+
+
+def test_a_t_co_link_nitter_cannot_expand_is_expanded_by_fxtwitter():
+    """nitter's RSS leaves t.co wrapped. The YouTube link the card reads must come from FxTwitter's
+    expanded facets, so the nitter answer alone is not final when such a link is present."""
+    from gamexpress.sources import twitter as tw
+
+    stream = "https://www.youtube.com/@ZZZ_Official/"
+    f = _NitterThenFx(nitter_body=_nit_rss(NIT_TCO), fx=_fx_body([stream]))
+    c = tw.XClient(f, settings())
+    t = asyncio.run(c.tweet(NIT_ID, "ZZZ_EN"))
+    assert f.calls == ["nitter", "fxtwitter"]
+    assert stream in t["links"]
+    assert c.source_used == {"fxtwitter": 1}
+
+
+def test_when_nitter_is_silent_fxtwitter_still_answers():
+    from gamexpress.sources import twitter as tw
+
+    f = _NitterThenFx(nitter_body=None, fx=_fx_body())
+    c = tw.XClient(f, settings())
+    t = asyncio.run(c.tweet(NIT_ID, "ZZZ_EN"))
+    assert f.calls == ["nitter", "nitter", "fxtwitter"]                 # nitter.cf, then xitter.cf
+    assert t["text"] == "fxtwitter's text" and c.source_used == {"fxtwitter": 1}
+
+
+def test_a_nitter_feed_for_another_status_is_never_taken_as_this_tweet():
+    from gamexpress.sources import twitter as tw
+
+    f = _NitterThenFx(nitter_body=_nit_rss(NIT_PLAIN, status_id="2106957553435312559"), fx=_fx_body())
+    c = tw.XClient(f, settings())
+    t = asyncio.run(c.tweet(NIT_ID, "ZZZ_EN"))
+    assert t["text"] == "fxtwitter's text"
+    assert c.source_used == {"fxtwitter": 1}
+
+
+def test_without_an_account_nitter_is_not_asked():
+    from gamexpress.sources import twitter as tw
+
+    f = _NitterThenFx(nitter_body=_nit_rss(NIT_PLAIN), fx=_fx_body())
+    c = tw.XClient(f, settings())
+    asyncio.run(c.tweet(NIT_ID))
+    assert f.calls == ["fxtwitter"]
 
 
 def main() -> int:

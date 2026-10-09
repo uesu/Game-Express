@@ -44,6 +44,13 @@ had opened the card.
 
 Seven regression tests in `tests/test_smoke.py` pin this, and each fails on the code before the change.
 
+**Single tweets are read from nitter.cf first.** A tweet fetched by id used to try FxTwitter first. It now asks
+`nitter.cf` (then `xitter.cf`) for the post's status feed, which reaches back weeks: the ZZZ 3.2 announcement from
+2026-08-24 resolved there on 2026-10-09. FxTwitter is still asked when nitter can't answer, and when the post has a
+`t.co` link, because nitter leaves those unexpanded and the YouTube stream link is read from the expanded URL.
+A nitter photo address `/pic/https%3A%2F%2Fpbs…` now resolves to `pbs.twimg.com` as well as the older `/pic/media%2F…`
+form, so the key art is no longer served through a nitter proxy.
+
 **A deleted copy says it was deleted, and a retirement names the message it retired**
 
 The first live run on the merged code (`#1062`, 2026-10-09 02:26 UTC+8) found the Genshin 7.1 card

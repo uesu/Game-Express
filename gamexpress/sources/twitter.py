@@ -74,6 +74,11 @@ def save_program_seed(game_key: str, version: str, entry: dict) -> bool:
 FX_SOURCES = (("fxtwitter", "https://api.fxtwitter.com/status/{id}"),
               ("fixupx", "https://api.fixupx.com/status/{id}"))
 VXTWITTER_URL = "https://api.vxtwitter.com/Twitter/status/{id}"
+# Single-tweet lookups ask nitter.cf first. xitter.cf is the same backend behind a second domain, so it
+# is only the second try. Both serve a per-status RSS feed (…/<account>/status/<id>/rss) that reaches
+# back weeks, not days: nitter.cf returned the ZZZ 3.2 announcement from 2026-08-24 on 2026-10-09.
+STATUS_MIRRORS = ("https://nitter.cf", "https://xitter.cf")
+TCO_WRAPPED = re.compile(r"/t\.co/", re.I)   # nitter leaves t.co links unexpanded in its RSS
 X_UA = "Game-Express"
 
 
@@ -232,9 +237,44 @@ class XClient:
         self._timelines[account] = sorted(entries.values(), key=lambda x: x["ts"], reverse=True) if working else None
         return self._timelines[account] or []
 
-    async def tweet(self, tweet_id: str) -> dict | None:
+    async def _tweet_from_nitter(self, tweet_id: str, account: str) -> dict | None:
+        """One tweet from a nitter status feed, in the same shape as _from_fx. nitter.cf first."""
+        for inst in STATUS_MIRRORS:
+            body = await self.fetcher.get_text(f"{inst}/{account}/status/{tweet_id}/rss", source="nitter",
+                                               headers={"User-Agent": "Mozilla/5.0"}, retries=0,
+                                               timeout=NITTER_TIMEOUT)
+            if not body:
+                continue
+            feed = await asyncio.to_thread(feedparser.parse, body)
+            for e in feed.entries:
+                m = STATUS_RE.search(e.get("link", ""))
+                if not m or m.group(1) != str(tweet_id):
+                    continue
+                text, links, imgs = html_to_text(e.get("summary") or e.get("description") or "")
+                text = text or e.get("title") or ""
+                if not text:
+                    continue
+                return {"id": str(tweet_id), "text": text,
+                        "ts": timegm(e.published_parsed) if e.get("published_parsed") else 0,
+                        "photos": [nitter_pic_to_twimg(i) for i in imgs], "links": links,
+                        "author": account, "avatar": "",
+                        "url": f"https://x.com/{account}/status/{tweet_id}"}
+        return None
+
+    async def tweet(self, tweet_id: str, account: str | None = None) -> dict | None:
+        """One tweet's text, time, photos and links.
+
+        With the account known, nitter.cf (then xitter.cf) answers first. FxTwitter and vxTwitter are
+        still consulted when nitter cannot answer, and also when the post carries a t.co link: nitter
+        leaves those unexpanded, and the expanded URL (a YouTube stream, say) is what the card reads.
+        """
         if tweet_id in self._tweets:
             return self._tweets[tweet_id]
+        nitter_hit = await self._tweet_from_nitter(str(tweet_id), account) if account else None
+        if nitter_hit and not any(TCO_WRAPPED.search(u) for u in nitter_hit["links"]):
+            self.source_used["nitter"] = self.source_used.get("nitter", 0) + 1
+            self._tweets[tweet_id] = nitter_hit
+            return nitter_hit
         result = None
         for name, url in FX_SOURCES:
             data = await self.fetcher.get_json(url.format(id=tweet_id), source=name,
@@ -254,6 +294,9 @@ class XClient:
                 result = _from_vx(vx, tweet_id)
                 self.source_used["vxtwitter"] = self.source_used.get("vxtwitter", 0) + 1
                 log.info("[x] vxtwitter answered for %s (FxEmbed could not)", tweet_id)
+        if not result and nitter_hit:
+            result = nitter_hit                  # nothing expanded the links, but the text is real
+            self.source_used["nitter"] = self.source_used.get("nitter", 0) + 1
         self._tweets[tweet_id] = result
         if result and result.get("author") and result.get("avatar"):
             self.avatars[result["author"].lower()] = result["avatar"]
@@ -273,7 +316,7 @@ class XClient:
         """
         seed = program_seed(game.key, version)
         if seed and seed.get("id"):
-            t = await self.tweet(str(seed["id"]))
+            t = await self.tweet(str(seed["id"]), seed.get("account") or None)
             if t and t.get("text"):
                 log.info("[x:%s] %s program announcement from the seed file: %s",
                          game.key, version, t.get("url") or seed["id"])
@@ -296,7 +339,7 @@ class XClient:
         if found is None:
             return None
         account, e = found
-        t = await self.tweet(e["id"]) or e
+        t = await self.tweet(e["id"], account) or e
         log.info("[x:%s] %s program announcement found on the timeline: %s",
                  game.key, version or "?", t.get("url") or e["id"])
         item = self._program_item(game, e["id"], account, t)
@@ -318,7 +361,7 @@ class XClient:
         timelines = await asyncio.gather(*(self.timeline(a) for a in game.x_accounts))
         picked = [(account, e) for account, tl in zip(game.x_accounts, timelines) for e in tl
                   if not (e["ts"] and e["ts"] < since_ts) and want(e["text"])]
-        details = await asyncio.gather(*(self.tweet(e["id"]) for _, e in picked))
+        details = await asyncio.gather(*(self.tweet(e["id"], account) for account, e in picked))
         out: list[Item] = []
         for (account, e), t in zip(picked, details):
             text = (t or {}).get("text") or e["text"]

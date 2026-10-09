@@ -36,6 +36,10 @@ def nitter_pic_to_twimg(url: str) -> str:
     path = unquote(m.group(1)).split("?")[0]
     if path.startswith(_MEDIA_PREFIXES):
         return f"https://pbs.twimg.com/{path}"
+    # nitter's RSS and status feeds carry the whole twimg address, not just the media path:
+    # /pic/https%3A%2F%2Fpbs%2Etwimg%2Ecom%2Fmedia%2F<id>.jpg  (seen 2026-10-09 on nitter.cf)
+    if path.startswith("https://pbs.twimg.com/"):
+        return path
     return url
 
 
