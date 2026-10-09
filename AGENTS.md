@@ -116,6 +116,13 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    stores only a 12-char non-reversible webhook fingerprint.
 14. **No LICENSE file is wanted** — this is a personal-use repository (owner's decision,
     2026-10-03). Do not add one "for completeness".
+15. **A posted Special Program card keeps its announcement.** The first post that gives an air time
+   sets `announcement_locked`. From then on `merge()` and `apply_program_media()` never move the
+   card's title link, source buttons, key art, air time or programme and version names. Only an
+   estimated air time may be replaced, and banners and maintenance keep updating. Records without
+   the flag are locked by `program_seen` or `media_from`. Do not restore a per-run rebuild from the
+   lookback window: that is how ZZZ 3.3's giveaway took the card on 2026-10-09. The tests that pin
+   this are the seven at the end of `tests/test_smoke.py` listed in `docs/TESTING.md`.
 
 ---
 

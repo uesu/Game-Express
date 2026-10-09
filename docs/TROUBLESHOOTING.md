@@ -44,6 +44,7 @@ in place — air time, link and key art all come back together.
 | No ping | `PING_ROLE_ID` unset or `none`; the role must be mentionable, or the webhook needs *Mention @everyone, @here and All Roles* |
 | Emojis show as `:name:` | the webhook's channel needs *Use External Emojis* for `@everyone`, or change `EMOJI_*` |
 | Card not edited after an override | the card must have been posted by a webhook with the same URL (the fingerprint is stored) |
+| Title link or key art changed to a different post after posting | a posted Special Program card is locked to the post that opened it ([ACCURACY.md](ACCURACY.md#once-posted-the-card-keeps-its-announcement)). It can only switch if its record has neither `announcement_locked` nor `program_seen`, so check that in `state/state.json`. Pin the right post with `title_url` and `image` in `config/overrides.json`; the next run edits the card back, and the log names the change (`schedule card updated — key art, link`) |
 | No livestream date line | the record never got the announcement, so there is no air time to show (a misleading `TBA` would be worse). If the tweet id is cached, the next run replays it once and date, key art and title link come back together; if not, see the `🩹` line above |
 | `webhooks` test shows ✗ / `not a webhook URL` | the secret holds something else (a channel link, extra spaces). Copy the webhook URL again |
 

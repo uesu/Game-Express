@@ -3553,6 +3553,200 @@ def test_the_documented_nitter_fleet_size_matches_the_code():
     assert f"{live} nitter mirrors" in security
 
 
+# =========================================================================== announcement lock (2026-10-09)
+# ZZZ 3.3, live on 2026-10-09: the card's title link and key art switched to ZZZ_EN's 05:00 UTC
+# "Share to Win Master Tape x10" giveaway, which repeats the air time and so classifies as a Special
+# Program post. The announcement itself (2026-10-05 04:00 UTC) had aged out of the 72 h window.
+# The texts below are the real fxtwitter bodies of both posts.
+ZZZ33_ANN_URL = "https://x.com/ZZZ_EN/status/2106957553435312559"
+ZZZ33_ANN_IMG = "https://pbs.twimg.com/media/HTxU4O3W4AAGolV.jpg?name=orig"
+ZZZ33_HOY_URL = "https://www.hoyolab.com/article/46972907"      # the article the card was built from
+ZZZ33_HOY_IMG = ("https://upload-os-bbs.hoyolab.com/upload/2026/09/30/"
+                 "c32ff7216961efbcd3fc83ef9f256f36_7613960778498299818.jpg")   # its 16:9 cover
+ZZZ33_GIVE_URL = "https://x.com/ZZZ_EN/status/2108422202974499088"
+ZZZ33_GIVE_IMG = "https://pbs.twimg.com/media/HUGjhQZWUAAiOJd.jpg?name=orig"
+ZZZ33_AIRS = 1791545400                      # 2026-10-09 11:30 UTC = 19:30 UTC+8
+ZZZ33_ANN_TEXT = (
+    "Zenless Zone Zero Version 3.3 \"Journey to the Sky\" Special Program Announcement\n\n"
+    "Dear Proxies,\nThe Zenless Zone Zero Version 3.3 \"Journey to the Sky\" Special Program will begin on October 9 at 19:30 (UTC+8)!\n"
+    "How will Phoenix, descending from the sky, rewrite the fate of the Proxies?\n"
+    "Severian, acting on the mayor's orders, has suddenly appeared on Quietude Isle!? How will his presence shake up the ever-shifting situation in Roscaelifer?\n"
+    "The story behind it all will be revealed by Mr. Z and these two new Agents!\n\n"
+    "We will also be dropping an exclusive redemption code during the livestream, so make sure you tune in on time. Don't miss out, Proxies!\n\n"
+    "Follow our official livestream channels:\nYouTube>> https://www.youtube.com/@ZZZ_Official/\nTwitch>> https://www.twitch.tv/zenlesszonezero\n"
+    "TikTok>> https://www.tiktok.com/@zenlesszonezero\n\n#zzzero #zenlesszonezero\n#zzzSpecialProgram")
+ZZZ33_GIVE_TEXT = (
+    "🎁 #zzzSpecialProgram – Share to Win Master Tape ×10\n\n"
+    "Dear Proxies, the Zenless Zone Zero Version 3.3 Special Program will air on October 9 at 19:30 (UTC+8)!\n"
+    "This special program will unveil new game content and updates for the upcoming version. During the show, you'll also have the chance to receive redemption codes and other exciting gifts!\n\n"
+    "Livestream Channels:\nTwitch: https://www.twitch.tv/zenlesszonezero\nYouTube: https://www.youtube.com/@ZZZ_Official\n\n"
+    "▼ Event Rewards\nMaster Tape ×10: 50 Winners\n\n▼ How to Participate\n1. Follow our official account\n"
+    "2. Quote this post along with the hashtags #zzzSpecialProgram #zzzero\n\n▼ Event Duration\nOctober 9 – October 11\n\n"
+    "▼ Event Rules\nhttps://hoyo.link/5ADjFCAL\n\n#zzzero #zzzSpecialProgram")
+
+
+def _zzz33_announcement() -> Item:
+    return Item("x", "zzz", "2106957553435312559", ZZZ33_ANN_URL, "", ZZZ33_ANN_TEXT, 1791172800, [ZZZ33_ANN_IMG])
+
+
+def _zzz33_giveaway() -> Item:
+    return Item("x", "zzz", "2108422202974499088", ZZZ33_GIVE_URL, "", ZZZ33_GIVE_TEXT, 1791522000, [ZZZ33_GIVE_IMG])
+
+
+def _merge_zzz33(record: dict, items: list[Item], now: int, override: dict | None = None) -> dict:
+    """One run's merge for ZZZ 3.3, called the way _handle_version calls it."""
+    extracts = [e for e in (schedule.extract(GAMES["zzz"], it) for it in items) if e]
+    data = schedule.merge(GAMES["zzz"], "3.3", extracts, record, override or {}, {}, now, [])
+    record["data"] = data
+    return data
+
+
+def test_the_announcement_that_opened_a_card_keeps_its_link_and_key_art():
+    """The incident, step by step. Both posts classify as the same programme with the same air
+    time, so the only thing that can keep the card on the announcement is remembering it."""
+    assert schedule.extract(GAMES["zzz"], _zzz33_giveaway()).fields["program_ts"] == ZZZ33_AIRS
+    record: dict = {}
+    first = _merge_zzz33(record, [_zzz33_announcement()], now=1791172900)
+    assert first["title_url"] == ZZZ33_ANN_URL and first["source_url"] == ZZZ33_ANN_URL
+    assert first["images"] == [ZZZ33_ANN_IMG]
+    assert first["program_ts"] == ZZZ33_AIRS
+    assert first["announcement_locked"] is True
+    # four days later the announcement has aged out of the window; only the giveaway is left
+    later = _merge_zzz33(record, [_zzz33_giveaway()], now=1791522100)
+    assert later["title_url"] == ZZZ33_ANN_URL and later["source_url"] == ZZZ33_ANN_URL
+    assert later["images"] == [ZZZ33_ANN_IMG]
+    assert later["source_links"] == [("X Post", ZZZ33_ANN_URL)]
+    assert later["program_ts"] == ZZZ33_AIRS
+    # and when both are in the window, the giveaway (newer) still does not take over
+    both = _merge_zzz33(record, [_zzz33_giveaway(), _zzz33_announcement()], now=1791522200)
+    assert both["title_url"] == ZZZ33_ANN_URL and both["images"] == [ZZZ33_ANN_IMG]
+    assert not any(ZZZ33_GIVE_URL in u for _, u in both["source_links"])
+
+
+def test_after_the_lock_only_banners_and_maintenance_details_move():
+    record: dict = {}
+    _merge_zzz33(record, [_zzz33_announcement()], now=1791172900)
+    notice = Item("hoyolab", "zzz", "notice-3.3", "https://www.hoyolab.com/article/46970001",
+                  "Version 3.3 Update and Maintenance Notice", "maintenance", 1791522000)
+    banners = Item("hoyolab", "zzz", "banner-3.3", "https://www.hoyolab.com/article/46970002",
+                   "Version 3.3 Banners", "banners", 1791522000)
+    extracts = [schedule.Extract(item=notice, kind="maintenance", version="3.3",
+                                 fields={"maint_start_ts": 1792533600, "maint_end_ts": 1792551600,
+                                         "preinstall_ts": 1792382400}),
+                schedule.Extract(item=banners, kind="banner", version="3.3",
+                                 fields={"banner_phase": 1, "banner_five": ["Phoenix Reffaella"]}),
+                schedule.Extract(item=_zzz33_giveaway(), kind="program", version="3.3",
+                                 fields={"program_ts": ZZZ33_AIRS})]
+    data = schedule.merge(GAMES["zzz"], "3.3", extracts, record, {}, {}, 1791522300, [])
+    assert data["maint_start_ts"] == 1792533600 and data["maint_end_ts"] == 1792551600   # maintenance moved
+    assert data["preinstall_ts"] == 1792382400
+    assert data["banners"]["phase1"] == ["Phoenix Reffaella"]                              # banner moved
+    assert data["title_url"] == ZZZ33_ANN_URL and data["images"] == [ZZZ33_ANN_IMG]       # link did not
+
+
+def test_a_later_lookup_cannot_move_a_locked_card_but_may_fill_an_estimate():
+    locked = {"version": "3.3", "title_url": ZZZ33_ANN_URL, "source_url": ZZZ33_ANN_URL,
+              "source_label": "X Post", "source_links": [("X Post", ZZZ33_ANN_URL)],
+              "images": [ZZZ33_ANN_IMG], "program_seen": True, "announcement_locked": True,
+              "program_ts": ZZZ33_AIRS}
+    other = {"url": "https://www.hoyolab.com/article/46970009", "source": "HoYoLAB",
+             "images": ["https://img.example/other-key-art.jpg"], "program_ts": ZZZ33_AIRS + 3600}
+    now = 1791522100
+    data = dict(locked)
+    assert schedule.apply_program_media(data, {}, other, now) == []        # official air time: kept
+    assert data == locked
+    # a countdown estimate of the air time IS replaced -- the link and key art still are not
+    estimate = dict(locked, program_ts=1791500000, estimated=["program_ts"])
+    changed = schedule.apply_program_media(estimate, {}, other, now)
+    assert "program_ts" in changed and estimate["program_ts"] == ZZZ33_AIRS + 3600
+    assert estimate["title_url"] == ZZZ33_ANN_URL and estimate["images"] == [ZZZ33_ANN_IMG]
+    # a card written before the flag existed is locked by what it already shows
+    legacy = {k: v for k, v in locked.items() if k != "announcement_locked"}
+    schedule.apply_program_media(legacy, {}, other, now)
+    assert legacy["title_url"] == ZZZ33_ANN_URL and legacy["images"] == [ZZZ33_ANN_IMG]
+    # and an UNLOCKED card still adopts the lookup, which then locks it
+    fresh: dict = {"version": "3.3"}
+    schedule.apply_program_media(fresh, {}, other, now)
+    assert fresh["title_url"] == other["url"] and fresh["announcement_locked"] is True
+
+
+def test_a_teaser_without_an_air_time_does_not_lock_the_card():
+    """A post that gives no air time cannot be the announcement the card is locked to. It may show
+    until the real one arrives, and the real one (with the air time) then takes the card."""
+    record: dict = {}
+    teaser = Item("x", "zzz", "2100000000000000001", "https://x.com/ZZZ_EN/status/2100000000000000001",
+                  "", "Version 3.3 is coming soon", 1791100000, [])
+    first = schedule.merge(GAMES["zzz"], "3.3", [schedule.Extract(item=teaser, kind="program",
+                                                                  version="3.3", fields={})],
+                           record, {}, {}, 1791100100, [])
+    assert first["announcement_locked"] is False and first["title_url"] == teaser.url
+    record["data"] = first
+    second = _merge_zzz33(record, [_zzz33_announcement()], now=1791172900)
+    assert second["title_url"] == ZZZ33_ANN_URL and second["program_ts"] == ZZZ33_AIRS
+    assert second["announcement_locked"] is True
+
+
+def test_a_title_override_pins_the_link_and_the_source_button_together():
+    record: dict = {}
+    _merge_zzz33(record, [_zzz33_giveaway()], now=1791522100)           # the wrong post, locked
+    fixed = _merge_zzz33(record, [_zzz33_giveaway()], now=1791522200,
+                         override={"title_url": ZZZ33_ANN_URL, "image": ZZZ33_ANN_IMG})
+    assert fixed["title_url"] == ZZZ33_ANN_URL and fixed["source_url"] == ZZZ33_ANN_URL
+    assert fixed["source_links"] == [("X Post", ZZZ33_ANN_URL)]          # no stale second button
+    assert fixed["images"] == [ZZZ33_ANN_IMG]
+
+
+def test_the_shipped_zzz_33_override_repairs_the_card_that_was_switched():
+    """The card as it stood after the 05:00 UTC run: a record from before the flag existed, locked
+    to the giveaway. config/overrides.json must restore the link and key art the card was built
+    from — the HoYoLAB article 46972907, whose created_at is the program_ts the card recorded — and
+    the button must say HoYoLAB, not the giveaway's X Post."""
+    from gamexpress.sources.twitter import program_seed
+    assert program_seed("zzz", "3.3").get("id") == "2106957553435312559"   # the seed agrees
+    broken = {"data": {"version": "3.3", "title_url": ZZZ33_GIVE_URL, "source_url": ZZZ33_GIVE_URL,
+                       "source_label": "X Post", "source_links": [("X Post", ZZZ33_GIVE_URL)],
+                       "images": [ZZZ33_GIVE_IMG], "program_seen": True, "program_ts": ZZZ33_AIRS}}
+    override = load_overrides()["zzz"]["3.3"]
+    fixed = _merge_zzz33(broken, [_zzz33_giveaway()], now=1791522200, override=override)
+    assert fixed["title_url"] == ZZZ33_HOY_URL and fixed["source_url"] == ZZZ33_HOY_URL
+    assert fixed["source_links"] == [("HoYoLAB", ZZZ33_HOY_URL)]           # no stale X Post button
+    assert fixed["source_label"] == "HoYoLAB"
+    assert fixed["images"] == [ZZZ33_HOY_IMG]
+    assert fixed["program_ts"] == ZZZ33_AIRS                                # the air time was never wrong
+
+
+def test_the_timeline_seed_is_the_first_announcement_not_a_later_reminder():
+    """The timeline is newest-first. The seed must be the OLDEST match, or the reminder becomes the
+    announcement that gets cached and then locked."""
+    import asyncio
+
+    from gamexpress.sources import twitter as tw
+
+    saved: list[dict] = []
+    ann = {"id": "2200000000000000001", "ts": 1000, "title": "", "links": [], "images": [],
+           "text": "Zenless Zone Zero Version 3.4 Special Program Announcement\n\nThe Version 3.4 Special Program will begin on October 9 at 19:30 (UTC+8)!"}
+    reminder = {"id": "2200000000000000002", "ts": 2000, "title": "", "links": [], "images": [],
+                "text": "Dear Proxies, the Version 3.4 Special Program will air on October 9 at 19:30 (UTC+8)!"}
+
+    client = tw.XClient(None, settings())
+
+    async def timeline(account):
+        return [reminder, ann]                                 # newest first, as in production
+
+    async def tweet(tweet_id):
+        return None                                            # fall back to the timeline entry
+
+    client.timeline, client.tweet = timeline, tweet
+    real_save = tw.save_program_seed
+    tw.save_program_seed = lambda game_key, version, entry: saved.append(entry) or True
+    try:
+        item = asyncio.run(client.program_tweet(GAMES["zzz"], "3.4"))
+    finally:
+        tw.save_program_seed = real_save
+    assert item is not None and item.id == ann["id"]
+    assert saved and saved[0]["id"] == ann["id"]
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0

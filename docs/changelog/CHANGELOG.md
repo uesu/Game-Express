@@ -15,6 +15,35 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ## 2026-10-09
 
+**A posted Special Program card keeps its announcement: link, key art and air time are locked**
+
+ZZZ 3.3's card was rebuilt at 05:00 UTC on 2026-10-09 from whatever program posts were still in the
+72-hour lookback. The announcement (posted 2026-10-05) had scrolled out, so a same-day giveaway that
+repeated the air time became the only match, and the card's title link and key art switched to it.
+The log said `schedule card updated — key art, link`, and nothing in the code remembered which post
+had opened the card.
+
+- **The announcement is recorded once, then locked.** The first post that gives an air time sets
+  `announcement_locked`. From then on the title link, the source buttons, the key art, the air time
+  and the programme and version names belong to that post. Only an *estimated* air time can still be
+  replaced by an official one. Records written before the flag are locked when they carry
+  `program_seen` or `media_from`, and keep their link.
+- **A teaser with no air time does not lock.** The real announcement can still take the card, and
+  its air time.
+- **The explicit flag wins** over the legacy keys.
+- **Banners and maintenance keep updating.** Pre-install, start and end times, compensation and
+  banner names still update, and an official value replaces the `🕒 estimated from version cadence`
+  line as before.
+- **The ZZZ 3.3 repair is a human override.** The card was built from the HoYoLAB article `46972907`
+  (its air time was recorded from that article, at priority 50), so `config/overrides.json` pins that
+  article and its 16:9 cover. The next run edits the card in place, silently. A `title_url` override
+  now names its button after the host it points to (`HoYoLAB`, not the broken record's `X Post`) and
+  drops the post it replaces.
+- **Open: a reschedule.** A locked card does not follow HoYoverse moving a programme. Pin
+  `program_ts` in `config/overrides.json` by hand until that is decided.
+
+Seven regression tests in `tests/test_smoke.py` pin this, and each fails on the code before the change.
+
 **A deleted copy says it was deleted, and a retirement names the message it retired**
 
 The first live run on the merged code (`#1062`, 2026-10-09 02:26 UTC+8) found the Genshin 7.1 card

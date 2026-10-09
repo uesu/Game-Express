@@ -3,6 +3,7 @@
     "Human-verified corrections — they win over every automatic source and the posted card is EDITED in place (silently, no re-ping) on the next run.",
     "Shape: { \"<game key>\": { \"<version>\": { ...fields } } }. Game keys: genshin, starrail, zzz, wuwa, hna, ananta.",
     "Times: unix seconds OR ISO text, e.g. \"2026-11-04T06:00:00+08:00\". Fields: program_ts, preinstall_ts, maint_start_ts, maint_end_ts, program_name, version_name, title_url, image, compensation.",
+    "title_url also pins the source button to the same post (the announcement). image is the key art. Once a card has its announcement, later posts can no longer move its link or key art, so use these to correct one by hand.",
     "banners: reruns, phase1, phase1_4, phase2, phase2_4, four_star (Wuthering Waves summary line) — lists of names; an empty list shows TBA.",
     "Example (remove the leading underscore from the game key to activate it):"
   ],
@@ -15,6 +16,14 @@
         "reruns": ["Rerun A", "Rerun B"]
       },
       "maint_start_ts": "2026-11-09T06:00:00+08:00"
+    }
+  },
+
+  "zzz": {
+    "3.3": {
+      "_why": "2026-10-09: the card's link and key art had switched to ZZZ_EN's 05:00 UTC 'Share to Win Master Tape x10' giveaway (2108422202974499088), which repeats the air time. Restored to the announcement the card was built from: the HoYoLAB article 46972907 (\"Zenless Zone Zero Version 3.3 Journey to the Sky Special Program Announcement\", created 1791172803 = 2026-10-05 04:00 UTC, the same moment program_ts was recorded from). Its key art is that article's 16:9 cover, which the HoYoLAB source ranks first.",
+      "title_url": "https://www.hoyolab.com/article/46972907",
+      "image": "https://upload-os-bbs.hoyolab.com/upload/2026/09/30/c32ff7216961efbcd3fc83ef9f256f36_7613960778498299818.jpg"
     }
   }
 }

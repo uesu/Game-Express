@@ -131,6 +131,10 @@ If the title link or the picture is wrong:
   older than the lookback window, the monitor looks it up on the **official news page** (then the
   HoYoLAB list) and replaces the link, the key art and the air time — see
   [ACCURACY.md](ACCURACY.md#the-announcements-own-link-and-key-art). `PROGRAM_MEDIA=0` switches that off.
+- Once posted, the link and key art are locked to the announcement that opened the card
+  ([ACCURACY.md](ACCURACY.md#once-posted-the-card-keeps-its-announcement)). A card that already
+  points at the wrong post is corrected by pinning `title_url` and `image` in
+  `config/overrides.json`. The next run edits the card in place.
 - A version this monitor has carded before is repaired from `config/program_announcements.json`:
   the announcement's tweet id is committed with the state, so a test run — which starts from an
   empty state — resolves it by id and the air time, the link and the key art all come back
@@ -192,6 +196,13 @@ ruff check .                               # same ruff.toml the advisory job use
 zizmor .github/workflows/                  # same config the advisory job uses (.github/zizmor.yml)
 DRY_RUN=1 TEST_MODE=1 BOOTSTRAP_POST=1 STATE_PATH=/tmp/s.json python -m gamexpress run
 ```
+
+The announcement lock is pinned by seven regression tests at the end of `tests/test_smoke.py`, from
+`test_the_announcement_that_opened_a_card_keeps_its_link_and_key_art` to
+`test_the_timeline_seed_is_the_first_announcement_not_a_later_reminder`. The last of them,
+`test_the_shipped_zzz_33_override_repairs_the_card_that_was_switched`, loads `config/overrides.json`
+itself. If one of them fails after a change to `merge()` or `apply_program_media()`, the lock is
+what you broke.
 
 `TEST_MODE=1` labels the cards 🧪 TEST and skips the state file; `DRY_RUN=1` builds and logs them
 without posting. Locally the two are the equivalent of the workflow's test modes.

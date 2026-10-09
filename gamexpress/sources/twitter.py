@@ -280,22 +280,31 @@ class XClient:
                 return self._program_item(game, str(seed["id"]), seed.get("account") or "", t)
             log.info("[x:%s] seed tweet %s did not resolve — falling back to the timeline",
                      game.key, seed.get("id"))
+        # The ANNOUNCEMENT is the OLDEST matching post, not the newest. The timeline is newest-first,
+        # and a giveaway or a same-day reminder that repeats the air time matches the same test:
+        # taking the first match seeded ZZZ 3.3's 2026-10-09 "Share to Win" post as its
+        # announcement, and that seed is what the card then locked onto.
+        found: tuple[str, dict] | None = None
         for account in game.x_accounts:
             for e in await self.timeline(account):
                 if not schedule.is_program_announcement(game, e["text"]):
                     continue
                 if version and version not in e["text"]:
                     continue                      # an announcement for some other version
-                t = await self.tweet(e["id"]) or e
-                log.info("[x:%s] %s program announcement found on the timeline: %s",
-                         game.key, version or "?", t.get("url") or e["id"])
-                item = self._program_item(game, e["id"], account, t)
-                save_program_seed(game.key, version or "?", {
-                    "id": e["id"], "account": account, "url": item.url,
-                    "posted_ts": item.published_ts, "image": (item.images or [""])[0],
-                })
-                return item
-        return None
+                if found is None or e["ts"] < found[1]["ts"]:
+                    found = (account, e)
+        if found is None:
+            return None
+        account, e = found
+        t = await self.tweet(e["id"]) or e
+        log.info("[x:%s] %s program announcement found on the timeline: %s",
+                 game.key, version or "?", t.get("url") or e["id"])
+        item = self._program_item(game, e["id"], account, t)
+        save_program_seed(game.key, version or "?", {
+            "id": e["id"], "account": account, "url": item.url,
+            "posted_ts": item.published_ts, "image": (item.images or [""])[0],
+        })
+        return item
 
     def _program_item(self, game: Game, tid: str, account: str, t: dict) -> Item:
         return Item(source="x", game=game.key, id=tid,

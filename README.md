@@ -110,6 +110,9 @@ existed stay out of the channel.
   | the announcement's own link + key art | the official news page, then the paged-back HoYoLAB list | `PROGRAM_MEDIA=0` |
 
   Details: **[docs/ACCURACY.md → Filling the gaps](docs/ACCURACY.md#filling-the-gaps-before-the-official-notice)**.
+  Once the card is posted, its link, key art and air time are locked to the announcement that opened
+  it. Only the banners and the maintenance details keep updating
+  ([ACCURACY.md → Once posted](docs/ACCURACY.md#once-posted-the-card-keeps-its-announcement)).
 
 ### 2 · Redemption code card
 
@@ -455,9 +458,14 @@ Index: **[docs/](docs/)**.
 
 ## 🗒 Changelog
 
-**Latest — [2026-10-09](docs/changelog/CHANGELOG.md#2026-10-09) · *a deleted copy says it was
-deleted, and a retirement names the message it retired***
+**Latest — [2026-10-09](docs/changelog/CHANGELOG.md#2026-10-09) · *a posted Special Program card
+keeps its announcement, a deleted copy says it was deleted, and a retirement names the message it
+retired***
 
+- **A posted card keeps its announcement.** Its title link, source buttons, key art and air time are
+  locked to the post that opened the card, so a later giveaway or reminder cannot move them. Banners
+  and maintenance details keep updating. A wrong link on a live card is corrected by pinning
+  `title_url` and `image` in `config/overrides.json`.
 - **A settled copy that no longer resolves is identified.** A mirror edit returning `404` yields
   `🗂 … copy <id> was deleted (Discord 10008) and a settled version is not re-posted`. “Was
   deleted” is report wording for an id that stopped resolving, not proof of who removed it. If no

@@ -138,6 +138,32 @@ Program announcement had scrolled out. Since **1.3.0** the monitor looks the ann
 
 ---
 
+### Once posted, the card keeps its announcement
+
+The lookup above decides the card's link and key art **once**. The first post that gives an air
+time sets `announcement_locked`, and from then on:
+
+| Field | After the lock |
+|---|---|
+| title link, source button(s), key art | fixed to the post that opened the card |
+| air time, programme name, version name, YouTube link | fixed. Only an *estimated* air time can still be replaced by an official one |
+| banners (confirmed names, 4★ names, TBA fields) | keep updating, from official posts and confirmations |
+| maintenance: pre-install, start, end, compensation | keep updating. An official value replaces the `🕒 estimated from version cadence` line and its countdown |
+
+Why: until this rule, every run rebuilt the link and key art from whatever program posts were still
+inside the 72 h lookback. When the real announcement aged out, a same-day giveaway that repeated the
+air time took the card over (ZZZ 3.3, 2026-10-09). Nothing remembered which post had opened it.
+
+- A teaser with no air time does not lock, so the real announcement can still take the card and its
+  air time.
+- Records written before the flag are locked when they carry `program_seen` or `media_from`, and keep
+  their link. An explicit `announcement_locked` value always takes precedence over those keys.
+- The human fix is `title_url` in `config/overrides.json`. It pins the link and the source button
+  together, names the button after its host (`X Post` or `HoYoLAB`), and drops the post it replaces.
+  `image` pins the key art. An override always wins, so a locked card can still be corrected by hand.
+- **Not decided:** HoYoverse moving a programme does not move the air time of a locked card. Until
+  that is decided, pin `program_ts` in `config/overrides.json`.
+
 ## The code gate
 
 A code is posted when **any one** of these is true:

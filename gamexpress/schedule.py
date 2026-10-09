@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from statistics import median
+from urllib.parse import urlparse
 
 from .cards import ESTIMATE_LABELS, mark_test, schedule_payload
 from .config import Game, Ping
@@ -981,6 +982,29 @@ def apply_gacha_wiki(game: Game, data: dict, prov: dict, wiki: dict | None, now:
         data["banners"] = banners
 
 
+def announcement_locked(data: dict | None) -> bool:
+    """True once this card has its Special Program / Special Broadcast announcement.
+
+    From that moment the card's title link, source button, key art and air time belong to THAT
+    post and nothing else. Only the banners and the maintenance details keep updating (a countdown
+    estimate is replaced by the official notice, as before).
+
+    Why: the card used to rebuild its link and key art on every run from every program-looking
+    post in the 72 h lookback window. ZZZ 3.3's announcement (x.com/ZZZ_EN/status/2106957553435312559,
+    posted 2026-10-05) aged out of that window, and a giveaway post that repeated the air time
+    (x.com/ZZZ_EN/status/2108422202974499088, "Share to Win Master Tape x10", 2026-10-09 05:00 UTC)
+    became the only program post left -- so the card's link and key art silently switched to it.
+    Nothing in the code remembered which post had opened the card.
+
+    Records written before the flag existed count as locked too: they already carry program_seen
+    or media_from, which only an announcement can set. Their link is kept as it is.
+    """
+    d = data or {}
+    if "announcement_locked" in d:
+        return bool(d["announcement_locked"])
+    return bool(d.get("program_seen") or d.get("media_from"))
+
+
 def apply_program_media(data: dict, prov: dict, media: dict | None, now: int) -> list[str]:
     """Give the card the ANNOUNCEMENT it should be showing: the program article's own link and
     its key art, instead of whatever the run happened to see.
@@ -995,6 +1019,7 @@ def apply_program_media(data: dict, prov: dict, media: dict | None, now: int) ->
     if not media or not media.get("url"):
         return []
     changed: list[str] = []
+    locked = announcement_locked(data)     # the link and key art are already someone's announcement
     ts = media.get("program_ts")
     # A recovered announcement is OFFICIAL, so an air time that has already passed is kept (the
     # card renders it as "5 days ago") — unlike a countdown estimate, only absurd values go.
@@ -1016,6 +1041,10 @@ def apply_program_media(data: dict, prov: dict, media: dict | None, now: int) ->
         if not est:
             data.pop("estimated", None)
             data.pop("estimate_sources", None)
+    if locked:
+        # The announcement that opened this card is locked: a later lookup may still fill an
+        # air time that was only a countdown estimate, but it never moves the link or the key art.
+        return changed
     label = media.get("source") or "Official News"
     # The title links the ANNOUNCEMENT itself. `media["youtube"] or media["url"]` made the card
     # headline link the YouTube stream instead of the post that announced it -- seen live on
@@ -1034,6 +1063,7 @@ def apply_program_media(data: dict, prov: dict, media: dict | None, now: int) ->
     if images:
         data["images"] = images
         data["media_from"] = label           # the card says where the key art came from
+    data["announcement_locked"] = True       # from here on the link and key art belong to this post
     return changed + ["title_url", "source_url"]
 
 
@@ -1143,6 +1173,16 @@ def needs_media(state, game_key: str, now: int) -> bool:
     return False
 
 
+def _link_label(url: str, fallback: str) -> str:
+    """The button name for a pinned announcement link: the platform the link is on."""
+    host = (urlparse(url).hostname or "").lower()
+    if host == "x.com" or host.endswith((".x.com", "twitter.com")):
+        return "X Post"
+    if host == "hoyolab.com" or host.endswith(".hoyolab.com"):
+        return "HoYoLAB"
+    return fallback
+
+
 def merge(game: Game, version: str, extracts: list[Extract], record: dict, override: dict,
           launcher: dict, now: int, notes: list[str] | None = None,
           estimates: dict | None = None, media: dict | None = None,
@@ -1172,9 +1212,10 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
         src, ts = e.item.source, e.item.published_ts
         f = e.fields
         if e.kind == "program":
+            # Collected only. The announcement is decided ONCE, below, from a single post -- see
+            # announcement_locked(). Merging every program post's fields here is what let a later
+            # post overwrite the card's air time, link and key art.
             program_items.append(e)
-            for k in ("program_ts", "program_name", "version_name", "youtube_video"):
-                put(k, f.get(k), src, ts)
         elif e.kind == "maintenance":
             for k in ("preinstall_ts", "maint_start_ts", "maint_end_ts", "compensation"):
                 put(k, f.get(k), src, ts)
@@ -1217,25 +1258,39 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                         banners[key4] = four
             data["banners"] = banners
 
-    # presentation: title link / image / source from the best program post
+    # presentation: the announcement's link, key art, source and air time. Decided ONCE, from ONE
+    # post, and then locked (see announcement_locked). Before the lock, every run rebuilt the link
+    # and key art from whatever program posts were still inside the lookback window, so when the
+    # real announcement aged out of that window a same-day giveaway post took the card over
+    # (ZZZ 3.3, 2026-10-09). Earliest first: the announcement precedes any reminder about it.
     if program_items:
+        locked = announcement_locked(data)   # read BEFORE program_seen is set below, or it is always True
         data["program_seen"] = True          # this card already shows the real announcement
-        best = sorted(program_items, key=lambda e: (-PRIORITY.get(e.item.source, 0), e.item.published_ts))[0]
-        images = next((e.fields.get("images") for e in program_items if e.fields.get("images")), None)
-        yt = data.get("youtube_video")
-        data["title_url"] = yt or best.item.url
-        data["source_url"] = best.item.url
-        data["source_label"] = best.item.source_label
-        if images:
-            data["images"] = rank(images)
-        elif yt:
-            data["images"] = [youtube_thumb(yt)]
-        links = []
-        for e in program_items:
-            label = e.item.source_label
-            if label not in [lbl for lbl, _ in links]:
-                links.append((label, e.item.url))
-        data["source_links"] = links[:3]
+        if not locked:
+            # Only a post that GIVES an air time can open the lock. A teaser without one shows
+            # for now (as it always did) but stays unlocked, so the real announcement can still
+            # take the card -- and its air time, which the teaser never had.
+            timed = [e for e in program_items if e.fields.get("program_ts")]
+            lock = sorted(timed or program_items, key=lambda e: (-PRIORITY.get(e.item.source, 0),
+                                                                 e.item.published_ts))[0]
+            lf, lsrc, lts = lock.fields, lock.item.source, lock.item.published_ts
+            for k in ("program_ts", "program_name", "version_name", "youtube_video"):
+                put(k, lf.get(k), lsrc, lts)
+            # the link and the key art come from the SAME post -- never one from each
+            data["title_url"] = lock.item.url           # the announcement, never the stream it mentions
+            data["source_url"] = lock.item.url
+            data["source_label"] = lock.item.source_label
+            if lf.get("images"):
+                data["images"] = rank(lf["images"])
+            elif data.get("youtube_video"):
+                data["images"] = [youtube_thumb(data["youtube_video"])]
+            links = [(lock.item.source_label, lock.item.url)]
+            for e in program_items:
+                label = e.item.source_label
+                if label not in [lbl for lbl, _ in links]:
+                    links.append((label, e.item.url))
+            data["source_links"] = links[:3]
+            data["announcement_locked"] = bool(timed)
     else:
         # nobody in the lookback window announced the program: look the article up on the
         # official news page / HoYoLAB news list (link + full-size key art + air time).
@@ -1276,9 +1331,24 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                 data[key] = ts
                 prov[key] = [PRIORITY["override"], now]
                 _unmark_estimated(data, key)
-    for key in ("program_name", "version_name", "title_url", "compensation"):
+    for key in ("program_name", "version_name", "compensation"):
         if override.get(key):
             data[key] = override[key]
+    if override.get("title_url"):
+        # A human-verified link pins the announcement itself: the title AND the source button move
+        # together, and any stale copy of the same source is dropped (it would otherwise survive as
+        # a second, wrong button next to the corrected one). The button is named for the host the
+        # override points at, not for whatever the broken record carried: a HoYoLAB pin under an
+        # "X Post" label is exactly the wrong card this override exists to repair.
+        link = override["title_url"]
+        label = _link_label(link, data.get("source_label") or "Source")
+        replaced = {data.get("title_url"), data.get("source_url")} - {None, ""}   # the post being moved off
+        rest = [(lbl, u) for lbl, u in (data.get("source_links") or [])
+                if lbl != label and u != link and u not in replaced]
+        data["title_url"] = link
+        data["source_url"] = link
+        data["source_label"] = label
+        data["source_links"] = ([(label, link)] + rest)[:3]
     if override.get("image"):
         data["images"] = [override["image"]]
     if isinstance(override.get("banners"), dict):
