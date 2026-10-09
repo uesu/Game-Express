@@ -344,6 +344,12 @@ already uses, with no key and no secret. Set `BANNER_CALENDAR=0` only to switch 
   2026-10-09 giveaway post took over is restored to the 3.3 announcement by the first monitor run after this code
   reaches the live branch: one edit to the card and one to the mirror, then nothing. Until that run, the live card
   still shows the wrong key art.
+- **The same run repairs its banners.** The 11:50 UTC run on 2026-10-09 had written the quoted *channel titles*
+  (`Into the Flames of Life`, …) onto the card as the 5★ agents, because ZZZ's X posts quote the channel and name
+  the agent bare. The fixed reader re-reads the same two tweets inside the 72-hour lookback and rewrites both
+  phases in place; the settled lock never moved. The state file already carries the healed names with
+  `payload_hash` left stale on purpose, so the edit still fires even if X is unreadable that run. Do not "help" by
+  updating `payload_hash` by hand — the card edit is what fixes the live message.
 - The title-search clock (`banners_search_ts`, see [BANNER_DATABASE.md](BANNER_DATABASE.md#finding-the-notice-by-title)) comes
   with the state too. Copying the state therefore keeps the search from re-asking every banner at once after cutover.
 - Copy it **after** pausing the scheduler (§6), so it cannot go stale between copy and cutover.

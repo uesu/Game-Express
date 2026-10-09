@@ -66,6 +66,32 @@ then. It does not wait for an official post.
 **Tentative values.** A hub, calendar or wiki name fills an empty phase and stays changeable until a second source
 agrees (or an official notice names it). An official notice locks alone. Nothing locks earlier than that.
 
+## How an official notice is read (`extract_banner`)
+
+One reader, four games, three sentence shapes. A name is only ever read straight after the
+star-tier phrase ("5-star character" / "S-Rank Agent" / "5-star Resonator" and the 4★ equivalents):
+
+1. **The epithet shape** (Genshin, WuWa): the banner is quoted and the character is the bare word
+   after it — `the event-exclusive 5-star character "Tasteful Excellence" Escoffier (Cryo)`,
+   `the 5-star Resonator "Tidebreaker" Cartethyia (Aero) rate-up Convene`. The bare name after a
+   closing quote is the character; the quote is the banner.
+2. **The bare shape** (Star Rail, Genshin, ZZZ's news page): the characters are bare and the
+   weapons are quoted — `the limited 5-star character Pearl (Elation: Ice) and the limited 5-star
+   Light Cone "Colors for Tomorrow (Elation)"`. A bare name ends at the next star tier, at prose,
+   or at a quoted span.
+3. **The channel shape** (ZZZ's X posts, 2026-10-09): the agent is the bare word, then the
+   gacha-mode phrase, then the quoted CHANNEL title — `S-Rank Agent Phoenix Signal Search "Into
+   the Flames of Life"`. `CHANNEL_MODE` names the mode phrase of every game (`signal search`,
+   `exclusive channel`, `limited-time channels`, `event wish`, `event warp`, `character event`,
+   `featured resonator`, `convene`, … — the vocabulary of `banner_patterns` in `config/games.json`),
+   and the reader cuts there, quote-aware: a quote that *follows* the mode phrase is a channel
+   title, never a character, while a quoted name that merely *contains* a mode word still reads
+   as a name. The quoted fallback refuses a channel title too, so not even an unreadable bare
+   name can publish one.
+
+Weapons, light cones and W-Engines never match, and a 4★ list that contains anything implausible
+(or a wrong count, or two official sources disagreeing) is flagged and shown as TBA.
+
 ## The four dialects
 
 | game | host | pool template | 5★ field | 4★ field |
@@ -128,6 +154,12 @@ card shows the debut roster instead of the slot word.
 
 ## Traps, every one of them a real bug
 
+- **A quoted string after the gacha-mode phrase is the CHANNEL, not the agent.** ZZZ's X channel
+  posts read `S-Rank Agent Phoenix Signal Search "Into the Flames of Life"` — the opposite of the
+  Genshin epithet shape. The first ZZZ 3.3 run (2026-10-09) published the channel titles as the
+  5★ agents (`Into the Flames of Life, Graceful Gale` / `Answers in the Wind, Outlier of
+  Prodigies`); `CHANNEL_MODE` cuts the run at the mode phrase, for every game, and re-reading the
+  same posts heals the card.
 - **A debut roster is not a line-up.** ZZZ 3.0 lists Pyrois with no Exclusive Channel; ZZZ 3.1
   puts Remielle under `* Lasting the whole version:`, which makes phase 1 the *re-run* Aria.
   That third bucket maps to phase 1.
@@ -197,18 +229,27 @@ Details:
 `GACHA_WIKI=0` disables the whole reader: no requests, banner blocks go back to showing whatever
 official sources and the banner feed provide. See [CONFIGURATION.md](CONFIGURATION.md).
 
-## Verified line-ups (2026-10-06)
+## Verified line-ups (2026-10-09)
 
 | game | version | phase 1 | phase 2 |
 |---|---|---|---|
 | genshin | 7.1 | Vesna, Vodyanitsa | Skirk, Escoffier *(re-runs)* |
 | starrail | 4.6 | Pearl, Evanescia | Mortenax Blade |
 | zzz | 3.2 | Claret Flint, Nangong Yu | Roxy Ifrita Pryce, Promeia |
+| zzz | 3.3 | Phoenix, Velina *(A-rank: Seth, Manato)* | Severian, Norma |
 | wuwa | 3.7 | Hsin, Chisa, Iuno | Suoming, Lucilla, Lynae |
 
 Re-checked on 2026-10-09 against the community hub (`hub.json`). The hub's `startsAt` values run about seven hours later than the official start times for Star Rail (4.6 Phase II: the hub's value is 2026-10-21 19:00 UTC+8, the post says 12:00 server time) and for Genshin 7.1 Phase II. The ennead Star Rail calendar carries the same stamps. Genshin and ZZZ calendar stamps match their posts to the minute. The offset only moves the phase split, never a name: Genshin 7.1 and Star Rail 4.6 phase 1 and 2 names match the table, and the hub already lists the Star Rail 4.6 phase 2 banner (Mortenax Blade) with a start date of 2026-10-21.
 
+ZZZ 3.3's 5★ names come from the official X channel tweets of 2026-10-09 11:46 UTC
+(`2108524400761061839`, `2108524541022818638` — Phase I Phoenix, Velina; Phase II Severian, Norma),
+read through the `CHANNEL_MODE` rule above; the calendar adds Phase I's A-rank pair (Seth,
+Manato), and Phase II's A-ranks stay TBA until the calendar or the wiki lists them. The hub does
+not list 3.3 yet. The 3.3 card healed on the next run after the fix: re-reading the same two
+tweets rewrote both phases, and the settled lock never moved.
+
 WuWa 3.7 Phase 1 is pinned to all three names in `config/overrides.json` (2026-10-09). Phase 1 locked on Chisa and Iuno without Hsin, and a locked phase never grows, so the human pin carries the full list. Phase 2 is not pinned: its names come from the sources as usual.
 
-ZZZ 3.3 was the early tier on that date: `Phoenix Reffaella`, `Severian Lowell`, releasing
-2026-10-21. The fixtures behind `tests/fixtures/gachawiki/` are trimmed copies of those pages.
+The fixtures behind `tests/fixtures/gachawiki/` are trimmed copies of the wiki pages; the ZZZ
+3.3 X tweets and the V3.2 HoYoLAB notices are trimmed copies of the real API responses behind
+`tests/test_schedule_epithet_and_settled.py` (section E).

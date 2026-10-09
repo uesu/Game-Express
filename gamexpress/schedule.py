@@ -167,6 +167,33 @@ PROSE_BETWEEN = re.compile(
     r"\b(?:can|could|will|would|shall|may|is|are|was|were|be|been|being|include[sd]?|including|"
     r"obtain(?:s|ed|able)?|only|from|during|that|which|who|such|boosted|returns?|available|"
     r"features?|featured|following|below|above)\b", re.I)
+# The gacha-mode phrase names the CHANNEL (the banner), never the character:
+#     S-Rank Agent Phoenix Signal Search "Into the Flames of Life"
+# Phoenix is the agent; "Into the Flames of Life" is the channel. ZZZ posts its channels on X in
+# exactly this shape (V3.3, 2026-10-09: tweets 2108524400761061839 / 2108524541022818638), and the
+# first 3.3 run read the quoted CHANNEL TITLE as the 5-star agent — the card showed "Into the
+# Flames of Life, Graceful Gale" instead of Phoenix, Velina. Two consequences, both game-wide:
+# a bare name ends where the mode phrase begins, and a quote that follows a mode phrase is a
+# channel title, never a character. The vocabulary is the games' own (config/games.json
+# `banner_patterns`): event wish(es), event warp / character event, signal search / exclusive
+# channel(s) / limited-time channels, featured resonator / resonator / weapon convene.
+CHANNEL_MODE = re.compile(
+    r"\b(?:signal\s+search|exclusive\s+channels?|exclusive\s+rescreening|limited[-\s]time\s+channels?|"
+    r"event\s+wishes?|event\s+warp|character\s+event|featured\s+resonators?|resonator\s+convenes?|"
+    r"weapon\s+convenes?|convenes?)\b", re.I)
+
+
+def _cut_channel_mode(run: str) -> str:
+    """Cut `run` where the gacha-mode phrase begins — but only OUTSIDE quotes. A quoted span that
+    FOLLOWS the mode phrase is the CHANNEL's name ('Agent "Phoenix" Signal Search "Into the
+    Flames of Life"': the first quote holds the agent, the second the channel), while a quoted
+    span that merely CONTAINS a mode word ("Event Wish" fed as a name) is a name, not prose,
+    and must survive the cut."""
+    spans = [(m.start(), m.end()) for m in QUOTED.finditer(run)]
+    for m in CHANNEL_MODE.finditer(run):
+        if not any(m.start() < e and s < m.end() for s, e in spans):
+            return run[: m.start()]
+    return run
 
 
 # Every word of a real character name is capitalised or starts with a digit ("Ben Bigger",
@@ -181,6 +208,15 @@ NAME_CAPPED = re.compile(r"[A-Z0-9]")
 def bare_names(tail: str) -> list[str]:
     """Character names written WITHOUT quotes after a star-tier phrase, in order."""
     run = TIER_STOP.split(tail, maxsplit=1)[0]
+    # A bare name ends where the channel begins: 'S-Rank Agent Phoenix Signal Search "Into the
+    # Flames of Life"' names the agent Phoenix and the channel "Into the Flames of Life" — reading
+    # past the mode phrase would glue the quoted channel title onto the name and reject it whole
+    # (ZZZ 3.3, 2026-10-09). The same cut at the first opening quote keeps a quoted span out of a
+    # bare name ("Agent Phoenix "Into the Flames of Life" will ...").
+    run = _cut_channel_mode(run)
+    q = OPEN_QUOTE.search(run)
+    if q:
+        run = run[: q.start()]
     # ZZZ writes two default agents as "Anton (Electric - Attack) & Nicole (Ether - Support)". A
     # ')' before the '&' means two annotated names, so it is split. "Topaz & Numby" has no ')'
     # and stays one name.
@@ -449,6 +485,10 @@ def extract_banner(item: Item) -> dict:
             # weapons; other official posts quote the characters too. The first character after
             # the star-tier phrase decides, so a quoted name is never read as a bare one.
             run = TIER_STOP.split(tail, maxsplit=1)[0]
+            # A quote that follows the gacha-mode phrase is the CHANNEL's name, not a
+            # character's (see CHANNEL_MODE) — the run ends where the mode phrase begins, so a
+            # quoted agent followed by its channel reads as the agent alone.
+            run = _cut_channel_mode(run)
             quoted = [_clean_name(q) for q in QUOTED.findall(run)]
             # `"Epithet" Name` beats every other reading: the bare name after a closing quote is
             # the character, and the quote is the banner it is featured on. Strictly additive --
@@ -465,9 +505,12 @@ def extract_banner(item: Item) -> dict:
                 if not names and quoted:
                     # Fallback for notices that quote their characters. Only when a NAME could
                     # sit between the tier phrase and the quote -- prose there means the quote is
-                    # a banner title from another clause (see PROSE_BETWEEN).
+                    # a banner title from another clause (see PROSE_BETWEEN), and so does a
+                    # gacha-mode phrase: 'Agent Phoenix Signal Search "Into the Flames of Life"'
+                    # quotes the CHANNEL, the agent is the bare word before it (see CHANNEL_MODE).
                     q = OPEN_QUOTE.search(tail)
-                    names = [] if PROSE_BETWEEN.search(tail[: q.start()]) else quoted
+                    between = tail[: q.start()] if q else ""
+                    names = [] if (PROSE_BETWEEN.search(between) or CHANNEL_MODE.search(between)) else quoted
             for n in names:
                 if not n:
                     continue

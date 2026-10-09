@@ -34,7 +34,11 @@ Related: [SOURCES.md](SOURCES.md) (what each upstream serves) ·
      "5-star Resonator" (and the 4★ equivalents) in official banner notices. Genshin titles the
      banner and *then* names the character (the 5-star character `"Tasteful Excellence"
      Escoffier`), so the bare name after a closing quote is the character and the quote is the
-     banner it is featured on. Weapons and banner titles never match.
+     banner it is featured on. ZZZ's X posts use the opposite shape — the agent is the bare word
+     and the quoted string is the channel (`S-Rank Agent Phoenix Signal Search "Into the Flames
+     of Life"`), so a bare name ends where the game's gacha-mode phrase begins (`CHANNEL_MODE`:
+     signal search, event wish, event warp, convene, …) and a quote after that phrase is a
+     channel title, never a character. Weapons and banner titles never match.
    - **4★ characters are TBA unless certain.** The names are shown only when the official
      notice lists exactly the expected number of rate-up 4★ (GI 3 · HSR 3 · ZZZ 2 · WW 3), every
      name looks like a real name, and no official source disagrees. Otherwise the card shows
@@ -191,8 +195,19 @@ air time took the card over (ZZZ 3.3, 2026-10-09). Nothing remembered which post
 
 ## Banner names: the reader fixes and the title search (2026-10-09)
 
-Checked against the real posts (fixtures in `tests/test_smoke.py`):
+Checked against the real posts (fixtures in `tests/test_smoke.py` and
+`tests/test_schedule_epithet_and_settled.py`):
 
+- **ZZZ 3.3 Phase I and II, from the X channel tweets** (`2108524400761061839` /
+  `2108524541022818638`, 2026-10-09 11:46 UTC): 5★ Phoenix, Velina and Severian, Norma. ZZZ's X
+  dialect quotes the CHANNEL and names the agent bare (`S-Rank Agent Phoenix Signal Search "Into
+  the Flames of Life"`), the opposite of the Genshin epithet shape — the first run read the
+  channel titles as the agents, and the card showed `Into the Flames of Life, Graceful Gale` /
+  `Answers in the Wind, Outlier of Prodigies`. Fixed by `CHANNEL_MODE`: a bare name ends where
+  the gacha-mode phrase begins, and a quote after it is a channel title, never a character. The
+  fix is game-wide (the vocabulary is each game's own `banner_patterns`), the V3.2 notices read
+  exactly as before, and the live card heals itself by re-reading the same two tweets. 4★: Seth,
+  Manato (Phase I) from the official calendar; Phase II's A-ranks stay TBA for now.
 - **WuWa 3.6 Phase I** (Kuro `5318`): 5★ Denia; 4★ Yangyang, Baizhi, Sanhua. The reader had dropped Sanhua,
   whose line says *receive boosted* — fixed (the stop-words now include `receives?`, `significantly`,
   `have/has (significantly) boosted`).

@@ -19,7 +19,7 @@ Game-Express is and how to set it up; come here for the detail.
 |---|---|
 | **[ACCURACY.md](ACCURACY.md)** | how a post becomes a card: detection, extraction, provenance, the code gate |
 | **[SOURCES.md](SOURCES.md)** | every verified endpoint, with why it was chosen or rejected |
-| **[BANNER_DATABASE.md](BANNER_DATABASE.md)** | where banner line-ups come from: the wiki readers, the precedence order, and how a TBA fills itself in |
+| **[BANNER_DATABASE.md](BANNER_DATABASE.md)** | where banner line-ups come from: the wiki readers, the precedence order, how an official notice is read, and how a TBA fills itself in |
 | **[TIMESTAMP-PATTERNS.md](TIMESTAMP-PATTERNS.md)** | the release-rhythm study the speculation and the estimates are calibrated on |
 | **[SECURITY.md](SECURITY.md)** | threat model: untrusted sources, secret handling, workflow permissions |
 

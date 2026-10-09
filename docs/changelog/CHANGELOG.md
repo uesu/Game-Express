@@ -15,6 +15,45 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ## 2026-10-09
 
+**The banner reader learns the ZZZ X dialect: a quoted channel title is never a character**
+
+ZZZ posts its channels on X in a dialect the reader had never seen: the bare word is the agent
+and the quoted string is the channel — `S-Rank Agent Phoenix Signal Search "Into the Flames of
+Life"`. The bare-name reader did not know that `Signal Search` is prose naming the channel, so
+it rejected the whole run as too long and the quoted fallback published the channel title as the
+5-star agent. From the 11:50 UTC run the live ZZZ 3.3 card showed `Into the Flames of Life,
+Graceful Gale` (Phase I) and `Answers in the Wind, Outlier of Prodigies` (Phase II), both 4★
+lines TBA.
+
+- **A bare name ends where the gacha-mode phrase begins.** `schedule.CHANNEL_MODE` names the mode
+  phrase of every game — `signal search`, `exclusive channel`, `limited-time channels`, `event
+  wish`, `event warp`, `character event`, `featured resonator`, `convene`, … — the vocabulary of
+  `config/games.json` `banner_patterns`. `bare_names()` and `extract_banner()` cut the run there,
+  quote-aware (`_cut_channel_mode()`): a quoted span that *follows* the mode phrase is the
+  channel's name, while a quoted name that merely *contains* a mode word (`"Event Wish"` fed as
+  a name) still reads as a name.
+- **The quoted fallback refuses a channel title too.** A quote that follows a mode phrase is
+  never published as a character, even when the bare name cannot be read at all.
+- **The fix is game-wide, not a ZZZ override.** The two real V3.3 tweets (fixtures
+  `fx_zzz_3_3_channels_phase1.json` / `fx_zzz_3_3_channels_phase2.json`, captured from
+  `api.fxtwitter.com` on 2026-10-09) now read Phoenix, Velina and Severian, Norma. The V3.2
+  HoYoLAB notices (fixtures `hoyolab_zzz_46604530_full.json` / `hoyolab_zzz_46863847_full.json`)
+  read exactly as before, and the Genshin, Star Rail and WuWa dialects are pinned unchanged by
+  the existing regression tests.
+- **The live card heals itself.** Re-reading the same two posts (same source, same timestamps,
+  still inside the 72-hour lookback) rewrites both phases through the same-post path in
+  `merge()`; the settled lock never moved. `state/state.json` now carries the healed names with
+  `payload_hash` deliberately left stale, so the next run still edits the card in place.
+- **The calendar fills the 4★ line.** `api.ennead.cc/mihoyo/zenless/calendar` now lists the 3.3
+  Phase I banner (Phoenix, Velina; Seth, Manato at A-rank), so `4 Star Characters (Default)`
+  fills from it once due. Phase II's A-ranks stay TBA until the calendar or the wiki lists them.
+- Tests: 266 in the CI runner, 289 under `pytest` — the five new ones in section E of
+  `tests/test_schedule_epithet_and_settled.py`.
+
+---
+
+## 2026-10-09
+
 **Banner names lock on any two reputable sources, the official calendar is a source, and 4★ / A-rank lists follow the same rule**
 
 - **Any two sources agree and the name locks**, for every game and for 4★ and A-rank lists as well as 5★. The

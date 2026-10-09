@@ -280,6 +280,13 @@ release = Phase 1, `startsAt` ~3 weeks later = Phase 2).
   against `getPostFull` on 2026-09-27). Read as characters, those two titles made the cross-check
   fire on **every** run, so phase 1 was carried by the feed at priority 5 — in the feed's order —
   instead of by the official notice at 50 in the notice's own order.
+- The same reader also knows the ZZZ X dialect, where the quoted string is the channel and the
+  bare word the agent (`S-Rank Agent Phoenix Signal Search "Into the Flames of Life"`): a bare
+  name ends where the game's gacha-mode phrase begins (`CHANNEL_MODE`), so a quoted channel
+  title is never published as a character (2026-10-09; see
+  [BANNER_DATABASE.md → How an official notice is read](BANNER_DATABASE.md#how-an-official-notice-is-read-extract_banner)).
+  The hub did not know the 3.3 channel titles yet, so its cross-check could not catch the first
+  wrong reading — the parser fix is the repair, and the card healed by re-reading the same posts.
 
 ### Banner sources evaluated
 
@@ -322,7 +329,12 @@ reads these, in order:
 
 Facts the searches confirmed: Genshin 7.1 Phase I (`46771531`) and Phase II (`47010361`), Star Rail 4.6 Phase I
 (`46851682`), ZZZ 3.2 Phase I (`46604530`) and Phase II (`46863847`). **No** Star Rail 4.6 Phase II official post and
-**no** ZZZ 3.3 official post existed on 2026-10-09; both stay hub-sourced and unlocked.
+**no** ZZZ 3.3 HoYoLAB post existed on 2026-10-09; Star Rail 4.6 Phase II stays hub/calendar-sourced and unlocked.
+ZZZ 3.3's names come from the official X channel tweets instead — `ZZZ_EN` posted
+`V3.3 Limited-Time Channels (Phase I)` (`2108524400761061839`) and `(Phase II)` (`2108524541022818638`) at
+11:46 UTC on 2026-10-09, read through the nitter timeline and verified against `api.fxtwitter.com` and
+`api.vxtwitter.com` the same day. The bot read the quoted channel titles as the agents until the
+`CHANNEL_MODE` fix later that day; the tweets now yield Phoenix, Velina and Severian, Norma.
 
 The sandbox cannot reach `bbs-api-os.hoyolab.com` with `curl` (TLS reset); the endpoint was checked through the
 page fetcher, and so were the ennead calendars. The production reachability of the search endpoint is therefore verified only by the first live run
@@ -339,7 +351,8 @@ page fetcher, and so were the ennead calendars. The production reachability of t
   - Genshin 7.1 Phase I: both banners (`Character Event Wish` Vesna, `Character Event Wish 2` Vodyanitsa; Diona, Faruzan, Chongyun at 4★) match the post. End 2026-10-13 17:59 UTC+8, matching the post.
   - ZZZ 3.2 Phase II (Roxy, Promeia; Corin, Billy): start 2026-09-30 12:00 and end 2026-10-20 14:59 UTC+8, matching the post.
   - Star Rail 4.6: Pearl and Evanescia, and the Qingque/Xueyi/Misha 4★ lists match the posts. **Mortenax Blade (4.6 Phase II) is already listed** with start 1792580400 (2026-10-21 19:00 UTC+8, the same stamp as the hub). Star Rail stamps run about 7 hours later than the posts' "server time".
-  - Not yet listed: Genshin 7.1 Phase II and ZZZ 3.3.
+  - ZZZ 3.3 Phase I **is listed** (checked 2026-10-09, after the channel tweets): Phoenix and Velina at S-rank, Seth and Manato at A-rank, starting 1792544400 — the names the X tweets gave, plus the 4★ pair the tweets do not carry. Phase II is not listed yet.
+  - Not yet listed: Genshin 7.1 Phase II.
   - **Status: not integrated.** It is a third-party relay of HoYoverse's game data, not an official post, so it would count as a hub-level source. Whether it may confirm a name is an operator decision (see the note below).
 - **`hakush.in` / `seriaati/hakushin-py`** (Python async wrapper): the wrapper's README says it is mainly for beta game data and that Wuthering Waves is "not planned". Its docs site was not reachable (404 on the GitHub Pages address), and `sr.yatta.moe` and `gi.yatta.moe` `/api/v2/en/banner` return 404. **No banner schedule was found there, so not used.**
 - **Other async wrappers found by search:** `seriaati/genshin.py` (HoYoLAB/Miyoushe API, asyncio + pydantic) and `seriaati/enka-py` (showcase data). Neither is a banner-schedule source. Not used.

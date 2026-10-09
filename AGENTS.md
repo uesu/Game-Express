@@ -133,7 +133,11 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    card, so a same-window giveaway seen before the announcement still wins. It is documented in
    `docs/ACCURACY.md`, not fixed.
 16. **Banners lock on confirmation, and the lock is final against the weaker source.** An official notice
-   (`official`) locks its 5★ or 4★ name alone when it parses cleanly. A hub name (`feed`), an official-calendar name
+   (`official`) locks its 5★ or 4★ name alone when it parses cleanly. The reader is dialect-aware, for every
+   game: a name is read straight after the star-tier phrase, a bare name ends where the game's gacha-mode
+   phrase begins (`schedule.CHANNEL_MODE` — signal search, event wish, event warp, convene, …), and a quote
+   after that phrase is a channel title, never a character (ZZZ 3.3's X posts quote the channel and name the
+   agent bare; 2026-10-09). A hub name (`feed`), an official-calendar name
    (`calendar`, `sources/calendarfeed.py`) and a wiki name (`wiki`) lock once any two of them agree, for 5★ and 4★
    (A-rank) alike and for every game. The calendar is names only, its 4★ lists need the exact rate-up count,
    and `calendar_due()` / `calendar_ts` / `BANNER_CALENDAR=0` govern its requests. An override locks alone. The confirmation is `schedule._confirm()`, the
