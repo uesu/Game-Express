@@ -67,11 +67,22 @@ def title_rx(template: str, version: str) -> re.Pattern:
 
 
 def phase_of(subject: str, template: str, version: str) -> int | None:
-    """1 or 2 when `subject` is the template's title for that version, else None."""
+    """1 or 2 when `subject` is the template's title for that version, else None.
+
+    A template WITHOUT {p} is a Phase I title written with no phase suffix (ZZZ 3.1 Phase I was
+    posted as just \"V3.1 Limited-Time Channels\"). It matches only the bare title, never a
+    \"(Phase II)\" post, because the match is a full match on the canonical title."""
     m = title_rx(template, version).fullmatch(canon(subject))
     if not m:
         return None
+    if "{p}" not in template:
+        return 1
     return _ROMAN.get(m.group("p"))
+
+
+def phases_for(template: str) -> tuple[int, ...]:
+    """The phases a template can identify: both when it has {p}, Phase I alone when it does not."""
+    return (1, 2) if "{p}" in template else (1,)
 
 
 def keyword_for(template: str, version: str, phase: int) -> str:
@@ -93,7 +104,7 @@ async def _search_rows(fetcher: Fetcher, game: Game, template: str, version: str
     """(phase, post, user) for every official search hit. None = the search endpoint failed."""
     rows: list[tuple[int, dict, dict]] = []
     answered = False
-    for phase in (1, 2):
+    for phase in phases_for(template):
         data = await fetcher.get_json(SEARCH_API, source="hoyolab", headers=hoyolab.HEADERS,
                                       params={"keyword": keyword_for(template, version, phase),
                                               "gids": game.hoyolab_gid, "page": 1, "size": 10})
@@ -139,25 +150,27 @@ async def _hoyolab_items(fetcher: Fetcher, game: Game, version: str) -> list[Ite
     out: list[Item] = []
     if not game.hoyolab_gid or game.official_uid is None:
         return out
-    for template in game.banner_titles:
-        rows = await _search_rows(fetcher, game, template, version)
-        if rows is None:
+    rows: list[tuple[int, dict, dict]] = []
+    for template in game.banner_titles:                  # every template feeds ONE newest-per-phase pick
+        found = await _search_rows(fetcher, game, template, version)
+        if found is None:
             log.warning("[%s] HoYoLAB search unavailable — paging the official news list", game.key)
-            rows = await _newslist_rows(fetcher, game, template, version)
-        best = _pick(rows)
-        for _phase, (created, post, _user) in sorted(best.items()):
-            pid = str(post.get("post_id") or "")
-            if not pid:
-                continue
-            subject = _TAGS.sub("", unescape(post.get("subject") or "")).strip()
-            full = await hoyolab._full_post(fetcher, game.hoyolab_gid, pid)
-            if full:
-                text, links, _imgs = hoyolab._post_text(full.get("post") or {})
-                images = hoyolab._images(full)
-            else:                                   # list preview only: the names may be cut short
-                text, links, images = (post.get("content") or post.get("desc") or ""), [], []
-            out.append(Item(source="hoyolab", game=game.key, id=pid, url=hoyolab.ARTICLE_URL.format(pid),
-                            title=subject, text=text, published_ts=created, images=images, links=links))
+            found = await _newslist_rows(fetcher, game, template, version)
+        rows.extend(found)
+    best = _pick(rows)
+    for _phase, (created, post, _user) in sorted(best.items()):
+        pid = str(post.get("post_id") or "")
+        if not pid:
+            continue
+        subject = _TAGS.sub("", unescape(post.get("subject") or "")).strip()
+        full = await hoyolab._full_post(fetcher, game.hoyolab_gid, pid)
+        if full:
+            text, links, _imgs = hoyolab._post_text(full.get("post") or {})
+            images = hoyolab._images(full)
+        else:                                   # list preview only: the names may be cut short
+            text, links, images = (post.get("content") or post.get("desc") or ""), [], []
+        out.append(Item(source="hoyolab", game=game.key, id=pid, url=hoyolab.ARTICLE_URL.format(pid),
+                        title=subject, text=text, published_ts=created, images=images, links=links))
     return out
 
 

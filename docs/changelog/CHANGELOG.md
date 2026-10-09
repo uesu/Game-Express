@@ -139,7 +139,9 @@ feed. The title search now asks the official sources for the card's own version 
   Nicole are read; the default-agent pair `Name (…) & Name (…)` splits into two names.
 - **Verified** against the real posts: WuWa 3.6 Phase I, ZZZ 3.2 Phase I and II, Genshin 7.1 Phase I and II, and HSR 4.6
   Phase I by title. HSR 4.6 Phase II (Mortenax Blade) stays hub-sourced and unlocked; no official post yet.
-- **Tests**: 249 in the CI runner (`tests/test_smoke.py`), 267 under `pytest`.
+- **ZZZ Phase I with no suffix**: ZZZ 3.1 Phase I was posted as `V3.1 Limited-Time Channels`. The template
+  `V{v} Limited-Time Channels` (Phase I only) now finds it, and every template feeds one newest-per-phase pick.
+- **Tests**: 251 in the CI runner (`tests/test_smoke.py`), 269 under `pytest`.
 
 ## 2026-10-08
 

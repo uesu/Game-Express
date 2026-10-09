@@ -4476,6 +4476,46 @@ ZZZ_32_PHASE1_TEXT = (
 )
 
 
+def test_zzz_bare_phase_one_title_matches_once_and_never_phase_two():
+    """ZZZ 3.1 Phase I (HoYoLAB 46015688) is titled 'V3.1 Limited-Time Channels' with no phase suffix;
+    Phase II (46329735) carries '(Phase II)'. The bare template identifies Phase I only."""
+    zzz = GAMES["zzz"]
+    bare = "V{v} Limited-Time Channels"
+    assert banner_search.phases_for(bare) == (1,)
+    assert banner_search.phases_for("V{v} Limited-Time Channels (Phase {p})") == (1, 2)
+    assert banner_search.phase_of("V3.1 Limited-Time Channels", bare, "3.1") == 1
+    assert banner_search.phase_of("V3.1 Limited-Time Channels (Phase II)", bare, "3.1") is None
+    assert banner_search.phase_of("V3.10 Limited-Time Channels", bare, "3.1") is None
+    assert banner_search.phase_of("V3.1 Limited-Time Channels Preview", bare, "3.1") is None
+    assert "V{v} Limited-Time Channels" in zzz.banner_titles              # shipped with the config
+
+
+def test_zzz_bare_phase_one_is_found_and_only_phase_one_is_asked_for():
+    game = GAMES["zzz"]
+    bare_row = _hoyolab_row("46015688", "V3.1 Limited-Time Channels", "219270333", 1785140000)
+    phase2_row = _hoyolab_row("46329735", "V3.1 Limited-Time Channels (Phase II)", "219270333", 1787000000)
+    fan_row = _hoyolab_row("900003", "V3.1 Limited-Time Channels", "555555", 1789000000)  # a repost, not official
+
+    def search(url, params):
+        kw = params.get("keyword", "")
+        rows = [bare_row, phase2_row, fan_row] if kw == "V3.1 Limited-Time Channels" else []
+        if kw == "V3.1 Limited-Time Channels (Phase II)":
+            rows = [phase2_row]
+        if kw == "V3.1 Limited-Time Channels (Phase I)":
+            rows = [bare_row]
+        return {"retcode": 0, "data": {"list": rows}}
+
+    fetch = _RouteFetch(json_routes=[(lambda u, p: u == banner_search.SEARCH_API, search),
+                                     (lambda u, p: "getPostFull" in u, _hoyolab_full("Dear Proxies ..."))])
+    items = asyncio.run(banner_search.find(fetch, game, "3.1"))
+    assert sorted(i.id for i in items) == ["46015688", "46329735"], [i.id for i in items]
+    asked = [p["keyword"] for u, p in fetch.calls if u == banner_search.SEARCH_API]
+    assert "V3.1 Limited-Time Channels" in asked and "V3.1 Limited-Time Channels (Phase II)" in asked
+    assert "V3.1 Limited-Time Channels (Phase I)" in asked                  # the templated Phase I query
+    assert set(asked) == {"V3.1 Limited-Time Channels", "V3.1 Limited-Time Channels (Phase I)",
+                          "V3.1 Limited-Time Channels (Phase II)"}, asked    # 3 queries, no phase-two bare query
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0

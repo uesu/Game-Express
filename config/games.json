@@ -86,7 +86,7 @@
       "program_label": "Special Program",
       "program_patterns": ["special program"],
       "banner_patterns": ["exclusive channel", "signal search", "limited-time channels"],
-      "banner_titles": ["V{v} Limited-Time Channels (Phase {p})"],
+      "banner_titles": ["V{v} Limited-Time Channels (Phase {p})", "V{v} Limited-Time Channels"],
       "cadence": {
         "days": 42, "maint_weekday": "Wed", "maint_time": "06:00", "maint_hours": 5,
         "program_weekday": "Fri", "program_time": "19:30", "program_lead_days": 12,

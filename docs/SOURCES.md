@@ -325,15 +325,23 @@ Facts the searches confirmed: Genshin 7.1 Phase I (`46771531`) and Phase II (`47
 **no** ZZZ 3.3 official post existed on 2026-10-09; both stay hub-sourced and unlocked.
 
 The sandbox cannot reach `bbs-api-os.hoyolab.com` with `curl` (TLS reset); the endpoint was checked through the
-page fetcher. The production reachability of the search endpoint is therefore verified only by the first live run
+page fetcher, and so were the ennead calendars. The production reachability of the search endpoint is therefore verified only by the first live run
 (see the log line below), and the `getNewsList` fallback covers it if the search is refused.
 
-**Evaluated for banners, not integrated (2026-10-09):**
+**Evaluated on 2026-10-09 (requested by the operator's links):**
 
-- `hakush.in` (`hakushin-py`, Python wrapper): game data, not a live banner schedule; Wuthering Waves is not
-  supported by the wrapper; the host is not reachable from the sandbox, so nothing could be verified.
-- `torikushiii/hoyoverse-api` (fan-made): a `calendar` endpoint with banners for Genshin, Star Rail and ZZZ. Useful
-  as a cross-check, but a third-party relay with no stated uptime, and not reachable from the sandbox, so not used.
+- **`torikushiii/hoyoverse-api`** (Rust, AGPL-3.0; public instance `api.ennead.cc/mihoyo`). Its `/mihoyo/{game}/calendar`
+  endpoints return the in-game event calendar with banners: `version`, the characters or weapons, and start and end times.
+  Checked through the page fetcher: `genshin/calendar`, `starrail/calendar` and `zenless/calendar` all answer. The
+  root `/mihoyo` lists only the code endpoints, so the calendar is not in its endpoint list.
+  - Genshin 7.1 Phase I: both banners (`Character Event Wish` Vesna, `Character Event Wish 2` Vodyanitsa; Diona, Faruzan, Chongyun at 4★) match the post. End 2026-10-13 17:59 UTC+8, matching the post.
+  - ZZZ 3.2 Phase II (Roxy, Promeia; Corin, Billy): start 2026-09-30 12:00 and end 2026-10-20 14:59 UTC+8, matching the post.
+  - Star Rail 4.6: Pearl and Evanescia, and the Qingque/Xueyi/Misha 4★ lists match the posts. **Mortenax Blade (4.6 Phase II) is already listed** with start 1792580400 (2026-10-21 19:00 UTC+8, the same stamp as the hub). Star Rail stamps run about 7 hours later than the posts' "server time".
+  - Not yet listed: Genshin 7.1 Phase II and ZZZ 3.3.
+  - **Status: not integrated.** It is a third-party relay of HoYoverse's game data, not an official post, so it would count as a hub-level source. Whether it may confirm a name is an operator decision (see the note below).
+- **`hakush.in` / `seriaati/hakushin-py`** (Python async wrapper): the wrapper's README says it is mainly for beta game data and that Wuthering Waves is "not planned". Its docs site was not reachable (404 on the GitHub Pages address), and `sr.yatta.moe` and `gi.yatta.moe` `/api/v2/en/banner` return 404. **No banner schedule was found there, so not used.**
+- **Other async wrappers found by search:** `seriaati/genshin.py` (HoYoLAB/Miyoushe API, asyncio + pydantic) and `seriaati/enka-py` (showcase data). Neither is a banner-schedule source. Not used.
+- **`api.ennead.cc/mihoyo`** root: codes only (`/codes` for Genshin, Star Rail, ZZZ, Honkai, Themis).
 - `Ertezy/Gacha-hub-info` (= `Kitsudock-data`): already the hub feed (`hub.json`), used since v1.3.0.
 
 ## Evaluated but not integrated (and why)
