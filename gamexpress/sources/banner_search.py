@@ -239,6 +239,11 @@ async def find(fetcher: Fetcher, game: Game, version: str) -> list[Item]:
             items = []
         if items:
             return items
-        log.warning("[%s] Kuro banner menu gave nothing — trying the GitHub mirror", game.key)
-        return await _feed_items(fetcher, game, version)
+        # Not a failure: the Kuro menu simply has no notice for this version yet (it is empty on most
+        # runs for a version still in its first days). Only the mirror also coming up empty is worth a warning.
+        log.info("[%s] Kuro banner menu has no notice for %s yet — trying the GitHub mirror", game.key, version)
+        items = await _feed_items(fetcher, game, version)
+        if not items:
+            log.warning("[%s] no banner notice for %s from the Kuro menu or the GitHub mirror", game.key, version)
+        return items
     return []

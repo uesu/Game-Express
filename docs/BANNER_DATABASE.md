@@ -208,5 +208,7 @@ official sources and the banner feed provide. See [CONFIGURATION.md](CONFIGURATI
 
 Re-checked on 2026-10-09 against the community hub (`hub.json`). The hub's `startsAt` values run about seven hours later than the official start times for Star Rail (4.6 Phase II: the hub's value is 2026-10-21 19:00 UTC+8, the post says 12:00 server time) and for Genshin 7.1 Phase II. The ennead Star Rail calendar carries the same stamps. Genshin and ZZZ calendar stamps match their posts to the minute. The offset only moves the phase split, never a name: Genshin 7.1 and Star Rail 4.6 phase 1 and 2 names match the table, and the hub already lists the Star Rail 4.6 phase 2 banner (Mortenax Blade) with a start date of 2026-10-21.
 
+WuWa 3.7 Phase 1 is pinned to all three names in `config/overrides.json` (2026-10-09). Phase 1 locked on Chisa and Iuno without Hsin, and a locked phase never grows, so the human pin carries the full list. Phase 2 is not pinned: its names come from the sources as usual.
+
 ZZZ 3.3 was the early tier on that date: `Phoenix Reffaella`, `Severian Lowell`, releasing
 2026-10-21. The fixtures behind `tests/fixtures/gachawiki/` are trimmed copies of those pages.

@@ -1443,6 +1443,10 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
     prov = dict(record.get("prov") or {})
     data = dict(prev)
     data["version"] = version
+    # A card that is already locked (by the flag, or by the legacy markers program_seen / media_from)
+    # keeps its lock written down on EVERY run, including runs with no program post in the window.
+    if announcement_locked(prev):
+        data["announcement_locked"] = True
     _sync_official_locks(data, prov)
 
     def put(key, value, source, ts):
@@ -1811,7 +1815,9 @@ async def gather_calendar(ctx, game: Game, records: dict, by_version: dict) -> N
         rec["calendar"] = {"ts": ctx.now, "banners": mine}
         if mine and ver not in by_version:
             by_version[ver] = []                       # the merge must run for this version
-        log.info("[%s] %s calendar: %d banner(s) with a 5★ character", game.key, ver, len(mine))
+        fours = sum(1 for b in mine if b.get("featured4"))
+        log.info("[%s] %s calendar: %d banner(s) with a 5★ character, %d with a 4★ list",
+                 game.key, ver, len(mine), fours)
 
 
 def calendar_due(game: Game, data: dict, now: int) -> bool:

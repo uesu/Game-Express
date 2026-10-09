@@ -4715,6 +4715,69 @@ def test_once_both_phases_lock_with_their_four_star_lists_the_card_stops_being_w
     assert not schedule.banner_phases_done(game, four_open)                           # 4★ of phase 1 still open
 
 
+def test_the_wuwa_37_pin_gives_phase_one_all_three_names_and_locks_it():
+    """Phase 1 was locked on two names (Chisa, Iuno) without Hsin, and a locked phase
+    never grows. The human-verified pin (hub + game8 + your screenshot) carries all three names,
+    locked, and a later feed cannot move them."""
+    game, now, rec = GAMES["wuwa"], 1790762400, {}
+    pin = json.loads((ROOT / "config" / "overrides.json").read_text(encoding="utf-8"))["wuwa"]["3.7"]
+    data = schedule.merge(game, "3.7", [], rec, pin, {}, now)
+    assert data["banners"]["phase1"] == ["Hsin", "Chisa", "Iuno"]
+    assert "phase1" in data["banners_settled"]
+    rec["data"], rec["prov"] = data, rec.get("prov", {})
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase1": ["Someone"], "titles": []}, now + 600,
+                               calendar=None)
+    assert rec["data"]["banners"]["phase1"] == ["Hsin", "Chisa", "Iuno"]
+
+
+def test_mortenax_blade_locks_when_the_calendar_and_the_hub_agree_for_star_rail_4_6():
+    """HSR 4.6 Phase II Mortenax Blade (re-run) is read from the calendar's own shape, split by the
+    release timestamp, and locks once the hub names the same character. Either source alone only fills."""
+    game, now = GAMES["starrail"], 1791522000
+    cal = calendarfeed.parse_banners({"banners": [
+        {"version": "4.6", "start_time": 1790564400, "end_time": 1792580399,
+         "characters": [{"name": "Evanescia", "rarity": 5}]},
+        {"version": "4.6", "start_time": 1792580400, "end_time": 1794319199,
+         "characters": [{"name": "Mortenax Blade", "rarity": 5}]}]})
+    lineup = calendarfeed.lineup(cal, 1790546400, 3)
+    assert lineup["phase2"] == ["Mortenax Blade"] and lineup["phase1"] == ["Evanescia"]
+    rec: dict = {}
+    rec["data"] = schedule.merge(game, "4.6", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase2": ["Mortenax Blade"], "titles": []}, now,
+                               calendar=lineup)
+    assert rec["data"]["banners"]["phase2"] == ["Mortenax Blade"]
+    assert "phase2" in rec["data"]["banners_settled"]
+    assert set(rec["prov"]["b_phase2_by"]) == {"calendar", "feed"}
+    alone: dict = {}
+    alone["data"] = schedule.merge(game, "4.6", [], alone, {}, {}, now)
+    schedule.apply_banner_feed(alone["data"], alone["prov"], {}, now, calendar=lineup)
+    assert alone["data"]["banners"]["phase2"] == ["Mortenax Blade"]
+    assert "phase2" not in alone["data"].get("banners_settled", [])
+
+
+def test_a_card_locked_by_the_legacy_markers_writes_the_lock_down():
+    """A record from before announcement_locked existed is locked by program_seen. Its lock is written
+    down on the next run, so the lock no longer depends on a marker that could be cleared, and the link
+    still stays with the announcement when a giveaway appears."""
+    record: dict = {}
+    _merge_zzz33(record, [_zzz33_announcement()], now=1791172900)
+    data = record["data"]
+    assert data["announcement_locked"] is True
+    data.pop("announcement_locked")                       # the record as it was before the flag existed
+    later = _merge_zzz33(record, [_zzz33_giveaway()], now=1791530000)
+    assert later["title_url"] == ZZZ33_ANN_URL and later["images"] == [ZZZ33_ANN_IMG]
+    assert later["announcement_locked"] is True
+
+
+def test_a_legacy_locked_card_is_written_down_even_on_a_run_with_no_program_post():
+    """The write-down must not depend on a program post being in the lookback window: a run with none
+    takes the other branch, and the legacy lock still has to be stored."""
+    record = {"data": {"program_seen": True, "title_url": ZZZ33_ANN_URL, "images": [ZZZ33_ANN_IMG]}}
+    data = schedule.merge(GAMES["zzz"], "3.3", [], record, {}, {}, 1791530000, [])
+    assert data["announcement_locked"] is True
+    assert data["title_url"] == ZZZ33_ANN_URL and data["images"] == [ZZZ33_ANN_IMG]
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0
