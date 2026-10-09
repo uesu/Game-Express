@@ -1628,6 +1628,26 @@
         ],
         "status": "seeded"
       },
+      "JRNY2SKY": {
+        "first_seen": 1791546293,
+        "gate": "redeem-validated",
+        "last_seen": 1791546293,
+        "message_id": "1558082849268179067",
+        "msg_codes": [
+          "JRNY2SKY"
+        ],
+        "msg_part": [
+          1,
+          1
+        ],
+        "posted_at": 1791546293,
+        "rewards": null,
+        "sources": [
+          "seria"
+        ],
+        "status": "posted",
+        "webhook_fp": "db5f4f8a75a5"
+      },
       "ROSCAELIFER0617": {
         "first_seen": 1790323430,
         "last_seen": 1791276018,
@@ -2233,7 +2253,7 @@
           ],
           "b_phase1": [
             100,
-            1791546020
+            1791546293
           ],
           "b_phase1_4": [
             50,
