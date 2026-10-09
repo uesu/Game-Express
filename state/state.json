@@ -1648,6 +1648,7 @@
           "Senior Investigator Logs ×2"
         ],
         "sources": [
+          "codehub",
           "ennead",
           "fandom",
           "ogc",
@@ -2217,7 +2218,7 @@
             ]
           },
           "banners_checked_ts": 1791544043,
-          "banners_search_ts": 1791536841,
+          "banners_search_ts": 1791547819,
           "banners_settled": [
             "phase1"
           ],
@@ -2261,7 +2262,7 @@
           ],
           "b_phase1": [
             100,
-            1791547515
+            1791547819
           ],
           "b_phase1_4": [
             50,
@@ -2310,15 +2311,11 @@
       "3.3": {
         "calendar": {
           "banners": [],
-          "ts": 1791536841
+          "ts": 1791547819
         },
         "data": {
           "announcement_locked": true,
           "banners": {
-            "confirmed": [
-              "Phoenix Reffaella",
-              "Severian Lowell"
-            ],
             "phase1": [
               "Into the Flames of Life",
               "Graceful Gale"
@@ -2328,13 +2325,13 @@
               "Outlier of Prodigies"
             ]
           },
-          "banners_checked_ts": 1791536841,
-          "banners_search_ts": 1791536841,
+          "banners_checked_ts": 1791547819,
+          "banners_search_ts": 1791547819,
           "banners_settled": [
             "phase1",
             "phase2"
           ],
-          "calendar_ts": 1791536841,
+          "calendar_ts": 1791547819,
           "estimate_sources": [
             "version cadence"
           ],
@@ -2377,13 +2374,6 @@
         "payload_hash": "a3e77b5ac895951c",
         "posted_at": 1791172831,
         "prov": {
-          "b_confirmed": [
-            6,
-            1791262984
-          ],
-          "b_confirmed_by": [
-            "wiki"
-          ],
           "b_phase1": [
             40,
             1791546366
