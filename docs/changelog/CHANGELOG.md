@@ -25,7 +25,8 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
   `BANNER_CALENDAR=0` switches it off.
 - **HSR 4.6 Phase II (Mortenax Blade)** is filled from the hub and the calendar, and locks once both name her.
   It no longer waits for an official post. The earlier "hub-only until an official post" line is superseded.
-- Tests: 261 in the CI runner, 279 under `pytest`.
+- **Stop rule.** The title search and the calendar stop watching a card once its phases are final: phase 1 and phase 2 each have their 5★ and 4★ lists locked. A card with no phase-2 names yet keeps being watched, and the freeze still applies. Re-runs and the 4★ summary stay on the wiki's own schedule.
+- Tests: 262 in the CI runner, 280 under `pytest`.
 
 ---
 

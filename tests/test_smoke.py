@@ -4691,6 +4691,30 @@ def test_the_calendar_is_one_request_per_game_per_run_and_only_when_due():
         calendarfeed.fetch_banners = orig
 
 
+def test_once_both_phases_lock_with_their_four_star_lists_the_card_stops_being_watched():
+    """The stop rule: a phase is final when its 5★ and 4★ lists are locked. Phase 2 has to be final too,
+    so a card with no phase-2 names yet is still watched. Re-runs stay on the wiki's own schedule."""
+    game, now = GAMES["starrail"], 1791522000
+    base = {"version": "4.6", "maint_start_ts": now, "banners_search_ts": now, "calendar_ts": now}
+    phase1 = {"phase1": ["Evanescia", "Pearl"], "phase1_4": ["Qingque", "Xueyi", "Misha"]}
+    phase2 = {"phase2": ["Mortenax Blade"], "phase2_4": ["Qingque", "Xueyi", "Misha"]}
+    locked = ["phase1", "phase1_4", "phase2", "phase2_4"]
+    done = dict(base, banners={**phase1, **phase2}, banners_settled=locked)          # reruns still TBA
+    assert schedule.banner_phases_done(game, done)
+    later = now + 10 * 86400
+    assert not schedule.banner_search_due(game, dict(done, banners_search_ts=0), later)
+    assert not schedule.calendar_due(game, dict(done, calendar_ts=0), later)
+    assert schedule.wiki_recheck_due(game, dict(done, banners_checked_ts=0), later)   # wiki keeps its schedule
+    no_phase2 = dict(base, banners=dict(phase1), banners_settled=["phase1", "phase1_4"])
+    assert not schedule.banner_phases_done(game, no_phase2)
+    assert schedule.calendar_due(game, dict(no_phase2, calendar_ts=0), later)         # phase 2 still watched
+    unlocked_2 = dict(base, banners={**phase1, **phase2}, banners_settled=["phase1", "phase1_4"])
+    assert not schedule.banner_phases_done(game, unlocked_2)
+    assert schedule.banner_search_due(game, dict(unlocked_2, banners_search_ts=0), later)
+    four_open = dict(base, banners={**phase1, **phase2}, banners_settled=["phase1", "phase2", "phase2_4"])
+    assert not schedule.banner_phases_done(game, four_open)                           # 4★ of phase 1 still open
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0

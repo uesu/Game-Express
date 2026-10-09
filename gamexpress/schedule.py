@@ -1100,6 +1100,26 @@ def banner_block_settled(game: Game, data: dict) -> bool:
     return all(k in settled for k in keys)
 
 
+def banner_phases_done(game: Game, data: dict) -> bool:
+    """Whether the card's banner PHASES are final, so the title search and the calendar stop watching it.
+
+    A phase is final when its 5★ list and its 4★ (A-rank) list are both locked: confirmed by two reputable
+    sources, or by an official notice. Phase 2 must be final too, so while it has no names it is still
+    watched. Re-runs and the 4★ summary are derived from the phase lists and come only from the wiki, so
+    they do not hold this up; the wiki keeps its own schedule (wiki_recheck_due). A game with no banner
+    block is done at once."""
+    if not game.card.show_banners:
+        return True
+    banners = data.get("banners") or {}
+    settled = banner_settled(data)
+    for phase in ("phase1", "phase2"):
+        if not banners.get(phase) or not banners.get(f"{phase}_4"):
+            return False
+        if phase not in settled or f"{phase}_4" not in settled:
+            return False
+    return True
+
+
 def apply_gacha_wiki(game: Game, data: dict, prov: dict, wiki: dict | None, now: int) -> None:
     """Fill banner lists from the game's own wiki wherever the card still says TBA, and keep
     the entries this source owns in step with what the wiki currently says.
@@ -1705,7 +1725,7 @@ def banner_search_due(game: Game, data: dict, now: int) -> bool:
     never searched, a frozen card is never searched, an incomplete block every WIKI_INCOMPLETE_H hours
     and a complete-but-unconfirmed block every WIKI_RECHECK_H hours. It has its own stamp
     (`banners_search_ts`), so the two sources do not reset each other's clock."""
-    if not game.banner_titles or banner_block_settled(game, data):
+    if not game.banner_titles or banner_phases_done(game, data):
         return False
     start = data.get("maint_start_ts")
     if start and now > int(start) + CARD_FREEZE_D * 86400:
@@ -1795,9 +1815,9 @@ async def gather_calendar(ctx, game: Game, records: dict, by_version: dict) -> N
 
 
 def calendar_due(game: Game, data: dict, now: int) -> bool:
-    """Same budget as the title search: a settled block never, a frozen card never, an incomplete block
-    every WIKI_INCOMPLETE_H hours and a complete-but-unconfirmed block every WIKI_RECHECK_H hours."""
-    if banner_block_settled(game, data):
+    """Same budget as the title search: a card whose phases are final never (banner_phases_done), a frozen
+    card never, an incomplete block every WIKI_INCOMPLETE_H hours and an unconfirmed one every WIKI_RECHECK_H hours."""
+    if banner_phases_done(game, data):
         return False
     start = data.get("maint_start_ts")
     if start and now > int(start) + CARD_FREEZE_D * 86400:

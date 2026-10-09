@@ -48,7 +48,7 @@ Code: `sources/banner_search.py`; templates: `banner_titles` in `config/games.js
   paged with `getNewsList` instead. The search is one request per phase per run.
 - **Only a candidate.** A hit goes into the same merge as every other official post. Names come from the
   body (`extract_banner()`), and the lock rules above decide what may change.
-- **When it runs.** `banner_search_due()`: a settled block never; a frozen card never; an incomplete block every
+- **When it runs.** `banner_search_due()`: a card whose phases are final never (`banner_phases_done()`: each phase's 5★ and 4★ list locked; phase 2 must exist and be final too); a frozen card never; an incomplete block every
   3 hours; a complete unconfirmed block every 6 hours. Its own stamp is `banners_search_ts`, so it does not reset
   the wiki clock (`banners_checked_ts`). A failed search is still stamped and retried only when due again.
 - **Off switch.** `BANNER_SEARCH=0`. With no fetcher (a dry test) there is no request and no stamp.

@@ -154,7 +154,7 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    news list is the fallback; Wuthering Waves reads Kuro's own article menu, with the GitHub Atom mirror only as a
    fallback. Matching is exact on version and phase (`7.1` is not `7.10`, Phase I is not Phase II), and a fan
    repost never counts. A hit is only a candidate for the normal merge: the names are still read from the body,
-   and invariant 16 still decides. It runs only through `schedule.banner_search_due()`: a settled block never, a
+   and invariant 16 still decides. It runs only through `schedule.banner_search_due()`: a card whose phases are final never (`banner_phases_done()`: each phase's 5★ and 4★ locked), a
    frozen card never, an incomplete block every 3 h, a complete unconfirmed block every 6 h, stamped in
    `banners_search_ts` (its own clock). `BANNER_SEARCH=0` switches it off. No fetcher means no request and no stamp.
 ---
