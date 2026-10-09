@@ -1843,6 +1843,7 @@
         },
         "card_retired": 1791483988,
         "data": {
+          "announcement_locked": true,
           "banners": {
             "phase1": [
               "Vesna",
@@ -2164,12 +2165,30 @@
       "3.7": {
         "data": {
           "banners": {
+            "four_star": [
+              "Buling",
+              "Taoqi",
+              "Youhu"
+            ],
             "phase1": [
+              "Hsin",
               "Chisa",
               "Iuno"
             ],
-            "phase1_4": []
+            "phase1_4": [],
+            "phase2": [
+              "Suoming",
+              "Lucilla",
+              "Lynae"
+            ],
+            "reruns": [
+              "Chisa",
+              "Iuno",
+              "Lucilla",
+              "Lynae"
+            ]
           },
+          "banners_checked_ts": 1791544043,
           "banners_search_ts": 1791536841,
           "banners_settled": [
             "phase1"
@@ -2205,15 +2224,36 @@
         "first_seen": 1790323161,
         "preinstall_offset_h": 42.0,
         "prov": {
+          "b_four_star": [
+            6,
+            1791544043
+          ],
+          "b_four_star_by": [
+            "wiki"
+          ],
           "b_phase1": [
-            50,
-            1790599919
+            100,
+            1791544043
           ],
           "b_phase1_4": [
             50,
             1790599919
           ],
           "b_phase1_4_tba": "2 name(s) found, 3 expected",
+          "b_phase2": [
+            6,
+            1791544043
+          ],
+          "b_phase2_by": [
+            "wiki"
+          ],
+          "b_reruns": [
+            6,
+            1791544043
+          ],
+          "b_reruns_by": [
+            "wiki"
+          ],
           "compensation": [
             50,
             1790072775
@@ -2245,6 +2285,7 @@
           "ts": 1791536841
         },
         "data": {
+          "announcement_locked": true,
           "banners": {
             "confirmed": [
               "Phoenix Reffaella",
