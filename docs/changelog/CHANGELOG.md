@@ -15,6 +15,105 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ## 2026-10-09
 
+**Banner names lock on any two reputable sources, the official calendar is a source, and 4★ / A-rank lists follow the same rule**
+
+- **Any two sources agree and the name locks**, for every game and for 4★ and A-rank lists as well as 5★. The
+  sources are the community hub, the official game calendar (new), and the game wiki. Official notices still lock alone.
+- **Official calendar** (`sources/calendarfeed.py`, `api.ennead.cc/mihoyo/{genshin,starrail,zenless}/calendar`).
+  It fills empty phases with names only, never times, and it is asked on the title search's budget (`calendar_due()`,
+  stamp `calendar_ts`, one request per game per run). The 4★ rule is the wiki's: exactly the game's rate-up count, else TBA.
+  `BANNER_CALENDAR=0` switches it off.
+- **HSR 4.6 Phase II (Mortenax Blade)** is filled from the hub and the calendar, and locks once both name her.
+  It no longer waits for an official post. The earlier "hub-only until an official post" line is superseded.
+- **Stop rule.** The title search and the calendar stop watching a card once its phases are final: phase 1 and phase 2 each have their 5★ and 4★ lists locked. A card with no phase-2 names yet keeps being watched, and the freeze still applies. Re-runs and the 4★ summary stay on the wiki's own schedule.
+- Tests: 262 in the CI runner, 280 under `pytest`.
+
+---
+
+**A posted Special Program card keeps its announcement: link, key art and air time are locked**
+
+ZZZ 3.3's card was rebuilt at 05:00 UTC on 2026-10-09 from whatever program posts were still in the
+72-hour lookback. The announcement (posted 2026-10-05) had scrolled out, so a same-day giveaway that
+repeated the air time became the only match, and the card's title link and key art switched to it.
+The log said `schedule card updated — key art, link`, and nothing in the code remembered which post
+had opened the card.
+
+- **The announcement is recorded once, then locked.** The first post that gives an air time sets
+  `announcement_locked`. From then on the title link, the source buttons, the key art, the air time
+  and the programme and version names belong to that post. Only an *estimated* air time can still be
+  replaced by an official one. Records written before the flag are locked when they carry
+  `program_seen` or `media_from`, and keep their link.
+- **A teaser with no air time does not lock.** The real announcement can still take the card, and
+  its air time.
+- **The explicit flag wins** over the legacy keys.
+- **Maintenance keeps updating; banners settle once confirmed.** Pre-install, start and end times and
+  compensation still update, and an official value replaces the `🕒 estimated from version cadence` line as
+  before. Banner names are covered by the next entry.
+- **ZZZ 3.3 is pinned to the X post.** The card was built from the HoYoLAB article `46972907` (its air
+  time was recorded from that article, at priority 50). `config/overrides.json` now pins the official X
+  announcement `2106957553435312559` as the link, and its photo `HTxU4O3W4AAGolV` as the key art, because
+  the lock prefers X. The photo was not checked visually at the time (both image hosts returned HTTP 500
+  from the build sandbox), so check the card once. The next run edits the card in place, silently. A `title_url` override
+  now names its button after the host it points to (`HoYoLAB`, not the broken record's `X Post`) and
+  drops the post it replaces.
+- **X is the preferred lock.** When X and HoYoLAB both carry the announcement, the lock goes to the X
+  post (`schedule.LOCK_RANK`: X 3, HoYoLAB and Kuro 2, news 1). A HoYoLAB lock taken while X was unreadable
+  moves **once** to the X post, when that post has the same air time and was published no later than the
+  lock. A giveaway never upgrades a lock, and records without the new keys get no upgrade.
+- **Countdown estimates work the same in all six games.** The estimate-to-official replacement is pinned
+  for every game, not just ZZZ.
+- **Known limit: the first program post seen locks the card.** The cross-game check passes when the
+  announcement is seen first, in all six games. When a same-window giveaway is seen first, it locks the
+  card in all six. This is documented, not fixed.
+- **Open: a reschedule.** A locked card does not follow HoYoverse moving a programme. Pin
+  `program_ts` in `config/overrides.json` by hand until that is decided.
+
+The regression tests in `tests/test_smoke.py`, from `test_the_announcement_that_opened_a_card_keeps_its_link_and_key_art`
+to `test_a_countdown_estimate_is_replaced_by_the_official_notice_in_every_game`, pin this.
+
+**Single tweets are read from nitter.cf first.** A tweet fetched by id used to try FxTwitter first. It now asks
+`nitter.cf` (then `xitter.cf`) for the post's status feed, which reaches back weeks: the ZZZ 3.2 announcement from
+2026-08-24 resolved there on 2026-10-09. FxTwitter is still asked when nitter can't answer, and when the post has a
+`t.co` link, because nitter leaves those unexpanded and the YouTube stream link is read from the expanded URL.
+A nitter photo address `/pic/https%3A%2F%2Fpbs…` now resolves to `pbs.twimg.com` as well as the older `/pic/media%2F…`
+form, so the key art is no longer served through a nitter proxy.
+
+A status mirror that fails twice in one run (`STATUS_FAIL_LIMIT = 2`) is skipped for the rest of that run. A
+dead `nitter.cf` used to be waited on for every tweet. Two dead mirrors and five tweets now make 4 requests
+instead of 10.
+
+**Banners lock on confirmation; until then the feed and the wiki can still correct them**
+
+Banner names kept changing after they looked right, and an official notice could not settle a name on its own.
+Now an official notice locks its 5★ or 4★ name when it parses cleanly. A community hub name and a wiki name
+lock once they agree. An override locks alone.
+
+- **Locked names do not move.** A locked name is recorded in `banners_settled`. The hub and the wiki
+  never change it. An official name is final against later official notices too: a different one is logged once
+  as a conflict and not applied. The one exception is a 4★ list: two clean official lists that disagree become
+  TBA with a warning. A doubtful 4★ reading never blanks a locked list. Re-reading the same post after a parser
+  fix still heals its own name.
+- **Unlocked names can still change.** The hub follows its own later reading. The wiki corrects a hub name but
+  never an official one. An official notice replaces a hub or wiki name and locks it. A hub title held in a
+  phase (a banner name, never a character) is corrected even when locked, and the correction is unlocked again.
+  A silent source never erases a value it did not write.
+- **The wiki-derived fields lock with their inputs.** Re-runs and the 4★ summary lock only once the wiki names
+  them and their phase lists are already locked. The 4★ summary must equal both phases' lists, and a re-run must
+  be a name featured in a phase. The early-tier `※ Confirmed:` line never locks.
+- **The wiki is read on a budget.** An incomplete banner block (still TBA) is read at most every three hours
+  (`WIKI_INCOMPLETE_H`). Before this it was read on every five-minute run: the ZZZ 3.3 card, which the override
+  pins, cost 288 wiki requests a day. It now costs 8. A complete block with an unconfirmed name is read at most
+  every six hours (`WIKI_RECHECK_H`), a fully locked block is never read, and a card past its freeze is never
+  read. Every answered read is stamped in the state, and so is a failed one, so a wiki that is down is not
+  retried on every run.
+- **Maintenance is unchanged.** Official maintenance times still replace the estimate, as before. A later
+  official notice can still correct them.
+- **Fixed: an unchanged derived pre-install was re-stamped on every run.** `derive_preinstall()` wrote a new
+  provenance clock each run, so the state file changed, and committed, every five minutes for nothing. Measured
+  on the same simulated day, the state file was rewritten on 287 of 288 runs before this and on none after.
+- **Known limit:** a 4★ or re-run name that only the wiki gives stays open until an official notice or the hub
+  confirms it. Genshin 7.1 is in that state, so the wiki is read every six hours until the freeze.
+
 **A deleted copy says it was deleted, and a retirement names the message it retired**
 
 The first live run on the merged code (`#1062`, 2026-10-09 02:26 UTC+8) found the Genshin 7.1 card
@@ -32,13 +131,32 @@ is a fan-out that stopped at a `404`, the other is a fan-out that may never have
 
 ### The title link may come from X or HoYoLAB — whichever carries the announcement
 
-The ZZZ 3.3 card links `hoyolab.com/article/46972907`; the Genshin 7.1 card links
+The ZZZ 3.3 card linked `hoyolab.com/article/46972907` (it now links the X post); the Genshin 7.1 card links
 `x.com/GenshinImpact/status/2096810691021689205`. Both are the announcement itself, so both are
 correct — the rule this changelog introduced says the link must be the announcement and never the
 *Update and Maintenance Notice*, and says nothing about which platform publishes it. ACCURACY.md and
 TESTING.md now state that explicitly, and TROUBLESHOOTING.md explains both `🗂` lines above.
 
 ---
+
+**Banner notices are found by title for every game and version; WuWa and ZZZ 4★ extraction fixed**
+
+The lookback window (72 h) could not see HSR 4.6 Phase I, posted 2026-09-27, so its names stayed on the hub
+feed. The title search now asks the official sources for the card's own version whatever the notice's age.
+
+- **Title templates per game** (`banner_titles` in `config/games.json`) and an exact matcher (`sources/banner_search.py`):
+  `7.1` ≠ `7.10`, Phase I ≠ Phase II, `V3.2` = `Version 3.2`, and fan reposts never count.
+- **Official sources only**: HoYoLAB search for Genshin, Star Rail and ZZZ (by `official_uid`), falling back to the
+  paged official news list; Kuro's article menu for Wuthering Waves, with the GitHub mirror as the last fallback.
+- **Budget**: `schedule.banner_search_due()`, with its own clock (`banners_search_ts`). Settled never; frozen never;
+  incomplete every 3 h; unconfirmed every 6 h. `BANNER_SEARCH=0` switches it off.
+- **Extraction**: WuWa's *receive boosted* and ZZZ's *have significantly boosted* now end the name list, so Sanhua and
+  Nicole are read; the default-agent pair `Name (…) & Name (…)` splits into two names.
+- **Verified** against the real posts: WuWa 3.6 Phase I, ZZZ 3.2 Phase I and II, Genshin 7.1 Phase I and II, and HSR 4.6
+  Phase I by title. HSR 4.6 Phase II (Mortenax Blade) stays hub-sourced and unlocked; no official post yet.
+- **ZZZ Phase I with no suffix**: ZZZ 3.1 Phase I was posted as `V3.1 Limited-Time Channels`. The template
+  `V{v} Limited-Time Channels` (Phase I only) now finds it, and every template feeds one newest-per-phase pick.
+- **Tests**: 251 in the CI runner (`tests/test_smoke.py`), 269 under `pytest`.
 
 ## 2026-10-08
 
@@ -174,7 +292,7 @@ art, the wrong link and no air time**
   request, the summary lines that explain a silent refusal, the two halves of the test-run rule
   (a live run never re-creates; a test run never edits) — and the real live 7.1 record healing
   end to end. Two older tests were named better, so the file runs **205** where `main` ran 188 —
-  including `test_a_test_run_still_reposts_a_settled_version`, which asserted the half of the
+  including `test_a_test_run_still_posts_the_game_channel_copy_of_a_retired_card`, which asserted the half of the
   behaviour this entry forbids.
 - **Docs restated for the two new rules**: the README's schedule-card section ("only an
   announcement opens one"), the `repost` note in *Then what?*, and the posting rules now split

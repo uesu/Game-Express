@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Effective date:** October 2, 2026
+**Effective date:** October 9, 2026
 **Applies to:** *Game-Express*, the open-source game version-schedule announcer and redemption-code
 poster ("the Service"):
 - **Automation mode**: GitHub Actions + Discord webhooks.
@@ -9,9 +9,10 @@ poster ("the Service"):
 
 ## 1. Short version
 
-**The Service collects, stores, sells and shares no personal data.** It reads **public, official
-game announcements** and **public redemption-code lists**, and posts them to **Discord channels
-controlled by whoever runs the instance**.
+**The Service collects, stores, sells and shares no personal data.** It reads **public game
+announcements** (official notices, plus community and wiki pages for banner lineups and estimated dates)
+and **public redemption-code lists**, and posts them to **Discord channels controlled by whoever runs
+the instance**.
 
 ## 2. Who operates it
 
@@ -25,7 +26,7 @@ is GitHub Actions.
 | Data | Where it lives | Why | Shared? |
 |---|---|---|---|
 | Public announcement data (titles, text, times, image links of official posts) | processed **in memory** during a run | building the cards | only sent to the operator's Discord webhooks |
-| Dedup state: version numbers, code strings, Discord **message IDs** of the Service's own posts, timestamps, a short non-reversible webhook fingerprint | `state/state.json` **inside the operator's repository** | never posting twice; editing its own cards | no |
+| Dedup state: version numbers, code strings, Discord **message IDs** of the Service's own posts, the public post ID a card is locked to, confirmed banner names, timestamps, a short non-reversible webhook fingerprint | `state/state.json` **inside the operator's repository** | never posting twice; editing its own cards | no |
 | Webhook URLs, optional nitter token | operator's **encrypted GitHub secrets** | authentication | no. They are never logged; GitHub masks secrets in logs |
 
 No analytics, telemetry, cookies, tracking pixels, advertising, or profiling. The monitor reads only
@@ -34,12 +35,18 @@ public source pages and sends cards to the operator's configured webhooks.
 ## 4. Third-party services contacted
 
 The Service sends ordinary HTTPS requests (no personal data) to:
-- HoYoLAB / HoYoverse (news API, livestream code module, HoYoPlay launcher API);
+- HoYoLAB / HoYoverse (news API, livestream code module, HoYoPlay launcher API), and the c3kay.de
+  JSON Feed mirror of HoYoLAB news, used only when the HoYoLAB API cannot be reached;
 - Kuro Games (official website JSON, launcher index);
-- nitter instances, FxTwitter and vxTwitter (public X posts);
-- hoyo-codes.seria.moe, api.ennead.cc (Open Gacha Codes), wuthering.gg, Fandom (MediaWiki API),
-  and GitHub / jsDelivr (PromoGacha and Hum-Bao code lists, the optional peer-instance state
-  file);
+- nitter instances (`nitter.cf` and `xitter.cf` first, for single posts and timelines; a token-gated
+  instance is used only when the operator sets a token, and the token is sent only to that instance),
+  FxTwitter, fixupx and vxTwitter (public X posts);
+- hoyo-codes.seria.moe, api.ennead.cc (Open Gacha Codes and the official game calendars for banner names), wuthering.gg, the Fandom game wikis (MediaWiki
+  API: code lists and banner lineups), and GitHub / jsDelivr (PromoGacha and Hum-Bao code lists, the
+  optional peer-instance state file);
+- the official banner notices, found by title through HoYoLAB's search endpoint and Kuro's article menu (for
+  Wuthering Waves, a GitHub mirror as a fallback), the community banner feed (`ertezy.github.io`, Kitsudock data), and countdown sites
+  (`gachacountdown.online`, `*-countdown.gengamer.in`) for estimated dates;
 - Discord (to post and edit the operator's cards through the operator's webhooks).
 
 The operator's scheduler (cron-job.org) only calls GitHub's API to start the workflow. It

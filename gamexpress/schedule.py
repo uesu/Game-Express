@@ -13,19 +13,21 @@ Accuracy rules:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from statistics import median
+from urllib.parse import urlparse
 
 from .cards import ESTIMATE_LABELS, mark_test, schedule_payload
 from .config import Game, Ping
 from .discord import webhook_fingerprint
 from .media import rank, youtube_thumb
 from .models import Item
-from .sources import gachawiki
+from .sources import calendarfeed, gachawiki
 from .sources.bannerfeed import banner_feed_for
 from .sources.codes import extract_codes_from_text
 from .state import stable_hash
@@ -125,7 +127,8 @@ PHASE2 = re.compile(r"phase\s*(?:II|2)\b|second\s+(?:half|phase)|2nd\s+(?:half|p
 # guard that was supposed to cut the weapon clause off did not fire at all.
 TIER_STOP = re.compile(
     r"\b(?:light\s+cones?|weapons?|w-engines?|as\s+well\s+as|will\s+(?:be|return|receive)|"
-    r"and\s+the\s+limited|drop[-\s]rates?)\b", re.I)
+    r"and\s+the\s+limited|drop[-\s]rates?|receives?|significantly|(?:have|has)\s+(?:significantly\s+)?boosted)\b",
+    re.I)                       # \"Sanhua receive boosted\" (WuWa), \"Nicole have significantly boosted\" (ZZZ)
 NAME_SPLIT = re.compile(r",\s*(?:and\s+)?|\s+and\s+|\s*;\s*")
 # A star-tier phrase is often followed by an article before the name ("5-star character \"Pearl\"",
 # "…and the 4-star characters …"), and truncating at the NEXT tier leaves a dangling "the". Those
@@ -178,6 +181,10 @@ NAME_CAPPED = re.compile(r"[A-Z0-9]")
 def bare_names(tail: str) -> list[str]:
     """Character names written WITHOUT quotes after a star-tier phrase, in order."""
     run = TIER_STOP.split(tail, maxsplit=1)[0]
+    # ZZZ writes two default agents as "Anton (Electric - Attack) & Nicole (Ether - Support)". A
+    # ')' before the '&' means two annotated names, so it is split. "Topaz & Numby" has no ')'
+    # and stays one name.
+    run = re.sub(r"\)\s*&\s*", "), ", run)
     out: list[str] = []
     for piece in NAME_SPLIT.split(run):
         n = _clean_name(piece)
@@ -203,8 +210,15 @@ LABEL_NO_TIME = re.compile(r"storage|space|GB|file\s+size|download\s+size", re.I
 # estimates; the banner feed is the lowest (5). Any official source or override replaces both.
 PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "news": 45, "x": 40, "launcher": 20,
             "countdown": 10, "pattern": 9, "gachawiki": 6, "bannerfeed": 5}
+# Which program post may HOLD the card's link and key art (the lock). X first: its post carries the
+# announcement's own URL and its photo at full size. HoYoLAB and the official sites hold the card
+# when X cannot be read (nitter and the tweet-data services all down). A card locked to one of
+# them is upgraded once X shows the same announcement -- see _upgrade_announcement().
+LOCK_RANK = {"x": 3, "hoyolab": 2, "kuro": 2, "news": 1}
 ESTIMATED_KEYS = ("program_ts", "preinstall_ts", "maint_start_ts", "maint_end_ts")
 MAINT_HOURS_ESTIMATE = 5          # typical HoYoverse / Kuro maintenance window
+WIKI_RECHECK_H = 6                  # a complete banner block with unconfirmed names is re-read this often
+WIKI_INCOMPLETE_H = 3               # a banner block that still has TBA is re-read this often (not every run)
 CARD_FREEZE_D = 45                 # after this many days past maintenance a card is never edited
 PROGRAM_FRESH_H = 36              # how long after the air time a program still counts as news
 
@@ -629,6 +643,8 @@ def derive_preinstall(game: Game, data: dict, prov: dict, now: int,
     derived = int(round(int(start) - hours * 3600))
     if derived <= 0:
         return None
+    if own_estimate and current == derived:
+        return None         # an unchanged prediction rewrites nothing: no new clock, no state churn
     data["preinstall_ts"] = derived
     prov["preinstall_ts"] = [PRIORITY["pattern"], now]
     estimated = set(data.get("estimated") or [])
@@ -884,33 +900,161 @@ def data_release_ts(data: dict) -> int | None:
     return data.get("maint_end_ts") or data.get("maint_start_ts")
 
 
-def apply_banner_feed(data: dict, prov: dict, feed: dict | None, now: int) -> None:
-    """Fill 5★ banner phases from the community banner feed (hub.json), but ONLY when that
-    phase is currently empty (PRIORITY['bannerfeed'] is 5, the lowest in the bot).
+# --- banner confirmation and lock (2026-10-09) ---------------------------------------------------
+# A banner name is CONFIRMED once two different groups name the same value: the official notice
+# ("official"), the community hub ("feed") or the game wiki ("wiki"). An override confirms alone.
+# A confirmed name is LOCKED: no later run changes it, so the card settles. The wiki-derived fields
+# (reruns, the 4★ summary) lock only once the wiki names them AND the phase lists they come from are
+# already locked. A banner the wiki names differently from the notice stays open, as before.
+# Maintenance is not part of this: official maintenance times already replace estimates natively.
+DERIVED_BANNER_INPUTS = {"reruns": ("phase1", "phase2"), "four_star": ("phase1_4", "phase2_4")}
 
-    One exception, and it is a cross-check rather than an override: the hub is the only source
-    that separates a banner's NAME from the character featured on it. If a phase is holding
-    something the hub knows as a banner title, the notice was mis-read -- the hub's own featured
-    list replaces it even though its priority is the lowest. That is what caught HSR 4.6 phase1
-    carrying "An Ocean in a Pearl" (a banner) instead of Pearl (the character).
-    """
-    if not feed:
+
+def _names(value) -> tuple[str, ...]:
+    """A comparable form of a list of names: case and surrounding spaces ignored."""
+    return tuple(str(n).strip().lower() for n in (value or []))
+
+
+def banner_settled(data: dict) -> set[str]:
+    """The banner keys that are confirmed and locked on this card."""
+    return set(data.get("banners_settled") or [])
+
+
+def _derived_ok(key: str, value, banners: dict) -> bool:
+    """A wiki-derived field must agree with the phase lists it comes from. The 4★ summary is the
+    list both phases share; re-runs are names featured in a phase, so they are a subset of them."""
+    if key == "four_star":
+        return all(_names(banners.get(k)) == _names(value) for k in DERIVED_BANNER_INPUTS[key])
+    phase_names = set(_names(banners.get("phase1"))) | set(_names(banners.get("phase2")))
+    return bool(phase_names) and set(_names(value)) <= phase_names
+
+
+def _official_owned(prov: dict, key: str) -> bool:
+    """True when an official notice (HoYoverse, Kuro, X, news) wrote banner `key`. Such a name is
+    final: the feed and the wiki can never change it, and a later official notice that names someone
+    else is logged as a conflict instead of applied. Only a human override outranks it."""
+    return PRIORITY["gachawiki"] < prov.get(f"b_{key}", [0])[0] < PRIORITY["override"]
+
+
+def _sync_official_locks(data: dict, prov: dict) -> None:
+    """An official name that is on the card is locked. Records written before the official lock existed
+    hold official names that were never marked, so without this they would stay open (and be read by the
+    wiki) for ever. Idempotent: it only ever adds keys."""
+    banners = data.get("banners") or {}
+    keys = [k for k in BANNER_KEYS if banners.get(k) and _official_owned(prov, k)]
+    if keys:
+        data["banners_settled"] = sorted(banner_settled(data) | set(keys))
+
+
+def _official_may_write(prov: dict, key: str) -> bool:
+    """An official notice may write an empty name, or one the feed or the wiki wrote (an official
+    notice outranks both, so it corrects them). It never writes over an official name or an override."""
+    return prov.get(f"b_{key}", [0])[0] <= PRIORITY["gachawiki"]
+
+
+def _confirm(data: dict, prov: dict, key: str, group: str, current, value, banners: dict) -> None:
+    """`group` names `value` for banner `key`, and the card currently holds `current` for it.
+
+    A matching name is one more witness. An official notice locks its name on its own; feed and wiki
+    names lock once they agree (two groups). The two derived 4★-summary keys keep their own rule.
+    Nothing happens when the names differ: the caller decides what to write in that case."""
+    if not value or _names(current) != _names(value):
         return
+    groups = set(prov.get(f"b_{key}_by") or []) | {group}
+    prov[f"b_{key}_by"] = sorted(groups)
+    settled = banner_settled(data)
+    if key in settled:
+        return
+    inputs = DERIVED_BANNER_INPUTS.get(key)
+    if inputs is not None:
+        locked = (group == "wiki" and _derived_ok(key, value, banners)
+                  and all(k in settled for k in inputs))
+    elif group == "official":
+        locked = True                   # a clean official notice is the confirmation on its own
+    else:
+        locked = len(groups) >= 2       # feed and wiki must agree before they lock
+    if locked:
+        data["banners_settled"] = sorted(settled | {key})
+
+
+def _fill_phase(data: dict, prov: dict, banners: dict, key: str, group: str, value, other, now: int) -> bool:
+    """One fill source (the hub `feed` or the `calendar`) for one 5★ phase. Returns True when it wrote.
+
+    - Same names as the card: one more witness (_confirm). Two groups agreeing lock the phase.
+    - Empty phase: the source fills it (PRIORITY['bannerfeed'], the lowest writer), still unlocked.
+    - The source changed its mind about a phase it filled itself: it follows, still unlocked.
+      When the OTHER fill source also backs the card's current names, the phase is shared and
+      this source leaves it alone, so the two never overwrite each other run after run.
+    - Anything else (an official or wiki name, or a disagreement) is left as it is.
+    `other` is the other source's current value for the phase, or None."""
+    if not value:
+        return False
+    have = banners.get(key)
+    if have and _names(have) == _names(value):
+        _confirm(data, prov, key, group, have, value, banners)
+        return False
+    owner = prov.get(f"b_{key}", [0])[0]
+    if not have:
+        if owner <= PRIORITY["bannerfeed"]:
+            banners[key] = value
+            prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
+            prov[f"b_{key}_by"] = [group]
+            return True
+        return False
+    if owner != PRIORITY["bannerfeed"]:
+        return False
+    by = prov.get(f"b_{key}_by")
+    if not by:                                   # written before the per-group record: it was the hub
+        by = ["feed"]
+    fill = {g for g in by if g in ("feed", "calendar")}
+    if group not in fill:
+        return False
+    other_backs_card = bool(other) and _names(other) == _names(have)
+    if fill == {group} or not other_backs_card:
+        banners[key] = value
+        prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
+        prov[f"b_{key}_by"] = [group]
+        return True
+    return False
+
+
+def apply_banner_feed(data: dict, prov: dict, feed: dict | None, now: int, calendar: dict | None = None) -> None:
+    """Fill 5★ banner phases from the community hub (`feed`, hub.json) and the official calendar
+    (`calendar`, api.ennead.cc). Both are fill sources at the lowest writer priority, so they only
+    fill an EMPTY phase, or follow their own later change (see _fill_phase).
+
+    Exception, and it is a cross-check: the hub is the only source that separates a banner's NAME from
+    the character featured on it. If a phase holds something the hub knows as a banner title, the
+    notice was mis-read -- the hub's featured list replaces it even though its priority is the lowest.
+    That is what caught HSR 4.6 phase1 carrying "An Ocean in a Pearl" (a banner) instead of Pearl.
+
+    Two fill sources that name the same phase confirm it (_confirm, two groups = lock). A locked phase
+    is never changed here, except by the title correction above."""
+    if not feed and not calendar:
+        return
+    feed = feed or {}
+    calendar = calendar or {}
     banners = dict(data.get("banners") or {})
     titles = {str(t).lower() for t in feed.get("titles") or []}
     changed = False
-    for key in ("phase1", "phase2"):
+    for key in ("phase1", "phase2", "phase1_4", "phase2_4"):
         have = banners.get(key)
-        if have and titles and feed.get(key) and any(str(n).lower() in titles for n in have):
+        hub, cal = feed.get(key), calendar.get(key)
+        if key in ("phase1", "phase2") and have and titles and hub and any(str(n).lower() in titles for n in have):
+            # A banner title is never a character, whoever wrote it, so this is a mis-read to correct --
+            # even a locked one. The hub's value is unconfirmed, so the phase is unlocked again.
             log.info("banner %s held a banner TITLE, not a character — replaced from the feed", key)
-            banners[key] = feed[key]
+            banners[key] = hub
             prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
+            prov[f"b_{key}_by"] = ["feed"]
+            if key in banner_settled(data):
+                data["banners_settled"] = sorted(banner_settled(data) - {key})
             changed = True
             continue
-        if feed.get(key) and not have and prov.get(f"b_{key}", [0])[0] <= PRIORITY["bannerfeed"]:
-            banners[key] = feed[key]
-            prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
-            changed = True
+        if key in banner_settled(data):
+            continue
+        changed |= _fill_phase(data, prov, banners, key, "feed", hub, cal, now)
+        changed |= _fill_phase(data, prov, banners, key, "calendar", cal, hub, now)
     if changed:
         data["banners"] = banners
 
@@ -922,12 +1066,58 @@ what makes the line delete itself."""
 
 
 def banner_block_complete(game: Game, data: dict) -> bool:
-    """True when nothing in the banner block is TBA — then the wikis are never even asked."""
+    """True when nothing in the banner block is TBA."""
     if not game.card.show_banners:
         return True
     banners = data.get("banners") or {}
     keys = list(BANNER_KEYS) + (["four_star"] if game.card.four_star_summary else [])
     return all(banners.get(k) for k in keys)
+
+
+def wiki_recheck_due(game: Game, data: dict, now: int) -> bool:
+    """Whether the wiki should be read for this version now.
+
+    An incomplete banner block (still TBA) is read at most every WIKI_INCOMPLETE_H hours, and a
+    complete block with an unconfirmed name at most every WIKI_RECHECK_H hours. The wiki only has to
+    confirm a name once. A settled block is never read again. Before this throttle an incomplete block
+    was read on every five-minute run, which is 288 requests a day for one version."""
+    if banner_block_settled(game, data):
+        return False
+    interval = WIKI_RECHECK_H if banner_block_complete(game, data) else WIKI_INCOMPLETE_H
+    return now - int(data.get("banners_checked_ts") or 0) >= interval * 3600
+
+
+def banner_block_settled(game: Game, data: dict) -> bool:
+    """True when the banner block is complete AND every name in it is confirmed and locked. Only
+    then is the wiki never asked. A complete block that still has an unconfirmed name keeps being
+    checked, until the card freezes, so the wiki can confirm it."""
+    if not banner_block_complete(game, data):
+        return False
+    if not game.card.show_banners:
+        return True
+    keys = list(BANNER_KEYS) + (["four_star"] if game.card.four_star_summary else [])
+    settled = banner_settled(data)
+    return all(k in settled for k in keys)
+
+
+def banner_phases_done(game: Game, data: dict) -> bool:
+    """Whether the card's banner PHASES are final, so the title search and the calendar stop watching it.
+
+    A phase is final when its 5★ list and its 4★ (A-rank) list are both locked: confirmed by two reputable
+    sources, or by an official notice. Phase 2 must be final too, so while it has no names it is still
+    watched. Re-runs and the 4★ summary are derived from the phase lists and come only from the wiki, so
+    they do not hold this up; the wiki keeps its own schedule (wiki_recheck_due). A game with no banner
+    block is done at once."""
+    if not game.card.show_banners:
+        return True
+    banners = data.get("banners") or {}
+    settled = banner_settled(data)
+    for phase in ("phase1", "phase2"):
+        if not banners.get(phase) or not banners.get(f"{phase}_4"):
+            return False
+        if phase not in settled or f"{phase}_4" not in settled:
+            return False
+    return True
 
 
 def apply_gacha_wiki(game: Game, data: dict, prov: dict, wiki: dict | None, now: int) -> None:
@@ -938,47 +1128,89 @@ def apply_gacha_wiki(game: Game, data: dict, prov: dict, wiki: dict | None, now:
     and below config/overrides.json. A 4★ list the reader could not verify never arrives here —
     gachawiki.build_lineup drops it rather than publish a half-right line-up.
 
+    A name the wiki gives identically to the card is one more confirmation (see _confirm). A
+    confirmed name is never changed here.
+
     `wiki is None` means the wikis were not read (complete block, frozen card, failed request)
     and nothing is touched. A dict means the page WAS read, so an entry this source wrote and
     the wiki no longer supports is withdrawn rather than left on the card for ever.
     """
     if wiki is None:
         return                      # the wikis were not consulted this run -> touch nothing
+    # Stamp every read the wiki actually answered. The throttle (wiki_recheck_due) needs it, and a
+    # read happens at most once per WIKI_INCOMPLETE_H, so this writes the state file that rarely.
+    data["banners_checked_ts"] = now
     banners = dict(data.get("banners") or {})
     changed = False
     for key in list(BANNER_KEYS) + ["four_star", "confirmed"]:
+        if key in banner_settled(data):
+            continue
         value = [n for n in (wiki.get(key) or []) if gachawiki.publishable_name(n)]
         owner = prov.get(f"b_{key}", [0])[0]
         have = banners.get(key)
         if have:
+            if _names(have) == _names(value):
+                _confirm(data, prov, key, "wiki", have, value, banners)
+                continue
             # A value is only as good as the read it came from, so the wiki reader is allowed
             # to correct -- and to withdraw -- what the wiki reader itself wrote. Everything
             # official, and every human override, outranks this source and is never touched.
             # Without this a single bad read is permanent: ZZZ 3.3 sat on "Agent" because
             # "already filled" was treated as "already right".
-            if owner != PRIORITY["gachawiki"] or list(have) == value:
-                continue
+            if owner > PRIORITY["gachawiki"]:
+                continue                        # official notices and overrides outrank the wiki
             if value:
                 banners[key] = value
                 prov[f"b_{key}"] = [PRIORITY["gachawiki"], now]
-            else:
+                prov[f"b_{key}_by"] = ["wiki"]
+                _confirm(data, prov, key, "wiki", value, value, banners)   # the read itself is a witness
+            elif owner == PRIORITY["gachawiki"]:
                 banners.pop(key, None)          # the wiki no longer says it -> back to TBA
                 prov.pop(f"b_{key}", None)
+                prov.pop(f"b_{key}_by", None)
+            else:
+                continue                        # the wiki is silent about a feed value: keep the feed's
             changed = True
             continue
         if not value or owner > PRIORITY["gachawiki"]:
             continue
         banners[key] = value
         prov[f"b_{key}"] = [PRIORITY["gachawiki"], now]
+        prov[f"b_{key}_by"] = ["wiki"]
+        _confirm(data, prov, key, "wiki", value, value, banners)           # the read itself is a witness
         changed = True
     # The early-tier line is a stand-in for phase data. Once the phases are known it is noise,
     # so it goes on the same silent edit that brings the real line-up in.
     if banners.get("confirmed") and banners.get("phase1"):
         banners.pop("confirmed")
         prov.pop("b_confirmed", None)
+        prov.pop("b_confirmed_by", None)
         changed = True
     if changed:
         data["banners"] = banners
+
+
+def announcement_locked(data: dict | None) -> bool:
+    """True once this card has its Special Program / Special Broadcast announcement.
+
+    From that moment the card's title link, source button, key art and air time belong to THAT
+    post and nothing else. Only the banners and the maintenance details keep updating (a countdown
+    estimate is replaced by the official notice, as before).
+
+    Why: the card used to rebuild its link and key art on every run from every program-looking
+    post in the 72 h lookback window. ZZZ 3.3's announcement (x.com/ZZZ_EN/status/2106957553435312559,
+    posted 2026-10-05) aged out of that window, and a giveaway post that repeated the air time
+    (x.com/ZZZ_EN/status/2108422202974499088, "Share to Win Master Tape x10", 2026-10-09 05:00 UTC)
+    became the only program post left -- so the card's link and key art silently switched to it.
+    Nothing in the code remembered which post had opened the card.
+
+    Records written before the flag existed count as locked too: they already carry program_seen
+    or media_from, which only an announcement can set. Their link is kept as it is.
+    """
+    d = data or {}
+    if "announcement_locked" in d:
+        return bool(d["announcement_locked"])
+    return bool(d.get("program_seen") or d.get("media_from"))
 
 
 def apply_program_media(data: dict, prov: dict, media: dict | None, now: int) -> list[str]:
@@ -995,6 +1227,7 @@ def apply_program_media(data: dict, prov: dict, media: dict | None, now: int) ->
     if not media or not media.get("url"):
         return []
     changed: list[str] = []
+    locked = announcement_locked(data)     # the link and key art are already someone's announcement
     ts = media.get("program_ts")
     # A recovered announcement is OFFICIAL, so an air time that has already passed is kept (the
     # card renders it as "5 days ago") — unlike a countdown estimate, only absurd values go.
@@ -1016,6 +1249,10 @@ def apply_program_media(data: dict, prov: dict, media: dict | None, now: int) ->
         if not est:
             data.pop("estimated", None)
             data.pop("estimate_sources", None)
+    if locked:
+        # The announcement that opened this card is locked: a later lookup may still fill an
+        # air time that was only a countdown estimate, but it never moves the link or the key art.
+        return changed
     label = media.get("source") or "Official News"
     # The title links the ANNOUNCEMENT itself. `media["youtube"] or media["url"]` made the card
     # headline link the YouTube stream instead of the post that announced it -- seen live on
@@ -1034,6 +1271,7 @@ def apply_program_media(data: dict, prov: dict, media: dict | None, now: int) ->
     if images:
         data["images"] = images
         data["media_from"] = label           # the card says where the key art came from
+    data["announcement_locked"] = True       # from here on the link and key art belong to this post
     return changed + ["title_url", "source_url"]
 
 
@@ -1143,11 +1381,61 @@ def needs_media(state, game_key: str, now: int) -> bool:
     return False
 
 
+def _link_label(url: str, fallback: str) -> str:
+    """The button name for a pinned announcement link: the platform the link is on."""
+    host = (urlparse(url).hostname or "").lower()
+    if host == "x.com" or host.endswith((".x.com", "twitter.com")):
+        return "X Post"
+    if host == "hoyolab.com" or host.endswith(".hoyolab.com"):
+        return "HoYoLAB"
+    return fallback
+
+
+def _pin_announcement(data: dict, e: Extract, others: list[tuple[str, str]]) -> None:
+    """Point the card's link, source buttons and key art at ONE program post, and remember which
+    post that was (source and time) so a later, better-ranked post can upgrade it once."""
+    lf, item = e.fields, e.item
+    data["title_url"] = item.url                   # the announcement, never the stream it mentions
+    data["source_url"] = item.url
+    data["source_label"] = item.source_label
+    if lf.get("images"):
+        data["images"] = rank(lf["images"])
+    elif data.get("youtube_video"):
+        data["images"] = [youtube_thumb(data["youtube_video"])]
+    links = [(item.source_label, item.url)]
+    for label, url in others:                      # the other program posts, as extra buttons
+        if label not in [lbl for lbl, _ in links]:
+            links.append((label, url))
+    data["source_links"] = links[:3]
+    data["announcement_source"] = item.source
+    data["announcement_ts"] = item.published_ts
+
+
+def _upgrade_announcement(data: dict, program_items: list) -> None:
+    """A card locked to HoYoLAB (because X was down when the card was first seen) moves to X ONCE,
+    and only when X's post is the same announcement: same air time, and published no later than the
+    post the card is locked to. A giveaway repeating the air time is always published later, so it
+    can never take the card -- the incident this lock exists to stop."""
+    cur_rank = LOCK_RANK.get(data.get("announcement_source"), 0)
+    cur_ts = data.get("announcement_ts")
+    if "announcement_source" not in data or not cur_ts or not data.get("program_ts"):
+        return                                     # legacy record, or no air time to match on
+    better = [e for e in program_items
+              if LOCK_RANK.get(e.item.source, 0) > cur_rank
+              and e.item.published_ts <= cur_ts
+              and e.fields.get("program_ts") == data.get("program_ts")]
+    if better:
+        best = sorted(better, key=lambda e: (-LOCK_RANK.get(e.item.source, 0), e.item.published_ts))[0]
+        _pin_announcement(data, best, [(e.item.source_label, e.item.url) for e in program_items])
+        log.info("announcement upgraded to %s: %s", best.item.source, best.item.url)
+
+
 def merge(game: Game, version: str, extracts: list[Extract], record: dict, override: dict,
           launcher: dict, now: int, notes: list[str] | None = None,
           estimates: dict | None = None, media: dict | None = None,
           banner_feed: list[dict] | None = None, lead_h: float | None = None,
-          records: dict | None = None, wiki: dict | None = None) -> dict:
+          records: dict | None = None, wiki: dict | None = None,
+          calendar: list[dict] | None = None) -> dict:
     """Return the merged card data (record['data'] is the previous state).
     4★ rule: no data or ANY doubt (wrong count, odd name, sources disagree) -> TBA;
     config/overrides.json is always trusted."""
@@ -1155,6 +1443,7 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
     prov = dict(record.get("prov") or {})
     data = dict(prev)
     data["version"] = version
+    _sync_official_locks(data, prov)
 
     def put(key, value, source, ts):
         if value in (None, "", []):
@@ -1172,9 +1461,10 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
         src, ts = e.item.source, e.item.published_ts
         f = e.fields
         if e.kind == "program":
+            # Collected only. The announcement is decided ONCE, below, from a single post -- see
+            # announcement_locked(). Merging every program post's fields here is what let a later
+            # post overwrite the card's air time, link and key art.
             program_items.append(e)
-            for k in ("program_ts", "program_name", "version_name", "youtube_video"):
-                put(k, f.get(k), src, ts)
         elif e.kind == "maintenance":
             for k in ("preinstall_ts", "maint_start_ts", "maint_end_ts", "compensation"):
                 put(k, f.get(k), src, ts)
@@ -1185,12 +1475,26 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                 phase = 1 if ts < int(data["maint_start_ts"]) + 7 * 86400 else 2
             if phase in (1, 2):
                 key5, key4 = f"phase{phase}", f"phase{phase}_4"
-                if f.get("banner_five") and prov.get(f"b_{key5}", [0])[0] < PRIORITY["override"]:
-                    banners[key5] = f["banner_five"]
+                five = f.get("banner_five")
+                # Re-reading the SAME post after a parser fix heals its own name (see the 4★ note below).
+                same5 = prov.get(f"b_{key5}") == [PRIORITY.get(src, 10), ts]
+                if five and _official_owned(prov, key5) and not same5:
+                    # Final. A different 5★ from a later official post is logged once, not applied.
+                    if _names(banners.get(key5)) != _names(five):
+                        conflict = ", ".join(five)
+                        if prov.get(f"b_{key5}_conflict") != conflict and notes is not None:
+                            notes.append(f"⚠️ {game.short} {version} phase {phase}: a later notice names "
+                                         f"{conflict}, the locked official name is kept. Correct it via "
+                                         "config/overrides.json if the notice is right.")
+                        prov[f"b_{key5}_conflict"] = conflict
+                elif five and (same5 or _official_may_write(prov, key5)):
+                    if _names(banners.get(key5)) != _names(five):
+                        prov[f"b_{key5}_by"] = ["official"]           # a new name from the notice
+                    banners[key5] = five
                     prov[f"b_{key5}"] = [PRIORITY.get(src, 10), ts]
+                    _confirm(data, prov, key5, "official", five, five, banners)   # the notice locks it
                 four = list(f.get("banner_four") or [])
-                if ((four or f.get("banner_four_unsure"))
-                        and prov.get(f"b_{key4}", [0])[0] < PRIORITY["override"]):
+                if (four or f.get("banner_four_unsure")) and prov.get(f"b_{key4}", [0])[0] < PRIORITY["override"]:
                     flag = f"b_{key4}_tba"
                     # Re-reading the SAME post (same source, same timestamp) is not two official
                     # sources disagreeing -- it is this bot parsing one notice better than it did
@@ -1199,43 +1503,60 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                     # by post 46851682, and the corrected reader re-reads that very post.
                     # Disagreement only means something between DIFFERENT posts.
                     same_post = prov.get(f"b_{key4}") == [PRIORITY.get(src, 10), ts]
+                    owned = _official_owned(prov, key4)
+                    # Only a list an OFFICIAL notice wrote can disagree with a new official notice.
+                    # A list the feed and the wiki locked between them is corrected by the notice.
                     problem = _four_star_problem(
                         game, four,
-                        None if same_post else banners.get(key4),
+                        None if (same_post or not owned) else banners.get(key4),
                         None if same_post else prov.get(flag))
                     if same_post:
                         prov.pop(flag, None)
-                    prov[f"b_{key4}"] = [PRIORITY.get(src, 10), ts]
-                    if problem:
-                        banners[key4] = []                                # TBA
+                    held = (problem and key4 in banner_settled(data) and problem != "official sources disagree") \
+                        or (owned and not four)           # an empty reading never wipes an official list
+                    if held:
+                        pass        # a doubtful reading never blanks or replaces a locked list
+                    elif problem:
+                        banners[key4] = []                                    # TBA
+                        prov.pop(f"b_{key4}_by", None)
+                        prov[f"b_{key4}"] = [PRIORITY.get(src, 10), ts]
                         if prov.get(flag) != problem and notes is not None:
                             notes.append(f"⚠️ {game.short} {version} phase {phase}: 4★ shown as TBA — {problem} "
                                          f"(found: {', '.join(four) or 'nothing usable'}). Confirm via "
                                          "config/overrides.json if you know the names.")
                         prov[flag] = problem
                     else:
+                        if _names(banners.get(key4)) != _names(four):
+                            prov[f"b_{key4}_by"] = ["official"]
                         banners[key4] = four
+                        prov[f"b_{key4}"] = [PRIORITY.get(src, 10), ts]
+                        _confirm(data, prov, key4, "official", four, four, banners)
             data["banners"] = banners
 
-    # presentation: title link / image / source from the best program post
+    # presentation: the announcement's link, key art, source and air time. Decided ONCE, from ONE
+    # post, and then locked (see announcement_locked). Before the lock, every run rebuilt the link
+    # and key art from whatever program posts were still inside the lookback window, so when the
+    # real announcement aged out of that window a same-day giveaway post took the card over
+    # (ZZZ 3.3, 2026-10-09). Earliest first: the announcement precedes any reminder about it.
     if program_items:
+        locked = announcement_locked(data)   # read BEFORE program_seen is set below, or it is always True
         data["program_seen"] = True          # this card already shows the real announcement
-        best = sorted(program_items, key=lambda e: (-PRIORITY.get(e.item.source, 0), e.item.published_ts))[0]
-        images = next((e.fields.get("images") for e in program_items if e.fields.get("images")), None)
-        yt = data.get("youtube_video")
-        data["title_url"] = yt or best.item.url
-        data["source_url"] = best.item.url
-        data["source_label"] = best.item.source_label
-        if images:
-            data["images"] = rank(images)
-        elif yt:
-            data["images"] = [youtube_thumb(yt)]
-        links = []
-        for e in program_items:
-            label = e.item.source_label
-            if label not in [lbl for lbl, _ in links]:
-                links.append((label, e.item.url))
-        data["source_links"] = links[:3]
+        if not locked:
+            # Only a post that GIVES an air time can open the lock. A teaser without one shows
+            # for now (as it always did) but stays unlocked, so the real announcement can still
+            # take the card -- and its air time, which the teaser never had.
+            timed = [e for e in program_items if e.fields.get("program_ts")]
+            # X first (LOCK_RANK), then the earliest post: the announcement precedes any reminder
+            lock = sorted(timed or program_items,
+                          key=lambda e: (-LOCK_RANK.get(e.item.source, 0), e.item.published_ts))[0]
+            lf, lsrc, lts = lock.fields, lock.item.source, lock.item.published_ts
+            for k in ("program_ts", "program_name", "version_name", "youtube_video"):
+                put(k, lf.get(k), lsrc, lts)
+            # the link and the key art come from the SAME post -- never one from each
+            _pin_announcement(data, lock, [(e.item.source_label, e.item.url) for e in program_items])
+            data["announcement_locked"] = bool(timed)
+        elif data.get("announcement_locked"):
+            _upgrade_announcement(data, program_items)
     else:
         # nobody in the lookback window announced the program: look the article up on the
         # official news page / HoYoLAB news list (link + full-size key art + air time).
@@ -1259,11 +1580,12 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
     # countdown sites: an ESTIMATE for every field no official source has given yet
     apply_estimates(data, prov, estimates, now)
 
-    # banner feed: fill empty banner phases from hub.json
-    if banner_feed:
+    # banner feed: fill empty banner phases from hub.json, and from the official calendar (names only)
+    if banner_feed or calendar:
         rel_ts = data_release_ts(data)
-        lineup = banner_feed_for(banner_feed, rel_ts) if rel_ts else {}
-        apply_banner_feed(data, prov, lineup, now)
+        lineup = banner_feed_for(banner_feed, rel_ts) if (banner_feed and rel_ts) else {}
+        cal = calendarfeed.lineup(calendar, rel_ts, game.four_star_count) if calendar else {}
+        apply_banner_feed(data, prov, lineup, now, calendar=cal)
 
     # the game's own wiki: fill whatever is still TBA (phases, 4★, re-runs, the early tier)
     apply_gacha_wiki(game, data, prov, wiki, now)
@@ -1276,9 +1598,24 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                 data[key] = ts
                 prov[key] = [PRIORITY["override"], now]
                 _unmark_estimated(data, key)
-    for key in ("program_name", "version_name", "title_url", "compensation"):
+    for key in ("program_name", "version_name", "compensation"):
         if override.get(key):
             data[key] = override[key]
+    if override.get("title_url"):
+        # A human-verified link pins the announcement itself: the title AND the source button move
+        # together, and any stale copy of the same source is dropped (it would otherwise survive as
+        # a second, wrong button next to the corrected one). The button is named for the host the
+        # override points at, not for whatever the broken record carried: a HoYoLAB pin under an
+        # "X Post" label is exactly the wrong card this override exists to repair.
+        link = override["title_url"]
+        label = _link_label(link, data.get("source_label") or "Source")
+        replaced = {data.get("title_url"), data.get("source_url")} - {None, ""}   # the post being moved off
+        rest = [(lbl, u) for lbl, u in (data.get("source_links") or [])
+                if lbl != label and u != link and u not in replaced]
+        data["title_url"] = link
+        data["source_url"] = link
+        data["source_label"] = label
+        data["source_links"] = ([(label, link)] + rest)[:3]
     if override.get("image"):
         data["images"] = [override["image"]]
     if isinstance(override.get("banners"), dict):
@@ -1287,6 +1624,8 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
             if isinstance(v, list):
                 banners[k] = v
                 prov[f"b_{k}"] = [PRIORITY["override"], now]
+                if v:                                  # a human-set name is confirmed and locked
+                    data["banners_settled"] = sorted(banner_settled(data) | {k})
         data["banners"] = banners
 
     # Last, derive only what every external source and human override left empty. This can use a
@@ -1335,6 +1674,8 @@ async def run(ctx) -> None:
             if rg == game.key and rv in records and rv not in by_version:
                 by_version[rv] = []
 
+        await gather_banner_search(ctx, game, records, by_version)
+        await gather_calendar(ctx, game, records, by_version)
         bootstrapped = ctx.state.is_bootstrapped("schedule", game.key)
         est = (ctx.estimates.get(game.key) or {}) if s.countdown_estimates else {}
         media = (ctx.media.get(game.key) or {}) if s.program_media else {}
@@ -1353,23 +1694,136 @@ async def run(ctx) -> None:
 async def gather_wiki_lineup(ctx, game: Game, ver: str, record: dict) -> dict | None:
     """Ask the game's wiki for this version's line-up — only while a blank remains.
 
-    The short-circuit is the whole traffic budget: a version whose banner block is already
-    complete costs zero requests, for ever, no matter how often the monitor runs.
+    The short-circuit is the whole traffic budget: a version whose banner block is complete AND
+    confirmed costs zero requests, for ever, no matter how often the monitor runs. A complete block
+    with an unconfirmed name is still checked until the card freezes, because the wiki may confirm it.
     """
     if not ctx.settings.gacha_wiki or game.key not in gachawiki.WIKIS:
         return None
-    data = record.get("data") or {}
-    if banner_block_complete(game, data):
+    data = record.get("data")
+    if data is None:
+        data = record["data"] = {}          # a brand-new record: keep the read stamp (merge keeps it too)
+    _sync_official_locks(data, record.get("prov") or {})
+    if not wiki_recheck_due(game, data, ctx.now):
         return None
     start = data.get("maint_start_ts")
     if start and ctx.now > int(start) + CARD_FREEZE_D * 86400:
         return None            # the card is frozen (never edited again) -> asking is pure waste
     try:
-        return await gachawiki.fetch_lineup(ctx.fetcher, game.key, ver, game.four_star_count,
-                                            game.card.four_star_summary)
+        out = await gachawiki.fetch_lineup(ctx.fetcher, game.key, ver, game.four_star_count,
+                                           game.card.four_star_summary)
     except Exception as e:                                   # noqa: BLE001 — one wiki, never fatal
         log.warning("%s wiki lookup failed for %s: %s", game.key, ver, e)
-        return None
+        out = None
+    if out is None:
+        data["banners_checked_ts"] = ctx.now                 # asked and failed: no retry until the interval passes
+    return out
+
+
+def banner_search_due(game: Game, data: dict, now: int) -> bool:
+    """Whether the title search runs for this card now. Same budget as the wiki: a settled block is
+    never searched, a frozen card is never searched, an incomplete block every WIKI_INCOMPLETE_H hours
+    and a complete-but-unconfirmed block every WIKI_RECHECK_H hours. It has its own stamp
+    (`banners_search_ts`), so the two sources do not reset each other's clock."""
+    if not game.banner_titles or banner_phases_done(game, data):
+        return False
+    start = data.get("maint_start_ts")
+    if start and now > int(start) + CARD_FREEZE_D * 86400:
+        return False
+    interval = WIKI_RECHECK_H if banner_block_complete(game, data) else WIKI_INCOMPLETE_H
+    return now - int(data.get("banners_search_ts") or 0) >= interval * 3600
+
+
+async def gather_banner_search(ctx, game: Game, records: dict, by_version: dict) -> None:
+    """Find each live or upcoming card's banner notices BY TITLE, whatever their age, and feed the
+    hits into the same merge as every other official post. This is what lets a Phase I notice that
+    is older than the lookback window still lock its names (HSR 4.6 Phase I, 2026-09-27).
+
+    Only cards that still hold a TBA or an unconfirmed name are asked, and only when due. A hit only
+    adds a candidate: the names are still read from the body by extract_banner(), and the normal
+    lock rules decide what they may overwrite."""
+    if not ctx.settings.banner_search or not game.banner_titles or ctx.fetcher is None:
+        return                                        # no lookup possible -> no request and no stamp
+    from .sources import banner_search  # noqa: I001 — lazy: banner_search -> hoyolab -> this module
+    live = (ctx.versions.get(game.key) or {}).get("live")
+    due = []
+    for ver, rec in records.items():
+        if live and version_key(ver) < version_key(live):
+            continue                                  # older cards are frozen history
+        data = rec.get("data")
+        if data is None:
+            data = rec["data"] = {}                   # keep the stamp on a brand-new record
+        _sync_official_locks(data, rec.get("prov") or {})
+        if banner_search_due(game, data, ctx.now):
+            due.append((ver, data))
+    if not due:
+        return
+    found = await asyncio.gather(*(banner_search.find(ctx.fetcher, game, ver) for ver, _ in due),
+                                 return_exceptions=True)
+    for (ver, data), items in zip(due, found):
+        data["banners_search_ts"] = ctx.now           # asked (answered or not): no retry until due again
+        if isinstance(items, BaseException):
+            log.warning("%s banner search failed for %s: %s", game.key, ver, items)
+            continue
+        have = {e.item.id for e in by_version.get(ver, [])}
+        added = 0
+        for item in items:
+            if item.id in have:
+                continue
+            fields = extract_banner(item)
+            if not fields:
+                continue
+            by_version.setdefault(ver, []).append(Extract(item=item, kind="banner", version=ver, fields=fields))
+            have.add(item.id)
+            added += 1
+        log.info("[%s] %s banner search: %d notice(s) by title, %d new", game.key, ver, len(items), added)
+
+
+async def gather_calendar(ctx, game: Game, records: dict, by_version: dict) -> None:
+    """Read the official calendar (api.ennead.cc) for each live or upcoming card whose banner block
+    still holds a TBA or an unconfirmed name, on the same budget as the title search (its own stamp,
+    `calendar_ts`). It keeps the version's 5★ banners on the record, and the merge fills and confirms
+    phases from them. One request per game per run, and none when nothing is due.
+
+    A calendar name only adds a witness: it fills an empty phase, and it locks a name once another
+    group (the hub, the wiki, an official notice) names the same character."""
+    if not ctx.settings.banner_calendar or ctx.fetcher is None:
+        return
+    if game.key not in calendarfeed.SLUGS:
+        return
+    live = (ctx.versions.get(game.key) or {}).get("live")
+    due = []
+    for ver, rec in records.items():
+        if live and version_key(ver) < version_key(live):
+            continue                                  # older cards are frozen history
+        data = rec.get("data") or {}
+        if calendar_due(game, data, ctx.now):
+            due.append((ver, rec))
+    if not due:
+        return
+    banners = await calendarfeed.fetch_banners(ctx.fetcher, game.key)
+    for ver, rec in due:
+        data = rec.setdefault("data", {})
+        data["calendar_ts"] = ctx.now                  # asked (answered or not): no retry until due again
+        if banners is None:
+            continue                                   # the request failed: keep what the card holds
+        mine = [b for b in banners if b.get("version") == ver]
+        rec["calendar"] = {"ts": ctx.now, "banners": mine}
+        if mine and ver not in by_version:
+            by_version[ver] = []                       # the merge must run for this version
+        log.info("[%s] %s calendar: %d banner(s) with a 5★ character", game.key, ver, len(mine))
+
+
+def calendar_due(game: Game, data: dict, now: int) -> bool:
+    """Same budget as the title search: a card whose phases are final never (banner_phases_done), a frozen
+    card never, an incomplete block every WIKI_INCOMPLETE_H hours and an unconfirmed one every WIKI_RECHECK_H hours."""
+    if banner_phases_done(game, data):
+        return False
+    start = data.get("maint_start_ts")
+    if start and now > int(start) + CARD_FREEZE_D * 86400:
+        return False
+    interval = WIKI_RECHECK_H if banner_block_complete(game, data) else WIKI_INCOMPLETE_H
+    return now - int(data.get("calendar_ts") or 0) >= interval * 3600
 
 
 async def _sync_mirror(ctx, game: Game, ver: str, record: dict, data: dict, now: int,
@@ -1493,7 +1947,8 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     notes: list[str] = []
     wiki = await gather_wiki_lineup(ctx, game, ver, record)
     data = merge(game, ver, extracts, record, override, live_info, now, notes, estimates, media,
-                 banner_feed, lead_h=observed_lead_h(records), records=records, wiki=wiki)
+                 banner_feed, lead_h=observed_lead_h(records), records=records, wiki=wiki,
+                 calendar=(record.get("calendar") or {}).get("banners"))
     ctx.report.extend(notes)
     before = record.get("data") or {}      # merge() copies; record["data"] is reassigned below
     changed_fields = [lbl for key, lbl in CARD_FIELDS if before.get(key) != data.get(key)] if before else []

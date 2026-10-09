@@ -107,9 +107,14 @@ existed stay out of the channel.
   |---|---|---|
   | maintenance start / end | community countdown sites | `COUNTDOWN_ESTIMATES=0` |
   | pre-install | that game's **median observed lead** in hours, learned from real notices | — |
-  | the announcement's own link + key art | the official news page, then the paged-back HoYoLAB list | `PROGRAM_MEDIA=0` |
+  | the announcement's own link + key art | the X post first, then the paged-back HoYoLAB list, then the official news page, then the news-feed mirror | `PROGRAM_MEDIA=0` |
 
   Details: **[docs/ACCURACY.md → Filling the gaps](docs/ACCURACY.md#filling-the-gaps-before-the-official-notice)**.
+  Once the card is posted, its link, key art and air time are locked to the announcement that opened
+  it. When X and HoYoLAB both carry the announcement, the lock goes to the X post, and a card that was
+  locked to HoYoLAB while X could not be read moves once to the X post. Banners settle once confirmed (an official
+  notice, or any two reputable sources agreeing (the community hub, the official calendar, the wiki)), and the maintenance details keep updating
+  ([ACCURACY.md → Once posted](docs/ACCURACY.md#once-posted-the-card-keeps-its-announcement)).
 
 ### 2 · Redemption code card
 
@@ -372,7 +377,7 @@ Flags: `--dry-run --only --game --repost --kind --ping --out --unlaunched --verb
 |---|---|
 | HoYoverse news | official HoYoLAB API → c3kay JSON-Feed mirror |
 | X timelines | the built-in nitter fleet (18 entries, 17 live — `xcancel.com` is suspended and kept last as a dead entry; `NITTER_INSTANCES` overrides the list). The first **two** working mirrors are merged, so a stale-but-200 mirror can't hide a tweet |
-| Tweet details | FxTwitter → vxTwitter → RSS body |
+| Tweet details | nitter.cf → xitter.cf by id (when the account is known) → FxTwitter → fixupx → vxTwitter → the nitter text. A status mirror that fails twice in one run is skipped for the rest of it |
 | Codes | up to 8 sources per game (validators, APIs, wikis, official posts), fetched in parallel, behind the gate above |
 | Version / pre-install | HoYoPlay `getGameBranches` / Kuro launcher index |
 
@@ -438,7 +443,7 @@ python -m gamexpress preview                     # open previews/index.html
 | **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** | every secret, variable, `games.json` field and `overrides.json` key |
 | **[docs/ACCURACY.md](docs/ACCURACY.md)** | how a post becomes a card: detection, extraction, provenance, the code gate |
 | **[docs/SOURCES.md](docs/SOURCES.md)** | every verified endpoint, with why it was chosen or rejected |
-| **[docs/BANNER_DATABASE.md](docs/BANNER_DATABASE.md)** | where banner line-ups come from: the wiki readers, the precedence order, and how a TBA fills itself in |
+| **[docs/BANNER_DATABASE.md](docs/BANNER_DATABASE.md)** | where banner line-ups come from: the wiki readers, the precedence order, how a TBA fills itself in, and when a name locks |
 | **[docs/SCHEDULER.md](docs/SCHEDULER.md)** | the cron-job.org trigger, the classic token, how fast it can poll |
 | **[docs/TESTING.md](docs/TESTING.md)** | the manual test bench and the local commands |
 | **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** | symptom → fix |
@@ -455,9 +460,28 @@ Index: **[docs/](docs/)**.
 
 ## 🗒 Changelog
 
-**Latest — [2026-10-09](docs/changelog/CHANGELOG.md#2026-10-09) · *a deleted copy says it was
-deleted, and a retirement names the message it retired***
+**Latest — [2026-10-09](docs/changelog/CHANGELOG.md#2026-10-09) · *a posted Special Program card
+keeps its announcement, a deleted copy says it was deleted, and a retirement names the message it
+retired***
 
+- **A posted card keeps its announcement.** Its title link, source buttons, key art and air time are
+  locked to the post that opened the card, so a later giveaway or reminder cannot move them. Banners
+  settle once confirmed, and maintenance details keep updating. X is the preferred post: a card locked to HoYoLAB while X was
+  unreadable moves once to the X post when X carries the same announcement. A status mirror that fails
+  twice in a run is skipped for the rest of it. A wrong link on a live card is corrected by pinning
+  `title_url` and `image` in `config/overrides.json`.
+- **Banners settle once confirmed.** An official notice locks its 5★ or 4★ name on its own. A community hub
+  name, a calendar name and a wiki name lock once any two of them agree (5★ and 4★, every game). An override locks alone. A locked name is final against the hub
+  and the wiki, and an official name is final against later official notices. Until a name locks, it can still
+  change: the hub follows itself, the wiki corrects the hub, and an official notice corrects both. Maintenance
+  keeps updating as before. An incomplete banner block is read at most every three hours, and a complete one
+  with an unconfirmed name at most every six hours
+  for a block that is complete but not yet confirmed.
+- **Banner notices are found by title.** For the card's own version, the monitor looks the official banner
+  notice up by its title (`Version 7.1 Event Wishes Notice - Phase I`, `Version 4.6 Event Warp: Phase I`,
+  `V3.2 Limited-Time Channels (Phase I)`, Wuthering Waves' `Featured Resonator/Weapon Convene`), whatever its
+  age, through HoYoLAB's official search and Kuro's article menu. Only the game's official account counts, a
+  fan repost never does, and the templates live in `config/games.json`. `BANNER_SEARCH=0` turns it off.
 - **A settled copy that no longer resolves is identified.** A mirror edit returning `404` yields
   `🗂 … copy <id> was deleted (Discord 10008) and a settled version is not re-posted`. “Was
   deleted” is report wording for an id that stopped resolving, not proof of who removed it. If no

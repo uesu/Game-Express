@@ -1,6 +1,6 @@
 # Terms of Service
 
-**Effective date:** October 2, 2026
+**Effective date:** October 9, 2026
 **Applies to:** *Game-Express*, the open-source game version-schedule announcer and redemption-code
 poster ("the Service"), running as a GitHub Actions workflow that posts through Discord webhooks.
 
@@ -11,8 +11,9 @@ By deploying, running or modifying an instance of the Service, you agree to thes
 
 ## 2. What the Service is
 A set of open-source Python scripts that read **public official announcements** (HoYoLAB,
-official X accounts, Kuro Games' website, official launcher APIs) and **public redemption-code
-lists**, then post formatted cards to Discord channels that **you** control. There is no hosted
+official X accounts, Kuro Games' website, official launcher APIs), **community and wiki pages** used
+for banner lineups and estimated dates (official banner notices found by title, a community banner feed, game wikis, countdown sites), and
+**public redemption-code lists**, then post formatted cards to Discord channels that **you** control. There is no hosted
 service operated by the author on your behalf. Each operator runs their own instance.
 
 ## 3. No affiliation
@@ -24,9 +25,16 @@ and trademarks belong to their respective owners and are shown for informational
 Schedules, banners, maintenance times and codes come from official and community sources and
 **can change** without notice:
 - **STC = Subject to Change**, and **TBA = To be Announced**.
-- Official sources always win. When no official time has been published yet, the card may show a
-  community **estimate** (countdown sites, the community banner feed) — always labelled as such
+- Official notices win over estimates. When no official time has been published yet, the card may
+  show a community **estimate** (countdown sites, the community banner feed) — always labelled as such
   on the card itself, and replaced automatically the moment the official notice appears.
+- **Locks.** Once a card is posted, its title link and key art stay on the announcement it was built
+  from. A banner name locks when an official notice confirms it, or when any two reputable sources agree
+  (the community feed, the official game calendar, the game wiki), for 5★ and 4★ alike. A locked name is not changed by the feed or the wiki, and an official name is not changed by a
+  later official notice either (a conflict is recorded, not applied). Until a name locks, it may change as
+  sources update, and an official notice corrects a feed or wiki value. A lock can keep an error in place
+  when the sources agreed on it; an operator can correct it through `config/overrides.json`. Maintenance
+  details keep updating as official times arrive.
 - The Service provides **no guarantee** that any date, banner, reward or code is correct, valid
   in your region, or still active.
 - Always confirm in-game or through official channels.
@@ -35,7 +43,7 @@ Schedules, banners, maintenance times and codes come from official and community
 If you run an instance, you are responsible for:
 - **Using webhooks and tokens you own**, and keeping them secret.
 - **Following the rules of every service involved**: the [Discord Terms of Service](https://discord.com/terms), the [Discord Developer Policy](https://discord.com/developers/docs/policies-and-agreements/developer-policy), the X/Twitter terms, and the terms of the APIs the Service reads.
-- **Respecting sources**: keep the default low request rate (a run every ~5 minutes, with only a few requests per source) and do not use the Service to overload, scrape at high frequency, or resell data.
+- **Respecting sources**: keep the default low request rate (a run every ~5 minutes, with only a few requests per source; a wiki banner lookup and a title search are each repeated at most every three hours while a banner is still TBA, and at most every six hours while it is unconfirmed) and do not use the Service to overload, scrape at high frequency, or resell data.
 - **Your server's content**: ping roles, channels, and who can see the posts.
 
 ## 6. Acceptable use

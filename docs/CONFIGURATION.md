@@ -134,6 +134,8 @@ being dropped. A codes drop split across several messages mentions the role on *
 | `COUNTDOWN_ESTIMATES` | on | `0` = never fill program / maintenance times from countdown sites |
 | `PROGRAM_MEDIA` | on | `0` = never look the program announcement up — neither the official news page nor the tweet already cached in `config/program_announcements.json` (the card then keeps whatever the run's own feed showed) |
 | `BANNER_FEED` | on | `0` = never fill banner lineups from `hub.json` |
+| `BANNER_CALENDAR` | on | `0` = never read the official game calendars (api.ennead.cc) for banner names — see [BANNER_DATABASE.md](BANNER_DATABASE.md) |
+| `BANNER_SEARCH` | on | `0` = never look banner notices up by title (HoYoLAB search, Kuro's article menu) — see [BANNER_DATABASE.md](BANNER_DATABASE.md#finding-the-notice-by-title) |
 | `GACHA_WIKI` | on | `0` = never fill banner line-ups from the game wikis ([BANNER_DATABASE.md](BANNER_DATABASE.md)) |
 | `CODES_MIN_SOURCES` | 2 | independent community sources needed for an unverified code |
 | `CODES_MARK_EXPIRED` | on | strike through posted codes once every source lists them as expired |

@@ -120,10 +120,10 @@ Program announcement had scrolled out. Since **1.3.0** the monitor looks the ann
   announcement with its cover, and an article page carries the embedded stream — whose YouTube
   thumbnail is the program's own 1280×720 artwork;
 - failing that, the **HoYoLAB news list is paged back** past the lookback window;
-- the headline links the announcement **wherever it was published** — an official **X post**
-  (Genshin 7.1: `x.com/GenshinImpact/status/2096810691021689205`) and an official **HoYoLAB /
-  official-site article** (ZZZ 3.3: `hoyolab.com/article/46972907`) are equally correct, and the
-  card says which one it used (`🛰️ … key art and link from HoYoLAB`). What the link must never be
+- the headline links the announcement **wherever it was published** — an official **X post** is preferred (ZZZ 3.3:
+  `x.com/ZZZ_EN/status/2106957553435312559`; Genshin 7.1: `x.com/GenshinImpact/status/2096810691021689205`).
+  An official **HoYoLAB / official-site article** is equally correct, and is the fallback when X cannot be
+  read (ZZZ 3.3's card had been built from `hoyolab.com/article/46972907` before it was pinned to X). The card says which one it used (`🛰️ … key art and link from HoYoLAB`). What the link must never be
   is the *Update and Maintenance Notice* — a different post that happens to carry the maintenance
   times, and the reason the first 7.1 card had no air time and the notice's cover;
 - images are always upgraded to the biggest rendition the source serves (tweet photo → `?name=orig`,
@@ -137,6 +137,77 @@ Program announcement had scrolled out. Since **1.3.0** the monitor looks the ann
   the whole thing off.
 
 ---
+
+### Once posted, the card keeps its announcement
+
+The lookup above decides the card's link and key art **once**. The first post that gives an air
+time sets `announcement_locked`, and from then on:
+
+| Field | After the lock |
+|---|---|
+| title link, source button(s), key art | fixed to the post that opened the card |
+| air time, programme name, version name, YouTube link | fixed. Only an *estimated* air time can still be replaced by an official one |
+| banners (5★ and 4★ names, re-runs) | an official notice locks its name on its own; any two of a hub name, a calendar name and a wiki name lock once they agree (5★ and 4★, every game). A locked name is final against the hub and the wiki, and an official name is final against later official notices (a conflict is logged, not applied). Until then a name stays open and keeps updating |
+| maintenance: pre-install, start, end, compensation | keep updating. An official value replaces the `🕒 estimated from version cadence` line and its countdown |
+
+Why: until this rule, every run rebuilt the link and key art from whatever program posts were still
+inside the 72 h lookback. When the real announcement aged out, a same-day giveaway that repeated the
+air time took the card over (ZZZ 3.3, 2026-10-09). Nothing remembered which post had opened it.
+
+- A teaser with no air time does not lock, so the real announcement can still take the card and its
+  air time.
+- Records written before the flag are locked when they carry `program_seen` or `media_from`, and keep
+  their link. An explicit `announcement_locked` value always takes precedence over those keys.
+- The human fix is `title_url` in `config/overrides.json`. It pins the link and the source button
+  together, names the button after its host (`X Post` or `HoYoLAB`), and drops the post it replaces.
+  `image` pins the key art. An override always wins, so a locked card can still be corrected by hand.
+- **Which post opens the lock.** `schedule.LOCK_RANK` ranks the candidates: X post 3, HoYoLAB and Kuro
+  official 2, official news page 1. The highest rank wins, then the earliest post. So the X post wins over
+  a HoYoLAB copy of the same announcement. This ranking is separate from `PRIORITY`, which still decides
+  which *value* wins (HoYoLAB 50 over X 40). The lock decides where the link points.
+- **One upgrade, never a giveaway.** A card locked to a lower rank (HoYoLAB taken while X could not be
+  read) moves **once** to a higher-rank post, and only when that post has the same air time and was
+  published no later than the lock's own announcement (`announcement_ts`). A later giveaway can never
+  upgrade a lock. Records without `announcement_source` / `announcement_ts` get no upgrade.
+- **Countdown estimates are unchanged, in all six games.** Before an official notice, maintenance
+  start and end still come from the countdown and version-cadence model, labelled as estimates. An
+  official value from X, HoYoLAB, Kuro or the launcher replaces it and removes the
+  `🕒 estimated from version cadence` line. `test_a_countdown_estimate_is_replaced_by_the_official_notice_in_every_game`
+  pins this.
+- **Known limit: the first program post seen locks the card.** If a program-titled post with an air time
+  (for example a same-window giveaway) is seen before the real announcement, it takes the lock. The
+  cross-game check covers the announcement-first order for all six games. The giveaway-first order fails
+  for all six: it is a documented limit, not a fixed one. Correct it with `title_url` and `image` in
+  `config/overrides.json`.
+- **Banners settle once confirmed.** Each banner name has a witness list, one entry per group (`official`,
+  `feed`, `calendar`, `wiki`). An official notice locks its name on its own; any two of a hub, calendar or wiki name lock once they
+  agree, and they cannot change a locked name. Two copies of one notice (HoYoLAB and X) are one group, not
+  two. An override confirms alone. Re-runs and the 4★ summary come only from the wiki, so they lock only once
+  the wiki names them and their phase lists are already locked. A name that only the wiki gives stays open
+  until the freeze, and it keeps updating. The full rule is in
+  [BANNER_DATABASE.md](BANNER_DATABASE.md#confirmation-and-the-lock).
+- **Not decided:** HoYoverse moving a programme does not move the air time of a locked card. Until
+  that is decided, pin `program_ts` in `config/overrides.json`.
+
+## Banner names: the reader fixes and the title search (2026-10-09)
+
+Checked against the real posts (fixtures in `tests/test_smoke.py`):
+
+- **WuWa 3.6 Phase I** (Kuro `5318`): 5★ Denia; 4★ Yangyang, Baizhi, Sanhua. The reader had dropped Sanhua,
+  whose line says *receive boosted* — fixed (the stop-words now include `receives?`, `significantly`,
+  `have/has (significantly) boosted`).
+- **ZZZ 3.2 Phase I**: 5★ Claret, Nangong Yu; 4★ Anton, Nicole. Nicole's line says *have significantly boosted*
+  — fixed. The default-agent pair `Anton (Electric - Attack) & Nicole (Ether - Support)` reads as two names, while
+  `Topaz & Numby` stays one name.
+- **ZZZ 3.2 Phase II**: 5★ Roxy, Promeia; 4★ Corin, Billy.
+- **Genshin 7.1 Phase I**: 5★ Vesna, Vodyanitsa; 4★ Diona, Faruzan, Chongyun. **Phase II**: 5★ Skirk, Escoffier;
+  4★ Dahlia, Candace, Mika.
+- **Star Rail 4.6 Phase I** (`46851682`, outside the lookback): 5★ Pearl, Evanescia; 4★ Qingque, Xueyi, Misha.
+  Found by title, so it locks the official names.
+- **Star Rail 4.6 Phase II** (Mortenax Blade, 2026-10-21): hub-sourced, unlocked, until an official post exists.
+
+Fan reposts are ignored, and a title that matches the wrong version or phase is ignored. See
+[BANNER_DATABASE.md → Finding the notice by title](BANNER_DATABASE.md#finding-the-notice-by-title).
 
 ## The code gate
 

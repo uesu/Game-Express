@@ -20,6 +20,7 @@ import sys
 import tempfile
 import time
 import traceback
+import types
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -37,8 +38,15 @@ from gamexpress.discord import SendResult, WebhookClient, _split, webhook_finger
 from gamexpress.models import CodeHit, Item  # noqa: E402
 from gamexpress.runner import Ctx, failover_check  # noqa: E402
 from gamexpress.samples import CODE_SAMPLES, SCHEDULE_SAMPLES  # noqa: E402
+from gamexpress.sources import (  # noqa: E402
+    banner_search,  # noqa: E402
+    calendarfeed,
+    countdown,
+    gachawiki,
+    hoyolab,
+    newspage,
+)
 from gamexpress.sources import codes as csrc  # noqa: E402
-from gamexpress.sources import countdown, gachawiki, hoyolab, newspage  # noqa: E402
 from gamexpress.sources.hoyolab import _post_text  # noqa: E402
 from gamexpress.sources.kuro import parse_launcher_index  # noqa: E402
 from gamexpress.sources.launcher import parse_branches  # noqa: E402
@@ -3553,6 +3561,1160 @@ def test_the_documented_nitter_fleet_size_matches_the_code():
     assert f"{live} nitter mirrors" in security
 
 
+# =========================================================================== announcement lock (2026-10-09)
+# ZZZ 3.3, live on 2026-10-09: the card's title link and key art switched to ZZZ_EN's 05:00 UTC
+# "Share to Win Master Tape x10" giveaway, which repeats the air time and so classifies as a Special
+# Program post. The announcement itself (2026-10-05 04:00 UTC) had aged out of the 72 h window.
+# The texts below are the real fxtwitter bodies of both posts.
+ZZZ33_ANN_URL = "https://x.com/ZZZ_EN/status/2106957553435312559"
+ZZZ33_ANN_IMG = "https://pbs.twimg.com/media/HTxU4O3W4AAGolV.jpg?name=orig"
+ZZZ33_GIVE_URL = "https://x.com/ZZZ_EN/status/2108422202974499088"
+ZZZ33_GIVE_IMG = "https://pbs.twimg.com/media/HUGjhQZWUAAiOJd.jpg?name=orig"
+ZZZ33_AIRS = 1791545400                      # 2026-10-09 11:30 UTC = 19:30 UTC+8
+ZZZ33_ANN_TEXT = (
+    "Zenless Zone Zero Version 3.3 \"Journey to the Sky\" Special Program Announcement\n\n"
+    "Dear Proxies,\nThe Zenless Zone Zero Version 3.3 \"Journey to the Sky\" Special Program will begin on October 9 at 19:30 (UTC+8)!\n"
+    "How will Phoenix, descending from the sky, rewrite the fate of the Proxies?\n"
+    "Severian, acting on the mayor's orders, has suddenly appeared on Quietude Isle!? How will his presence shake up the ever-shifting situation in Roscaelifer?\n"
+    "The story behind it all will be revealed by Mr. Z and these two new Agents!\n\n"
+    "We will also be dropping an exclusive redemption code during the livestream, so make sure you tune in on time. Don't miss out, Proxies!\n\n"
+    "Follow our official livestream channels:\nYouTube>> https://www.youtube.com/@ZZZ_Official/\nTwitch>> https://www.twitch.tv/zenlesszonezero\n"
+    "TikTok>> https://www.tiktok.com/@zenlesszonezero\n\n#zzzero #zenlesszonezero\n#zzzSpecialProgram")
+ZZZ33_GIVE_TEXT = (
+    "🎁 #zzzSpecialProgram – Share to Win Master Tape ×10\n\n"
+    "Dear Proxies, the Zenless Zone Zero Version 3.3 Special Program will air on October 9 at 19:30 (UTC+8)!\n"
+    "This special program will unveil new game content and updates for the upcoming version. During the show, you'll also have the chance to receive redemption codes and other exciting gifts!\n\n"
+    "Livestream Channels:\nTwitch: https://www.twitch.tv/zenlesszonezero\nYouTube: https://www.youtube.com/@ZZZ_Official\n\n"
+    "▼ Event Rewards\nMaster Tape ×10: 50 Winners\n\n▼ How to Participate\n1. Follow our official account\n"
+    "2. Quote this post along with the hashtags #zzzSpecialProgram #zzzero\n\n▼ Event Duration\nOctober 9 – October 11\n\n"
+    "▼ Event Rules\nhttps://hoyo.link/5ADjFCAL\n\n#zzzero #zzzSpecialProgram")
+
+
+def _zzz33_announcement() -> Item:
+    return Item("x", "zzz", "2106957553435312559", ZZZ33_ANN_URL, "", ZZZ33_ANN_TEXT, 1791172800, [ZZZ33_ANN_IMG])
+
+
+def _zzz33_giveaway() -> Item:
+    return Item("x", "zzz", "2108422202974499088", ZZZ33_GIVE_URL, "", ZZZ33_GIVE_TEXT, 1791522000, [ZZZ33_GIVE_IMG])
+
+
+def _merge_zzz33(record: dict, items: list[Item], now: int, override: dict | None = None) -> dict:
+    """One run's merge for ZZZ 3.3, called the way _handle_version calls it."""
+    extracts = [e for e in (schedule.extract(GAMES["zzz"], it) for it in items) if e]
+    data = schedule.merge(GAMES["zzz"], "3.3", extracts, record, override or {}, {}, now, [])
+    record["data"] = data
+    return data
+
+
+def test_the_announcement_that_opened_a_card_keeps_its_link_and_key_art():
+    """The incident, step by step. Both posts classify as the same programme with the same air
+    time, so the only thing that can keep the card on the announcement is remembering it."""
+    assert schedule.extract(GAMES["zzz"], _zzz33_giveaway()).fields["program_ts"] == ZZZ33_AIRS
+    record: dict = {}
+    first = _merge_zzz33(record, [_zzz33_announcement()], now=1791172900)
+    assert first["title_url"] == ZZZ33_ANN_URL and first["source_url"] == ZZZ33_ANN_URL
+    assert first["images"] == [ZZZ33_ANN_IMG]
+    assert first["program_ts"] == ZZZ33_AIRS
+    assert first["announcement_locked"] is True
+    # four days later the announcement has aged out of the window; only the giveaway is left
+    later = _merge_zzz33(record, [_zzz33_giveaway()], now=1791522100)
+    assert later["title_url"] == ZZZ33_ANN_URL and later["source_url"] == ZZZ33_ANN_URL
+    assert later["images"] == [ZZZ33_ANN_IMG]
+    assert later["source_links"] == [("X Post", ZZZ33_ANN_URL)]
+    assert later["program_ts"] == ZZZ33_AIRS
+    # and when both are in the window, the giveaway (newer) still does not take over
+    both = _merge_zzz33(record, [_zzz33_giveaway(), _zzz33_announcement()], now=1791522200)
+    assert both["title_url"] == ZZZ33_ANN_URL and both["images"] == [ZZZ33_ANN_IMG]
+    assert not any(ZZZ33_GIVE_URL in u for _, u in both["source_links"])
+
+
+def test_after_the_lock_only_banners_and_maintenance_details_move():
+    record: dict = {}
+    _merge_zzz33(record, [_zzz33_announcement()], now=1791172900)
+    notice = Item("hoyolab", "zzz", "notice-3.3", "https://www.hoyolab.com/article/46970001",
+                  "Version 3.3 Update and Maintenance Notice", "maintenance", 1791522000)
+    banners = Item("hoyolab", "zzz", "banner-3.3", "https://www.hoyolab.com/article/46970002",
+                   "Version 3.3 Banners", "banners", 1791522000)
+    extracts = [schedule.Extract(item=notice, kind="maintenance", version="3.3",
+                                 fields={"maint_start_ts": 1792533600, "maint_end_ts": 1792551600,
+                                         "preinstall_ts": 1792382400}),
+                schedule.Extract(item=banners, kind="banner", version="3.3",
+                                 fields={"banner_phase": 1, "banner_five": ["Phoenix Reffaella"]}),
+                schedule.Extract(item=_zzz33_giveaway(), kind="program", version="3.3",
+                                 fields={"program_ts": ZZZ33_AIRS})]
+    data = schedule.merge(GAMES["zzz"], "3.3", extracts, record, {}, {}, 1791522300, [])
+    assert data["maint_start_ts"] == 1792533600 and data["maint_end_ts"] == 1792551600   # maintenance moved
+    assert data["preinstall_ts"] == 1792382400
+    assert data["banners"]["phase1"] == ["Phoenix Reffaella"]                              # banner moved
+    assert data["title_url"] == ZZZ33_ANN_URL and data["images"] == [ZZZ33_ANN_IMG]       # link did not
+
+
+def test_a_later_lookup_cannot_move_a_locked_card_but_may_fill_an_estimate():
+    locked = {"version": "3.3", "title_url": ZZZ33_ANN_URL, "source_url": ZZZ33_ANN_URL,
+              "source_label": "X Post", "source_links": [("X Post", ZZZ33_ANN_URL)],
+              "images": [ZZZ33_ANN_IMG], "program_seen": True, "announcement_locked": True,
+              "program_ts": ZZZ33_AIRS}
+    other = {"url": "https://www.hoyolab.com/article/46970009", "source": "HoYoLAB",
+             "images": ["https://img.example/other-key-art.jpg"], "program_ts": ZZZ33_AIRS + 3600}
+    now = 1791522100
+    data = dict(locked)
+    assert schedule.apply_program_media(data, {}, other, now) == []        # official air time: kept
+    assert data == locked
+    # a countdown estimate of the air time IS replaced -- the link and key art still are not
+    estimate = dict(locked, program_ts=1791500000, estimated=["program_ts"])
+    changed = schedule.apply_program_media(estimate, {}, other, now)
+    assert "program_ts" in changed and estimate["program_ts"] == ZZZ33_AIRS + 3600
+    assert estimate["title_url"] == ZZZ33_ANN_URL and estimate["images"] == [ZZZ33_ANN_IMG]
+    # a card written before the flag existed is locked by what it already shows
+    legacy = {k: v for k, v in locked.items() if k != "announcement_locked"}
+    schedule.apply_program_media(legacy, {}, other, now)
+    assert legacy["title_url"] == ZZZ33_ANN_URL and legacy["images"] == [ZZZ33_ANN_IMG]
+    # and an UNLOCKED card still adopts the lookup, which then locks it
+    fresh: dict = {"version": "3.3"}
+    schedule.apply_program_media(fresh, {}, other, now)
+    assert fresh["title_url"] == other["url"] and fresh["announcement_locked"] is True
+
+
+def test_a_teaser_without_an_air_time_does_not_lock_the_card():
+    """A post that gives no air time cannot be the announcement the card is locked to. It may show
+    until the real one arrives, and the real one (with the air time) then takes the card."""
+    record: dict = {}
+    teaser = Item("x", "zzz", "2100000000000000001", "https://x.com/ZZZ_EN/status/2100000000000000001",
+                  "", "Version 3.3 is coming soon", 1791100000, [])
+    first = schedule.merge(GAMES["zzz"], "3.3", [schedule.Extract(item=teaser, kind="program",
+                                                                  version="3.3", fields={})],
+                           record, {}, {}, 1791100100, [])
+    assert first["announcement_locked"] is False and first["title_url"] == teaser.url
+    record["data"] = first
+    second = _merge_zzz33(record, [_zzz33_announcement()], now=1791172900)
+    assert second["title_url"] == ZZZ33_ANN_URL and second["program_ts"] == ZZZ33_AIRS
+    assert second["announcement_locked"] is True
+
+
+def test_a_title_override_pins_the_link_and_the_source_button_together():
+    record: dict = {}
+    _merge_zzz33(record, [_zzz33_giveaway()], now=1791522100)           # the wrong post, locked
+    fixed = _merge_zzz33(record, [_zzz33_giveaway()], now=1791522200,
+                         override={"title_url": ZZZ33_ANN_URL, "image": ZZZ33_ANN_IMG})
+    assert fixed["title_url"] == ZZZ33_ANN_URL and fixed["source_url"] == ZZZ33_ANN_URL
+    assert fixed["source_links"] == [("X Post", ZZZ33_ANN_URL)]          # no stale second button
+    assert fixed["images"] == [ZZZ33_ANN_IMG]
+
+
+def test_the_shipped_zzz_33_override_repairs_the_card_that_was_switched():
+    """The card as it stood after the 05:00 UTC run: a record from before the flag existed, locked
+    to the giveaway. config/overrides.json must restore the announcement's own X post and its photo."""
+    from gamexpress.sources.twitter import program_seed
+    assert program_seed("zzz", "3.3").get("id") == "2106957553435312559"   # the seed agrees
+    broken = {"data": {"version": "3.3", "title_url": ZZZ33_GIVE_URL, "source_url": ZZZ33_GIVE_URL,
+                       "source_label": "X Post", "source_links": [("X Post", ZZZ33_GIVE_URL)],
+                       "images": [ZZZ33_GIVE_IMG], "program_seen": True, "program_ts": ZZZ33_AIRS}}
+    override = load_overrides()["zzz"]["3.3"]
+    fixed = _merge_zzz33(broken, [_zzz33_giveaway()], now=1791522200, override=override)
+    assert fixed["title_url"] == ZZZ33_ANN_URL and fixed["source_url"] == ZZZ33_ANN_URL
+    assert fixed["source_links"] == [("X Post", ZZZ33_ANN_URL)]            # no stale giveaway button
+    assert fixed["source_label"] == "X Post"
+    assert fixed["images"] == [ZZZ33_ANN_IMG]
+    assert fixed["program_ts"] == ZZZ33_AIRS                                # the air time was never wrong
+
+
+def test_the_timeline_seed_is_the_first_announcement_not_a_later_reminder():
+    """The timeline is newest-first. The seed must be the OLDEST match, or the reminder becomes the
+    announcement that gets cached and then locked."""
+    import asyncio
+
+    from gamexpress.sources import twitter as tw
+
+    saved: list[dict] = []
+    ann = {"id": "2200000000000000001", "ts": 1000, "title": "", "links": [], "images": [],
+           "text": "Zenless Zone Zero Version 3.4 Special Program Announcement\n\nThe Version 3.4 Special Program will begin on October 9 at 19:30 (UTC+8)!"}
+    reminder = {"id": "2200000000000000002", "ts": 2000, "title": "", "links": [], "images": [],
+                "text": "Dear Proxies, the Version 3.4 Special Program will air on October 9 at 19:30 (UTC+8)!"}
+
+    client = tw.XClient(None, settings())
+
+    async def timeline(account):
+        return [reminder, ann]                                 # newest first, as in production
+
+    async def tweet(tweet_id, account=None):
+        return None                                            # fall back to the timeline entry
+
+    client.timeline, client.tweet = timeline, tweet
+    real_save = tw.save_program_seed
+    tw.save_program_seed = lambda game_key, version, entry: saved.append(entry) or True
+    try:
+        item = asyncio.run(client.program_tweet(GAMES["zzz"], "3.4"))
+    finally:
+        tw.save_program_seed = real_save
+    assert item is not None and item.id == ann["id"]
+    assert saved and saved[0]["id"] == ann["id"]
+
+
+# ---- nitter.cf first for single tweets (2026-10-09) -------------------------------------------
+NIT_ID = "2091737263398862915"                         # ZZZ 3.2 announcement, 2026-08-24 04:00 UTC
+
+
+def _nit_rss(description: str, status_id: str = NIT_ID) -> str:
+    """A per-status feed in nitter's shape: the status link, pubDate, creator and HTML description."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel>'
+        "<title>Thread by @ZZZ_EN</title><item>"
+        "<title>Zenless Zone Zero Version 3.2 announcement</title>"
+        f"<link>https://nitter.cf/ZZZ_EN/status/{status_id}#m</link>"
+        "<dc:creator>@ZZZ_EN</dc:creator>"
+        "<pubDate>Mon, 24 Aug 2026 04:00:00 GMT</pubDate>"
+        f"<guid>https://nitter.cf/ZZZ_EN/status/{status_id}#m</guid>"
+        f"<description>{description}</description>"
+        "</item></channel></rss>"
+    )
+
+
+NIT_PLAIN = (
+    "&lt;p&gt;Zenless Zone Zero Version 3.2 &quot;Their Secret Histories&quot; Special Program Announcement"
+    "&lt;/p&gt;&lt;p&gt;The Version 3.2 Special Program will begin on August 28 at 19:30 (UTC+8)!&lt;/p&gt;"
+    "&lt;p&gt;#zzzSpecialProgram&lt;/p&gt;"
+    '&lt;img src="https://nitter.cf/pic/https%3A%2F%2Fpbs%2Etwimg%2Ecom%2Fmedia%2FHQZWs%2D3WAAEj32y%2Ejpg"/&gt;'
+)
+NIT_TCO = NIT_PLAIN.replace(
+    "#zzzSpecialProgram&lt;/p&gt;",
+    '#zzzSpecialProgram&lt;/p&gt;&lt;p&gt;YouTube&amp;gt;&amp;gt; '
+    '&lt;a href="https://nitter.cf/t.co/x1mTuVPngd"&gt;https://nitter.cf/t.co/x1mTuVPngd&lt;/a&gt;&lt;/p&gt;')
+
+
+class _NitterThenFx:
+    """Fetcher stand-in: nitter.cf serves `nitter_body` (xitter.cf serves nothing), FxTwitter serves
+    `fx`. It records the source of every request in order, which is what these tests check."""
+    def __init__(self, nitter_body=None, fx=None):
+        self.nitter_body, self.fx, self.calls = nitter_body, fx, []
+
+    async def get_text(self, url, source="", **k):
+        self.calls.append(source)
+        return self.nitter_body if "nitter.cf/" in url else None
+
+    async def get_json(self, url, source="", **k):
+        self.calls.append(source)
+        return self.fx if source == "fxtwitter" else None
+
+
+def _fx_body(links=()):
+    return {"tweet": {"id": NIT_ID, "text": "fxtwitter's text", "created_timestamp": 1787544000,
+                      "author": {"screen_name": "ZZZ_EN"}, "url": f"https://x.com/ZZZ_EN/status/{NIT_ID}",
+                      "raw_text": {"facets": [{"type": "url", "replacement": u} for u in links]}}}
+
+
+def test_a_single_tweet_is_read_from_nitter_before_fxtwitter():
+    """With the account known, nitter.cf answers first and FxTwitter is not asked at all."""
+    from gamexpress.sources import twitter as tw
+
+    f = _NitterThenFx(nitter_body=_nit_rss(NIT_PLAIN), fx=_fx_body())
+    c = tw.XClient(f, settings())
+    t = asyncio.run(c.tweet(NIT_ID, "ZZZ_EN"))
+    assert f.calls == ["nitter"]
+    assert c.source_used == {"nitter": 1}
+    assert t["text"].startswith("Zenless Zone Zero Version 3.2") and t["ts"] == 1787544000
+    assert t["author"] == "ZZZ_EN" and t["url"] == f"https://x.com/ZZZ_EN/status/{NIT_ID}"
+    assert t["photos"] == ["https://pbs.twimg.com/media/HQZWs-3WAAEj32y.jpg"]
+
+
+def test_a_t_co_link_nitter_cannot_expand_is_expanded_by_fxtwitter():
+    """nitter's RSS leaves t.co wrapped. The YouTube link the card reads must come from FxTwitter's
+    expanded facets, so the nitter answer alone is not final when such a link is present."""
+    from gamexpress.sources import twitter as tw
+
+    stream = "https://www.youtube.com/@ZZZ_Official/"
+    f = _NitterThenFx(nitter_body=_nit_rss(NIT_TCO), fx=_fx_body([stream]))
+    c = tw.XClient(f, settings())
+    t = asyncio.run(c.tweet(NIT_ID, "ZZZ_EN"))
+    assert f.calls == ["nitter", "fxtwitter"]
+    assert stream in t["links"]
+    assert c.source_used == {"fxtwitter": 1}
+
+
+def test_when_nitter_is_silent_fxtwitter_still_answers():
+    from gamexpress.sources import twitter as tw
+
+    f = _NitterThenFx(nitter_body=None, fx=_fx_body())
+    c = tw.XClient(f, settings())
+    t = asyncio.run(c.tweet(NIT_ID, "ZZZ_EN"))
+    assert f.calls == ["nitter", "nitter", "fxtwitter"]                 # nitter.cf, then xitter.cf
+    assert t["text"] == "fxtwitter's text" and c.source_used == {"fxtwitter": 1}
+
+
+def test_a_nitter_feed_for_another_status_is_never_taken_as_this_tweet():
+    from gamexpress.sources import twitter as tw
+
+    f = _NitterThenFx(nitter_body=_nit_rss(NIT_PLAIN, status_id="2106957553435312559"), fx=_fx_body())
+    c = tw.XClient(f, settings())
+    t = asyncio.run(c.tweet(NIT_ID, "ZZZ_EN"))
+    assert t["text"] == "fxtwitter's text"
+    assert c.source_used == {"fxtwitter": 1}
+
+
+def test_without_an_account_nitter_is_not_asked():
+    from gamexpress.sources import twitter as tw
+
+    f = _NitterThenFx(nitter_body=_nit_rss(NIT_PLAIN), fx=_fx_body())
+    c = tw.XClient(f, settings())
+    asyncio.run(c.tweet(NIT_ID))
+    assert f.calls == ["fxtwitter"]
+
+
+# ---- source preference and the lock (2026-10-09, the X-first rule) ------------------------------
+HOY_ANN_URL = "https://www.hoyolab.com/article/46972907"        # the fallback announcement
+
+
+def _zzz33_hoyolab_announcement() -> Item:
+    """The same announcement from HoYoLAB, published three seconds after the X post."""
+    return Item("hoyolab", "zzz", "46972907", HOY_ANN_URL, "Zenless Zone Zero Version 3.3 Announcement",
+                ZZZ33_ANN_TEXT, 1791172803, ["https://upload-os-bbs.hoyolab.com/upload/2026/09/30/"
+                                              "c32ff7216961efbcd3fc83ef9f256f36_7613960778498299818.jpg"])
+
+
+def test_when_x_and_hoyolab_both_carry_the_announcement_the_lock_goes_to_x():
+    """X is the preferred source, so when both posts are visible in the same run, the card's link
+    and key art are X's post and its photo, and HoYoLAB is only the second button."""
+    record: dict = {}
+    data = _merge_zzz33(record, [_zzz33_hoyolab_announcement(), _zzz33_announcement()], now=1791172900)
+    assert data["title_url"] == ZZZ33_ANN_URL and data["images"] == [ZZZ33_ANN_IMG]
+    assert data["announcement_source"] == "x"
+    assert [lbl for lbl, _ in data["source_links"]][0] == "X Post"
+
+
+def test_a_hoyolab_lock_taken_while_x_was_down_is_upgraded_once_to_the_same_x_announcement():
+    """X was unreadable when the card was first seen, so HoYoLAB held it. Once X can be read again,
+    its announcement (published first, same air time) takes the link and key art -- once."""
+    record: dict = {}
+    first = _merge_zzz33(record, [_zzz33_hoyolab_announcement()], now=1791172900)
+    assert first["title_url"] == HOY_ANN_URL and first["announcement_source"] == "hoyolab"
+    later = _merge_zzz33(record, [_zzz33_hoyolab_announcement(), _zzz33_announcement()], now=1791180000)
+    assert later["title_url"] == ZZZ33_ANN_URL and later["images"] == [ZZZ33_ANN_IMG]
+    assert later["announcement_source"] == "x"
+    # the giveaway appears afterwards with the same air time: it is published later, so it never upgrades
+    # and never re-pins -- the X announcement stays
+    after = _merge_zzz33(record, [_zzz33_hoyolab_announcement(), _zzz33_announcement(), _zzz33_giveaway()],
+                         now=1791530000)
+    assert after["title_url"] == ZZZ33_ANN_URL and after["images"] == [ZZZ33_ANN_IMG]
+
+
+def test_a_giveaway_never_upgrades_a_hoyolab_lock():
+    """The incident in the other direction: a later X post repeating the air time cannot upgrade a
+    card that is locked to HoYoLAB, because it was published after that lock."""
+    record: dict = {}
+    _merge_zzz33(record, [_zzz33_hoyolab_announcement()], now=1791172900)
+    after = _merge_zzz33(record, [_zzz33_hoyolab_announcement(), _zzz33_giveaway()], now=1791530000)
+    assert after["title_url"] == HOY_ANN_URL and after["announcement_source"] == "hoyolab"
+    assert after["images"] != [ZZZ33_GIVE_IMG]
+
+
+def test_the_lock_holds_in_every_game_the_incident_can_reach():
+    """The lock lives in merge(), shared by all games. For each game with a programme pattern, an
+    announcement with an air time locks the card, and a same-air-time giveaway that arrives after the
+    announcement has aged out cannot move the link or the key art."""
+    for key, game in GAMES.items():
+        if not game.enabled:
+            continue
+        word = game.program_patterns[0].title()
+        ann_text = (f"{game.short} Version 9.9 {word} Announcement\n\nThe Version 9.9 {word} will begin on "
+                    "October 20 at 19:30 (UTC+8)!")
+        gw_text = (f"Share to win! The Version 9.9 {word} begins on October 20 at 19:30 (UTC+8). "
+                   "Retweet and reply to join the giveaway.")
+        now0 = 1792000000 - 3 * 86400
+        ann = Item("x", key, "1000000000000000001", "https://x.com/A/status/1000000000000000001", "",
+                   ann_text, now0 - 3600, ["https://pbs.twimg.com/media/ANN.jpg?name=orig"])
+        gw = Item("x", key, "1000000000000000002", "https://x.com/A/status/1000000000000000002", "",
+                  gw_text, now0 + 5 * 86400, ["https://pbs.twimg.com/media/GIVE.jpg?name=orig"])
+        record: dict = {}
+        for items, now in (([ann], now0), ([gw], now0 + 5 * 86400)):
+            extracts = [e for e in (schedule.extract(game, it) for it in items) if e]
+            data = schedule.merge(game, "9.9", extracts, record, {}, {}, now, [])
+            record["data"] = data
+        assert data["title_url"] == ann.url and data["images"] == ann.images, key
+
+
+def test_a_dead_nitter_status_mirror_is_not_waited_on_for_every_tweet():
+    """With nitter.cf and xitter.cf both down, each tweet used to wait on both before FxTwitter.
+    After STATUS_FAIL_LIMIT failures the mirrors are skipped for the run."""
+    from gamexpress.sources import twitter as tw
+
+    class Dead:
+        def __init__(self):
+            self.calls = []
+
+        async def get_text(self, url, source="", **k):
+            self.calls.append(source)
+            return None                                      # every status mirror is down
+
+        async def get_json(self, url, source="", **k):
+            self.calls.append(source)
+            return _fx_body() if source == "fxtwitter" else None
+
+    f = Dead()
+    c = tw.XClient(f, settings())
+    for n in range(5):
+        asyncio.run(c.tweet(str(1000 + n), "ZZZ_EN"))
+    assert f.calls.count("nitter") == tw.STATUS_FAIL_LIMIT * len(tw.STATUS_MIRRORS)
+    assert f.calls.count("fxtwitter") == 5
+
+
+def test_a_countdown_estimate_is_replaced_by_the_official_notice_in_every_game():
+    """The speculation / countdown mechanism is native and game-independent: a maintenance start that is
+    only a countdown estimate is labelled as one, and an official notice replaces it and clears the
+    label, whichever game the card belongs to."""
+    now = 1791522000
+    for key, game in GAMES.items():
+        if not game.enabled:
+            continue
+        estimate = 1792300000
+        official = 1792380000
+        record = {"data": {"version": "9.9", "maint_start_ts": estimate, "estimated": ["maint_start_ts"],
+                           "estimate_sources": ["version cadence"]},
+                  "prov": {"maint_start_ts": [schedule.PRIORITY["countdown"], now - 3600]}}
+        notice = schedule.Extract(
+            Item("hoyolab", key, "notice-9.9", f"https://www.hoyolab.com/article/{key}-9.9-notice",
+                 "Version 9.9 Update Maintenance Notice", "official", now),
+            "maintenance", "9.9", fields={"maint_start_ts": official})
+        data = schedule.merge(game, "9.9", [notice], record, {}, {}, now, [])
+        assert data["maint_start_ts"] == official, key
+        assert "maint_start_ts" not in (data.get("estimated") or []), key
+
+
+# ---- banner confirmation and lock (2026-10-09) -------------------------------------------------
+# A banner name is confirmed when two different groups name it (official / hub / wiki); an override
+# confirms alone. A confirmed name is locked, so a later notice or wiki reading cannot change it.
+def _banner_notice(game_key: str, source: str, url: str, phase: int, five: list[str], ts: int,
+                   four: list[str] | None = None, unsure: bool = False) -> schedule.Extract:
+    item = Item(source, game_key, url.rsplit("/", 1)[-1], url, f"Version 9.9 Banner Phase {phase}", "", ts)
+    fields = {"banner_five": five, "banner_phase": phase, "banner_four": four or [],
+              "banner_four_unsure": unsure}
+    return schedule.Extract(item, "banner", "9.9", fields=fields)
+
+
+def test_an_official_notice_locks_on_its_own_and_a_later_different_one_is_logged_not_applied():
+    game, now, rec = GAMES["zzz"], 1791522000, {}
+    first = _banner_notice("zzz", "x", "https://x.com/ZZZ_EN/status/1", 1, ["Phoenix Reffaella"], now - 3600)
+    rec["data"] = schedule.merge(game, "9.9", [first], rec, {}, {}, now)
+    assert rec["data"]["banners_settled"] == ["phase1"]          # one OFFICIAL notice is the confirmation
+    later = _banner_notice("zzz", "hoyolab", "https://www.hoyolab.com/article/2", 1, ["Severian Lowell"], now - 60)
+    notes: list[str] = []
+    rec["data"] = schedule.merge(game, "9.9", [later], rec, {}, {}, now + 600, notes)
+    assert rec["data"]["banners"]["phase1"] == ["Phoenix Reffaella"]    # final: the conflict is logged
+    assert any("locked official name is kept" in n for n in notes)
+    rec["data"] = schedule.merge(game, "9.9", [later], rec, {}, {}, now + 1200, notes)
+    assert sum("locked official name is kept" in n for n in notes) == 1  # logged once, not every run
+
+
+def test_a_community_lock_is_corrected_by_a_later_official_notice():
+    """Feed and wiki agreement locks a name, but an official notice outranks both and replaces it."""
+    game, now, rec = GAMES["zzz"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "9.9", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"],
+                               {"phase1": ["Lycaon"], "phase2": [], "titles": []}, now)
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase1": ["Lycaon"]}, now + 60)
+    assert rec["data"]["banners_settled"] == ["phase1"]          # feed + wiki agree -> locked
+    official = _banner_notice("zzz", "hoyolab", "https://www.hoyolab.com/article/9", 1, ["Soukaku"], now + 120)
+    rec["data"] = schedule.merge(game, "9.9", [official], rec, {}, {}, now + 600)
+    assert rec["data"]["banners"]["phase1"] == ["Soukaku"]
+    assert rec["data"]["banners_settled"] == ["phase1"]
+
+
+def test_an_official_banner_locks_when_the_hub_confirms_it_and_never_changes_after():
+    game, now, rec = GAMES["zzz"], 1791522000, {}
+    notice = _banner_notice("zzz", "x", "https://x.com/ZZZ_EN/status/1", 1, ["Phoenix Reffaella"], now - 3600)
+    rec["data"] = schedule.merge(game, "9.9", [notice], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"],
+                               {"phase1": ["Phoenix Reffaella"], "phase2": [], "titles": []}, now)
+    assert rec["data"]["banners_settled"] == ["phase1"]
+    newer = _banner_notice("zzz", "hoyolab", "https://www.hoyolab.com/article/3", 1, ["Severian Lowell"], now + 60)
+    rec["data"] = schedule.merge(game, "9.9", [newer], rec, {}, {}, now + 600)
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase1": ["Someone Else"]}, now + 900)
+    assert rec["data"]["banners"]["phase1"] == ["Phoenix Reffaella"]
+    assert rec["data"]["banners_settled"] == ["phase1"]
+
+
+def test_the_wiki_confirming_an_official_banner_locks_it_too():
+    game, now, rec = GAMES["zzz"], 1791522000, {}
+    notice = _banner_notice("zzz", "hoyolab", "https://www.hoyolab.com/article/4", 2, ["Ellen Joe"], now - 3600)
+    rec["data"] = schedule.merge(game, "9.9", [notice], rec, {}, {}, now)
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase2": ["Ellen Joe"]}, now + 60)
+    assert "phase2" in rec["data"]["banners_settled"]
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {}, now + 120)   # a later, empty read
+    assert rec["data"]["banners"]["phase2"] == ["Ellen Joe"]
+
+
+def test_a_wiki_only_early_tier_line_never_locks():
+    game, now, rec = GAMES["zzz"], 1791522000, {}
+    rec["data"], rec["prov"] = {"version": "9.9"}, {}
+    for i in range(3):
+        schedule.apply_gacha_wiki(game, rec["data"], rec["prov"],
+                                  {"confirmed": ["Phoenix Reffaella", "Severian Lowell"]}, now + i * 300)
+    assert rec["data"]["banners"]["confirmed"] == ["Phoenix Reffaella", "Severian Lowell"]
+    assert "confirmed" not in (rec["data"].get("banners_settled") or [])
+
+
+def test_reruns_and_the_four_star_summary_lock_only_after_their_phase_lists_do():
+    """The wiki-derived fields: `reruns` is a subset of the phase names, and `four_star` is the list
+    both phases share. Each locks only when the wiki names it AND its inputs are already locked."""
+    game, now = GAMES["wuwa"], 1791522000
+    four1 = ["Calcharo", "Encore", "Jiyan"][:game.four_star_count]
+    four2 = ["Yangyang", "Lingyang", "Taoqi"][:game.four_star_count]
+
+    def card(phase2_4):
+        rec = {}
+        notices = [_banner_notice("wuwa", "kuro", "https://wutheringwaves.kurogames.com/en/main/news/1", 1,
+                                  ["Verina"], now - 7200, four1),
+                   _banner_notice("wuwa", "kuro", "https://wutheringwaves.kurogames.com/en/main/news/2", 2,
+                                  ["Lupa"], now - 3600, phase2_4)]
+        rec["data"] = schedule.merge(game, "2.5", notices, rec, {}, {}, now)
+        return rec
+
+    # 1. the wiki disagrees on phase 1: the official name is final (it stays and locks), and a re-run
+    #    the phase lists do not contain never locks
+    rec = card(four2)
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"],
+                              {"phase1": ["Someone Else"], "phase2": ["Lupa"], "phase1_4": four1,
+                               "phase2_4": four2, "reruns": ["Someone Else"]}, now + 60)
+    assert rec["data"]["banners"]["phase1"] == ["Verina"]
+    assert "phase1" in rec["data"]["banners_settled"]
+    assert "reruns" not in rec["data"]["banners_settled"]
+
+    # 2. the wiki agrees on the re-runs: they lock now that their phase lists are settled
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"],
+                              {"phase1": ["Verina"], "phase2": ["Lupa"], "phase1_4": four1,
+                               "phase2_4": four2, "reruns": ["Lupa"]}, now + 120)
+    assert {"phase1", "phase2", "phase1_4", "phase2_4", "reruns"} <= set(rec["data"]["banners_settled"])
+    assert "four_star" not in rec["data"]["banners_settled"]    # the two 4★ lists differ: no summary
+
+    # 3. the summary is the shared list when both phases have the same 4★: it locks the same way
+    rec = card(four1)
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"],
+                              {"phase1": ["Verina"], "phase2": ["Lupa"], "phase1_4": four1,
+                               "phase2_4": four1, "four_star": four1}, now + 60)
+    assert "four_star" in rec["data"]["banners_settled"]
+
+    # 4. a summary that disagrees with a phase list is never locked, even when the wiki names it
+    rec = card(four2)
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"],
+                              {"phase1": ["Verina"], "phase2": ["Lupa"], "phase1_4": four1,
+                               "phase2_4": four2, "four_star": four1}, now + 60)
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"],
+                              {"phase1": ["Verina"], "phase2": ["Lupa"], "phase1_4": four1,
+                               "phase2_4": four2, "four_star": four1}, now + 120)
+    assert "four_star" not in rec["data"]["banners_settled"]
+
+
+def test_a_locked_four_star_list_is_not_turned_into_tba_by_a_later_doubtful_notice():
+    game, now, rec = GAMES["genshin"], 1791522000, {}
+    names = ["Furina", "Lyney", "Kaveh"]
+    notice = _banner_notice("genshin", "hoyolab", "https://www.hoyolab.com/article/5", 1, ["Neuvillette"],
+                            now - 3600, names)
+    rec["data"] = schedule.merge(game, "9.9", [notice], rec, {}, {}, now)
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"],
+                              {"phase1": ["Neuvillette"], "phase1_4": names}, now + 60)
+    assert "phase1_4" in rec["data"]["banners_settled"]
+    doubt = _banner_notice("genshin", "x", "https://x.com/GenshinImpact/status/9", 1, [], now + 120,
+                           [], unsure=True)
+    rec["data"] = schedule.merge(game, "9.9", [doubt], rec, {}, {}, now + 600)
+    assert rec["data"]["banners"]["phase1_4"] == names
+
+
+def test_an_override_locks_the_name_it_sets():
+    game, now, rec = GAMES["zzz"], 1791522000, {}
+    notice = _banner_notice("zzz", "x", "https://x.com/ZZZ_EN/status/1", 1, ["Wrong Name"], now - 3600)
+    rec["data"] = schedule.merge(game, "9.9", [notice], rec, {}, {}, now,
+                                 )
+    rec["data"] = schedule.merge(game, "9.9", [notice], rec, {"banners": {"phase1": ["Phoenix Reffaella"]}},
+                                 {}, now + 60)
+    assert "phase1" in rec["data"]["banners_settled"]
+    newer = _banner_notice("zzz", "hoyolab", "https://www.hoyolab.com/article/6", 1, ["Severian Lowell"], now + 120)
+    rec["data"] = schedule.merge(game, "9.9", [newer], rec, {}, {}, now + 600)
+    assert rec["data"]["banners"]["phase1"] == ["Phoenix Reffaella"]
+
+
+def test_a_settled_block_stops_the_wiki_and_an_unconfirmed_one_does_not():
+    games = load_games(ROOT / "config" / "games.json")
+    full = {"banners": {"phase1": ["A"], "phase2": ["B"], "phase1_4": ["a", "b", "c"],
+                        "phase2_4": ["a", "b", "c"], "reruns": ["B"]}}
+    keys = list(schedule.BANNER_KEYS)
+    assert not schedule.banner_block_settled(games["genshin"], full)     # complete, nothing confirmed
+    settled = dict(full, banners_settled=keys)
+    assert schedule.banner_block_settled(games["genshin"], settled)
+    assert not schedule.banner_block_settled(games["wuwa"], settled)     # WuWa also needs its summary
+    assert schedule.banner_block_settled(games["ananta"], {})            # no banner block at all
+
+
+def test_a_complete_but_unconfirmed_block_is_rechecked_every_six_hours_and_a_settled_one_never():
+    games = load_games(ROOT / "config" / "games.json")
+    now = 1791522000
+    game = games["genshin"]
+    full = {"banners": {"phase1": ["A"], "phase2": ["B"], "phase1_4": ["a", "b", "c"],
+                        "phase2_4": ["a", "b", "c"], "reruns": ["B"]}, "banners_checked_ts": now - 3600}
+    assert schedule.wiki_recheck_due(game, dict(full, banners_checked_ts=now - 7 * 3600), now)
+    assert not schedule.wiki_recheck_due(game, full, now)                       # read an hour ago
+    incomplete = {"banners": dict(full["banners"], reruns=[]), "banners_checked_ts": now - 60}
+    assert not schedule.wiki_recheck_due(game, incomplete, now)                 # still TBA: read hourly, not per run
+    assert schedule.wiki_recheck_due(game, dict(incomplete, banners_checked_ts=now - schedule.WIKI_INCOMPLETE_H * 3600), now)
+    settled = dict(full, banners_settled=list(schedule.BANNER_KEYS))
+    assert not schedule.wiki_recheck_due(game, dict(settled, banners_checked_ts=0), now)
+
+
+def test_an_unchanged_derived_preinstall_is_not_re_stamped_every_run():
+    """A derived pre-install that did not move must not get a new provenance clock on every run:
+    the state file would change, and commit, every five minutes for nothing."""
+    game = GAMES["genshin"]
+    data = {"version": "9.9", "maint_start_ts": 1792000000}
+    prov: dict = {}
+    assert schedule.derive_preinstall(game, data, prov, 1791522000, 43) is not None
+    stamp = list(prov["preinstall_ts"])
+    assert schedule.derive_preinstall(game, data, prov, 1791522300, 43) is None
+    assert prov["preinstall_ts"] == stamp
+    data["maint_start_ts"] = 1792010000                     # a real change of the maintenance date does move it
+    assert schedule.derive_preinstall(game, data, prov, 1791522600, 43) is not None
+    assert data["preinstall_ts"] == 1792010000 - 43 * 3600
+
+
+def test_a_failed_wiki_read_is_not_retried_every_run_for_a_complete_block():
+    """When the wiki is down, a complete block must not hammer it on every five-minute run."""
+    games = load_games(ROOT / "config" / "games.json")
+    game = games["genshin"]
+    complete = {"version": "7.1", "maint_start_ts": 1790114400,
+                "banners": {"phase1": ["A"], "phase2": ["B"], "phase1_4": ["a", "b", "c"],
+                            "phase2_4": ["a", "b", "c"], "reruns": ["B"]}}
+    calls = []
+
+    async def failing_fetch(fetcher, key, ver, count, summary):
+        calls.append(ver)
+        return None                                          # the page could not be read
+
+    class _Ctx:
+        settings = types.SimpleNamespace(gacha_wiki=True)
+        fetcher = object()
+        now = 1791522000
+
+    old = gachawiki.fetch_lineup
+    gachawiki.fetch_lineup = failing_fetch
+    try:
+        record = {"data": complete}
+        assert asyncio.run(schedule.gather_wiki_lineup(_Ctx(), game, "7.1", record)) is None
+        assert len(calls) == 1 and complete["banners_checked_ts"] == _Ctx.now
+        assert asyncio.run(schedule.gather_wiki_lineup(_Ctx(), game, "7.1", record)) is None
+        assert len(calls) == 1                               # not asked again straight away
+    finally:
+        gachawiki.fetch_lineup = old
+
+
+def test_an_incomplete_block_is_stamped_and_read_at_most_hourly_so_the_state_changes_once_an_hour():
+    """An incomplete block (still TBA) is read at most every WIKI_INCOMPLETE_H hours. Each read stamps
+    the record, so the state file changes once an hour at most, never on every five-minute run."""
+    game, now, rec = GAMES["genshin"], 1791522000, {}
+    rec["data"], rec["prov"] = {"version": "9.9", "banners": {"phase1": ["A"]}}, {}
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase2": ["B"]}, now)
+    assert rec["data"]["banners_checked_ts"] == now
+    assert rec["data"]["banners"]["phase2"] == ["B"]
+    assert not schedule.wiki_recheck_due(game, rec["data"], now + 300)     # the next five-minute run: no read
+    assert schedule.wiki_recheck_due(game, rec["data"], now + schedule.WIKI_INCOMPLETE_H * 3600)
+
+
+def test_a_banner_lock_holds_in_every_game_and_maintenance_still_moves():
+    now = 1791522000
+    for key, game in GAMES.items():
+        if not game.enabled or not game.card.show_banners:
+            continue
+        name = ["Lyra Vale"]
+        rec = {}
+        first = _banner_notice(key, "hoyolab", f"https://www.hoyolab.com/article/{key}-1", 1, name, now - 3600)
+        rec["data"] = schedule.merge(game, "9.9", [first], rec, {}, {}, now)
+        schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase1": name}, now + 60)
+        assert "phase1" in rec["data"]["banners_settled"], key
+        other = _banner_notice(key, "x", f"https://x.com/{key}/status/2", 1, ["Someone Else"], now + 120)
+        rec["data"] = schedule.merge(game, "9.9", [other], rec, {}, {}, now + 600)
+        assert rec["data"]["banners"]["phase1"] == name, key
+        notice = Item("hoyolab", key, "maint", f"https://www.hoyolab.com/article/{key}-m",
+                      "Version 9.9 Maintenance", "", now + 300)
+        maint = schedule.Extract(notice, "maintenance", "9.9", fields={"maint_start_ts": now + 86400})
+        rec["data"] = schedule.merge(game, "9.9", [maint], rec, {}, {}, now + 900)
+        assert rec["data"]["maint_start_ts"] == now + 86400, key
+
+
+def test_the_feed_follows_its_own_correction_and_a_silent_wiki_never_withdraws_it():
+    """The hub is a single source: its own unlocked value follows a later hub reading. The wiki says
+    nothing about this phase, so the wiki must not erase the hub's value."""
+    game, now, rec = GAMES["starrail"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "9.9", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase1": ["Pela"], "phase2": [], "titles": []}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase1": ["Pearl"], "phase2": [], "titles": []}, now + 600)
+    assert rec["data"]["banners"]["phase1"] == ["Pearl"]              # feed-owned, unlocked: follows the hub
+    assert "banners_settled" not in rec["data"]
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase2": []}, now + 1200)
+    assert rec["data"]["banners"]["phase1"] == ["Pearl"]              # silent wiki: the feed's value stays
+
+
+def test_the_wiki_corrects_a_feed_value_but_never_an_official_one():
+    """Priority order: official (50) > wiki (6) > hub (5). The wiki may correct the hub, never HoYoverse."""
+    game, now, rec = GAMES["starrail"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "9.9", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase1": ["Pela"], "phase2": [], "titles": []}, now)
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase1": ["Pearl"]}, now + 60)
+    assert rec["data"]["banners"]["phase1"] == ["Pearl"]              # wiki outranks the hub
+    assert rec["prov"]["b_phase1"][0] == schedule.PRIORITY["gachawiki"]
+    official = _banner_notice("starrail", "hoyolab", "https://www.hoyolab.com/article/77", 1, ["Seele"], now + 120)
+    rec["data"] = schedule.merge(game, "9.9", [official], rec, {}, {}, now + 600)
+    assert rec["data"]["banners"]["phase1"] == ["Seele"]              # official replaces the wiki value
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase1": ["Pearl"]}, now + 900)
+    assert rec["data"]["banners"]["phase1"] == ["Seele"]              # and the wiki never overrides official
+
+
+# =========================================================================== banner search by title
+# Discovery by TITLE, for any version (sources/banner_search.py). A notice older than the lookback
+# window used to be invisible to the card; these tests pin the matching, the official-account rule,
+# the fallbacks and the budget. Fixtures are the verbatim HoYoLAB / Kuro bodies checked on 2026-10-09.
+class _RouteFetch:
+    """Serves canned JSON by predicate; a text route serves the Atom mirror. Records every call."""
+
+    def __init__(self, json_routes=(), text_routes=()):
+        self.json_routes, self.text_routes, self.calls = list(json_routes), list(text_routes), []
+
+    async def get_json(self, url, source="", params=None, **kw):
+        self.calls.append((url, dict(params or {})))
+        for pred, body in self.json_routes:
+            if pred(url, params or {}):
+                return body(url, params or {}) if callable(body) else body
+        return None
+
+    async def get_text(self, url, source="", **kw):
+        self.calls.append((url, {}))
+        for pred, body in self.text_routes:
+            if pred(url):
+                return body
+        return None
+
+
+def _hoyolab_row(pid, subject, uid, created, content=""):
+    return {"post": {"post_id": pid, "subject": subject, "uid": uid, "created_at": created,
+                     "content": content, "desc": content},
+            "user": {"uid": uid}}
+
+
+def _hoyolab_full(body):
+    return {"retcode": 0, "data": {"post": {"post": {"content": body, "structured_content": ""},
+                                            "image_list": [], "cover_list": []}}}
+
+
+def _search_route(by_phrase):
+    """Search endpoint: the rows whose keyword contains the given phrase; anything else is empty."""
+    def pred(url, params):
+        return url == banner_search.SEARCH_API
+    def body_for(url, params):
+        kw = params.get("keyword", "")
+        for phrase, rows in by_phrase.items():
+            if phrase in kw:
+                return {"retcode": 0, "data": {"list": rows}}
+        return {"retcode": 0, "data": {"list": []}}
+    return pred, body_for
+
+
+def test_banner_title_match_is_exact_on_version_phase_and_prefix():
+    gi = "Version {v} Event Wishes Notice - Phase {p}"
+    assert banner_search.phase_of("Version 7.1 Event Wishes Notice - Phase I", gi, "7.1") == 1
+    assert banner_search.phase_of("Version 7.1 Event Wishes Notice - Phase II", gi, "7.1") == 2
+    assert banner_search.phase_of("Version 7.10 Event Wishes Notice - Phase I", gi, "7.1") is None   # 7.1 != 7.10
+    assert banner_search.phase_of("Version 7.1 Event Wishes Notice - Phase I", gi, "7.10") is None
+    assert banner_search.phase_of("Version 7.1 Event Wishes Notice - Phase III", gi, "7.1") is None
+    assert banner_search.phase_of("Version 7.1 Event Wishes Notice", gi, "7.1") is None            # no phase
+    zzz = "V{v} Limited-Time Channels (Phase {p})"
+    assert banner_search.phase_of("V3.2 Limited-Time Channels (Phase I)", zzz, "3.2") == 1
+    assert banner_search.phase_of("V3.2 Limited-Time Channels (Phase II)", zzz, "3.2") == 2
+    assert banner_search.phase_of("V3.2 Limited-Time Channels (Phase II)", zzz, "3.3") is None
+    hsr = "Version {v} Event Warp: Phase {p}"
+    assert banner_search.phase_of("<hoyolab>Version</hoyolab> 4.6 <hoyolab>Event</hoyolab> <hoyolab>Warp</hoyolab>: <hoyolab>Phase</hoyolab> I", hsr, "4.6") == 1
+    wuwa = "Version {v} Featured Resonator/Weapon Convene: Phase {p}"
+    assert banner_search.phase_of("[Version 3.6 Featured Resonator/Weapon Convene: Phase I]", wuwa, "3.6") == 1
+    assert banner_search.phase_of("Version 3.6 Featured Weapon Convene: Phase I", wuwa, "3.6") is None   # weapon-only title
+    assert banner_search.keyword_for(zzz, "3.2", 2) == "V3.2 Limited-Time Channels (Phase II)"
+
+
+def test_banner_search_finds_hsr_phase1_outside_the_lookback_by_title():
+    game = GAMES["starrail"]
+    row = _hoyolab_row("46851682", "<hoyolab>Version</hoyolab> 4.6 <hoyolab>Event</hoyolab> <hoyolab>Warp</hoyolab>: <hoyolab>Phase</hoyolab> I",
+                       "172534910", 1790488804)                                 # 2026-09-27, 12 days old
+    pred, body = _search_route({"Phase I": [row], "Phase II": []})
+    fetch = _RouteFetch(json_routes=[(pred, body),
+                                     (lambda u, p: "getPostFull" in u, _hoyolab_full(HSR_46_WARP_PHASE1))])
+    items = asyncio.run(banner_search.find(fetch, game, "4.6"))
+    assert [i.id for i in items] == ["46851682"], items
+    assert items[0].title == "Version 4.6 Event Warp: Phase I" and items[0].published_ts == 1790488804
+    b = schedule.extract_banner(items[0])
+    assert b["banner_five"] == ["Pearl", "Evanescia"] and b["banner_phase"] == 1
+    # Phase II is not out yet: it was asked for by title, found nothing, and nothing is invented.
+    asked = {p["keyword"] for u, p in fetch.calls if u == banner_search.SEARCH_API}
+    assert asked == {"Version 4.6 Event Warp: Phase I", "Version 4.6 Event Warp: Phase II"}, asked
+    assert [i.kind if hasattr(i, "kind") else i.source for i in items] == ["hoyolab"]
+
+
+def test_banner_search_ignores_fan_reposts_and_other_versions():
+    game = GAMES["genshin"]
+    fan = _hoyolab_row("900001", "Version 7.1 Event Wishes Notice - Phase I", "555555", 1790000000)
+    other_version = _hoyolab_row("900002", "Version 7.10 Event Wishes Notice - Phase I", "1015537", 1790000000)
+    pred, body = _search_route({"Phase I": [fan, other_version], "Phase II": []})
+    fetch = _RouteFetch(json_routes=[(pred, body)])
+    assert asyncio.run(banner_search.find(fetch, game, "7.1")) == []        # a repost is not an announcement
+
+
+def test_banner_search_falls_back_to_the_official_news_list_when_search_is_down():
+    game = GAMES["zzz"]
+    notice = _hoyolab_row("46604530", "V3.2 <hoyolab>Limited</hoyolab>-<hoyolab>Time</hoyolab> <hoyolab>Channels</hoyolab> (Phase I)",
+                          "219270333", 1788755408)
+    news_page = {"retcode": 0, "data": {"list": [{"post": notice["post"]}]}}
+
+    def search_down(url, params):
+        return url == banner_search.SEARCH_API
+
+    def news(url, params):
+        return url.endswith("getNewsList") and params.get("type") == 1
+
+    fetch = _RouteFetch(json_routes=[
+        (search_down, {"retcode": 1, "message": "down"}),
+        (news, news_page),
+        (lambda u, p: "getPostFull" in u, _hoyolab_full("Dear Proxies, ..."))])
+    items = asyncio.run(banner_search.find(fetch, game, "3.2"))
+    assert [i.id for i in items] == ["46604530"]
+    assert any(u.endswith("getNewsList") for u, _ in fetch.calls)           # the fallback really ran
+
+
+def test_banner_search_budget_settled_never_frozen_never_and_two_clocks():
+    game = GAMES["starrail"]
+    now = 1790500000
+    keys = list(schedule.BANNER_KEYS)
+    full = {k: ["Name"] for k in keys}
+    full.update({"phase1_4": ["A", "B", "C"], "phase2_4": ["A", "B", "C"]})
+    settled = {"banners": full, "banners_settled": keys, "maint_start_ts": now - 86400}
+    assert schedule.banner_search_due(game, settled, now + 999999) is False       # settled: never
+    partial = {"banners": {"phase1": ["Pearl"]}, "maint_start_ts": now - 86400}
+    assert schedule.banner_search_due(game, partial, now) is True                  # incomplete, never searched
+    partial["banners_search_ts"] = now
+    assert schedule.banner_search_due(game, partial, now + 2 * 3600) is False      # incomplete: 3 h clock
+    assert schedule.banner_search_due(game, partial, now + 3 * 3600) is True
+    unconfirmed = {"banners": full, "maint_start_ts": now - 86400, "banners_search_ts": now}
+    assert schedule.banner_search_due(game, unconfirmed, now + 5 * 3600) is False  # complete: 6 h clock
+    assert schedule.banner_search_due(game, unconfirmed, now + 6 * 3600) is True
+    frozen = {"banners": {}, "maint_start_ts": now - (schedule.CARD_FREEZE_D + 1) * 86400}
+    assert schedule.banner_search_due(game, frozen, now) is False                  # frozen card: never
+    assert schedule.banner_search_due(GAMES["wuwa"], {}, now) is True              # WW has templates too
+
+
+def test_gather_banner_search_feeds_the_merge_once_and_stamps_the_clock():
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", now=1790500000, versions={"starrail": {"live": "4.6"}})
+        row = _hoyolab_row("46851682", "Version 4.6 Event Warp: Phase I", "172534910", 1790488804)
+        pred, body = _search_route({"Phase I": [row], "Phase II": []})
+        ctx.fetcher = _RouteFetch(json_routes=[(pred, body),
+                                               (lambda u, p: "getPostFull" in u, _hoyolab_full(HSR_46_WARP_PHASE1))])
+        records = {"4.6": {"status": "posted", "data": {"maint_start_ts": ctx.now - 2 * 86400}}}
+        by_version: dict = {}
+        asyncio.run(schedule.gather_banner_search(ctx, GAMES["starrail"], records, by_version))
+        extracts = by_version.get("4.6") or []
+        assert [e.kind for e in extracts] == ["banner"] and extracts[0].fields["banner_five"] == ["Pearl", "Evanescia"]
+        assert records["4.6"]["data"]["banners_search_ts"] == ctx.now
+        calls = len(ctx.fetcher.calls)
+        asyncio.run(schedule.gather_banner_search(ctx, GAMES["starrail"], records, by_version))   # 5 min later
+        assert len(ctx.fetcher.calls) == calls                                  # throttled: no request
+        # With the banner search switched off nothing is asked and nothing is stamped.
+        ctx2 = make_ctx(Path(tmp) / "state2.json", now=1790500000, BANNER_SEARCH="0")
+        ctx2.fetcher = _RouteFetch()
+        recs2 = {"4.6": {"status": "posted", "data": {"maint_start_ts": ctx2.now - 86400}}}
+        asyncio.run(schedule.gather_banner_search(ctx2, GAMES["starrail"], recs2, {}))
+        assert ctx2.fetcher.calls == [] and "banners_search_ts" not in recs2["4.6"]["data"]
+
+
+def test_wuwa_banner_comes_from_the_kuro_menu_by_title_with_its_body():
+    game = GAMES["wuwa"]
+    menu = [{"articleId": 5318, "articleTitle": "[Version 3.6 Featured Resonator/Weapon Convene: Phase I]",
+             "createTime": "2026-08-17 17:35:40", "suggestCover": ""},
+            {"articleId": 5220, "articleTitle": "[Version 3.5 Featured Resonator/Weapon Convene: Phase II]",
+             "createTime": "2026-07-28 15:50:35", "suggestCover": ""}]
+    detail = {"articleContent": WUWA_36_PHASE1_BODY}
+    fetch = _RouteFetch(json_routes=[
+        (lambda u, p: u.endswith("ArticleMenu.json"), menu),
+        (lambda u, p: u.endswith("article/5318.json"), detail)])
+    items = asyncio.run(banner_search.find(fetch, game, "3.6"))
+    assert [i.id for i in items] == ["5318"], items           # the 3.5 notice is another version
+    b = schedule.extract_banner(items[0])
+    assert b["banner_five"] == ["Denia"]
+    assert b["banner_four"] == ["Yangyang", "Baizhi", "Sanhua"] and b["banner_four_unsure"] is False
+
+
+WUWA_36_PHASE1_BODY = (
+    "[False Promise for Tomorrow] Featured Resonator Convene\n"
+    "During the event, 5-Star Resonator: Denia, 4-Star Resonators: Yangyang, Baizhi, and Sanhua receive "
+    "boosted drop rates!✦Duration✦Version 3.6 update - 2026-09-10 09:59 (server time)✦Convene Rules✦"
+    "- [False Promise for Tomorrow] is a Featured Resonator Convene event banner.\n"
+    "[Forged Dwarf Star] Featured Weapon Convene\n"
+    "During the event, 5-Star Weapon: Forged Dwarf Star, 4-Star Weapons: Commando of Conviction, Fusion "
+    "Accretion, and Lunar Cutter receive boosted drop rates!✦Duration✦Version 3.6 update✦"
+)
+
+
+def test_zzz_and_wuwa_four_star_lists_are_read_whole():
+    zzz = Item("hoyolab", "zenless", "46604530", "u", "V3.2 Limited-Time Channels (Phase I)",
+               ZZZ_32_PHASE1_TEXT, 1788755408)
+    b = schedule.extract_banner(zzz)
+    assert b["banner_five"] == ["Claret", "Nangong Yu"]
+    assert b["banner_four"] == ["Anton", "Nicole"] and b["banner_four_unsure"] is False
+    ww = Item("kuro", "wuwa", "5318", "u", "Version 3.6 Featured Resonator/Weapon Convene: Phase I",
+              WUWA_36_PHASE1_BODY, 1787000000)
+    assert schedule.extract_banner(ww)["banner_four"] == ["Yangyang", "Baizhi", "Sanhua"]
+    # "Topaz & Numby" (no bracket before the ampersand) stays one name.
+    assert schedule.bare_names(" Topaz & Numby (Destruction: Fire), Bailu will receive") == ["Topaz & Numby", "Bailu"]
+
+
+ZZZ_32_PHASE1_TEXT = (
+    '"Bloodmoon Rising" Signal Search Details\n'
+    "During the event, the limited S-Rank Agent Claret (Electric - Armorer) and default A-Rank Agents "
+    "Anton (Electric - Attack) & Nicole (Ether - Support) have significantly boosted reception rates!\n"
+    '"Axiom of Captivation" Signal Search Details\n'
+    "During the event, the limited S-Rank Agent Nangong Yu (Ether - Stun) and default A-Rank Agents "
+    "Anton (Electric - Attack) & Nicole (Ether - Support) have significantly boosted reception rates!\n"
+)
+
+
+def test_zzz_bare_phase_one_title_matches_once_and_never_phase_two():
+    """ZZZ 3.1 Phase I (HoYoLAB 46015688) is titled 'V3.1 Limited-Time Channels' with no phase suffix;
+    Phase II (46329735) carries '(Phase II)'. The bare template identifies Phase I only."""
+    zzz = GAMES["zzz"]
+    bare = "V{v} Limited-Time Channels"
+    assert banner_search.phases_for(bare) == (1,)
+    assert banner_search.phases_for("V{v} Limited-Time Channels (Phase {p})") == (1, 2)
+    assert banner_search.phase_of("V3.1 Limited-Time Channels", bare, "3.1") == 1
+    assert banner_search.phase_of("V3.1 Limited-Time Channels (Phase II)", bare, "3.1") is None
+    assert banner_search.phase_of("V3.10 Limited-Time Channels", bare, "3.1") is None
+    assert banner_search.phase_of("V3.1 Limited-Time Channels Preview", bare, "3.1") is None
+    assert "V{v} Limited-Time Channels" in zzz.banner_titles              # shipped with the config
+
+
+def test_zzz_bare_phase_one_is_found_and_only_phase_one_is_asked_for():
+    game = GAMES["zzz"]
+    bare_row = _hoyolab_row("46015688", "V3.1 Limited-Time Channels", "219270333", 1785140000)
+    phase2_row = _hoyolab_row("46329735", "V3.1 Limited-Time Channels (Phase II)", "219270333", 1787000000)
+    fan_row = _hoyolab_row("900003", "V3.1 Limited-Time Channels", "555555", 1789000000)  # a repost, not official
+
+    def search(url, params):
+        kw = params.get("keyword", "")
+        rows = [bare_row, phase2_row, fan_row] if kw == "V3.1 Limited-Time Channels" else []
+        if kw == "V3.1 Limited-Time Channels (Phase II)":
+            rows = [phase2_row]
+        if kw == "V3.1 Limited-Time Channels (Phase I)":
+            rows = [bare_row]
+        return {"retcode": 0, "data": {"list": rows}}
+
+    fetch = _RouteFetch(json_routes=[(lambda u, p: u == banner_search.SEARCH_API, search),
+                                     (lambda u, p: "getPostFull" in u, _hoyolab_full("Dear Proxies ..."))])
+    items = asyncio.run(banner_search.find(fetch, game, "3.1"))
+    assert sorted(i.id for i in items) == ["46015688", "46329735"], [i.id for i in items]
+    asked = [p["keyword"] for u, p in fetch.calls if u == banner_search.SEARCH_API]
+    assert "V3.1 Limited-Time Channels" in asked and "V3.1 Limited-Time Channels (Phase II)" in asked
+    assert "V3.1 Limited-Time Channels (Phase I)" in asked                  # the templated Phase I query
+    assert set(asked) == {"V3.1 Limited-Time Channels", "V3.1 Limited-Time Channels (Phase I)",
+                          "V3.1 Limited-Time Channels (Phase II)"}, asked    # 3 queries, no phase-two bare query
+
+
+def test_the_calendar_keeps_only_five_star_characters_in_each_games_shape():
+    """api.ennead.cc: Genshin and Star Rail list `characters` with integer rarity, Zenless lists `agents`
+    with S/A. Weapons, light cones and W-Engines are never banner characters, and 4★ names are not read."""
+    gi = {"banners": [
+        {"id": 231, "name": "Character Event Wish", "version": "7.1",
+         "characters": [{"name": "Vesna", "rarity": 5}, {"name": "Diona", "rarity": 4}], "weapons": [],
+         "start_time": 1790118000, "end_time": 1791885540},
+        {"id": 233, "name": "Weapon Event Wish", "version": "7.1", "characters": [],
+         "weapons": [{"name": "Hymn of the Maelstrom", "rarity": 5}], "start_time": 1790118000, "end_time": 1791885540}]}
+    assert calendarfeed.parse_banners(gi) == [
+        {"version": "7.1", "featured": ["Vesna"], "featured4": ["Diona"],
+         "startsAt": 1790118000, "endsAt": 1791885540, "title": ""}]
+    sr = {"banners": [
+        {"id": 97, "name": "", "version": "4.6",
+         "characters": [{"name": "Mortenax Blade", "rarity": 5}, {"name": "Qingque", "rarity": 4}],
+         "light_cones": [], "start_time": 1792580400, "end_time": 1794319200},
+        {"id": 99, "name": "", "version": "4.6", "characters": [],
+         "light_cones": [{"name": "Until the Flowers Bloom Again", "rarity": 5}],
+         "start_time": 1790560800, "end_time": 1792580340}]}
+    assert [(b["featured"], b["featured4"]) for b in calendarfeed.parse_banners(sr)] == [
+        (["Mortenax Blade"], ["Qingque"])]
+    zz = {"banners": [
+        {"banner_type": "GACHA_TYPE_CHARACTER_UP", "version": "3.2",
+         "agents": [{"name": "Roxy", "rarity": "S"}, {"name": "Promeia", "rarity": "S"}, {"name": "Corin", "rarity": "A"}],
+         "w_engines": [{"name": "Sleepless Eternal Night", "rarity": "S"}],
+         "start_time": 1790740800, "end_time": 1792479599}]}
+    assert calendarfeed.parse_banners(zz)[0]["featured"] == ["Roxy", "Promeia"]
+    assert calendarfeed.parse_banners(zz)[0]["featured4"] == ["Corin"]
+    assert calendarfeed.parse_banners({}) == [] and calendarfeed.parse_banners({"banners": [None]}) == []
+
+
+def test_the_calendar_lineup_writes_four_star_lists_only_at_the_rate_up_count():
+    """A-rank and 4★ lists follow the wiki's rule: exactly four_star_count names per phase, else TBA."""
+    sr = calendarfeed.parse_banners({"banners": [
+        {"version": "4.6", "start_time": 1790560800, "end_time": 1792580340,
+         "characters": [{"name": "Evanescia", "rarity": 5}, {"name": "Qingque", "rarity": 4},
+                        {"name": "Xueyi", "rarity": 4}, {"name": "Misha", "rarity": 4}]}]})
+    assert calendarfeed.lineup(sr, 1790560800, 3) == {
+        "phase1": ["Evanescia"], "phase1_4": ["Qingque", "Xueyi", "Misha"]}
+    assert calendarfeed.lineup(sr, 1790560800, 2) == {"phase1": ["Evanescia"]}   # 3 != 2 -> TBA, never half-right
+    zz = calendarfeed.parse_banners({"banners": [
+        {"version": "3.2", "start_time": 1790740800, "end_time": 1792479599,
+         "agents": [{"name": "Roxy", "rarity": "S"}, {"name": "Promeia", "rarity": "S"},
+                    {"name": "Corin", "rarity": "A"}, {"name": "Billy", "rarity": "A"}]}]})
+    assert calendarfeed.lineup(zz, 1790740800, 2) == {"phase1": ["Roxy", "Promeia"],
+                                                      "phase1_4": ["Corin", "Billy"]}
+
+
+def test_a_calendar_four_star_name_locks_only_with_a_second_source_and_fills_otherwise_blank():
+    """The same rule for 4★ / A-rank: the calendar fills an empty 4★ list, and a second source confirms it."""
+    game, now, rec = GAMES["zzz"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "3.2", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {}, now, calendar={"phase2_4": ["Corin", "Billy"]})
+    assert rec["data"]["banners"]["phase2_4"] == ["Corin", "Billy"]
+    assert "banners_settled" not in rec["data"]                                  # one source: not locked
+    schedule.apply_gacha_wiki(game, rec["data"], rec["prov"], {"phase2_4": ["Corin", "Billy"]}, now + 60)
+    assert rec["data"]["banners_settled"] == ["phase2_4"]                        # wiki agrees -> locked
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {}, now + 600, calendar={"phase2_4": ["Anby", "Ben"]})
+    assert rec["data"]["banners"]["phase2_4"] == ["Corin", "Billy"]              # locked: unchanged
+
+
+def test_a_calendar_name_alone_fills_an_empty_phase_and_never_locks_it():
+    """One group is not confirmation: the calendar fills the empty phase, unlocked, like the hub does."""
+    game, now, rec = GAMES["starrail"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "4.6", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {}, now, calendar={"phase1": ["Pearl", "Evanescia"]})
+    assert rec["data"]["banners"]["phase1"] == ["Pearl", "Evanescia"]
+    assert rec["prov"]["b_phase1_by"] == ["calendar"]
+    assert "banners_settled" not in rec["data"]
+
+
+def test_a_calendar_name_that_the_hub_agrees_with_locks_the_phase_for_every_game():
+    """Any two sources agreeing lock a name: calendar + hub is that pair (here Star Rail 4.6 Phase II)."""
+    game, now, rec = GAMES["starrail"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "4.6", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"],
+                               {"phase1": [], "phase2": ["Mortenax Blade"], "titles": []}, now,
+                               calendar={"phase2": ["Mortenax Blade"]})
+    assert rec["data"]["banners"]["phase2"] == ["Mortenax Blade"]
+    assert rec["data"]["banners_settled"] == ["phase2"]
+    assert rec["prov"]["b_phase2_by"] == ["calendar", "feed"]
+    later = {"phase2": ["Someone Else"], "titles": []}
+    schedule.apply_banner_feed(rec["data"], rec["prov"], later, now + 600, calendar={"phase2": ["Someone Else"]})
+    assert rec["data"]["banners"]["phase2"] == ["Mortenax Blade"]          # locked: neither source may move it
+
+
+def test_a_calendar_that_disagrees_with_the_hub_neither_locks_nor_overwrites():
+    game, now, rec = GAMES["zzz"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "3.2", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase1": ["Roxy"], "phase2": [], "titles": []}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase1": ["Roxy"], "phase2": [], "titles": []}, now + 60,
+                               calendar={"phase1": ["Promeia"]})
+    assert rec["data"]["banners"]["phase1"] == ["Roxy"]                    # held by the hub: calendar may not take it
+    assert "banners_settled" not in rec["data"]
+    assert rec["prov"]["b_phase1_by"] == ["feed"]
+
+
+def test_the_calendar_follows_its_own_correction_and_the_hub_never_takes_it_over():
+    game, now, rec = GAMES["starrail"], 1791522000, {}
+    rec["data"] = schedule.merge(game, "4.6", [], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {}, now, calendar={"phase1": ["Pela"]})
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase1": ["Pearl"], "phase2": [], "titles": []}, now + 600)
+    assert rec["data"]["banners"]["phase1"] == ["Pela"]                    # the hub does not take a calendar name
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {}, now + 1200, calendar={"phase1": ["Pearl"]})
+    assert rec["data"]["banners"]["phase1"] == ["Pearl"]                   # calendar follows its own change
+    assert "banners_settled" not in rec["data"]                            # one group so far: not locked
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {"phase1": ["Pearl"], "phase2": [], "titles": []}, now + 1800)
+    assert rec["data"]["banners_settled"] == ["phase1"]                    # the hub now agrees with it -> locked
+
+
+def test_the_calendar_never_changes_a_name_an_official_notice_wrote():
+    game, now, rec = GAMES["zzz"], 1791522000, {}
+    notice = _banner_notice("zzz", "hoyolab", "https://www.hoyolab.com/article/55", 1, ["Soukaku"], now - 3600)
+    rec["data"] = schedule.merge(game, "9.9", [notice], rec, {}, {}, now)
+    schedule.apply_banner_feed(rec["data"], rec["prov"], {}, now + 60, calendar={"phase1": ["Lycaon"]})
+    assert rec["data"]["banners"]["phase1"] == ["Soukaku"]
+    assert rec["data"]["banners_settled"] == ["phase1"]                    # the official notice locks alone, as before
+
+
+def test_the_calendar_reaches_merge_and_only_fills_the_phases_it_names():
+    """merge(calendar=...) splits the calendar's banners by the card's own release timestamp, as the hub's."""
+    game, now, rec = GAMES["starrail"], 1791522000, {}
+    maint = Item("hoyolab", "starrail", "maint", "https://www.hoyolab.com/article/sr-m",
+                 "Version 4.6 Maintenance", "", now)
+    extract = schedule.Extract(maint, "maintenance", "4.6", fields={"maint_start_ts": now})
+    cal = [{"version": "4.6", "featured": ["Pearl"], "startsAt": now + 3600, "endsAt": now + 90 * 86400, "title": ""},
+           {"version": "4.6", "featured": ["Mortenax Blade"], "startsAt": now + 23 * 86400,
+            "endsAt": now + 60 * 86400, "title": ""}]
+    rec["data"] = schedule.merge(game, "4.6", [extract], rec, {}, {}, now, calendar=cal)
+    assert rec["data"]["banners"]["phase1"] == ["Pearl"]
+    assert rec["data"]["banners"]["phase2"] == ["Mortenax Blade"]
+    assert rec["prov"]["b_phase2_by"] == ["calendar"]
+
+
+def test_the_calendar_is_one_request_per_game_per_run_and_only_when_due():
+    """gather_calendar: asked only for a block that still has a TBA or unconfirmed name, once per run,
+    stamped so the next run does not ask again; a settled block and a switched-off setting ask nothing."""
+    from types import SimpleNamespace
+    game, now = GAMES["starrail"], 1791522000
+    calls = []
+
+    async def fake_fetch(fetcher, key):
+        calls.append(key)
+        return [{"version": "4.6", "featured": ["Pearl"], "startsAt": now, "endsAt": now + 9999, "title": ""},
+                {"version": "4.5", "featured": ["Old"], "startsAt": now, "endsAt": now + 9999, "title": ""}]
+
+    orig = calendarfeed.fetch_banners
+    calendarfeed.fetch_banners = fake_fetch
+    try:
+        records = {"4.6": {"status": "tracked", "data": {"version": "4.6", "maint_start_ts": now}}}
+        ctx = SimpleNamespace(settings=SimpleNamespace(banner_calendar=True), fetcher=object(), versions={},
+                              now=now)
+        by_version = {}
+        asyncio.run(schedule.gather_calendar(ctx, game, records, by_version))
+        assert calls == ["starrail"] and by_version == {"4.6": []}
+        assert records["4.6"]["calendar"]["banners"] == [
+            {"version": "4.6", "featured": ["Pearl"], "startsAt": now, "endsAt": now + 9999, "title": ""}]
+        ctx.now = now + 600
+        asyncio.run(schedule.gather_calendar(ctx, game, records, {}))
+        assert calls == ["starrail"]                                       # stamped: not due again this soon
+        full = {k: ["Pearl"] for k in schedule.BANNER_KEYS}
+        keys = list(schedule.BANNER_KEYS) + (["four_star"] if game.card.four_star_summary else [])
+        settled = {"4.6": {"status": "tracked", "data": {"version": "4.6", "maint_start_ts": now,
+                                                          "banners": full, "banners_settled": keys}}}
+        assert schedule.banner_block_settled(game, settled["4.6"]["data"])
+        asyncio.run(schedule.gather_calendar(ctx, game, settled, {}))
+        assert calls == ["starrail"]                                       # a settled block asks nothing
+        ctx.settings.banner_calendar = False
+        asyncio.run(schedule.gather_calendar(ctx, game, {"4.6": {"status": "tracked", "data": {}}}, {}))
+        assert calls == ["starrail"]                                       # BANNER_CALENDAR=0
+    finally:
+        calendarfeed.fetch_banners = orig
+
+
+def test_once_both_phases_lock_with_their_four_star_lists_the_card_stops_being_watched():
+    """The stop rule: a phase is final when its 5★ and 4★ lists are locked. Phase 2 has to be final too,
+    so a card with no phase-2 names yet is still watched. Re-runs stay on the wiki's own schedule."""
+    game, now = GAMES["starrail"], 1791522000
+    base = {"version": "4.6", "maint_start_ts": now, "banners_search_ts": now, "calendar_ts": now}
+    phase1 = {"phase1": ["Evanescia", "Pearl"], "phase1_4": ["Qingque", "Xueyi", "Misha"]}
+    phase2 = {"phase2": ["Mortenax Blade"], "phase2_4": ["Qingque", "Xueyi", "Misha"]}
+    locked = ["phase1", "phase1_4", "phase2", "phase2_4"]
+    done = dict(base, banners={**phase1, **phase2}, banners_settled=locked)          # reruns still TBA
+    assert schedule.banner_phases_done(game, done)
+    later = now + 10 * 86400
+    assert not schedule.banner_search_due(game, dict(done, banners_search_ts=0), later)
+    assert not schedule.calendar_due(game, dict(done, calendar_ts=0), later)
+    assert schedule.wiki_recheck_due(game, dict(done, banners_checked_ts=0), later)   # wiki keeps its schedule
+    no_phase2 = dict(base, banners=dict(phase1), banners_settled=["phase1", "phase1_4"])
+    assert not schedule.banner_phases_done(game, no_phase2)
+    assert schedule.calendar_due(game, dict(no_phase2, calendar_ts=0), later)         # phase 2 still watched
+    unlocked_2 = dict(base, banners={**phase1, **phase2}, banners_settled=["phase1", "phase1_4"])
+    assert not schedule.banner_phases_done(game, unlocked_2)
+    assert schedule.banner_search_due(game, dict(unlocked_2, banners_search_ts=0), later)
+    four_open = dict(base, banners={**phase1, **phase2}, banners_settled=["phase1", "phase2", "phase2_4"])
+    assert not schedule.banner_phases_done(game, four_open)                           # 4★ of phase 1 still open
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0
@@ -3828,6 +4990,19 @@ def test_the_banner_feed_replaces_a_phase_that_holds_a_banner_title():
                                            "Now I Am Become Blade"]}, 1790500000)
     assert data["banners"]["phase1"] == ["Evanescia", "Pearl"]
     assert prov["b_phase1"][0] == 5                # now attributed to the feed
+
+
+def test_a_locked_phase_holding_a_banner_title_is_corrected_and_unlocked():
+    """An official misread (a title, not a character) is corrected by the hub, and the correction is
+    unconfirmed until another source agrees, so the phase is no longer locked."""
+    data = {"banners": {"phase1": ["An Ocean in a Pearl"]}, "banners_settled": ["phase1"]}
+    prov = {"b_phase1": [50, 1790488804], "b_phase1_by": ["official"]}
+    schedule.apply_banner_feed(data, prov,
+                               {"phase1": ["Pearl"], "titles": ["An Ocean in a Pearl"]}, 1790500000)
+    assert data["banners"]["phase1"] == ["Pearl"]
+    assert "phase1" not in data["banners_settled"]
+    schedule._sync_official_locks(data, prov)           # owner is the feed now: no official lock comes back
+    assert "phase1" not in data["banners_settled"]
 
 
 def test_the_banner_feed_still_never_overwrites_real_characters():

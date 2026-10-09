@@ -6,11 +6,13 @@ wiki that documents the line-up the moment the beta/livestream shows it, through
 MediaWiki API — no key, pure JSON, two GET requests per game and version.
 
 Rules (the whole point of the module):
-  * it fills ONLY blanks. An official notice or config/overrides.json always wins
+  * it fills ONLY blanks, and it may confirm a name the notice already gave (a confirmed name is
+    locked, see schedule._confirm). An official notice or config/overrides.json always wins
     (schedule.PRIORITY['gachawiki'] = 6, above the community banner feed, below everything
     official);
-  * nothing is fetched while the banner block is already complete (`banner_block_complete()`
-    runs before any request, so a fully-known version costs zero traffic);
+  * nothing is fetched while the banner block is complete AND confirmed (`banner_block_settled()`
+    runs before any request, so a fully-known, locked version costs zero traffic). A complete block
+    with an unconfirmed name is still read, because the wiki may be the second source that confirms it;
   * a 4★ list whose length is not exactly the game's `four_star_count` is dropped, never
     published half-right;
   * re-runs are a SET DIFFERENCE against the version's debut roster. A repeated banner title

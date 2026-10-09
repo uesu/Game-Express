@@ -103,17 +103,17 @@ still manual: an agent cannot set your repository secrets or your cron-job.org s
 > The per-game rhythm remains in `config/games.json`, and the read-only
 > `python -m gamexpress speculate` command works in prod as soon as the files are there.
 
-## 1. The file manifest — exactly 34 files
+## 1. The file manifest — exactly 36 files
 
 ### Copy to prod (runtime)
 
 ```
-gamexpress/                      26 .py files — the whole package
+gamexpress/                      28 .py files — the whole package
   __init__.py  __main__.py  cards.py  codeposter.py  config.py  discord.py
   http.py  media.py  models.py  preview_html.py  runner.py  samples.py
   schedule.py  state.py  textutil.py  timeparse.py
-  sources/__init__.py  bannerfeed.py  codes.py  countdown.py  gachawiki.py
-          hoyolab.py  kuro.py  launcher.py  newspage.py  twitter.py
+  sources/__init__.py  banner_search.py  bannerfeed.py  calendarfeed.py  codes.py
+          countdown.py  gachawiki.py  hoyolab.py  kuro.py  launcher.py  newspage.py  twitter.py
 config/games.json                game definitions, X accounts, code sources
 config/overrides.json            manual corrections
 config/program_announcements.json  discovered tweet ids — the workflow commits to this
@@ -272,7 +272,7 @@ Webhooks).
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA` | **set on dev** | |
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_HNA` | **set on dev** | |
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ANANTA` | **set on dev** | |
-| `NITTER_RSS_TOKEN` | optional | only unlocks `nitter.miningtcup.me`. Useful, not required: the 2026-10-06 audit had 8 mirrors answering and the fleet merges the first **two** of them, so the token adds a proven answerer rather than supplying one you cannot do without |
+| `NITTER_RSS_TOKEN` | optional | only unlocks `nitter.miningtcup.me`. Useful, not required: the 2026-10-06 audit had 8 mirrors answering and the fleet merges the first **two** of them, so the token adds a proven answerer rather than supplying one you cannot do without. Single-tweet lookups by id do not need it: they go to `nitter.cf` and then `xitter.cf`, with no token |
 | `BUMP_PAT` | yes, if you keep `python_version_bump.yml` | a PAT with **Workflows: read and write**. Without it the weekly bump validates fine and then fails on the push — see below |
 | `DISCORD_WEBHOOK_CODES` | optional | catch-all for games without their own channel |
 | `DISCORD_WEBHOOK_URL` | optional | global catch-all |
@@ -318,6 +318,10 @@ here does not multiply the notification across six more channels.
 Emojis need no variables — `EMOJI_YOUTUBE` / `EMOJI_TWITCH` fall back to the defaults baked
 into `gamexpress/config.py`, which is where your current values already live.
 
+The banner switches (`BANNER_FEED`, `BANNER_SEARCH`, `BANNER_CALENDAR`, `GACHA_WIKI`) are all on by default,
+so prod needs no variable for them. `BANNER_CALENDAR` reads `api.ennead.cc`, the same host the codes source
+already uses, with no key and no secret. Set `BANNER_CALENDAR=0` only to switch the calendar off.
+
 ---
 
 ## 4. The state file is the thing that prevents a re-post storm
@@ -331,10 +335,23 @@ into `gamexpress/config.py`, which is where your current values already live.
 - Starting empty would not spam (the first run silently seeds, it does not post history), but
   you would lose the ability to edit existing cards, and the seed boundary could swallow an
   announcement that was mid-flight.
+- **The locks come with it.** A posted card records `announcement_locked`, with `announcement_source` and
+  `announcement_ts`, and a banner name that is locked records it in `banners_settled`. Copying the state keeps
+  those locks, so a card stays on the announcement that opened it, and its locked banners do not move, after
+  cutover. The wiki read stamp (`banners_checked_ts`) comes with the state too, so cutover does not re-read every
+  open banner at once. An official name already on a card is locked by the first merge after cutover.
+- **The first run repairs ZZZ 3.3 once.** The 3.3 Special Program card (and its `#zzz-news` mirror) that the
+  2026-10-09 giveaway post took over is restored to the 3.3 announcement by the first monitor run after this code
+  reaches the live branch: one edit to the card and one to the mirror, then nothing. Until that run, the live card
+  still shows the wrong key art.
+- The title-search clock (`banners_search_ts`, see [BANNER_DATABASE.md](BANNER_DATABASE.md#finding-the-notice-by-title)) comes
+  with the state too. Copying the state therefore keeps the search from re-asking every banner at once after cutover.
 - Copy it **after** pausing the scheduler (§6), so it cannot go stale between copy and cutover.
 
 `config/program_announcements.json` matters for the same reason — it holds discovered tweet
-IDs so a card can be re-rendered later, after the nitter timeline has rolled past it.
+IDs so a card can be re-rendered later, after the nitter timeline has rolled past it. The X seed is read first,
+by id, from `nitter.cf`'s status feed, so an announcement can be recovered from X even after the timeline has
+moved on.
 
 ---
 

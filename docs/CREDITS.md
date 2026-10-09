@@ -16,6 +16,7 @@ What each endpoint actually serves, and why it was chosen or rejected, is in
 ## Data sources
 
 - [seriaati/hoyo-codes](https://github.com/seriaati/hoyo-codes) and [hoyo-update-notifier](https://github.com/seriaati/hoyo-update-notifier) (the verified code API and the Sophon/launcher endpoints)
+- [TheLovinator1/wutheringwaves](https://github.com/TheLovinator1/wutheringwaves) — a GitHub Atom mirror of the Wuthering Waves news list, read only as a fallback for WuWa banner notices. The repository declares no license (checked 2026-10-09).
 - [Ertezy/Kitsudock-data](https://github.com/Ertezy/Kitsudock-data) — the hourly `hub.json` behind the 5★ banner lineups (formerly *Gacha-hub-info*; collector MIT, banner data assembled from the fandom wikis under CC BY-SA 3.0 — Endfield from endfield.wiki.gg, CC BY-SA 4.0), and the [Kitsudock](https://github.com/Ertezy/Kitsudock) launcher it is built for
 - [c3kay/hoyolab-rss-feeds](https://github.com/c3kay/hoyolab-rss-feeds) — the HoYoLAB mirror that covers for the API when it bot-checks a CI runner
 - [api.ennead.cc](https://api.ennead.cc/) and [Open Gacha Codes](https://github.com/torikushiii/OpenGachaCodes)
@@ -26,7 +27,7 @@ What each endpoint actually serves, and why it was chosen or rejected, is in
 - [wuthering.gg](https://wuthering.gg/codes)
 - The **Fandom wikis** read directly for redemption codes — [Genshin Impact](https://genshin-impact.fandom.com/), [Honkai: Star Rail](https://honkai-star-rail.fandom.com/), [Zenless Zone Zero](https://zenless-zone-zero.fandom.com/) and [Wuthering Waves](https://wutheringwaves.fandom.com/) — and their editors. Wiki text is CC BY-SA 3.0.
 - [nitter](https://github.com/zedeus/nitter) (and forks / instances: [git.kareem.one/shaquille/nitter](https://git.kareem.one/shaquille/nitter), [tw.eir-nya.gay](https://tw.eir-nya.gay/), [Cynosphere/nitter](https://gitlab.com/Cynosphere/nitter)), xcancel (*service suspended — kept here as thanks, no longer in the fleet*) and **every operator who keeps a public instance online** — they are the reason an announcement is seen minutes after it is tweeted
-- [FxTwitter / FixTweet](https://github.com/FixTweet/FxTwitter) (the fallback that resolves a tweet when no mirror answers)
+- [FxTwitter / FixTweet](https://github.com/FixTweet/FxTwitter) (the fallback that resolves a tweet when no nitter mirror answers; fixupx and vxTwitter follow it)
 
 ---
 

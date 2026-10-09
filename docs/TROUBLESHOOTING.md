@@ -44,6 +44,8 @@ in place — air time, link and key art all come back together.
 | No ping | `PING_ROLE_ID` unset or `none`; the role must be mentionable, or the webhook needs *Mention @everyone, @here and All Roles* |
 | Emojis show as `:name:` | the webhook's channel needs *Use External Emojis* for `@everyone`, or change `EMOJI_*` |
 | Card not edited after an override | the card must have been posted by a webhook with the same URL (the fingerprint is stored) |
+| Title link or key art changed to a different post after posting | a posted Special Program card is locked to the post that opened it ([ACCURACY.md](ACCURACY.md#once-posted-the-card-keeps-its-announcement)). It can only switch if its record has neither `announcement_locked` nor `program_seen`, so check that in `state/state.json`. Pin the right post with `title_url` and `image` in `config/overrides.json`; the next run edits the card back, and the log names the change (`schedule card updated — key art, link`) |
+| Title link came from HoYoLAB although X has the post | a card that opened while X could not be read is upgraded **once**, to the X post, when X answers with the same air time (the log says `schedule card updated — key art, link`). If X is still unreadable, the HoYoLAB link stays until then |
 | No livestream date line | the record never got the announcement, so there is no air time to show (a misleading `TBA` would be worse). If the tweet id is cached, the next run replays it once and date, key art and title link come back together; if not, see the `🩹` line above |
 | `webhooks` test shows ✗ / `not a webhook URL` | the secret holds something else (a channel link, extra spaces). Copy the webhook URL again |
 
@@ -56,6 +58,7 @@ in place — air time, link and key art all come back together.
 | `every code source was unreachable` | a transient outage. The next run catches up because codes are compared against the state, not the time |
 | X silent | nitter fleet down. The HoYoLAB / Kuro sources still work; add `NITTER_RSS_TOKEN` or a fresh `NITTER_INSTANCES` |
 | A code isn't posted | it's *pending*: only one source has it, or a source lists it as expired. The job summary shows the reason. Official / redeem-validated codes post immediately |
+| A banner name that a newer notice contradicts does not change | the name is locked on purpose: an official notice locked it, or two reputable sources (the hub, the official calendar, the wiki) agreed ([BANNER_DATABASE.md](BANNER_DATABASE.md#confirmation-and-the-lock)). A later official notice that names someone else is logged as a conflict in the run summary, not applied. To change it, put the right name in `config/overrides.json`; the next run edits the card |
 | `4 Star Characters: TBA` although the names are known | the official text didn't list exactly the expected number, or two posts disagreed. Put the names in `config/overrides.json`; the card is edited on the next run |
 
 ---
@@ -71,6 +74,21 @@ in place — air time, link and key art all come back together.
 Full scheduler setup, the classic token and the response codes: **[SCHEDULER.md](SCHEDULER.md)**.
 
 ---
+
+## A banner stays TBA although its notice is out
+
+Look for these lines in the run log:
+
+- `[<game>] <version> banner search: N notice(s) by title, M new` — the search ran. `N = 0` means the notice
+  is not out yet, or its title differs from the template in `config/games.json` (`banner_titles`).
+- `[<game>] HoYoLAB search unavailable — paging the official news list` — the keyword search did not answer, so
+  the official news list was read instead. Harmless unless the banner never appears.
+- `Kuro banner menu failed` / `Kuro banner menu gave nothing — trying the GitHub mirror` — Wuthering Waves only;
+  the GitHub mirror is a fallback.
+- `<game> banner search failed for <version>` — the request raised; the search is retried only when due again.
+
+A banner is not searched when its block is settled, when the card is frozen (past `CARD_FREEZE_D` days), or when
+`BANNER_SEARCH=0`. A notice that is out but was not matched can be pinned in `config/overrides.json`, which always wins.
 
 ## Still stuck
 

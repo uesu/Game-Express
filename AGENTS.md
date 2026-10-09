@@ -108,6 +108,9 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 10. **Ranking beats speed in the nitter fleet.** `_probe_batch` may stop waiting early, but only
    once enough *higher-ranked* mirrors have answered (plus the `NITTER_GRACE` cap). Do not
    "simplify" it to first-two-to-respond: mirror order is a quality ranking.
+   By-id tweet lookups follow the same order: `XClient.tweet()` asks nitter.cf (then xitter.cf) first
+   when the account is known, and FxTwitter only after nitter cannot answer or the post has a `t.co`
+   link. A status mirror that fails `STATUS_FAIL_LIMIT` times in one run is skipped for the rest of it.
 11. **The advisory CI job must never gate a merge** (`continue-on-error: true` on every step). Only
    the `test` job is a required check.
 12. **No new runtime dependencies** without a very good reason. The whole app runs on `aiohttp`,
@@ -116,7 +119,44 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    stores only a 12-char non-reversible webhook fingerprint.
 14. **No LICENSE file is wanted** — this is a personal-use repository (owner's decision,
     2026-10-03). Do not add one "for completeness".
-
+15. **A posted Special Program card keeps its announcement.** The first post that gives an air time
+   sets `announcement_locked`, and `announcement_source` / `announcement_ts` record which post. From
+   then on `merge()` and `apply_program_media()` never move the card's title link, source buttons, key
+   art, air time or programme and version names. Only an estimated air time may be replaced, and maintenance keeps updating. The lock goes to the highest `LOCK_RANK` (X 3 over HoYoLAB / Kuro 2
+   over news 1), then the earliest post. A card locked to a lower rank moves **once**, to a higher-rank
+   post with the same air time that was published no later than the lock. A giveaway never upgrades.
+   Records without the flag are locked by `program_seen` or `media_from`, and get no upgrade. Do not
+   restore a per-run rebuild from the lookback window: that is how ZZZ 3.3's giveaway took the card on
+   2026-10-09. The tests that pin this run from `test_the_announcement_that_opened_a_card_keeps_its_link_and_key_art`
+   to `test_a_countdown_estimate_is_replaced_by_the_official_notice_in_every_game` in
+   `tests/test_smoke.py`, listed in `docs/TESTING.md`. Known limit: the first program post seen locks the
+   card, so a same-window giveaway seen before the announcement still wins. It is documented in
+   `docs/ACCURACY.md`, not fixed.
+16. **Banners lock on confirmation, and the lock is final against the weaker source.** An official notice
+   (`official`) locks its 5★ or 4★ name alone when it parses cleanly. A hub name (`feed`), an official-calendar name
+   (`calendar`, `sources/calendarfeed.py`) and a wiki name (`wiki`) lock once any two of them agree, for 5★ and 4★
+   (A-rank) alike and for every game. The calendar is names only, its 4★ lists need the exact rate-up count,
+   and `calendar_due()` / `calendar_ts` / `BANNER_CALENDAR=0` govern its requests. An override locks alone. The confirmation is `schedule._confirm()`, the
+   lock is `data["banners_settled"]`, and the rule lives in `_official_owned` and `_official_may_write`
+   (the owner is the priority that wrote the name). Official names are final against later official notices:
+   a different one is logged as a conflict, not applied, and two clean official 4★ lists that disagree
+   become TBA. The hub corrects only the hub, the wiki corrects the hub but never an official name, and a
+   silent source never erases a value it did not write. A hub title in a phase is corrected even when locked.
+   `reruns` and the 4★ summary lock only with the wiki and their phase inputs. Maintenance is not part of this
+   and keeps its native behaviour. Traffic: `wiki_recheck_due()` reads an incomplete block (still TBA) at most
+   every `WIKI_INCOMPLETE_H` (3) hours, a complete unconfirmed block at most every `WIKI_RECHECK_H` (6), and
+   every answered read is stamped (`banners_checked_ts`), so the state file changes at most once per interval.
+   Do not put a per-run wiki read back: an incomplete block read on every five-minute run was 288 requests
+   a day for the pinned ZZZ 3.3 card.
+17. **Banner notices are found by title, for the card's version, whatever their age.** `sources/banner_search.py`
+   fills the title templates in `config/games.json` (`banner_titles`, `{v}` = version, `{p}` = phase). HoYoLAB
+   keyword search answers first (one request per phase, only posts by `official_uid`), and the paged official
+   news list is the fallback; Wuthering Waves reads Kuro's own article menu, with the GitHub Atom mirror only as a
+   fallback. Matching is exact on version and phase (`7.1` is not `7.10`, Phase I is not Phase II), and a fan
+   repost never counts. A hit is only a candidate for the normal merge: the names are still read from the body,
+   and invariant 16 still decides. It runs only through `schedule.banner_search_due()`: a card whose phases are final never (`banner_phases_done()`: each phase's 5★ and 4★ locked), a
+   frozen card never, an incomplete block every 3 h, a complete unconfirmed block every 6 h, stamped in
+   `banners_search_ts` (its own clock). `BANNER_SEARCH=0` switches it off. No fetcher means no request and no stamp.
 ---
 
 ## 4. Config model you must understand
