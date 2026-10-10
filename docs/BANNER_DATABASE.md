@@ -236,7 +236,7 @@ official sources and the banner feed provide. See [CONFIGURATION.md](CONFIGURATI
 | genshin | 7.1 | Vesna, Vodyanitsa | Skirk, Escoffier *(re-runs)* |
 | starrail | 4.6 | Pearl, Evanescia | Mortenax Blade |
 | zzz | 3.2 | Claret Flint, Nangong Yu | Roxy Ifrita Pryce, Promeia |
-| zzz | 3.3 | Phoenix, Velina *(A-rank: Seth, Manato)* | Severian, Norma |
+| zzz | 3.3 | Phoenix, Velina *(A-rank: Seth, Manato)* | Severian, Norma *(re-runs: Velina Airgid, Norma Hollowell)* |
 | wuwa | 3.7 | Hsin, Chisa, Iuno | Suoming, Lucilla, Lynae |
 
 Re-checked on 2026-10-09 against the community hub (`hub.json`). The hub's `startsAt` values run about seven hours later than the official start times for Star Rail (4.6 Phase II: the hub's value is 2026-10-21 19:00 UTC+8, the post says 12:00 server time) and for Genshin 7.1 Phase II. The ennead Star Rail calendar carries the same stamps. Genshin and ZZZ calendar stamps match their posts to the minute. The offset only moves the phase split, never a name: Genshin 7.1 and Star Rail 4.6 phase 1 and 2 names match the table, and the hub already lists the Star Rail 4.6 phase 2 banner (Mortenax Blade) with a start date of 2026-10-21.
@@ -247,6 +247,15 @@ read through the `CHANNEL_MODE` rule above; the calendar adds Phase I's A-rank p
 Manato), and Phase II's A-ranks stay TBA until the calendar or the wiki lists them. The hub does
 not list 3.3 yet. The 3.3 card healed on the next run after the fix: re-reading the same two
 tweets rewrote both phases, and the settled lock never moved.
+
+**Display names (2026-10-10).** The stored line-up keeps whatever form its source wrote — the
+official notice's short form (`Phoenix`, `Velina`), the wiki's full form (`Velina Airgid`) — but
+the card renders one style: each wiki read also builds `banners_display`, a `{short: full}` map
+from the debut roster and channel list (the same prefix rule the debut detection uses), and the
+card maps every banner line through it. ZZZ 3.3's card therefore reads *Phoenix Reffaella,
+Velina Airgid / Severian Lowell, Norma Hollowell* while its locked data still says Phoenix,
+Velina, Severian, Norma. Wikis that use single names produce an empty map and nothing changes;
+if the wiki corrects a full name, the next read re-renders the card.
 
 WuWa 3.7 Phase 1 is pinned to all three names in `config/overrides.json` (2026-10-09). Phase 1 locked on Chisa and Iuno without Hsin, and a locked phase never grows, so the human pin carries the full list. Phase 2 is not pinned: its names come from the sources as usual.
 

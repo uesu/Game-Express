@@ -3,7 +3,7 @@
 Layout (schedule card), converted 1:1 from the reference embed cards:
 
   [Container accent=14922399]        <- the whole post; NOTHING sits above it
-     ## [Honkai: Star Rail Version 4.6 Special Program](url) 📜             <- title + url
+     ## [Honkai: Star Rail Version 4.6 Special Program](url) <:ananta1:…>  <- title + url + scroll
      <t:…:F> or <t:…:R>  +  ※ maintenance-extended note
      ───────────
      **Version 4.6 Banners (STC)**  re-runs / phases / 4★ (TBA when unknown)
@@ -84,6 +84,16 @@ def buttons_of(*candidates: dict | None) -> list[dict]:
     return [b for b in candidates if b]
 
 
+def emoji_str(e: dict | None) -> str:
+    """An emoji as Discord TEXT syntax — buttons take the dict, text components take this:
+    '<:name:id>' (or '<a:name:id>' animated), the unicode character itself, or '' when off."""
+    if not e:
+        return ""
+    if e.get("id"):
+        return f"<a:{e['name']}:{e['id']}>" if e.get("animated") else f"<:{e['name']}:{e['id']}>"
+    return e.get("name") or ""
+
+
 def action_row(buttons: list[dict]) -> dict:
     return {"type": 1, "components": [b for b in buttons if b][:5]}
 
@@ -130,8 +140,10 @@ def _is_x_url(url: str) -> bool:
                          url or "", re.I))
 
 
-def names(values: list[str] | None) -> str:
+def names(values: list[str] | None, disp: dict[str, str] | None = None) -> str:
     vals = [v for v in (values or []) if v and v.strip()]
+    if disp and vals:
+        vals = [disp.get(v, v) for v in vals]     # the wiki's full display name, when it has one
     return ", ".join(vals) if vals else TBA
 
 
@@ -237,6 +249,11 @@ def program_title(game: Game, d: dict) -> str:
 
 def banners_block(game: Game, d: dict) -> str:
     b = d.get("banners") or {}
+    # The wiki's display names: the official notice writes 'Phoenix', the wiki 'Phoenix
+    # Reffaella', and the card shows the full form. Render-time only — the stored names,
+    # their provenance and their locks are exactly as each source wrote them (schedule's
+    # _display_map built this dict), so a wiki correction simply re-renders the card.
+    disp = d.get("banners_display") or {}
     v = d.get("version") or TBA
     heading = f"Version {v} Banners (STC)"
     heading = f"**[{heading}]({game.card.banners_url})**" if game.card.banners_url else f"**{heading}**"
@@ -245,15 +262,19 @@ def banners_block(game: Game, d: dict) -> str:
     # (the livestream has not aired). The line disappears by itself the moment real phase data
     # lands, because `confirmed` is not part of the banner key set.
     if b.get("confirmed") and not b.get("phase1"):
-        lines.append(f"※ Confirmed: {names(b.get('confirmed'))}")
-    lines.append(f"※ Re-runs: {names(b.get('reruns'))}")
-    if game.card.four_star_summary:
-        lines.append(f"※ 4 Star Characters: {names(b.get('four_star'))}")
+        lines.append(f"※ Confirmed: {names(b.get('confirmed'), disp)}")
+    lines.append(f"※ Re-runs: {names(b.get('reruns'), disp)}")
+    # The 4★ summary is the pre-notice signal (the wiki knows the full roster before any phase
+    # notice exists, and often names phase 2's 4★s early); once BOTH per-phase lists are in,
+    # the summary is just their union — noise — and hides on the same silent edit that filled
+    # the second phase. Symmetric with the `※ Confirmed:` rule above.
+    if game.card.four_star_summary and not (b.get("phase1_4") and b.get("phase2_4")):
+        lines.append(f"※ 4 Star Characters: {names(b.get('four_star'), disp)}")
     four = game.card.four_star_label
-    lines += ["", f"✦ First Half/Phase: {names(b.get('phase1'))}",
-              f"- {four}: {names(b.get('phase1_4'))}", "",
-              f"✦ Second Half/Phase: {names(b.get('phase2'))}",
-              f"- {four}: {names(b.get('phase2_4'))}"]
+    lines += ["", f"✦ First Half/Phase: {names(b.get('phase1'), disp)}",
+              f"- {four}: {names(b.get('phase1_4'), disp)}", "",
+              f"✦ Second Half/Phase: {names(b.get('phase2'), disp)}",
+              f"- {four}: {names(b.get('phase2_4'), disp)}"]
     return "\n".join(lines)
 
 
@@ -281,7 +302,9 @@ def schedule_payload(game: Game, d: dict, settings: Settings, ping: Ping,
                      updated_ts: int | None = None) -> dict:
     title = _md_link_text(program_title(game, d))
     url = safe_url(d.get("title_url") or d.get("source_url"))
-    head = f"## [{title}]({url}) 📜" if url else f"## {title} 📜"
+    # The scroll on the headline, every game: the title emoji (EMOJI_TITLE), bare when "none".
+    tail = f" {emoji_str(settings.emoji.get('title'))}".rstrip()
+    head = f"## [{title}]({url}){tail}" if url else f"## {title}{tail}"
     pts = d.get("program_ts")
     if pts:
         ts_line = f"{discord_ts(pts, 'F')} or {discord_ts(pts, 'R')}"

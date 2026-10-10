@@ -30,6 +30,7 @@ Game-Express is and how to set it up; come here for the detail.
 | **[DEPENDABOT.md](DEPENDABOT.md)** | what Dependabot watches, and the opt-in auto-merge |
 | **[PYTHON_VERSION.md](PYTHON_VERSION.md)** | the automated Python-version bump workflow |
 | **[PROD-REPO-SETUP.md](PROD-REPO-SETUP.md)** | splitting into a private dev repo + a public production repo |
+
 | **[changelog/](changelog/)** | every release, newest first — [current line](changelog/CHANGELOG.md) · [archive](changelog/CHANGELOG_ARCHIVE.md) |
 
 ## Credits and legal

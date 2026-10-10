@@ -13,6 +13,73 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ---
 
+## 2026-10-10
+
+**The card's own style: an emoji on every headline, full names on every line, and a run summary
+that says what actually happened**
+
+Four quality-of-life changes, each validated against live data before shipping.
+
+**1. The headline scroll is an emoji setting — and every game now carries `<:ananta1:…>`.** The
+📜 that ended every schedule-card title is gone. The headline emoji is a setting like the button
+emojis: `EMOJI_TITLE`, format `a:name:id` / `name:id` / a unicode emoji / `none`, and the default
+is the server's own `ananta1` (`<:ananta1:1558340472525693018>`) on **every game's** card — the
+same shape as the Youtube / Twitch buttons, which already carry the server's animated emojis.
+`EMOJI_TITLE=none` leaves the headline bare. The emoji must be one the webhook's server can
+reach (own server, or a server a helper bot like Discohook bridges by sitting in both); one
+borrowed from a random bot's server posts as the raw `<:name:id>` text — the original `ananta2`
+came from a bot's server and was replaced for exactly that reason. The `📜` in the run summary
+(`📜 ZZZ 3.3: schedule card posted`) is untouched — that line lives in the GitHub log, where
+Discord emoji syntax cannot render.
+
+- **`parse_emoji` no longer misreads a name that starts with "a".** The animated marker needs
+  its own colon now: `ananta1:1558…` is the STATIC `<:ananta1:…>`, not an animated
+  `<a:nanta1:…>`. Any `EMOJI_*` value whose name begins with "a" was affected.
+
+**2. Full display names on the card, when the data carries them.** The official notice writes
+`Phoenix`, the wiki `Phoenix Reffaella`, and the ZZZ 3.3 card showed both forms at once (short
+phase lines, full re-runs line). Each wiki read now also builds `banners_display`, a
+`{short: full}` map from the debut roster and channel list — the same prefix rule the debut
+detection already uses — and the card maps every banner line through it at render time.
+
+- **Render-time only.** The stored banner data, the provenance, the confirmation and lock
+  machinery and every comparison are untouched — those keep the short form exactly as each
+  source wrote it. One silent in-place edit shows the full names (the map is part of the card
+  data, so the payload hash moves once); if the wiki corrects a full name, the next re-check
+  follows.
+- **Data-gated, so automatically per-game.** The false-positive sweep across the captured
+  version pages: genshin 7.1 / starrail 4.6 / wuwa 3.7 produce empty maps (single-name wikis);
+  zzz 3.2 maps `Claret → Claret Flint`, `Roxy → Roxy Ifrita Pryce` — exactly what the golden
+  3.2 card already shows, because the *wiki* wrote those phases. One card style, whichever
+  source filled the data.
+- The live capture is pinned as `tests/fixtures/gachawiki/version_zzz_3_3.wiki`, and the
+  line-up it yields is exactly what run #1349 stored.
+
+**3. The WuWa `※ 4 Star Characters:` summary auto-hides once both phases carry their lists.**
+The summary is the pre-notice 4★ signal (the wiki knows the full roster before any phase
+notice exists, and often names phase 2's 4★s early); once both per-phase lines are filled it is
+their union — the same names one line up — so it hides on the same silent edit that filled the
+second phase. Symmetric with the existing `※ Confirmed:` rule. The golden cards are unchanged
+(their phase lines are TBA).
+
+**4. The run summary answers "what happened to this card?" on its own.**
+
+- **The edit line names the banner keys that moved, and who wrote them** — the writers are the
+  prov witness groups: `✏️ ZZZ 3.3: schedule card updated — banners (reruns ← wiki)` (run
+  #1349's line said only `— banners`). A withdrawn key renders bare (`reruns`).
+- **Locks are announced.** A witness settling a name changes no field, so it used to happen in
+  total silence: `🔒 ZZZ 3.3: phase1_4 locked (calendar + wiki)` now says who settled what.
+- **The WuWa banner-search warning no longer fires when the Kuro menu merely answered with
+  nothing published yet** (that is the pre-notice normal, now INFO with that context); the
+  WARNING is reserved for the menu being unreachable with the mirror also empty.
+
+Also: the third `Watch` button is documented (SOURCES.md + TROUBLESHOOTING.md row) — it appears
+when the announcement post itself links the livestream video, and Genshin 7.1 / ZZZ 3.3 simply
+did not; and BANNER_DATABASE documents the two name forms and the display map. New tests pin
+all of it (272 in the CI runner, 295 under `pytest`); the golden cards are unchanged.
+
+---
+
 ## 2026-10-09
 
 **The banner reader learns the ZZZ X dialect: a quoted channel title is never a character**

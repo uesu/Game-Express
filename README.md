@@ -462,9 +462,27 @@ Index: **[docs/](docs/)**.
 
 ## 🗒 Changelog
 
-**Latest — [2026-10-09](docs/changelog/CHANGELOG.md#2026-10-09) · *the banner reader learns the ZZZ X
-dialect (a quoted channel title is never a character), a posted Special Program card keeps its
-announcement, a deleted copy says it was deleted, and a retirement names the message it retired***
+**Latest — [2026-10-10](docs/changelog/CHANGELOG.md#2026-10-10) · *the card headline's scroll is
+an emoji setting (`EMOJI_TITLE`, default the server's `<:ananta1:…>` on every game), the card
+shows the wiki's full display names (Phoenix Reffaella, Velina Airgid), the WuWa 4★ summary
+auto-hides, the edit line says which banner keys moved and locks are announced, and
+`parse_emoji` stops misreading names that start with "a"***
+
+- **The headline scroll is a setting.** Every game's schedule card now ends its title with the
+  server's own `<:ananta1:1558340472525693018>` instead of the generic 📜; `EMOJI_TITLE` swaps
+  it (any emoji format, or `none` for a bare headline). `parse_emoji` also no longer treats a
+  name starting with "a" as the animated marker — `ananta1:…` reads as the static
+  `<:ananta1:…>`, fixing every `EMOJI_*` value with such a name.
+- **Full display names on the card, when the data shows them.** The official notice writes
+  `Phoenix`, the wiki `Phoenix Reffaella`; the card now renders the full form on every line
+  while the stored data, its provenance and its locks keep the short form exactly as each
+  source wrote it. Data-gated: games whose wikis use single names (GI, HSR, WuWa) are
+  untouched.
+- **The WuWa `※ 4 Star Characters:` summary auto-hides** once both per-phase 4★ lists are
+  filled (it was their union, said twice), and **the edit summary speaks in specifics**:
+  `✏️ ZZZ 3.3: schedule card updated — banners (reruns ← wiki)`, plus `🔒 … locked (…) ` lines
+  when a name settles, and the WuWa banner-search warning no longer fires when the Kuro menu
+  merely answered with nothing published yet.
 
 - **The banner reader learns the ZZZ X dialect.** ZZZ posts its channels on X as
   `S-Rank Agent Phoenix Signal Search "Into the Flames of Life"` — the bare word is the agent, the

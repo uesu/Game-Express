@@ -232,18 +232,26 @@ async def find(fetcher: Fetcher, game: Game, version: str) -> list[Item]:
     if game.hoyolab_gid:
         return await _hoyolab_items(fetcher, game, version)
     if game.kuro_news:
+        menu_failed = False
         try:
             items = await _kuro_items(fetcher, game, version)
         except Exception as e:                       # noqa: BLE001 — one source, never fatal
             log.warning("[%s] Kuro banner menu failed: %s", game.key, e)
+            menu_failed = True
             items = []
         if items:
             return items
         # Not a failure: the Kuro menu simply has no notice for this version yet (it is empty on most
-        # runs for a version still in its first days). Only the mirror also coming up empty is worth a warning.
+        # runs for a version still in its first days). The mirror is tried either way, and only the
+        # menu having been UNREACHABLE with the mirror also empty is worth a warning — a menu that
+        # answered with nothing published yet is the pre-notice normal and logs at INFO with that
+        # context (WuWa 3.7 warned on every run for a week before this distinction existed).
         log.info("[%s] Kuro banner menu has no notice for %s yet — trying the GitHub mirror", game.key, version)
         items = await _feed_items(fetcher, game, version)
         if not items:
-            log.warning("[%s] no banner notice for %s from the Kuro menu or the GitHub mirror", game.key, version)
+            (log.warning if menu_failed else log.info)(
+                "[%s] no banner notice for %s from the Kuro menu or the GitHub mirror%s",
+                game.key, version,
+                " (menu unreachable)" if menu_failed else " (menu answered — nothing published yet)")
         return items
     return []

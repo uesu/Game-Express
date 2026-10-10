@@ -193,6 +193,13 @@ trustworthy as any other official post, because that is what it is.
 Ranking puts the program's own artwork first: a livestream thumbnail, then a full-size tweet
 photo, then an article cover. Nothing is ever rewritten to a host the source did not give us.
 
+**The third `Watch` button** (`cards.py`) is automatic and game-agnostic: the first two buttons
+are always the game's *channel* pages (Youtube, Twitch), and when the announcement post itself
+links one specific livestream video — HSR 4.6 and WW 3.7 carried `youtube.com/live/…` — a
+`Watch` button for that video is added. Genshin 7.1 and ZZZ 3.3 announced their programmes
+without a link in the post, so their cards have no third button; nothing is missing. The card's
+title always links the announcement post itself, never the stream.
+
 **Not used:** Reddit (`reddit.com/r/<official sub>/…/search.json`) was considered as an image
 fallback. It is skipped for now — the official pages already serve the key art at full size, and a
 subreddit preview image is a re-upload, so it would be the first non-official pixel on a card.
