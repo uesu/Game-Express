@@ -2218,7 +2218,7 @@
             ]
           },
           "banners_checked_ts": 1791609618,
-          "banners_search_ts": 1791602418,
+          "banners_search_ts": 1791613219,
           "banners_settled": [
             "phase1"
           ],
@@ -2262,7 +2262,7 @@
           ],
           "b_phase1": [
             100,
-            1791612923
+            1791613219
           ],
           "b_phase1_4": [
             50,
@@ -2326,7 +2326,7 @@
               "version": "3.3"
             }
           ],
-          "ts": 1791602418
+          "ts": 1791613219
         },
         "data": {
           "announcement_locked": true,
@@ -2348,13 +2348,19 @@
               "Norma Hollowell"
             ]
           },
-          "banners_checked_ts": 1791602418,
-          "banners_search_ts": 1791602418,
+          "banners_checked_ts": 1791613219,
+          "banners_display": {
+            "Norma": "Norma Hollowell",
+            "Phoenix": "Phoenix Reffaella",
+            "Severian": "Severian Lowell",
+            "Velina": "Velina Airgid"
+          },
+          "banners_search_ts": 1791613219,
           "banners_settled": [
             "phase1",
             "phase2"
           ],
-          "calendar_ts": 1791602418,
+          "calendar_ts": 1791613219,
           "estimate_sources": [
             "version cadence"
           ],
@@ -2391,10 +2397,10 @@
         ],
         "first_seen": 1791172831,
         "message_id": "1556516427786096744",
-        "mirror_hash": "54606eca5e028426",
+        "mirror_hash": "05f6a7da30a8561e",
         "mirror_message_id": "1556585523047436341",
         "mirror_webhook_fp": "db5f4f8a75a5",
-        "payload_hash": "341d0ec2b4762a54",
+        "payload_hash": "75c39f4d9203109d",
         "posted_at": 1791172831,
         "prov": {
           "b_phase1": [
@@ -2451,7 +2457,7 @@
           ]
         },
         "status": "posted",
-        "updated_at": 1791610923,
+        "updated_at": 1791613219,
         "webhook_fp": "19991534cf6d"
       }
     }
