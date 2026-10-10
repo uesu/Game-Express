@@ -315,7 +315,7 @@
       "NEEI986K5X6R": {
         "first_seen": 1791403234,
         "gate": "only ennead",
-        "last_seen": 1791621027,
+        "last_seen": 1791664513,
         "rewards": [
           "Primogem ×60",
           "Adventurer's Experience ×5"
@@ -2217,7 +2217,7 @@
               "Lynae"
             ]
           },
-          "banners_checked_ts": 1791653427,
+          "banners_checked_ts": 1791664513,
           "banners_search_ts": 1791657026,
           "banners_settled": [
             "phase1"
@@ -2262,7 +2262,7 @@
           ],
           "b_phase1": [
             100,
-            1791664225
+            1791664513
           ],
           "b_phase1_4": [
             50,
