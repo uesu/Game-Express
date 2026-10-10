@@ -51,7 +51,8 @@ Expect:
 1. `Show resolved config` → every game reads `schedule[✓ DISCORD_WEBHOOK_SCHEDULE | no ping]`,
    **no 🪞**.
 2. Summary → a burst of `✏️` edit lines, one per live version.
-3. In `#schedule` → no line above the card any more, title ends `… 📜`, Discord shows `(edited)`.
+3. In `#schedule` → no line above the card any more, title ends with the title emoji
+   (`<:ananta1:…>` by default — `EMOJI_TITLE`), Discord shows `(edited)`.
 4. **Nobody is notified.** Edits never ping.
 
 🛑 If anything looks wrong, stop here. No fan-out is involved yet.

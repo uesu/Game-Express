@@ -31,6 +31,7 @@ nothing is renumbered after the fact.
 
 | Entry | Date | Headline |
 |---|---|---|
+| [2026-10-10](CHANGELOG.md#2026-10-10) | 2026-10-10 | the card's own style: `EMOJI_TITLE` puts the server's `<:ananta1:…>` on every headline (and `parse_emoji` stops misreading names that start with "a"), full display names render on every banner line while the stored data keeps each source's form, the WuWa 4★ summary auto-hides once both phases are filled, the edit line names the banner keys that moved and who wrote them, locks are announced with their witnesses, and the WuWa banner-search warning stops firing on a merely empty menu |
 | [2026-10-09](CHANGELOG.md#2026-10-09) | 2026-10-09 | the banner reader learns the ZZZ X dialect (a quoted channel title is never a character; the live 3.3 card heals itself), a posted Special Program card keeps its announcement (link, key art, air time) and prefers the X post, banners lock on confirmation (an official notice, or the hub and the wiki agreeing) with a three-hour wiki budget for TBA blocks, a single tweet is read from nitter.cf first, a deleted copy says it was deleted, and a retirement names the message it retired |
 | [2026-10-08](CHANGELOG.md#2026-10-08) | 2026-10-08 | a card that should never have existed, plus the wrong art, the wrong link and no air time |
 | [2026-10-06](CHANGELOG.md#2026-10-06) | 2026-10-06 | banner line-ups fill themselves in from the game wikis — plus a countdown fix and a documentation accuracy sweep |

@@ -1163,6 +1163,28 @@ def banner_phases_done(game: Game, data: dict) -> bool:
     return True
 
 
+def _display_map(banners: dict, candidates: list[str]) -> dict[str, str]:
+    """{short: full} for card names this wiki read states longer. ZZZ's Version page writes
+    'Phoenix' in the channel list and 'Phoenix Reffaella' in the debut roster, and the official
+    notice says just 'Phoenix'; the card can show the full name while every comparison keeps
+    the short one. The rule is gachawiki's own debut rule (a name plus a space-separated suffix
+    is the same character): each card name maps to the longest candidate it is a prefix of.
+    A wiki that states only single names (GI, HSR, WuWa) yields an empty map, so the whole
+    feature is gated on the data showing longer forms and is a no-op everywhere else."""
+    out: dict[str, str] = {}
+    for key in BANNER_KEYS + ("four_star", "confirmed"):
+        for n in banners.get(key) or []:
+            if not n:
+                continue
+            best = n
+            for c in candidates:
+                if len(c) > len(best) and c.startswith(n + " "):
+                    best = c
+            if best != n:
+                out[n] = best
+    return out
+
+
 def apply_gacha_wiki(game: Game, data: dict, prov: dict, wiki: dict | None, now: int) -> None:
     """Fill banner lists from the game's own wiki wherever the card still says TBA, and keep
     the entries this source owns in step with what the wiki currently says.
@@ -1231,6 +1253,15 @@ def apply_gacha_wiki(game: Game, data: dict, prov: dict, wiki: dict | None, now:
         changed = True
     if changed:
         data["banners"] = banners
+    # The wiki's display names, kept apart from the banner data itself: the stored names (and
+    # every lock and comparison above) stay exactly as the source that wrote them left them,
+    # and the card maps short -> full at render time (cards.banners_block). A wiki that stops
+    # stating a full name withdraws it here, and the next silent edit takes the card back.
+    disp = _display_map(banners, wiki.get("candidates") or [])
+    if disp:
+        data["banners_display"] = disp
+    else:
+        data.pop("banners_display", None)
 
 
 def announcement_locked(data: dict | None) -> bool:
@@ -1987,6 +2018,34 @@ CARD_FIELDS = (("program_ts", "livestream time"), ("banners", "banners"),
                ("images", "key art"), ("title_url", "link"), ("version_name", "version name"))
 
 
+def banner_change_detail(before_banners: dict, after_banners: dict, prov: dict) -> str:
+    """"banners" in an edit summary says nothing about WHAT moved. The sub-keys that differ,
+    each with the writer groups that hold them (prov's b_<key>_by): run #1349's summary line
+    would have read `✏️ ZZZ 3.3: schedule card updated — banners (reruns ← wiki)`. A key with
+    no writer group was withdrawn (the wiki retracted it), and renders as the bare key."""
+    parts = []
+    for k in BANNER_KEYS + ("four_star", "confirmed"):
+        if (before_banners or {}).get(k) == (after_banners or {}).get(k):
+            continue
+        writers = " + ".join((prov or {}).get(f"b_{k}_by") or [])
+        parts.append(f"{k} ← {writers}" if writers else k)
+    return ", ".join(parts)
+
+
+def newly_locked_lines(before: dict, after: dict, prov: dict) -> list[str]:
+    """One line per banner key that settled between two states, with the witnesses that
+    settled it. Locks used to happen in total silence, so "why doesn't this name change any
+    more?" was answerable only from the state file; the run summary now says it outright:
+    `🔒 ZZZ 3.3: phase1_4 locked (calendar + wiki)`."""
+    was, now = banner_settled(before), banner_settled(after)
+    lines = []
+    for k in BANNER_KEYS + ("four_star", "confirmed"):
+        if k not in was and k in now:
+            witnesses = " + ".join((prov or {}).get(f"b_{k}_by") or []) or "?"
+            lines.append(f"{k} locked ({witnesses})")
+    return lines
+
+
 async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], records: dict,
                           override: dict, live_info: dict, bootstrapped: bool,
                           estimates: dict | None = None, media: dict | None = None,
@@ -2001,6 +2060,18 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     ctx.report.extend(notes)
     before = record.get("data") or {}      # merge() copies; record["data"] is reassigned below
     changed_fields = [lbl for key, lbl in CARD_FIELDS if before.get(key) != data.get(key)] if before else []
+    if before:
+        # "banners" alone answers nothing — say WHICH banner keys moved and who wrote them.
+        # And a lock (a witness settling a name) changes no field at all, so it needs its own
+        # line or it stays invisible: both are receipts for the silent in-place edit that
+        # follows, and together they make a run summary enough to answer "what happened to
+        # this card?" without opening the state file.
+        detail = banner_change_detail(before.get("banners") or {}, data.get("banners") or {},
+                                      record.get("prov") or {})
+        changed_fields = [f"banners ({detail})" if lbl == "banners" and detail else lbl
+                          for lbl in changed_fields]
+        for line in newly_locked_lines(before, data, record.get("prov") or {}):
+            ctx.report.append(f"🔒 {game.short} {ver}: {line}")
     # The three fields whose absence produced the wrong Genshin 7.1 card -- no air time, the
     # maintenance article as the title link, the Update Details picture as the key art -- all
     # arrive together, from the announcement. Finding them is the repair, and it used to happen

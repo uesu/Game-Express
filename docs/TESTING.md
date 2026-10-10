@@ -228,8 +228,8 @@ agent, unreadable-name fallback, the Genshin and Star Rail traps, the WuWa list)
 titles, healed in place by re-reading the same two posts, lock unmoved). If one of them fails
 after a change to `extract_banner()` or `bare_names()`, the reader is what you broke.
 
-Counts: the CI runner `python tests/test_smoke.py` runs 266 tests (all must pass). `pytest -q tests` runs 289:
-those 266, the 20 in `test_schedule_epithet_and_settled.py` and the 3 in `test_gachawiki_placeholder.py`.
+Counts: the CI runner `python tests/test_smoke.py` runs 272 tests (all must pass). `pytest -q tests` runs 295:
+those 272, the 20 in `test_schedule_epithet_and_settled.py` and the 3 in `test_gachawiki_placeholder.py`.
 The title-search tests sit in `tests/test_smoke.py` before `main()`: title matching (`test_banner_title_match_is_exact_on_version_phase_and_prefix`),
 the HSR 4.6 Phase I outside-lookback case, fan-repost rejection, the HoYoLAB search versus `getNewsList` fallback,
 the budget and throttle (`test_banner_search_budget_settled_never_frozen_never_and_two_clocks`), the `gather_banner_search` integration, WuWa's Kuro discovery

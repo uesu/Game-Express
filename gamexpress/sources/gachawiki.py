@@ -351,6 +351,12 @@ def build_lineup(game_key: str, version_wikitext: str, pages: dict[str, str],
     reruns = [n for n in dict.fromkeys(featured) if not _is_debut(n, vp.debuts)]
     if reruns:
         out["reruns"] = reruns
+    # Every name this wiki read states the version's characters in, both forms it uses them:
+    # the debut roster plus the featured names. schedule._display_map matches the card's names
+    # against these to render the full form ('Phoenix' -> 'Phoenix Reffaella') without ever
+    # touching the stored banner data. Not a banner key: apply_gacha_wiki's fill loop never
+    # reads it, and it reaches the card only as data["banners_display"].
+    out["candidates"] = list(dict.fromkeys(list(vp.debuts) + featured))
     if four_star_summary:
         lists = [v for v in (out.get("phase1_4"), out.get("phase2_4")) if v]
         if lists and all(v == lists[0] for v in lists):

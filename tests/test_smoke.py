@@ -15,6 +15,7 @@ import asyncio
 import contextlib
 import io
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -238,7 +239,7 @@ def test_reference_card_text_is_exact():
     (box,) = p["components"]                  # one container, nothing floating above it
     assert _legend(p).endswith("To be Announced <@&1296268365593186426>")
     body = "\n".join(c["content"] for c in box["components"] if c["type"] == 10)
-    for line in ("## [Honkai: Star Rail Version 4.6 Special Program](https://x.com/honkaistarrail/status/2099440781115211916) 📜",
+    for line in ("## [Honkai: Star Rail Version 4.6 Special Program](https://x.com/honkaistarrail/status/2099440781115211916) <:ananta1:1558340472525693018>",
                  "<t:1789903800:F> or <t:1789903800:R>", "**Version 4.6 Banners (STC)**",
                  "✦ First Half/Phase: Pearl", "- 4 Star Characters: TBA", "**Maintenance Details (STC)**",
                  "✦ Pre-Install: <t:1790229600:F>", "✦ Start: <t:1790546400:F>", "✦ End: <t:1790564400:F>"):
@@ -251,6 +252,26 @@ def test_reference_card_text_is_exact():
     gi = "\n".join(c["content"] for c in _render("genshin")["components"][0]["components"] if c["type"] == 10)
     assert "**[Version 7.1 Banners (STC)](https://lunaris.moe/banners)**" in gi
     assert "※ Re-runs: Skirk, Escoffier" in gi
+
+
+def test_title_emoji_is_configurable():
+    # Default: the ananta scroll ends every game's card headline.
+    for key in SCHEDULE_SAMPLES:
+        head = _render(key)["components"][0]["components"][0]["content"].split("\n")[0]
+        assert head.endswith("<:ananta1:1558340472525693018>"), key
+    # EMOJI_TITLE swaps it: a unicode emoji, an animated custom one, or none at all.
+    for value, tail in (("🎁", " 🎁"), ("a:starward11:1439878792653832253",
+                                        " <a:starward11:1439878792653832253>")):
+        s = settings(EMOJI_TITLE=value)
+        p = cards.schedule_payload(GAMES["starrail"], SCHEDULE_SAMPLES["starrail"], s,
+                                   s.ping("schedule", "starrail"))
+        head = p["components"][0]["components"][0]["content"].split("\n")[0]
+        assert head.endswith(tail), value
+    s = settings(EMOJI_TITLE="none")
+    p = cards.schedule_payload(GAMES["starrail"], SCHEDULE_SAMPLES["starrail"], s,
+                               s.ping("schedule", "starrail"))
+    head = p["components"][0]["components"][0]["content"].split("\n")[0]
+    assert "📜" not in head and "<:" not in head and not head.endswith(" ")
 
 
 def test_buttons_are_inside_the_card():
@@ -3362,6 +3383,86 @@ def test_zzz_four_star_line_says_default():
     assert "(Default)" not in cards.banners_block(games["genshin"], {"version": "7.1"})
 
 
+def test_wiki_display_names_render_full_forms_without_touching_stored_data():
+    """The official notice writes 'Phoenix', the wiki 'Phoenix Reffaella' — the card shows
+    the full name and the stored banner data never changes (live ZZZ 3.3, run #1349)."""
+    game = load_games(ROOT / "config" / "games.json")["zzz"]
+    wiki = gachawiki.build_lineup("zzz", _wiki("version_zzz_3_3.wiki"), {}, four_star_count=2)
+    # the line-up the monitor read that morning, exactly what run #1349 stored from it
+    assert wiki["phase1"] == ["Phoenix", "Velina Airgid"]
+    assert wiki["phase2"] == ["Severian", "Norma Hollowell"]
+    assert wiki["reruns"] == ["Velina Airgid", "Norma Hollowell"]
+    # the card holds the official notice's short forms, all locked — the wiki read may not
+    # touch any of them; all it may do is contribute the display map
+    data = {"banners": {"phase1": ["Phoenix", "Velina"], "phase2": ["Severian", "Norma"],
+                        "phase1_4": ["Seth", "Manato"], "reruns": ["Velina", "Norma"]},
+            "banners_settled": ["phase1", "phase1_4", "phase2", "phase2_4", "reruns"]}
+    prov = {f"b_{k}": [schedule.PRIORITY["hoyolab"], 1]
+            for k in ("phase1", "phase1_4", "phase2", "phase2_4", "reruns")}
+    schedule.apply_gacha_wiki(game, data, prov, wiki, 1790000000)
+    assert data["banners"]["phase1"] == ["Phoenix", "Velina"]           # locked data untouched
+    assert data["banners"]["reruns"] == ["Velina", "Norma"]
+    assert data["banners_display"] == {"Phoenix": "Phoenix Reffaella", "Velina": "Velina Airgid",
+                                       "Severian": "Severian Lowell", "Norma": "Norma Hollowell"}
+    card = cards.banners_block(game, {"version": "3.3", **data})
+    assert "✦ First Half/Phase: Phoenix Reffaella, Velina Airgid" in card
+    assert "✦ Second Half/Phase: Severian Lowell, Norma Hollowell" in card
+    assert "※ Re-runs: Velina Airgid, Norma Hollowell" in card
+    # names the map does not hold render exactly as stored (the 4★ line, from the calendar)
+    assert "- 4 Star Characters (Default): Seth, Manato" in card
+
+
+def test_wiki_display_names_are_data_gated_per_game():
+    """A wiki that states single names (GI, HSR, WuWa) produces no map and nothing changes;
+    ZZZ 3.2's page states the full forms where the official notice wrote the short ones."""
+    cases = (("genshin", "version_genshin_7_1.wiki", 3, ["Vesna", "Vodyanitsa", "Skirk", "Escoffier"]),
+             ("starrail", "version_starrail_4_6.wiki", 3, ["Pearl", "Evanescia", "Mortenax Blade"]),
+             ("wuwa", "version_wuwa_3_7.wiki", 3, ["Hsin", "Chisa", "Iuno", "Suoming", "Lucilla", "Lynae"]))
+    for key, fixture, count, card_names in cases:
+        wiki = gachawiki.build_lineup(key, _wiki(fixture), {}, four_star_count=count)
+        assert schedule._display_map({"phase1": card_names, "phase2": card_names},
+                                     wiki.get("candidates") or []) == {}, key
+    zzz = gachawiki.build_lineup("zzz", _wiki("version_zzz_3_2.wiki"), {}, four_star_count=2)
+    disp = schedule._display_map({"phase1": ["Claret", "Nangong Yu"], "phase2": ["Roxy", "Promeia"]},
+                                 zzz.get("candidates") or [])
+    # the golden 3.2 card shows the full forms because the WIKI wrote those phases; the map
+    # makes the official notice's short forms render the same way — one card style
+    assert disp == {"Claret": "Claret Flint", "Roxy": "Roxy Ifrita Pryce"}
+
+
+def test_wuwa_four_star_summary_hides_once_both_phases_carry_lists():
+    """The `※ 4 Star Characters:` summary is the pre-notice 4★ signal (and the phase-2 leak);
+    once both per-phase lists are filled it is their union — noise — and hides on the same
+    silent edit that filled the second phase."""
+    game = load_games(ROOT / "config" / "games.json")["wuwa"]
+    b = {"phase1": ["Hsin", "Chisa", "Iuno"], "phase1_4": ["Buling", "Taoqi", "Youhu"],
+         "phase2": ["Suoming", "Lucilla", "Lynae"],
+         "four_star": ["Buling", "Taoqi", "Youhu", "Lumi", "Danjin", "Yangyang"]}
+    half = cards.banners_block(game, {"version": "3.7", "banners": dict(b)})
+    assert "※ 4 Star Characters: Buling, Taoqi, Youhu, Lumi, Danjin, Yangyang" in half
+    full = cards.banners_block(game, {"version": "3.7",
+                                      "banners": dict(b, phase2_4=["Lumi", "Danjin", "Yangyang"])})
+    assert "※ 4 Star Characters:" not in full                     # the union is above, per phase
+    assert "- 4 Star Characters: Buling, Taoqi, Youhu" in full
+    assert "- 4 Star Characters: Lumi, Danjin, Yangyang" in full
+
+
+def test_edit_summary_names_banner_keys_and_lock_witnesses():
+    """"banners" alone answers nothing: the edit line says WHICH keys moved and who wrote them,
+    and a lock (a witness settling a name) gets its own receipt line with its witnesses."""
+    before = {"banners": {"phase1": ["A"], "reruns": ["X"]}, "banners_settled": ["phase1"]}
+    after = {"banners": {"phase1": ["A"], "phase1_4": ["a", "b"], "reruns": []},
+             "banners_settled": ["phase1", "phase1_4"]}
+    prov = {"b_phase1_4_by": ["calendar", "wiki"]}
+    # phase1_4 was written (writer: calendar + wiki); reruns was withdrawn (no writer -> bare)
+    assert schedule.banner_change_detail(before["banners"], after["banners"], prov) == \
+        "phase1_4 ← calendar + wiki, reruns"
+    assert schedule.newly_locked_lines(before, after, prov) == ["phase1_4 locked (calendar + wiki)"]
+    # nothing moved, nothing settled -> silence
+    assert schedule.banner_change_detail(after["banners"], after["banners"], prov) == ""
+    assert schedule.newly_locked_lines(after, after, prov) == []
+
+
 def test_banner_block_complete_short_circuits_the_whole_fetch():
     games = load_games(ROOT / "config" / "games.json")
     full = {"banners": {"phase1": ["A"], "phase2": ["B"], "phase1_4": ["a", "b", "c"],
@@ -4349,6 +4450,48 @@ def test_banner_search_finds_hsr_phase1_outside_the_lookback_by_title():
     asked = {p["keyword"] for u, p in fetch.calls if u == banner_search.SEARCH_API}
     assert asked == {"Version 4.6 Event Warp: Phase I", "Version 4.6 Event Warp: Phase II"}, asked
     assert [i.kind if hasattr(i, "kind") else i.source for i in items] == ["hoyolab"]
+
+
+def test_wuwa_banner_search_warning_only_when_the_menu_was_unreachable():
+    """A Kuro menu that answers with nothing published yet is the pre-notice normal (INFO,
+    with that context); the WARNING is reserved for the menu being unreachable with the
+    mirror also empty — it fired on every run for WW 3.7 while the menu was answering fine."""
+    game = load_games(ROOT / "config" / "games.json")["wuwa"]
+    recs: list[logging.LogRecord] = []
+
+    class _Capt(logging.Handler):
+        def emit(self, r):
+            recs.append(r)
+
+    handler = _Capt(level=logging.DEBUG)
+    banner_search.log.addHandler(handler)
+    saved_level = banner_search.log.level      # the module logger defaults to WARNING: let INFO through
+    banner_search.log.setLevel(logging.DEBUG)
+    try:
+        def _msgs():
+            return [(r.levelname, r.getMessage()) for r in recs]
+        menu = (lambda u, p: "ArticleMenu.json" in u or "MainMenu.json" in u)
+
+        # 1) menu answered, no notice under the exact title yet, mirror empty -> INFO, never WARNING
+        recs.clear()
+        out = asyncio.run(banner_search.find(_RouteFetch(json_routes=[(menu, {"article": []})]),
+                                             game, "3.7"))
+        assert out == []
+        assert all(lvl == "INFO" for lvl, _ in _msgs()), _msgs()
+        assert any("menu answered — nothing published yet" in m for _, m in _msgs()), _msgs()
+
+        # 2) the menu itself unreachable, mirror empty -> the WARNING, and it says why
+        recs.clear()
+
+        def _boom(url, params):
+            raise RuntimeError("kuro down")
+        out = asyncio.run(banner_search.find(_RouteFetch(json_routes=[(menu, _boom)]),
+                                             game, "3.7"))
+        assert out == []
+        assert any(lvl == "WARNING" and "menu unreachable" in m for lvl, m in _msgs()), _msgs()
+    finally:
+        banner_search.log.removeHandler(handler)
+        banner_search.log.setLevel(saved_level)
 
 
 def test_banner_search_ignores_fan_reposts_and_other_versions():

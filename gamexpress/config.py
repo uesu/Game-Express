@@ -27,8 +27,10 @@ DEFAULT_COLOR = 14922399  # the gold accent used by every reference card
 MAINTENANCE_NOTE = ("※ In the event that the maintenance is extended, the dev team will issue a "
                     "follow-up notice and adjust the compensation accordingly.")
 
-# Emojis from the reference cards (animated, from the user's server).
+# Emojis from the reference cards (animated, from the user's server). "title" is the scroll on
+# the card headline, every game; EMOJI_TITLE="none" leaves the headline bare.
 DEFAULT_EMOJI = {
+    "title": "ananta1:1558340472525693018",
     "youtube": "a:kurobbseventcalendar:1508619925940473966",
     "twitch": "a:hsrbbsevanescia:1508647148902813776",
     "source": "",
@@ -153,12 +155,15 @@ def parse_emoji(value: str | None) -> dict | None:
     v = value.strip()
     if not v or v.lower() in ("none", "off", "0", "false"):
         return None
-    m = re.fullmatch(r"<?(a)?:?([A-Za-z0-9_~]{1,32}):(\d{15,25})>?", v)
+    # The animated marker needs its own colon ('a:name:id'). A plain 'name:id' whose name
+    # happens to start with 'a' is a STATIC emoji: 'ananta1:1558…' is <:ananta1:…>, never an
+    # animated <:nanta1:…>.
+    m = re.fullmatch(r"<?(a):([A-Za-z0-9_~]{1,32}):(\d{15,25})>?", v)
     if m:
-        e = {"id": m.group(3), "name": m.group(2)}
-        if m.group(1):
-            e["animated"] = True
-        return e
+        return {"id": m.group(3), "name": m.group(2), "animated": True}
+    m = re.fullmatch(r"<?:?([A-Za-z0-9_~]{1,32}):(\d{15,25})>?", v)
+    if m:
+        return {"id": m.group(2), "name": m.group(1)}
     return {"name": v[:8]}  # unicode emoji
 
 

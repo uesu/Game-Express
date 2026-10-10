@@ -111,8 +111,9 @@ being dropped. A codes drop split across several messages mentions the role on *
 
 | Name | Default | Meaning |
 |---|---|---|
+| `EMOJI_TITLE` | `<:ananta1:1558340472525693018>` | the scroll on every game's card headline, after the title link. `none` leaves the headline bare. Custom emoji render as long as your server can reach them: **your own server's** emoji always work via the webhook, and so do emoji from servers a helper bot (Discohook, Embed Generator) bridges by sitting in both your server and the emoji server — animated ones too. An emoji from a random bot's own server (the original `ananta2`, now deleted) has no bridge and posts as the raw `<:name:id>` text |
 | `EMOJI_YOUTUBE` / `EMOJI_TWITCH` | the animated defaults | format `a:name:id` (animated), `name:id`, a unicode emoji, or `none` |
-| `EMOJI_SOURCE` / `EMOJI_REDEEM` | *none* / 🎁 | emojis for the Source and Redeem buttons. These four are the only emoji settings — `EMOJI_BANNERS` was accepted but never rendered, and was removed. |
+| `EMOJI_SOURCE` / `EMOJI_REDEEM` | *none* / 🎁 | emojis for the Source and Redeem buttons. These five are the only emoji settings — `EMOJI_BANNERS` was accepted but never rendered, and was removed. |
 | `EXTRA_BUTTONS` | — | JSON list (max 3) of extra buttons on every card, e.g. a community invite |
 | `COMMUNITY_BUTTONS` | `[{"label":"Citlali News","url":"https://discord.gg/HyrVP9wRXu","emoji":"a:starward11:1439878792653832253"}]` | the bottom row of a **codes** card (`none` = no row). Youtube / Twitch / Redeem Page are not shown there — they belong to the livestream card |
 | `SHOW_LEGEND` | on | the `STC — Subject to Change • TBA — To be Announced` footer |
