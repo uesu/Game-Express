@@ -1849,7 +1849,7 @@
   "heartbeat": {
     "every_min": 1440,
     "instance": "alpha",
-    "last_success": 1791621922
+    "last_success": 1791708324
   },
   "icons": {
     "genshin": "https://pbs.twimg.com/profile_images/2102589386378686464/tS24hVO2_200x200.jpg",
@@ -2241,7 +2241,7 @@
               "Lynae"
             ]
           },
-          "banners_checked_ts": 1791697520,
+          "banners_checked_ts": 1791708324,
           "banners_search_ts": 1791700518,
           "banners_settled": [
             "phase1"
@@ -2286,7 +2286,7 @@
           ],
           "b_phase1": [
             100,
-            1791708022
+            1791708324
           ],
           "b_phase1_4": [
             50,
