@@ -1396,7 +1396,7 @@
       "KEEPONSHINING": {
         "first_seen": 1791691231,
         "gate": "only ogc",
-        "last_seen": 1791691231,
+        "last_seen": 1791734437,
         "rewards": [
           "Astrite ×80"
         ],
@@ -1529,7 +1529,7 @@
       "STARRYSTAGE2": {
         "first_seen": 1791691231,
         "gate": "only ogc",
-        "last_seen": 1791691231,
+        "last_seen": 1791734437,
         "rewards": [
           "Astrite ×80"
         ],
@@ -1653,6 +1653,7 @@
         "status": "seeded"
       },
       "JRNY2SKY": {
+        "expired_at": 1791734437,
         "first_seen": 1791546293,
         "gate": "redeem-validated",
         "last_seen": 1791719719,
@@ -2286,7 +2287,7 @@
           ],
           "b_phase1": [
             100,
-            1791734116
+            1791734437
           ],
           "b_phase1_4": [
             50,
