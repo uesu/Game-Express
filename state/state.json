@@ -1655,7 +1655,7 @@
       "JRNY2SKY": {
         "first_seen": 1791546293,
         "gate": "redeem-validated",
-        "last_seen": 1791676218,
+        "last_seen": 1791719719,
         "message_id": "1558082849268179067",
         "msg_codes": [
           "JRNY2SKY"
@@ -2286,7 +2286,7 @@
           ],
           "b_phase1": [
             100,
-            1791719417
+            1791719719
           ],
           "b_phase1_4": [
             50,
