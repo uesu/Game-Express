@@ -1393,6 +1393,18 @@
         ],
         "status": "seeded"
       },
+      "KEEPONSHINING": {
+        "first_seen": 1791691231,
+        "gate": "only ogc",
+        "last_seen": 1791691231,
+        "rewards": [
+          "Astrite ×80"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "pending"
+      },
       "MECHANISMCITY": {
         "first_seen": 1790323430,
         "last_seen": 1790992827,
@@ -1513,6 +1525,18 @@
           "codehub"
         ],
         "status": "seeded"
+      },
+      "STARRYSTAGE2": {
+        "first_seen": 1791691231,
+        "gate": "only ogc",
+        "last_seen": 1791691231,
+        "rewards": [
+          "Astrite ×80"
+        ],
+        "sources": [
+          "ogc"
+        ],
+        "status": "pending"
       },
       "STRANGEVISITORS": {
         "first_seen": 1790323430,
@@ -2262,7 +2286,7 @@
           ],
           "b_phase1": [
             100,
-            1791690918
+            1791691231
           ],
           "b_phase1_4": [
             50,
