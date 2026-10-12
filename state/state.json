@@ -1656,7 +1656,7 @@
         "expired_at": 1791734437,
         "first_seen": 1791546293,
         "gate": "redeem-validated",
-        "last_seen": 1791719719,
+        "last_seen": 1791763235,
         "message_id": "1558082849268179067",
         "msg_codes": [
           "JRNY2SKY"
@@ -2242,7 +2242,7 @@
               "Lynae"
             ]
           },
-          "banners_checked_ts": 1791752432,
+          "banners_checked_ts": 1791763235,
           "banners_search_ts": 1791755720,
           "banners_settled": [
             "phase1"
@@ -2287,7 +2287,7 @@
           ],
           "b_phase1": [
             100,
-            1791762916
+            1791763235
           ],
           "b_phase1_4": [
             50,
