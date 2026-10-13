@@ -251,7 +251,7 @@ the announcement link come back anyway; a version that was never cached can stil
 
 ---
 
-## ⚙️ Configuration
+## 🔧 Configuration
 
 **➡️ Full reference: [docs/CONFIGURATION.md](docs/CONFIGURATION.md)** — every secret, variable,
 `games.json` field and `overrides.json` key.
