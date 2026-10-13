@@ -98,11 +98,14 @@ DEFAULT_COMMUNITY_BUTTONS = [
 DEFAULT_NITTER = [
     # ── hot path: probed on EVERY run (NITTER_BATCH = 4) — measured answerers only ──
     "https://nitter.cf",                # proven from the runners: 6/6 handles, every run
-    "https://shitter.thepixora.com",    # TRIAL: clean body off-runner, independent backend
     "https://nitter.meowing.monster",   # TRIAL: clean body off-runner; its old "0 entries"
                                         # verdict predates the truncation fix (see above)
     "https://nitter.miningtcup.me",     # token-gated — proven from the runners: 6/6 handles
     # ── fallbacks: only reached when the hot path gave fewer than two working feeds ──
+    "https://shitter.thepixora.com",    # demoted 2026-10-13: HTTP 403 on all 6 handles from
+                                        # the runners (run #2312) with a clean body off-runner
+                                        # — the nitter.kareem.one signature. Demoted, not
+                                        # deleted; it moves back up the day it answers again.
     "https://tw.eir-nya.gay",           # not blocked, just slower than the quorum: lost the
                                         # NITTER_GRACE race on 4/6 handles, 0 entries on 2
     "https://xitter.cf",                # answers, but it is nitter.cf behind a second

@@ -3461,6 +3461,11 @@ def test_edit_summary_names_banner_keys_and_lock_witnesses():
     # nothing moved, nothing settled -> silence
     assert schedule.banner_change_detail(after["banners"], after["banners"], prov) == ""
     assert schedule.newly_locked_lines(after, after, prov) == []
+    # a display-only change (the wiki's full-name map landing) names itself too: run #1386's
+    # silent edit would have read "— display names" instead of saying nothing at all
+    only_display = dict(after, banners_display={"Phoenix": "Phoenix Reffaella"})
+    labels = [lbl for key, lbl in schedule.CARD_FIELDS if after.get(key) != only_display.get(key)]
+    assert labels == ["display names"], labels
 
 
 def test_banner_block_complete_short_circuits_the_whole_fetch():
