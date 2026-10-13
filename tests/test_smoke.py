@@ -5315,7 +5315,7 @@ def test_a_hot_path_slot_needs_both_a_verified_body_and_a_clean_live_run():
     assert "https://xitter.cf" in hot and "https://tw.eir-nya.gay" not in hot
 
 
-def test_the_duplicate_domain_does_not_hold_a_hot_path_slot():
+def test_the_duplicate_domain_never_displaces_an_independent_answerer():
     """xitter.cf answers, and every link in its feed points back at nitter.cf -- it is the same
     backend behind a second domain. It never displaces an independent answerer in slots 1-3,
     and warms slot 4 after eir-nya's empty trial (rotation #4, run #2323)."""

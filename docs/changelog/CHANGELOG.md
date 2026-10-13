@@ -35,7 +35,8 @@ already lived in `docs/changelog/`. The changelog ritual is two parts from here 
 entry and its index row. Also: the Contents link `[Configuration](#-configuration)` never
 scrolled anywhere — the `## ⚙️ Configuration` heading is U+2699 + U+FE0F, and GitHub's heading
 ids keep the invisible variation selector, so the fragment matched nothing. The heading is
-`## 🔧 Configuration` now and the link works; the other fifteen anchors were already correct.
+`## 🔧 Configuration` now and the link works; every other anchor in the README was already
+correct.
 
 **Rotation #4: eir-nya's slot-4 trial ends after one run; xitter.cf warms the slot.** The
 first run after rotation #3 (#2323) measured the promoted mirror on all six handles:
