@@ -1396,7 +1396,7 @@
       "KEEPONSHINING": {
         "first_seen": 1791691231,
         "gate": "only ogc",
-        "last_seen": 1791825020,
+        "last_seen": 1791868225,
         "rewards": [
           "Astrite ×80"
         ],
@@ -1529,7 +1529,7 @@
       "STARRYSTAGE2": {
         "first_seen": 1791691231,
         "gate": "only ogc",
-        "last_seen": 1791825020,
+        "last_seen": 1791868225,
         "rewards": [
           "Astrite ×80"
         ],
@@ -2287,7 +2287,7 @@
           ],
           "b_phase1": [
             100,
-            1791867919
+            1791868225
           ],
           "b_phase1_4": [
             50,
