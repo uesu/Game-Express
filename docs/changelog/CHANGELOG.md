@@ -28,6 +28,15 @@ moves up into the vacated hot-path slot 4, since a merely-slow mirror can still 
 some runs and a 403'd one never can. Demoted, not deleted, per the fleet rule — it moves
 back up the day it answers again.
 
+**The README's Changelog section becomes a pointer, and the broken Configuration anchor is
+fixed.** The section no longer inlines the latest entry (−62 lines): it now links the full
+changelog and the archive, News-Express style — no content was lost, every deleted bullet
+already lived in `docs/changelog/`. The changelog ritual is two parts from here on: the dated
+entry and its index row. Also: the Contents link `[Configuration](#-configuration)` never
+scrolled anywhere — the `## ⚙️ Configuration` heading is U+2699 + U+FE0F, and GitHub's heading
+ids keep the invisible variation selector, so the fragment matched nothing. The heading is
+`## 🔧 Configuration` now and the link works; the other fifteen anchors were already correct.
+
 ## 2026-10-10
 
 **The card's own style: an emoji on every headline, full names on every line, and a run summary
