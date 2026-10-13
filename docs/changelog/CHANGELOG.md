@@ -18,10 +18,13 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 **A display-only card edit names itself.** `banners_display` joins `CARD_FIELDS`, so the
 silent edit that lands the wiki's full display names now reads
 `✏️ ZZZ 3.3: schedule card updated — display names` instead of saying nothing (run #1386
-was the edit that had no words). Also: `shitter.thepixora.com` is demoted from the nitter
-hot path — HTTP 403 on all six handles from the Actions runners (run #2312) while serving a
-clean body off-runner, the same signature that demoted `nitter.kareem.one`; demoted, not
-deleted, per the fleet rule.
+was the edit that had no words). Also: `shitter.thepixora.com` is demoted out of the nitter
+every-run batch — HTTP 403 on all six handles from the Actions runners (run #2312) while
+serving a clean body off-runner, the same signature that demoted `nitter.kareem.one`.
+Position matters: `twitter.py` probes `fleet[:4]` every run, so the demotion moves
+`tw.eir-nya.gay` (not blocked, just loses the quorum race) up into the vacated slot rather
+than leaving thepixora at the head of the fallbacks, which would still have cost 6 requests a
+run. Demoted, not deleted, per the fleet rule — it moves back up the day it answers again.
 
 ## 2026-10-10
 

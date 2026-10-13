@@ -464,7 +464,7 @@ Index: **[docs/](docs/)**.
 
 **Latest — [2026-10-13](docs/changelog/CHANGELOG.md#2026-10-13) · *a display-only card edit
 (`banners_display`) names itself in the run summary, and `shitter.thepixora.com` is demoted
-from the nitter hot path after its runner verdict (HTTP 403 on all six handles)***
+out of the nitter every-run batch after its runner verdict (HTTP 403 on all six handles)***
 
 - **The headline scroll is a setting.** Every game's schedule card now ends its title with the
   server's own `<:ananta1:1558340472525693018>` instead of the generic 📜; `EMOJI_TITLE` swaps
