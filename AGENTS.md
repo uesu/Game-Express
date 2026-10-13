@@ -46,7 +46,7 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 | `tests/test_smoke.py` | the main suite: every test offline — no network, no secrets |
 | `tests/test_schedule_epithet_and_settled.py` | the 2026-10-08 schedule regressions; also runs standalone in a checkout with no dependencies installed |
 | `docs/` | the manual, indexed in `docs/README.md`: `CONFIGURATION`, `ACCURACY`, `SOURCES`, `BANNER_DATABASE`, `SCHEDULER`, `ROLLOUT`, `TESTING`, `TROUBLESHOOTING`, `SECURITY`, `TIMESTAMP-PATTERNS`, `DEPENDABOT`, `PYTHON_VERSION`, `PROD-REPO-SETUP`, `CREDITS` |
-| `docs/changelog/` | `CHANGELOG.md` (1.8.0 →) + `CHANGELOG_ARCHIVE.md` (1.0.0 – 1.7.0) + an index; full history is here, while the README carries only the latest-entry summary. |
+| `docs/changelog/` | `CHANGELOG.md` (1.8.0 →) + `CHANGELOG_ARCHIVE.md` (1.0.0 – 1.7.0) + an index; the full history lives here — the README's Changelog section is a pointer to it. |
 | `.github/workflows/` | `monitor.yml` (production), `ci.yml` (tests + advisory job), `python_version_bump.yml` |
 
 ---
@@ -256,8 +256,7 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
   reports the short `GITHUB_SHA`, so every run summary already names the exact commit that
   produced it. The old `__version__` needed four files to move in lockstep and went stale the
   first time one was missed. To record a change, add a dated `## YYYY-MM-DD` section at the
-  **top** of `docs/changelog/CHANGELOG.md` and its row in `docs/changelog/README.md`; refresh
-  the summary under *Changelog* in `README.md` when the change is worth a reader's attention.
+  **top** of `docs/changelog/CHANGELOG.md` and its row in `docs/changelog/README.md`.
   Entries up to `1.9.0` keep the numbers they shipped as — **never renumber history.**
 - **Docs are part of the change.** If a count, a cadence, a flag or a workflow step changes,
   grep for it across `README.md`, `AGENTS.md`, `docs/**.md` and `.github/workflows/*.yml` before
