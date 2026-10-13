@@ -462,68 +462,11 @@ Index: **[docs/](docs/)**.
 
 ## 🗒 Changelog
 
-**Latest — [2026-10-13](docs/changelog/CHANGELOG.md#2026-10-13) · *a display-only card edit
-(`banners_display`) names itself in the run summary, and `shitter.thepixora.com` is demoted
-out of the nitter every-run batch after its runner verdict (HTTP 403 on all six handles)***
+Latest release and current changes are documented in
+[`docs/changelog/CHANGELOG.md`](docs/changelog/CHANGELOG.md).
 
-- **The headline scroll is a setting.** Every game's schedule card now ends its title with the
-  server's own `<:ananta1:1558340472525693018>` instead of the generic 📜; `EMOJI_TITLE` swaps
-  it (any emoji format, or `none` for a bare headline). `parse_emoji` also no longer treats a
-  name starting with "a" as the animated marker — `ananta1:…` reads as the static
-  `<:ananta1:…>`, fixing every `EMOJI_*` value with such a name.
-- **Full display names on the card, when the data shows them.** The official notice writes
-  `Phoenix`, the wiki `Phoenix Reffaella`; the card now renders the full form on every line
-  while the stored data, its provenance and its locks keep the short form exactly as each
-  source wrote it. Data-gated: games whose wikis use single names (GI, HSR, WuWa) are
-  untouched.
-- **The WuWa `※ 4 Star Characters:` summary auto-hides** once both per-phase 4★ lists are
-  filled (it was their union, said twice), and **the edit summary speaks in specifics**:
-  `✏️ ZZZ 3.3: schedule card updated — banners (reruns ← wiki)`, plus `🔒 … locked (…) ` lines
-  when a name settles, and the WuWa banner-search warning no longer fires when the Kuro menu
-  merely answered with nothing published yet.
-
-- **The banner reader learns the ZZZ X dialect.** ZZZ posts its channels on X as
-  `S-Rank Agent Phoenix Signal Search "Into the Flames of Life"` — the bare word is the agent, the
-  quoted string the channel. The reader used to publish the channel title as the 5-star agent, so
-  the live 3.3 card showed `Into the Flames of Life, Graceful Gale` and `Answers in the Wind,
-  Outlier of Prodigies`. A bare name now ends where the game's gacha-mode phrase begins
-  (`CHANNEL_MODE`: signal search, event wish, event warp, convene, … — every game, not a ZZZ
-  override), and the live card heals itself on the next run by re-reading the same two tweets.
-- **A posted card keeps its announcement.** Its title link, source buttons, key art and air time are
-  locked to the post that opened the card, so a later giveaway or reminder cannot move them. Banners
-  settle once confirmed, and maintenance details keep updating. X is the preferred post: a card locked to HoYoLAB while X was
-  unreadable moves once to the X post when X carries the same announcement. A status mirror that fails
-  twice in a run is skipped for the rest of it. A wrong link on a live card is corrected by pinning
-  `title_url` and `image` in `config/overrides.json`.
-- **Banners settle once confirmed.** An official notice locks its 5★ or 4★ name on its own. A community hub
-  name, a calendar name and a wiki name lock once any two of them agree (5★ and 4★, every game). An override locks alone. A locked name is final against the hub
-  and the wiki, and an official name is final against later official notices. Until a name locks, it can still
-  change: the hub follows itself, the wiki corrects the hub, and an official notice corrects both. Maintenance
-  keeps updating as before. An incomplete banner block is read at most every three hours, and a complete one
-  with an unconfirmed name at most every six hours
-  for a block that is complete but not yet confirmed.
-- **Banner notices are found by title.** For the card's own version, the monitor looks the official banner
-  notice up by its title (`Version 7.1 Event Wishes Notice - Phase I`, `Version 4.6 Event Warp: Phase I`,
-  `V3.2 Limited-Time Channels (Phase I)`, Wuthering Waves' `Featured Resonator/Weapon Convene`), whatever its
-  age, through HoYoLAB's official search and Kuro's article menu. Only the game's official account counts, a
-  fan repost never does, and the templates live in `config/games.json`. `BANNER_SEARCH=0` turns it off.
-- **A settled copy that no longer resolves is identified.** A mirror edit returning `404` yields
-  `🗂 … copy <id> was deleted (Discord 10008) and a settled version is not re-posted`. “Was
-  deleted” is report wording for an id that stopped resolving, not proof of who removed it. If no
-  copy was ever made, the shorter `— already out` wording is used. Both print once.
-- **A retirement names the message it retired.** `🗂 … its card is not re-created (message <id> no
-  longer resolves — Discord 10008 — …)`: the state drops the id in the retirement branch, so the
-  summary is the only place it will appear again.
-- **The title link may come from X or HoYoLAB**, whichever carries the announcement — ZZZ 3.3 links
-  the HoYoLAB article, Genshin 7.1 links the X post, both correct — and never the *Update and
-  Maintenance Notice*.
-- Both clauses are load-bearing: remove either and its test fails.
-
-**➡️ Full history: [docs/changelog/](docs/changelog/)** —
-[current entries](docs/changelog/CHANGELOG.md) (1.8.0 onward) ·
-[archive](docs/changelog/CHANGELOG_ARCHIVE.md) (1.0.0 → 1.7.0).
-
-Entries are **dated, not numbered** — releases up to `1.9.0` keep the numbers they shipped as.
+Historical records are preserved in
+[`docs/changelog/CHANGELOG_ARCHIVE.md`](docs/changelog/CHANGELOG_ARCHIVE.md).
 
 ---
 
