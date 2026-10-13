@@ -37,6 +37,18 @@ scrolled anywhere — the `## ⚙️ Configuration` heading is U+2699 + U+FE0F, 
 ids keep the invisible variation selector, so the fragment matched nothing. The heading is
 `## 🔧 Configuration` now and the link works; the other fifteen anchors were already correct.
 
+**Rotation #4: eir-nya's slot-4 trial ends after one run; xitter.cf warms the slot.** The
+first run after rotation #3 (#2323) measured the promoted mirror on all six handles:
+`tw.eir-nya.gay` answered HTTP 200 with 0 entries every time — a body that parses to nothing,
+the same uselessness it showed when it lost the NITTER_GRACE race on 2026-10-03, now measured
+twice. `xitter.cf` moves up from the fallbacks into slot 4: it answered from the Actions
+runners across its whole pre-2026-10-03 hot-path tenure (it was demoted then for being
+nitter.cf's second domain, never for failing a probe), and slot 4's job is to answer — the
+request count is unchanged either way, so the difference is that the fourth request now goes
+to a mirror that delivers. eir-nya drops back to the fallbacks behind thepixora — demoted,
+not deleted, per the fleet rule; it moves back up the day it delivers a real feed from the
+runners.
+
 ## 2026-10-10
 
 **The card's own style: an emoji on every headline, full names on every line, and a run summary

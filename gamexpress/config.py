@@ -105,16 +105,28 @@ DEFAULT_COMMUNITY_BUTTONS = [
 # the race on a day nitter.cf or miningtcup answers late, while a mirror GitHub's runners get
 # 403'd from contributes nothing, ever. Lesser evil over guaranteed-dead weight. Demoted, not
 # deleted: thepixora moves back up the day it answers the runners again.
+#
+# 2026-10-13 ROTATION #4 (run #2323, the first run after #3): the eir-nya promotion answered
+# the runners with HTTP 200 and 0 entries on all six handles -- a body that parses to nothing.
+# That is its second measured failure (it lost the NITTER_GRACE race on 2026-10-03), so slot 4
+# goes back to a mirror with runner evidence: xitter.cf answered throughout its hot-path tenure
+# before the 2026-10-03 audit demoted it for being nitter.cf's second domain -- a redundancy
+# demotion, never a failure. Slot 4's job is to answer, not to add independence (the fleet's
+# independent answerers are meowing.monster and the token-gated miningtcup.me either way).
+# eir-nya drops to the fallbacks behind thepixora; nothing is deleted, and it moves back up
+# the day it delivers a real feed from the runners.
 DEFAULT_NITTER = [
     # ── hot path: probed on EVERY run (NITTER_BATCH = 4) — measured answerers only ──
     "https://nitter.cf",                # proven from the runners: 6/6 handles, every run
     "https://nitter.meowing.monster",   # TRIAL: clean body off-runner; its old "0 entries"
                                         # verdict predates the truncation fix (see above)
     "https://nitter.miningtcup.me",     # token-gated — proven from the runners: 6/6 handles
-    "https://tw.eir-nya.gay",           # shifted up to slot 4: not blocked from the runners,
-                                        # just slower than the quorum — a slot-4 request is
-                                        # cancelled the moment two higher ranks answer, and
-                                        # unlike thepixora it can actually deliver a feed
+    "https://xitter.cf",                # rotation #4 (2026-10-13, run #2323): promoted from
+                                        # the fallbacks — it ANSWERED from the runners across
+                                        # its whole pre-2026-10-03 hot-path tenure (demoted
+                                        # then for being nitter.cf's second domain, never for
+                                        # failing a probe). Same machine as slot 1: a warm
+                                        # answering slot, not independent redundancy.
     # ── fallbacks (batch 2+): zero requests while batch 1 gives two working feeds ──
     "https://shitter.thepixora.com",    # demoted 2026-10-13: HTTP 403 on all 6 handles from
                                         # the runners (run #2312) with a clean body off-runner
@@ -122,8 +134,11 @@ DEFAULT_NITTER = [
                                         # deleted; it moves back up the day it answers again
                                         # (it flapped: 25 ok / 0 fail from the runners on
                                         # 2026-10-10, runs #1378/#1386).
-    "https://xitter.cf",                # answers, but it is nitter.cf behind a second
-                                        # domain — zero redundancy for a hot-path slot
+    "https://tw.eir-nya.gay",           # rotation #4 (2026-10-13, run #2323): second measured
+                                        # failure — lost the NITTER_GRACE race 2026-10-03,
+                                        # then answered slot 4 with HTTP 200 and 0 entries on
+                                        # all 6 handles. Demoted, not deleted; moves back up
+                                        # the day it delivers a real feed from the runners.
     "https://nitter.jaydenha.uk",       # demoted: /rss serves a "click anywhere to enter" splash
     "https://nitter.click",             # browser check (__gandalf) in front of /rss
     "https://nitter.tiekoetter.com",    # last-resort: Anubis proof-of-work wall
