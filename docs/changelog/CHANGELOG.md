@@ -13,6 +13,21 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ---
 
+## 2026-10-13
+
+**A display-only card edit names itself.** `banners_display` joins `CARD_FIELDS`, so the
+silent edit that lands the wiki's full display names now reads
+`✏️ ZZZ 3.3: schedule card updated — display names` instead of saying nothing (run #1386
+was the edit that had no words). Also: `shitter.thepixora.com` is demoted out of the nitter
+every-run batch — HTTP 403 on all six handles from the Actions runners (run #2312) while
+serving a clean body off-runner, the same signature that demoted `nitter.kareem.one`.
+Position matters: `twitter.py` probes `fleet[:4]` every run, so a mirror only truly stops
+costing requests once it sits at position 5 or later. thepixora lands there — the head of
+the fallbacks, batch 2 — while `tw.eir-nya.gay` (not blocked, just loses the quorum race)
+moves up into the vacated hot-path slot 4, since a merely-slow mirror can still win the race
+some runs and a 403'd one never can. Demoted, not deleted, per the fleet rule — it moves
+back up the day it answers again.
+
 ## 2026-10-10
 
 **The card's own style: an emoji on every headline, full names on every line, and a run summary

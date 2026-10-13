@@ -95,16 +95,33 @@ DEFAULT_COMMUNITY_BUTTONS = [
 # Note the real ceiling this exposes: nitter.cf and xitter.cf are ONE machine, so the only
 # independent redundancy today is the token-gated mirror. Finding a second backend that answers
 # Actions IPs is what these two trial slots are for.
+#
+# 2026-10-13 RUN #2312 -- ROTATION #3, SAME RULE: shitter.thepixora.com (slot 2's TRIAL since
+# 2026-10-03) got its runner verdict -- HTTP 403 on all 6 handles, a clean body off-runner, the
+# exact nitter.kareem.one signature. It joins the runner-blocked tier (NITTER_CANNOT_ANSWER in
+# the test suite). The slot it vacated does NOT go to an untested candidate -- there isn't one
+# -- it goes to tw.eir-nya.gay, promoted back from the fallbacks despite still losing the
+# NITTER_GRACE race (that verdict stands unchanged): a mirror that is merely slow can still win
+# the race on a day nitter.cf or miningtcup answers late, while a mirror GitHub's runners get
+# 403'd from contributes nothing, ever. Lesser evil over guaranteed-dead weight. Demoted, not
+# deleted: thepixora moves back up the day it answers the runners again.
 DEFAULT_NITTER = [
     # ── hot path: probed on EVERY run (NITTER_BATCH = 4) — measured answerers only ──
     "https://nitter.cf",                # proven from the runners: 6/6 handles, every run
-    "https://shitter.thepixora.com",    # TRIAL: clean body off-runner, independent backend
     "https://nitter.meowing.monster",   # TRIAL: clean body off-runner; its old "0 entries"
                                         # verdict predates the truncation fix (see above)
     "https://nitter.miningtcup.me",     # token-gated — proven from the runners: 6/6 handles
-    # ── fallbacks: only reached when the hot path gave fewer than two working feeds ──
-    "https://tw.eir-nya.gay",           # not blocked, just slower than the quorum: lost the
-                                        # NITTER_GRACE race on 4/6 handles, 0 entries on 2
+    "https://tw.eir-nya.gay",           # shifted up to slot 4: not blocked from the runners,
+                                        # just slower than the quorum — a slot-4 request is
+                                        # cancelled the moment two higher ranks answer, and
+                                        # unlike thepixora it can actually deliver a feed
+    # ── fallbacks (batch 2+): zero requests while batch 1 gives two working feeds ──
+    "https://shitter.thepixora.com",    # demoted 2026-10-13: HTTP 403 on all 6 handles from
+                                        # the runners (run #2312) with a clean body off-runner
+                                        # — the nitter.kareem.one signature. Demoted, not
+                                        # deleted; it moves back up the day it answers again
+                                        # (it flapped: 25 ok / 0 fail from the runners on
+                                        # 2026-10-10, runs #1378/#1386).
     "https://xitter.cf",                # answers, but it is nitter.cf behind a second
                                         # domain — zero redundancy for a hot-path slot
     "https://nitter.jaydenha.uk",       # demoted: /rss serves a "click anywhere to enter" splash

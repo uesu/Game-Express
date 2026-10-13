@@ -2013,6 +2013,7 @@ async def _sync_mirror(ctx, game: Game, ver: str, record: dict, data: dict, now:
 # is deliberately silent: a banner filling in, a guessed maintenance time being replaced by the
 # official one and a corrected key art all read identically. Order is the order they matter in.
 CARD_FIELDS = (("program_ts", "livestream time"), ("banners", "banners"),
+               ("banners_display", "display names"),
                ("preinstall_ts", "pre-install"), ("maint_start_ts", "maintenance start"),
                ("maint_end_ts", "maintenance end"), ("compensation", "compensation"),
                ("images", "key art"), ("title_url", "link"), ("version_name", "version name"))

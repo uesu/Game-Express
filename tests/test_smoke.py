@@ -3461,6 +3461,11 @@ def test_edit_summary_names_banner_keys_and_lock_witnesses():
     # nothing moved, nothing settled -> silence
     assert schedule.banner_change_detail(after["banners"], after["banners"], prov) == ""
     assert schedule.newly_locked_lines(after, after, prov) == []
+    # a display-only change (the wiki's full-name map landing) names itself too: run #1386's
+    # silent edit would have read "— display names" instead of saying nothing at all
+    only_display = dict(after, banners_display={"Phoenix": "Phoenix Reffaella"})
+    labels = [lbl for key, lbl in schedule.CARD_FIELDS if after.get(key) != only_display.get(key)]
+    assert labels == ["display names"], labels
 
 
 def test_banner_block_complete_short_circuits_the_whole_fetch():
@@ -5252,11 +5257,18 @@ NITTER_SERVES_REAL_RSS = (
     "https://nitter.cf", "https://nitter.kareem.one", "https://tw.eir-nya.gay",
     "https://shitter.thepixora.com", "https://nitter.meowing.monster",
 )
-# Answers, is not blocked, and is still useless in a parallel slot: the batch resolves as soon
-# as two mirrors reply, and NITTER_GRACE kills whatever is still silent. tw.eir-nya.gay lost
-# that race on 4 of 6 handles in run 2026-10-03 04:25 and returned 0 entries on the other 2.
+# Answers, is not blocked, and used to be useless in a parallel slot while a genuinely clean
+# trial candidate (thepixora) still had a shot: tw.eir-nya.gay lost the NITTER_GRACE race on
+# 4 of 6 handles in run 2026-10-03 04:25 and returned 0 entries on the other 2. That verdict is
+# still true -- it is NOT what reclaimed its hot-path slot. What changed is the alternative:
+# thepixora's own runner verdict (run #2312, 2026-10-13: HTTP 403 on all 6 handles) is strictly
+# worse, because a blocked mirror contributes NOTHING, ever, while a mirror that merely loses
+# the race can still win it the day nitter.cf or miningtcup answers slowly. With no untested
+# candidate left, slot 4 goes to the lesser evil: not-blocked-but-slow over guaranteed-blocked.
 NITTER_LOSES_THE_RACE = {
-    "https://tw.eir-nya.gay": "silent past NITTER_GRACE on 4/6 handles (2026-10-03 04:25)",
+    "https://tw.eir-nya.gay": "silent past NITTER_GRACE on 4/6 handles (2026-10-03 04:25) -- "
+                              "still true, but reclaimed the slot 2026-10-13 over a now-blocked "
+                              "thepixora; see NITTER_CANNOT_ANSWER",
 }
 NITTER_WALLED = {
     "https://nitter.jaydenha.uk": '/rss serves a "click anywhere to enter" splash page',
@@ -5284,21 +5296,28 @@ def test_a_walled_mirror_never_sits_in_the_hot_path():
 def test_a_hot_path_slot_needs_both_a_verified_body_and_a_clean_live_run():
     """Rotation #2 (run 2026-10-03 04:25). A clean hand probe is necessary but NOT sufficient:
     nitter.kareem.one served a perfect feed from a VPS and answered GitHub's runners with 403
-    six times out of six. A mirror that loses the NITTER_GRACE race is just as useless in a
-    parallel slot as one that is blocked, so it is kept out too."""
+    six times out of six -- that is a permanent, flat-out ban from the hot path, enforced via
+    NITTER_CANNOT_ANSWER. Losing the NITTER_GRACE race (NITTER_LOSES_THE_RACE) is a lesser,
+    reversible penalty: tw.eir-nya.gay is NOT blocked, so it can still occupy a slot nothing
+    better is available for -- which is exactly rotation #3 (2026-10-13): thepixora earned its
+    own permanent ban (HTTP 403 on all 6 handles, run #2312) and tw.eir-nya.gay reclaimed the
+    slot it vacated."""
     from gamexpress.config import DEFAULT_NITTER
     from gamexpress.sources.twitter import NITTER_BATCH
     hot = DEFAULT_NITTER[:NITTER_BATCH]
-    for inst, why in {**NITTER_CANNOT_ANSWER, **NITTER_LOSES_THE_RACE}.items():
+    for inst, why in NITTER_CANNOT_ANSWER.items():
         assert inst in DEFAULT_NITTER, f"{inst} is demoted, not deleted"
         assert inst not in hot, f"{inst} costs a request every run but {why}"
 
     # The quorum is two answers, and both proven answerers are in the hot path, so the two
-    # trial slots can never cost an announcement -- only wasted requests.
+    # trial/reclaimed slots can never cost an announcement -- only wasted requests.
     proven = ("https://nitter.cf", "https://nitter.miningtcup.me")
     for inst in proven:
         assert inst in hot, f"{inst} answered 6/6 handles live and must stay in the hot path"
-    assert len(hot) - len(proven) == 2, "exactly two trial slots, no more"
+    assert len(hot) - len(proven) == 2, "exactly two non-proven slots, no more"
+    # tw.eir-nya.gay's own weakness (NITTER_LOSES_THE_RACE) is real but not disqualifying: it
+    # is not runner-blocked, so it is still a better 4th slot than a guaranteed-403 mirror.
+    assert "https://tw.eir-nya.gay" in hot
 
 
 def test_the_duplicate_domain_does_not_hold_a_hot_path_slot():
@@ -5338,6 +5357,7 @@ def test_the_token_gated_instance_is_in_the_fleet():
 NITTER_CANNOT_ANSWER = {
     "https://nitter.netbub.com": "HTTP 403 on all 4 handles (live run 36305123457)",
     "https://nitter.kareem.one": "HTTP 403 on all 6 handles (live run 2026-10-03 04:25)",
+    "https://shitter.thepixora.com": "HTTP 403 on all 6 handles (live run #2312, 2026-10-13)",
     "https://xcancel.com": "suspended 2026-09-14",
     "https://x.yuuki.sh": "HTTP 403 to GitHub runners (2026-09-25)",
     "https://x.n0g.xyz": "404 then 429 in runs 36296323488 / 36298632006 / 36299586254",
