@@ -5466,10 +5466,12 @@ NITTER_CANNOT_ANSWER = {
     "https://nitter.netbub.com": "HTTP 403 on all 4 handles (live run 36305123457)",
     "https://nitter.kareem.one": "HTTP 403 on all 6 handles (live run 2026-10-03 04:25)",
     "https://shitter.thepixora.com": "HTTP 403 on all 6 handles (live run #2312, 2026-10-13)",
-    "https://xcopy.uk": "rotation #5 trial verdict (2026-10-15): HTTP 403 on all 6 handles in "
-                        "4 consecutive runs (#2662-#2665) across 4 Azure regions -- 24/24 "
-                        "refused. Clean body off-runner (stays in NITTER_SERVES_REAL_RSS, "
-                        "exactly like kareem.one); flat refusal to Actions IPs",
+    "https://xcopy.uk": "HTTP 403 on all 6 handles in 4 consecutive live runs (#2662-#2665, 2026-10-14)",
+                                   # rotation #5 trial verdict (2026-10-15): HTTP 403 on
+                                   # all 6 handles in 4 consecutive runs (#2662-#2665)
+                                   # across 4 Azure regions -- 24/24 refused. Clean body
+                                   # off-runner (stays in NITTER_SERVES_REAL_RSS, exactly
+                                   # like kareem.one); flat refusal to Actions IPs.
     "https://xcancel.com": "suspended 2026-09-14",
     "https://x.yuuki.sh": "HTTP 403 to GitHub runners (2026-09-25)",
     "https://x.n0g.xyz": "404 then 429 in runs 36296323488 / 36298632006 / 36299586254",
