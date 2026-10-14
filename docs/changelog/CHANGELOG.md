@@ -13,6 +13,33 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ---
 
+## 2026-10-14
+
+**Rotation #5: xcopy.uk trials nitter slot 2 after the full-coverage test; meowing.monster
+— dark 8 hours, revived, IPv6-slow — takes the head of the fallbacks.** The fleet's
+proven independent answerer went dark for ~8 hours (05:15–13:35 UTC,
+`ClientConnectorError` on every handle, runs #2603–#2616), and a demotion spec was stopped
+by its own pre-check when the host revived at ~13:35 (d420 healthy at 13:45, real entries
+for 5/6 handles from the runners in run #2621). The operator then ordered every monitored
+handle probed before deciding: **xcopy.uk answered 8/8 across the day** — all six game
+feeds plus the two News-Express accounts, bodies read, top tweet ids matching the
+nitter.cf controls (current, not stale), full fidelity on RTs, quotes, pinned tweets and
+articles — while meowing's revival is real but structurally slow for GitHub's IPv4-only
+runners (d420 lists the host IPv6; grace-race losses even after recovery). Slot 2 passes
+to xcopy.uk as a TRIAL: the hot path's every-run probe is the only mechanism that turns
+body evidence into a runner verdict, the quorum never depends on slot 2 (nitter.cf,
+miningtcup.me and xitter.cf are three measured answerers), and the first run after merge
+delivers the verdict — rollback is one line if the runners refuse it. meowing, a proven
+answerer through one bad day, waits at the head of the fallbacks: zero requests while the
+hot path is healthy, first backup, back up the day it outdelivers the trial. No ledger
+moves — a dark day plus revival is a position change, not a verdict. The audit trail that
+chose xcopy: nitter.pp.ua (98 % on d420) and nitter.poast.org refused the hand probe on
+/rss outright — and the same-day fill-in sweep showed pp.ua's `/rss` serves
+shitter.thepixora.com-generated bodies: an alias, never an independent candidate;
+shi.meowing.de fronts a browser challenge; xnologin.com redirects to a
+"RSS feed is disabled" page; nitter.privacyredirect.com errors; nitter.catsarch.com shut
+down. Slots 1/3/4 untouched, nothing deleted.
+
 ## 2026-10-13
 
 **A display-only card edit names itself.** `banners_display` joins `CARD_FIELDS`, so the
