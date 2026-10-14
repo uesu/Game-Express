@@ -51,7 +51,7 @@ jobs:
           python-version: '3.14'
 
       - name: Install uv (same packages pip would install, just a much faster resolver)
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0 # astral-sh doesn't publish a floating major tag like v10
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.2.0 # astral-sh doesn't publish a floating major tag like v10
         with:
           version: latest-known            # see monitor.yml for why this is not "latest"
 
@@ -93,7 +93,7 @@ jobs:
 
       - name: Static check of the workflow YAML itself (rhysd/actionlint via reviewdog)
         continue-on-error: true   # informational only, see above
-        uses: reviewdog/action-actionlint@13465d022aa41c282f730be17574b5ce692d0186  # v1.78.1
+        uses: reviewdog/action-actionlint@a8ac3eea598697a830f7d8e701fc9fcbfde88974  # v1.80.0
         with:
           reporter: local
           fail_level: none

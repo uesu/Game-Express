@@ -156,7 +156,7 @@ jobs:
       # This step runs every 5 minutes (cron-job.org), so its speed is the one that actually
       # matters: uv installs the exact same packages pip would, just with a much faster resolver.
       - name: Install uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0 # astral-sh doesn't publish a floating major tag like v10
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.2.0 # astral-sh doesn't publish a floating major tag like v10
         with:
           # NOT the default "latest": with no version and no uv.toml/pyproject.toml, setup-uv has
           # to fetch astral-sh/versions' manifest over the network on EVERY run (0.3-4 s in runs
