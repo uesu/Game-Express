@@ -3657,7 +3657,7 @@ def test_the_documented_nitter_fleet_size_matches_the_code():
     configured = len(DEFAULT_NITTER)
     suspended = [u for u in DEFAULT_NITTER if "xcancel" in u]      # kept last, cannot answer
     live = configured - len(suspended)
-    assert (configured, live) == (18, 17)
+    assert (configured, live) == (19, 18)
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     sources = (ROOT / "docs" / "SOURCES.md").read_text(encoding="utf-8")
@@ -5259,6 +5259,10 @@ NITTER_SERVES_REAL_RSS = (
     "https://xitter.cf",   # answered from the Actions runners across its whole pre-2026-10-03
                            # hot-path tenure (its feed's links were read then); demoted for
                            # being nitter.cf's second domain, never for failing a probe
+    "https://xcopy.uk",   # rotation #5 (2026-10-14): every monitored handle's /rss body
+                          # hand-read that day, nitter.cf parity on top tweet ids; on the
+                          # shitter fork's working list. TRIAL until a runner probe says
+                          # otherwise.
 )
 # Reversible tier (demotion only, not NITTER_CANNOT_ANSWER): tw.eir-nya.gay lost the NITTER_GRACE
 # race on 4 of 6 handles in run 2026-10-03 04:25 (0 entries on the other 2), and when rotation #3
@@ -5340,6 +5344,28 @@ def test_rotation_4_xitter_cf_warms_slot_4_after_eir_nyas_empty_trial():
     assert "https://xitter.cf" in hot, "slot 4 must hold a mirror that answers"
     assert "https://tw.eir-nya.gay" not in hot, "two measured failures: grace race + 0 entries"
     assert "https://tw.eir-nya.gay" in DEFAULT_NITTER, "demoted, not deleted"
+
+
+def test_rotation_5_xcopy_uk_trials_slot_2_meowing_heads_the_fallbacks():
+    """Rotation #5 v3 (2026-10-14, post-test): xcopy.uk answered 8/8 monitored handles
+    across the day (bodies read, nitter.cf parity on top tweet ids) while meowing.monster
+    spent ~8 h dark, revived, and remains IPv6-slow for GitHub's IPv4-only runners (5/6
+    handles at best, run #2621). Slot 2 passes to xcopy.uk as a TRIAL -- the every-run
+    probe delivers its runner verdict, and the quorum never depends on it (slots 1/3/4
+    are three measured answerers). meowing, a proven answerer through one bad day, waits
+    at the head of the fallbacks -- demoted, not deleted, no ledger move."""
+    from gamexpress.config import DEFAULT_NITTER
+    from gamexpress.sources.twitter import NITTER_BATCH
+    hot = DEFAULT_NITTER[:NITTER_BATCH]
+    assert DEFAULT_NITTER[1] == "https://xcopy.uk", "the tested candidate trials slot 2"
+    assert "https://nitter.meowing.monster" not in hot, \
+        "IPv6-slow the same day it was dark 8 h: the bench, not the hot path"
+    assert DEFAULT_NITTER[NITTER_BATCH] == "https://nitter.meowing.monster", \
+        "a proven answerer that is slow waits at the HEAD of the fallbacks"
+    assert "https://xcopy.uk" in DEFAULT_NITTER and \
+        "https://nitter.meowing.monster" in DEFAULT_NITTER, "nothing deleted"
+    assert "https://nitter.cf" in hot and "https://xitter.cf" in hot, \
+        "slots 1 and 4 are untouched by this rotation"
 
 
 def test_the_token_gated_instance_is_in_the_fleet():

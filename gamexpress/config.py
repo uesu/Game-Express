@@ -115,11 +115,44 @@ DEFAULT_COMMUNITY_BUTTONS = [
 # independent answerers are meowing.monster and the token-gated miningtcup.me either way).
 # eir-nya drops to the fallbacks behind thepixora; nothing is deleted, and it moves back up
 # the day it delivers a real feed from the runners.
+#
+# 2026-10-14 ROTATION #5 (v3, post-test): meowing.monster went dark ~8 h (05:15-13:35 UTC,
+# ClientConnectorError on every handle, runs #2603-#2616), the first spec demoted it, its
+# pre-check stopped that PR when the host revived (~13:35: d420 healthy at 13:45, 5/6
+# handles delivered from the runners in run #2621), and the operator then ordered a
+# full-coverage test before deciding. Result: xcopy.uk answered 8/8 monitored handles
+# across the day (all six game feeds + the two News-Express accounts, bodies read, top
+# tweet ids matching the nitter.cf controls -- current, not stale), while meowing's
+# revival is real but structurally slow for GitHub's IPv4-only runners (d420 lists the
+# host IPv6; the Game-Express bot measured NITTER_GRACE kills even after recovery, 5/6
+# at best). So slot 2 passes to xcopy.uk as a TRIAL -- the hot path's every-run probe is
+# the only mechanism that converts body evidence into a runner verdict, and the quorum
+# never depends on slot 2 (slots 1/3/4 are three measured answerers, NITTER_WORKING=2).
+# meowing, a proven answerer through one bad day, takes the HEAD of the fallbacks: zero
+# cost while the hot path is healthy, first backup, back up the day it outdelivers the
+# trial. No ledger moves -- a dark day plus revival is a position change, not a verdict.
+# The audit that chose xcopy: nitter.pp.ua (98% on d420) and nitter.poast.org refused
+# the hand probe on /rss outright -- no readable body, no trial -- and the same-day
+# fill-in sweep closed the pp.ua question for good: its /rss serves bodies generated
+# by shitter.thepixora.com, an alias of a host this fleet already audits, never an
+# independent candidate (do not re-probe); shi.meowing.de fronts a browser challenge;
+# xnologin.com redirects to a "RSS feed is disabled" page; nitter.privacyredirect.com
+# errors; nitter.catsarch.com shut down. Slots 1/3/4 untouched.
+# If the first run after merge shows the runners 403 xcopy: rollback is one line (meowing
+# back to slot 2), and THAT verdict is what the ledgers record.
 DEFAULT_NITTER = [
     # ── hot path: probed on EVERY run (NITTER_BATCH = 4) — measured answerers only ──
     "https://nitter.cf",                # proven from the runners: 6/6 handles, every run
-    "https://nitter.meowing.monster",   # TRIAL: clean body off-runner; its old "0 entries"
-                                        # verdict predates the truncation fix (see above)
+    "https://xcopy.uk",                 # TRIAL (rotation #5, 2026-10-14): every monitored
+                                        # handle's /rss body hand-read that day -- entries
+                                        # current through Oct 14, nitter.cf parity on top
+                                        # tweet ids, full fidelity (RTs, quotes, pinned,
+                                        # articles); on the shitter fork's working wiki;
+                                        # independent, non-token-gated. The kareem.one
+                                        # rule applies: a clean off-runner body is a trial
+                                        # ticket, never proof -- this seat is probed every
+                                        # run, so the FIRST RUN AFTER MERGE delivers the
+                                        # runner verdict. Quorum never depends on slot 2.
     "https://nitter.miningtcup.me",     # token-gated — proven from the runners: 6/6 handles
     "https://xitter.cf",                # rotation #4 (2026-10-13, run #2323): promoted from
                                         # the fallbacks — it ANSWERED from the runners across
@@ -128,6 +161,20 @@ DEFAULT_NITTER = [
                                         # failing a probe). Same machine as slot 1: a warm
                                         # answering slot, not independent redundancy.
     # ── fallbacks (batch 2+): zero requests while batch 1 gives two working feeds ──
+    "https://nitter.meowing.monster",   # rotation #5 (2026-10-14): dark ~8 h that day
+                                        # (05:15-13:35 UTC, ClientConnectorError on every
+                                        # handle, runs #2603-#2616), revived ~13:35 -- d420
+                                        # healthy at 13:45, version 2026.10.12-f97b733,
+                                        # and real entries for 5/6 handles from the runners
+                                        # (run #2621). A PROVEN answerer (6/6 in run #2323),
+                                        # so it waits at the HEAD of the fallbacks -- zero
+                                        # requests while the hot path is healthy, first
+                                        # backup the moment it revives fully. d420 lists its
+                                        # connectivity as IPv6 (runners are IPv4-only), so
+                                        # expect slow-but-working; it moves back up the day
+                                        # it outdelivers the slot-2 trial. No ledger move:
+                                        # a dark day plus revival is a position change,
+                                        # never a body verdict.
     "https://shitter.thepixora.com",    # demoted 2026-10-13: HTTP 403 on all 6 handles from
                                         # the runners (run #2312) with a clean body off-runner
                                         # — the nitter.kareem.one signature. Demoted, not
