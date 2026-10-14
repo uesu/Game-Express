@@ -27,7 +27,7 @@ official site / launcher and by X respectively. The API is used rather than the 
 it returns the same posts as structured JSON, with no HTML or JavaScript to scrape.
 | HoYoLAB post (official) | `…/getPostFull?gids={gid}&post_id={id}` | full body (`content` HTML, or `structured_content` when `content == "en-us"`) + images | ✅ HSR 46814308 (quirk), GI 46604275 |
 | c3kay JSON-Feed (mirror, fallback) | `https://feeds.c3kay.de/{genshin,starrail,zenless}.json` | JSON Feed 1.1 with full `content_html`, refreshed every 30 min | ✅ |
-| Official X accounts | nitter RSS fleet `https://<instance>/<account>/rss` (19 entries, 18 live — `xcancel.com` is suspended; originally from News-Express round 13/14) | timeline (first 2 working instances merged) | fleet taken from News-Express |
+| Official X accounts | nitter RSS fleet `https://<instance>/<account>/rss` (21 entries, 20 live — `xcancel.com` is suspended; originally from News-Express round 13/14) | timeline (first 2 working instances merged) | fleet taken from News-Express |
 | Tweet details | `https://nitter.cf/<account>/status/{id}/rss` (then `xitter.cf`, when the account is known) → `https://api.fxtwitter.com/status/{id}` → `https://api.fixupx.com/status/{id}` → `https://api.vxtwitter.com/Twitter/status/{id}` | full text with expanded links, photos, exact timestamp; the winner is logged | ✅ all 4 reference tweets |
 | Kuro official site (WW) | `https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/json/G152/en/{ArticleMenu,MainMenu}.json` + `…/article/{id}.json` | official articles incl. *Featured Resonator/Weapon Convene* banner notices; times are UTC+8 | ✅ (English menus are homepage **subsets**, so X stays primary for WW) |
 | HoYoPlay launcher | `https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGameBranches?launcher_id=VYTpXlbWo8` | exact live version (`main.tag`) + pre-install availability (`pre_download`) | ✅ ZZZ `3.2.0` |
@@ -65,12 +65,18 @@ handles and it returned zero entries on the other two. Both were demoted and two
 candidates took the slots. A hot-path slot therefore needs **two** things, enforced by separate
 tests: a feed body read by hand, *and* no runner-measured failure.
 
-Only `nitter.cf` and the token-gated `nitter.miningtcup.me` have answered 6/6 handles live, and
-they hold slots 1 and 4 — so the quorum of two never depends on a trial slot, and an experiment
-costs wasted requests at worst, never a missed announcement. Worth knowing where that leaves
-the fleet: `nitter.cf` and `xitter.cf` are one machine, so the only *independent* redundancy
-today is the token-gated mirror. Finding a second backend that answers Actions IPs is exactly
-what the two trial slots are for.
+The hot path has been re-ranked by live runs ever since; every rotation is dated in the comment
+block above `DEFAULT_NITTER` in `gamexpress/config.py` and in `docs/changelog/`. Since rotation
+#6 (2026-10-15) all four hot-path slots carry positive runner evidence: `nitter.cf` (6/6 handles,
+every run), `xitter.cf` (the same machine as `nitter.cf`, an answerer across its whole tenure),
+`nitter.meowing.monster` (6/6 in run #2323; listed IPv6-only on d420 while the runners are
+IPv4-only, so it may lose a `NITTER_GRACE` race on a handle but never the quorum) and the
+token-gated `nitter.miningtcup.me` (6/6). That round's ranking rule, which every later rotation
+inherits: **no member that blocks GitHub Actions / Azure datacenter IPs sits above one that
+doesn't.** The fallbacks open with two zero-refusal TRIALs — `nitter.freedit.eu` (the only host
+answering all 8 union handles, the six game feeds plus the two News-Express accounts) and
+`nitter.gravitywell.xyz` (5/8, deterministic `User not found` gaps) — which cost nothing while
+the hot path is healthy and get their runner test on the first degraded day.
 
 Being polite about it matters: these are volunteer-run mirrors and `status.d420.de` asks
 outright that they not be scraped. The design already keeps the cost low — the loop stops at
@@ -80,8 +86,10 @@ A mirror that stops answering is **demoted, never deleted**. `x.n0g.xyz` returne
 429 on every handle in three consecutive live runs, so it sits at the very end of the fleet as a
 backup instead of being cut — and because the loop above breaks once two instances have answered,
 a demoted mirror costs no requests at all until the mirrors ahead of it degrade. The same applies
-to `nitter.netbub.com`, `nitter.meowing.monster`, `xcancel.com` and `x.yuuki.sh`: a host may
-simply be blocking GitHub's runners while answering fine from a VPS.
+to `nitter.kareem.one`, `nitter.netbub.com`, `xcopy.uk`, `xcancel.com` and `x.yuuki.sh`: a host may
+simply be blocking GitHub's runners while answering fine from a VPS — `nitter.kareem.one` and
+`xcopy.uk` both serve a clean feed off-runner and answer the runners with HTTP 403 (xcopy on
+24/24 fetches across four Azure regions, runs #2662–#2665, the trial verdict of 2026-10-15).
 
 Single tweets are read **from nitter.cf first** when the account is known: `XClient.tweet()` asks the
 nitter status feed (`nitter.cf`, then `xitter.cf`, the same backend) for that post. FxTwitter is asked

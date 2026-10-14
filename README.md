@@ -378,7 +378,7 @@ Flags: `--dry-run --only --game --repost --kind --ping --out --unlaunched --verb
 | Data | Chain |
 |---|---|
 | HoYoverse news | official HoYoLAB API → c3kay JSON-Feed mirror |
-| X timelines | the built-in nitter fleet (19 entries, 18 live — `xcancel.com` is suspended and kept last as a dead entry; `NITTER_INSTANCES` overrides the list). The first **two** working mirrors are merged, so a stale-but-200 mirror can't hide a tweet |
+| X timelines | the built-in nitter fleet (21 entries, 20 live — `xcancel.com` is suspended and kept last as a dead entry; `NITTER_INSTANCES` overrides the list). The first **two** working mirrors are merged, so a stale-but-200 mirror can't hide a tweet |
 | Tweet details | nitter.cf → xitter.cf by id (when the account is known) → FxTwitter → fixupx → vxTwitter → the nitter text. A status mirror that fails twice in one run is skipped for the rest of it |
 | Codes | up to 8 sources per game (validators, APIs, wikis, official posts), fetched in parallel, behind the gate above |
 | Version / pre-install | HoYoPlay `getGameBranches` / Kuro launcher index |

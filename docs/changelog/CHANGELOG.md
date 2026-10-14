@@ -13,6 +13,29 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ---
 
+## 2026-10-15
+
+**Rotation #6: the xcopy.uk trial's verdict lands, and the hot path goes fully
+runner-proven.** The first four post-merge runs delivered the verdict rotation #5 was
+built for: xcopy.uk refused the runners with HTTP 403 on all six handles, every run,
+across four Azure regions (runs #2662–#2665, 24/24 fetches) while its off-runner body
+stayed clean — the exact kareem.one signature, and the rollback line the spec pre-wrote
+was never needed because the operator went further: a new ranking rule for the round
+(**no member that blocks GitHub Actions / Azure datacenter IPs sits above one that
+doesn't**) and a new operator-directed head — nitter.cf, xitter.cf, meowing.monster,
+miningtcup.me — the first time all four hot slots carry positive runner evidence.
+The union-coverage test then filled the bench: **freedit.eu** joins as the fallback head
+(the only host answering 8/8 union handles — all six game feeds plus TYPEII_EN and
+PomPom_HonkaiSR — with nitter.cf parity on top tweet ids and zero refusals on record
+anywhere) and **gravitywell.xyz** behind it (5/8 union; `User not found` on
+GenshinImpact — first seen this round — plus the known Wuthering_Waves and HonkaiNA
+gaps, deterministic and complementary to kareem.one's coverage). eir-nya keeps its
+no-block status but seats behind the trials (the fleet's only measured runner
+non-deliveries: grace losses, 200-with-0-entries, and 429s on every GE-handle probe
+this round); thepixora's flapping 403 seats it below everyone who has never refused.
+xcopy records its verdict beside kareem in the runner-refused tier — demoted, not
+deleted, back up the day it answers the runners. Fleet 19 → 21; nothing deleted.
+
 ## 2026-10-14
 
 **Rotation #5: xcopy.uk trials nitter slot 2 after the full-coverage test; meowing.monster

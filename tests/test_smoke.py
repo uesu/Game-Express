@@ -3657,7 +3657,7 @@ def test_the_documented_nitter_fleet_size_matches_the_code():
     configured = len(DEFAULT_NITTER)
     suspended = [u for u in DEFAULT_NITTER if "xcancel" in u]      # kept last, cannot answer
     live = configured - len(suspended)
-    assert (configured, live) == (19, 18)
+    assert (configured, live) == (21, 20)
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     sources = (ROOT / "docs" / "SOURCES.md").read_text(encoding="utf-8")
@@ -5245,8 +5245,9 @@ def test_the_nitter_fleet_leads_with_nitter_cf_and_demotes_the_flaky_mirror():
 
 
 # A mirror only earns a hot-path slot by serving a real RSS BODY, not by scoring well on a
-# status page that probes the homepage. Each of these was fetched by hand on 2026-10-03 and
-# answered with a parseable feed; each of the walled ones answered with an interstitial.
+# status page that probes the homepage. Each of these was fetched by hand (the 2026-10-03
+# audit, then each dated rotation since) and answered with a parseable feed; each of the
+# walled ones answered with an interstitial.
 #
 # This is a NECESSARY condition, not a sufficient one -- serving a clean body to a VPS says
 # nothing about what an Actions runner gets. nitter.kareem.one is in this tuple and still
@@ -5263,11 +5264,24 @@ NITTER_SERVES_REAL_RSS = (
                           # hand-read that day, nitter.cf parity on top tweet ids; on the
                           # shitter fork's working list. TRIAL until a runner probe says
                           # otherwise.
+    "https://nitter.freedit.eu",   # rotation #6 (2026-10-15): 8/8 union handles across
+                                   # two days -- 5/5 News-Express accounts (2026-10-14)
+                                   # plus GenshinImpact, honkaistarrail and ZZZ_EN this
+                                   # round, all with nitter.cf parity on top tweet ids.
+                                   # Zero refusals on record, from any vantage. TRIAL.
+    "https://nitter.gravitywell.xyz",   # rotation #6 (2026-10-15): 5/8 union handles --
+                                   # honkaistarrail, ZZZ_EN, TYPEII_EN, PomPom_HonkaiSR,
+                                   # Ananta_EN current with identical top ids;
+                                   # deterministic `User not found` on GenshinImpact
+                                   # (new this round), Wuthering_Waves and HonkaiNA --
+                                   # kareem-style gaps, not downtime. TRIAL.
 )
 # Reversible tier (demotion only, not NITTER_CANNOT_ANSWER): tw.eir-nya.gay lost the NITTER_GRACE
 # race on 4 of 6 handles in run 2026-10-03 04:25 (0 entries on the other 2), and when rotation #3
 # gave it a one-run slot-4 trial after thepixora's 403, run #2323 (2026-10-13) returned HTTP 200
-# with 0 entries on all 6 handles. Demoted back behind thepixora while xitter.cf warms slot 4.
+# with 0 entries on all 6 handles. Rotation #6 (2026-10-15) seats it back ahead of thepixora by
+# the no-block rule (it answers the runners HTTP 200; that round it 429'd every GE-handle probe,
+# retry included -- throttled, never a hard refusal) but behind the two zero-history trials.
 NITTER_LOSES_THE_RACE = {
     "https://tw.eir-nya.gay": "silent past NITTER_GRACE on 4/6 handles (2026-10-03 04:25); "
                               "slot-4 trial: HTTP 200 with 0 entries on 6/6 handles "
@@ -5302,7 +5316,8 @@ def test_a_hot_path_slot_needs_both_a_verified_body_and_a_clean_live_run():
     clean feeds off-runner and answered GitHub's runners with 403 six times out of six
     (NITTER_CANNOT_ANSWER). Losing the NITTER_GRACE race or returning HTTP 200 with 0 entries
     (NITTER_LOSES_THE_RACE) is a reversible penalty that still keeps tw.eir-nya.gay out of the
-    every-run hot path while xitter.cf warms slot 4."""
+    every-run hot path (rotation #6 seats xitter.cf at slot 2 and meowing.monster at slot 3,
+    both runner-proven)."""
     from gamexpress.config import DEFAULT_NITTER
     from gamexpress.sources.twitter import NITTER_BATCH
     hot = DEFAULT_NITTER[:NITTER_BATCH]
@@ -5310,8 +5325,8 @@ def test_a_hot_path_slot_needs_both_a_verified_body_and_a_clean_live_run():
         assert inst in DEFAULT_NITTER, f"{inst} is demoted, not deleted"
         assert inst not in hot, f"{inst} costs a request every run but {why}"
 
-    # The quorum is two answers, and both proven answerers are in the hot path, so the other
-    # two slots can never cost an announcement -- only wasted requests.
+    # The quorum is two answers, and the two 6/6-every-run answerers are in the hot path, so
+    # the other two slots can never cost an announcement -- only wasted requests.
     proven = ("https://nitter.cf", "https://nitter.miningtcup.me")
     for inst in proven:
         assert inst in hot, f"{inst} answered 6/6 handles live and must stay in the hot path"
@@ -5321,8 +5336,10 @@ def test_a_hot_path_slot_needs_both_a_verified_body_and_a_clean_live_run():
 
 def test_the_duplicate_domain_never_displaces_an_independent_answerer():
     """xitter.cf answers, and every link in its feed points back at nitter.cf -- it is the same
-    backend behind a second domain. It never displaces an independent answerer in slots 1-3,
-    and warms slot 4 after eir-nya's empty trial (rotation #4, run #2323)."""
+    backend behind a second domain. It never displaces an independent answerer out of the hot
+    path: rotation #4 (run #2323) warmed slot 4 with it after eir-nya's empty trial, and
+    rotation #6 (2026-10-15) seats it at slot 2 by operator direction with both independent
+    answerers (meowing.monster, miningtcup.me) still in the batch."""
     from gamexpress.config import DEFAULT_NITTER
     from gamexpress.sources.twitter import NITTER_BATCH
     hot = DEFAULT_NITTER[:NITTER_BATCH]
@@ -5346,26 +5363,47 @@ def test_rotation_4_xitter_cf_warms_slot_4_after_eir_nyas_empty_trial():
     assert "https://tw.eir-nya.gay" in DEFAULT_NITTER, "demoted, not deleted"
 
 
-def test_rotation_5_xcopy_uk_trials_slot_2_meowing_heads_the_fallbacks():
-    """Rotation #5 v3 (2026-10-14, post-test): xcopy.uk answered 8/8 monitored handles
-    across the day (bodies read, nitter.cf parity on top tweet ids) while meowing.monster
-    spent ~8 h dark, revived, and remains IPv6-slow for GitHub's IPv4-only runners (5/6
-    handles at best, run #2621). Slot 2 passes to xcopy.uk as a TRIAL -- the every-run
-    probe delivers its runner verdict, and the quorum never depends on it (slots 1/3/4
-    are three measured answerers). meowing, a proven answerer through one bad day, waits
-    at the head of the fallbacks -- demoted, not deleted, no ledger move."""
+def test_rotation_6_runner_proven_hot_path_xcopy_verdict_demotes_it():
+    """Rotation #6 (2026-10-15): the rotation-5 trial got its verdict -- xcopy.uk
+    returned HTTP 403 to the runners on all 6 handles in 4 consecutive post-merge
+    runs (#2662-#2665, westus/westus3/eastus2/centralus, 24/24 fetches), the
+    nitter.kareem.one signature. The operator then set this round's rule -- no
+    member that blocks GitHub Actions / Azure datacenter IPs sits above one that
+    doesn't -- and directed the hot path to the four mirrors with positive runner
+    evidence: nitter.cf, xitter.cf (back at slot 2, an answerer its whole tenure),
+    meowing.monster (6/6 run #2323, 5/6 run #2621; IPv6-slow, so it may lose a
+    NITTER_GRACE race on a handle, never the quorum) and the token-gated
+    miningtcup.me. The union-coverage test fills the bench: freedit.eu (8/8 union
+    handles, nitter.cf parity, zero refusals anywhere) heads the fallbacks,
+    gravitywell.xyz (5/8, deterministic not-found gaps: GenshinImpact new this
+    round plus Wuthering_Waves and HonkaiNA, complementary to kareem.one) behind
+    it, eir-nya (no block, but the only measured runner non-deliveries) and
+    thepixora (flapping runner 403) behind the trials. xcopy records its verdict
+    in the runner-refused tier. Fleet 19 -> 21; nothing deleted."""
     from gamexpress.config import DEFAULT_NITTER
     from gamexpress.sources.twitter import NITTER_BATCH
     hot = DEFAULT_NITTER[:NITTER_BATCH]
-    assert DEFAULT_NITTER[1] == "https://xcopy.uk", "the tested candidate trials slot 2"
-    assert "https://nitter.meowing.monster" not in hot, \
-        "IPv6-slow the same day it was dark 8 h: the bench, not the hot path"
-    assert DEFAULT_NITTER[NITTER_BATCH] == "https://nitter.meowing.monster", \
-        "a proven answerer that is slow waits at the HEAD of the fallbacks"
-    assert "https://xcopy.uk" in DEFAULT_NITTER and \
-        "https://nitter.meowing.monster" in DEFAULT_NITTER, "nothing deleted"
-    assert "https://nitter.cf" in hot and "https://xitter.cf" in hot, \
-        "slots 1 and 4 are untouched by this rotation"
+    assert hot == ["https://nitter.cf", "https://xitter.cf",
+                   "https://nitter.meowing.monster", "https://nitter.miningtcup.me"], \
+        "operator-directed: the four mirrors with positive runner evidence"
+    assert "https://xcopy.uk" not in hot, "the trial's verdict: 403 to the runners, 24/24"
+    assert DEFAULT_NITTER.index("https://xcopy.uk") > DEFAULT_NITTER.index("https://nitter.kareem.one"), \
+        "demoted into the runner-refused tier, beside its own signature"
+    assert DEFAULT_NITTER[4] == "https://nitter.freedit.eu", "8/8 union handles -- the fallback head"
+    assert DEFAULT_NITTER[5] == "https://nitter.gravitywell.xyz", "5/8 union, deterministic gaps"
+    assert DEFAULT_NITTER.index("https://tw.eir-nya.gay") < DEFAULT_NITTER.index("https://shitter.thepixora.com"), \
+        "no-block (slow, empty) seats above flapping-403 by this round's rule"
+    assert len(DEFAULT_NITTER) == 21 and "https://xcancel.com" in DEFAULT_NITTER
+    for kept in ("https://nitter.cf", "https://xitter.cf", "https://xcopy.uk",
+                 "https://nitter.meowing.monster", "https://nitter.miningtcup.me",
+                 "https://shitter.thepixora.com", "https://tw.eir-nya.gay",
+                 "https://nitter.jaydenha.uk", "https://nitter.click",
+                 "https://nitter.tiekoetter.com", "https://nitter.xitter.cc",
+                 "https://nitter.perennialte.ch", "https://nitter.privacydev.net",
+                 "https://nitter.net", "https://nitter.kareem.one",
+                 "https://nitter.netbub.com", "https://xcancel.com",
+                 "https://x.yuuki.sh", "https://x.n0g.xyz"):
+        assert kept in DEFAULT_NITTER, "nothing is ever deleted"
 
 
 def test_the_token_gated_instance_is_in_the_fleet():
@@ -5394,6 +5432,10 @@ NITTER_CANNOT_ANSWER = {
     "https://nitter.netbub.com": "HTTP 403 on all 4 handles (live run 36305123457)",
     "https://nitter.kareem.one": "HTTP 403 on all 6 handles (live run 2026-10-03 04:25)",
     "https://shitter.thepixora.com": "HTTP 403 on all 6 handles (live run #2312, 2026-10-13)",
+    "https://xcopy.uk": "rotation #5 trial verdict (2026-10-15): HTTP 403 on all 6 handles in "
+                        "4 consecutive runs (#2662-#2665) across 4 Azure regions -- 24/24 "
+                        "refused. Clean body off-runner (stays in NITTER_SERVES_REAL_RSS, "
+                        "exactly like kareem.one); flat refusal to Actions IPs",
     "https://xcancel.com": "suspended 2026-09-14",
     "https://x.yuuki.sh": "HTTP 403 to GitHub runners (2026-09-25)",
     "https://x.n0g.xyz": "404 then 429 in runs 36296323488 / 36298632006 / 36299586254",
