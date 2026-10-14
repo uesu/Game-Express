@@ -52,8 +52,6 @@ class WikiDialect:
     pool_template: str
     five_field: str
     four_field: str
-    banner_type: str
-    category: str
     # Version/<X.Y> page
     debut_section: str            # heading / definition-list marker that holds the debut roster
     debut_template: str           # '{{<template>|Name}}' the roster uses ('' = wiki links)
@@ -67,8 +65,6 @@ WIKIS: dict[str, WikiDialect] = {
         pool_template="Wish Pool",
         five_field="character_5_F",
         four_field="character_4_F",
-        banner_type="Character Event",
-        category="Character Event Wishes",
         debut_section=";New Characters",
         debut_template="",
         banner_section=";Event Wishes",
@@ -79,8 +75,6 @@ WIKIS: dict[str, WikiDialect] = {
         pool_template="Warp Pool",
         five_field="character_5_F",
         four_field="character_4_F",
-        banner_type="Character Event",
-        category="Character Event Warps",
         debut_section="===Characters===",
         debut_template="Character Intro",
         banner_section="* Character Event Warps:",
@@ -91,8 +85,6 @@ WIKIS: dict[str, WikiDialect] = {
         pool_template="Signal Search Pool",
         five_field="agent_S_F",
         four_field="agent_A_F",
-        banner_type="Exclusive Channel",
-        category="Exclusive Channel Signal Searches",
         debut_section="===Playable Agents===",
         debut_template="Intro/Agent/Full",
         banner_section="====Exclusive Channels====",
@@ -103,8 +95,6 @@ WIKIS: dict[str, WikiDialect] = {
         pool_template="Convene/Pool",
         five_field="resonator_5_F",
         four_field="resonator_4_F",
-        banner_type="Featured Resonator",
-        category="Featured Resonator Convenes",
         debut_section="===Resonators===",
         debut_template="Intro/Resonator/Full",
         banner_section="===Character Event Convenes===",

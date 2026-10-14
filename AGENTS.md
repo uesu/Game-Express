@@ -5,7 +5,7 @@ behaviours are deliberate (and must not be "fixed"), how to verify a change, and
 already cost a broken run. `README.md` is the user-facing manual and `docs/` is its reference
 material; this file is the maintainer's mental model.
 
-Last updated **2026-10-09**.
+Last updated **2026-10-15**.
 
 ---
 
@@ -31,20 +31,20 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 
 | Path | Role |
 |---|---|
-| `gamexpress/__main__.py` | CLI: `run`, `test-card`, `check-webhooks`, `preview`, `validate` |
+| `gamexpress/__main__.py` | CLI: `run`, `test-card`, `check-webhooks`, `preview`, `speculate`, `validate` |
 | `gamexpress/runner.py` | builds `Ctx` (settings, games, state, fetcher, webhook, X client), fail-over, run summary |
-| `gamexpress/schedule.py` (1.1k lines) | the brain: picks the announcement, parses times, builds/edits the schedule card |
+| `gamexpress/schedule.py` (the largest module by far) | the brain: picks the announcement, parses times, locks banners, speculates a cycle, builds/edits the schedule card |
 | `gamexpress/codeposter.py` | the code gate (families, validators, min-sources), posts/edits code cards |
 | `gamexpress/cards.py` | Components V2 payload builders + `validate_payload` (`CODES_PER_CARD = 10`) |
 | `gamexpress/discord.py` | webhook POST/PATCH, 429/5xx retries, `WEBHOOK_SPACING = 1.2 s` pacing |
 | `gamexpress/http.py` | shared `aiohttp` fetcher, `MAX_PARALLEL = 12`, per-source health counters |
 | `gamexpress/state.py` | `state/state.json` (`SCHEMA = 1`): posted keys, message ids, bootstrap flags, heartbeat |
 | `gamexpress/config.py` | `Settings` (env) + `Game` (games.json) + `game_is_on` / `active_games` |
-| `gamexpress/sources/*` | one module per upstream: `twitter` (nitter fleet + FxEmbed), `hoyolab`, `kuro`, `codes`, `launcher`, `bannerfeed`, `gachawiki`, `countdown`, `newspage` |
-| `gamexpress/{media,textutil,timeparse,samples,preview_html}.py` | image URL normalisation, HTML→text, date/time parsing, sample cards, local preview |
+| `gamexpress/sources/*` | one module per upstream: `twitter` (nitter fleet + FxEmbed), `hoyolab`, `kuro`, `codes`, `launcher`, `bannerfeed`, `calendarfeed`, `gachawiki`, `banner_search`, `countdown`, `newspage` |
+| `gamexpress/{models,media,textutil,timeparse,samples,preview_html}.py` | the `Item` / `CodeHit` dataclasses, image URL normalisation, HTML→text, date/time parsing, sample cards, local preview |
 | `config/games.json` | per-game config (see §4) · `config/overrides.json` human corrections · `config/program_announcements.json` discovered tweet ids |
 | `tests/test_smoke.py` | the main suite: every test offline — no network, no secrets |
-| `tests/test_schedule_epithet_and_settled.py` | the 2026-10-08 schedule regressions; also runs standalone in a checkout with no dependencies installed |
+| `tests/test_schedule_epithet_and_settled.py` · `tests/test_gachawiki_placeholder.py` | the 2026-10-08 schedule regressions (the first also runs in a checkout with no dependencies installed) and the ZZZ 3.3 "Agent" placeholder guard. Every test file has a plain runner and **every one is a CI gate** — `test_ci_and_the_python_bump_gate_run_every_offline_test_file` fails the moment a new file is not wired into `ci.yml` and the python-bump gate |
 | `docs/` | the manual, indexed in `docs/README.md`: `CONFIGURATION`, `ACCURACY`, `SOURCES`, `BANNER_DATABASE`, `SCHEDULER`, `ROLLOUT`, `TESTING`, `TROUBLESHOOTING`, `SECURITY`, `TIMESTAMP-PATTERNS`, `DEPENDABOT`, `PYTHON_VERSION`, `PROD-REPO-SETUP`, `CREDITS` |
 | `docs/changelog/` | `CHANGELOG.md` (1.8.0 →) + `CHANGELOG_ARCHIVE.md` (1.0.0 – 1.7.0) + an index; the full history lives here — the README's Changelog section is a pointer to it. |
 | `.github/workflows/` | `monitor.yml` (production), `ci.yml` (tests + advisory job), `python_version_bump.yml` |
@@ -191,8 +191,10 @@ so a newly added variable works without touching the workflow.
 uv venv --python 3.11 && uv pip install -r requirements.txt pyyaml ruff pytest vulture
 .venv/bin/python -m compileall -q gamexpress tests .github/scripts
 .venv/bin/ruff check .                      # ruff.toml is authoritative
-.venv/bin/python tests/test_smoke.py        # must end N/N, 0 failed — the plain runner is what CI uses
-.venv/bin/python -m pytest -q tests         # pytest must also pass
+.venv/bin/python tests/test_smoke.py        # must end N/N, 0 failed — the plain runners are what CI uses
+.venv/bin/python tests/test_schedule_epithet_and_settled.py
+.venv/bin/python tests/test_gachawiki_placeholder.py
+.venv/bin/python -m pytest -q tests         # pytest must also pass (all three files in one go)
 .venv/bin/python -m gamexpress validate     # routing, pings, card limits -> "config OK"
 .venv/bin/python -m gamexpress preview --out /tmp/previews
 zizmor .github/workflows                    # 0 findings; config in .github/zizmor.yml
@@ -216,7 +218,7 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
 | zizmor suppressions | `# zizmor: ignore[rule]` on the *preceding* line is unreliable | put it as a **trailing comment on the exact reported line** |
 | `cache: 'pip'` after the uv switch | warns on every run about a missing `~/.cache/pip` | removed in PR #21; uv has its own cache |
 | `setup-uv` with no `version:` | fetches the version manifest over the network every run | `version: latest-known` |
-| Hung nitter mirror | `asyncio.gather` waited the full 12 s timeout (run #217: 16.2 s vs 5 s) | fixed in v1.9.0; see invariant #8 |
+| Hung nitter mirror | `asyncio.gather` waited the full 12 s timeout (run #217: 16.2 s vs 5 s) | fixed in v1.9.0; see invariant #10 |
 | Hardcoded chunk size | `codeposter` chunked by `10` while cards used `CODES_PER_CARD` | always import the constant |
 | Python 3.14 locally | sandboxes usually cannot download it (TLS proxy); CI pins 3.14 | develop on 3.11, let CI prove 3.14 |
 | `actionlint` locally | `actionlint-py` needs a Go toolchain; it will not install | rely on CI's advisory job + `yaml.safe_load` |

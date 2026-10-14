@@ -99,7 +99,8 @@ Reproduce it offline before changing anything — none of these posts to Discord
 
 ```bash
 python -m gamexpress validate                               # routing, pings, emojis, card limits
-python tests/test_smoke.py                                  # the full offline suite
+python tests/test_smoke.py                                  # the main offline suite
+python -m pytest -q tests                                   # every test file in one go
 python -m gamexpress preview --out /tmp/previews            # render every card locally
 DRY_RUN=1 STATE_PATH=/tmp/s.json python -m gamexpress run   # a real pass that posts nothing
 ```

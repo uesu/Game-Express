@@ -45,8 +45,10 @@ DEFAULT_COMMUNITY_BUTTONS = [
      "emoji": "a:starward11:1439878792653832253"},
 ]
 
-# nitter.cf leads: it is the mirror this monitor is built against and the only one with live
-# production evidence. The chain stops at the first TWO instances that answer with real entries.
+# nitter.cf leads: it is the mirror this monitor is built against and the one with the longest
+# unbroken run of live production evidence (6/6 handles, every run). The chain stops at the
+# first TWO instances that answer with real entries. What follows is the fleet's dated audit
+# trail, oldest first -- each rotation is a measurement, and the list below is its verdict.
 #
 # SLOTS 1-4 ARE THE HOT PATH. twitter.py probes NITTER_BATCH (= 4) instances IN PARALLEL on
 # every run, for every handle, whether or not the ones ahead of them answered -- so a mirror
@@ -140,52 +142,98 @@ DEFAULT_COMMUNITY_BUTTONS = [
 # errors; nitter.catsarch.com shut down. Slots 1/3/4 untouched.
 # If the first run after merge shows the runners 403 xcopy: rollback is one line (meowing
 # back to slot 2), and THAT verdict is what the ledgers record.
+#
+# 2026-10-15 ROTATION #6 (the trial's verdict + the operator's re-rank): the first
+# four post-merge runs delivered the verdict rotation #5 was built for -- xcopy.uk
+# returned HTTP 403 to the runners on all 6 handles, every run, across four Azure
+# regions (westus, westus3, eastus2, centralus; runs #2662-#2665, 24/24 fetches),
+# the exact nitter.kareem.one signature: clean body off-runner, flat refusal to
+# Actions IPs. The operator then set this round's ranking rule -- no member that
+# blocks GitHub Actions / Azure datacenter IPs sits above one that doesn't -- and
+# directed the head: nitter.cf, xitter.cf, meowing.monster, miningtcup.me; the first
+# time all four hot slots carry positive runner evidence (meowing's IPv6 slowness is
+# a grace cost on a handle, never a quorum cost: slots 1/2/4 answer, the engine
+# needs two). The union-coverage test then filled the bench: freedit.eu is the only
+# host answering 8/8 union handles with nitter.cf parity and zero refusals anywhere
+# (fallback head, TRIAL); gravitywell.xyz answers 5/8 with deterministic not-found
+# gaps (GenshinImpact new this round, plus Wuthering_Waves and HonkaiNA) whose
+# complement is kareem.one at the bottom, so between them every union handle is
+# covered somewhere below the hot path (TRIAL). eir-nya passes the no-block rule
+# but keeps the fleet's only measured runner non-deliveries (grace losses,
+# 200-with-0-entries on all six, and 429s on every GE-handle probe this round,
+# retry included), so it sits behind the two trials; thepixora's runner 403 flapped
+# fresh (blocked 10-13 three days after 25 ok on 10-10), so it sits behind everyone
+# who has never refused. xcopy records its verdict beside kareem, demoted not
+# deleted. Fleet 19 -> 21; nothing deleted, as always.
 DEFAULT_NITTER = [
     # ── hot path: probed on EVERY run (NITTER_BATCH = 4) — measured answerers only ──
     "https://nitter.cf",                # proven from the runners: 6/6 handles, every run
-    "https://xcopy.uk",                 # TRIAL (rotation #5, 2026-10-14): every monitored
-                                        # handle's /rss body hand-read that day -- entries
-                                        # current through Oct 14, nitter.cf parity on top
-                                        # tweet ids, full fidelity (RTs, quotes, pinned,
-                                        # articles); on the shitter fork's working wiki;
-                                        # independent, non-token-gated. The kareem.one
-                                        # rule applies: a clean off-runner body is a trial
-                                        # ticket, never proof -- this seat is probed every
-                                        # run, so the FIRST RUN AFTER MERGE delivers the
-                                        # runner verdict. Quorum never depends on slot 2.
+    "https://xitter.cf",                # rotation #6 (2026-10-15): back to slot 2 -- it
+                                        # ANSWERED from the runners across its whole
+                                        # hot-path tenure (run #2323) and was only ever
+                                        # demoted for being nitter.cf's second domain,
+                                        # never for failing a probe. The rotation-5 trial
+                                        # it replaces got its verdict (see the refused
+                                        # tier below); the slot goes back to a measured
+                                        # answerer.
+    "https://nitter.meowing.monster",   # rotation #6 (2026-10-15): OPERATOR-DIRECTED
+                                        # slot 3, up from the fallback head. A PROVEN
+                                        # answerer (6/6 in run #2323, 5/6 in run #2621)
+                                        # whose body re-verified this round
+                                        # (GenshinImpact + ZZZ_EN identical top ids to
+                                        # the nitter.cf controls; one transient HTTP 500
+                                        # on GenshinImpact that cleared on retry). Known
+                                        # cost, kept on purpose: d420 lists the host IPv6
+                                        # and the runners are IPv4-only, so it may lose
+                                        # a NITTER_GRACE race on a handle -- grace, never
+                                        # the quorum (slots 1/2/4 answer; the engine
+                                        # needs two).
     "https://nitter.miningtcup.me",     # token-gated — proven from the runners: 6/6 handles
-    "https://xitter.cf",                # rotation #4 (2026-10-13, run #2323): promoted from
-                                        # the fallbacks — it ANSWERED from the runners across
-                                        # its whole pre-2026-10-03 hot-path tenure (demoted
-                                        # then for being nitter.cf's second domain, never for
-                                        # failing a probe). Same machine as slot 1: a warm
-                                        # answering slot, not independent redundancy.
     # ── fallbacks (batch 2+): zero requests while batch 1 gives two working feeds ──
-    "https://nitter.meowing.monster",   # rotation #5 (2026-10-14): dark ~8 h that day
-                                        # (05:15-13:35 UTC, ClientConnectorError on every
-                                        # handle, runs #2603-#2616), revived ~13:35 -- d420
-                                        # healthy at 13:45, version 2026.10.12-f97b733,
-                                        # and real entries for 5/6 handles from the runners
-                                        # (run #2621). A PROVEN answerer (6/6 in run #2323),
-                                        # so it waits at the HEAD of the fallbacks -- zero
-                                        # requests while the hot path is healthy, first
-                                        # backup the moment it revives fully. d420 lists its
-                                        # connectivity as IPv6 (runners are IPv4-only), so
-                                        # expect slow-but-working; it moves back up the day
-                                        # it outdelivers the slot-2 trial. No ledger move:
-                                        # a dark day plus revival is a position change,
-                                        # never a body verdict.
-    "https://shitter.thepixora.com",    # demoted 2026-10-13: HTTP 403 on all 6 handles from
-                                        # the runners (run #2312) with a clean body off-runner
-                                        # — the nitter.kareem.one signature. Demoted, not
-                                        # deleted; it moves back up the day it answers again
-                                        # (it flapped: 25 ok / 0 fail from the runners on
-                                        # 2026-10-10, runs #1378/#1386).
-    "https://tw.eir-nya.gay",           # rotation #4 (2026-10-13, run #2323): second measured
-                                        # failure — lost the NITTER_GRACE race 2026-10-03,
-                                        # then answered slot 4 with HTTP 200 and 0 entries on
-                                        # all 6 handles. Demoted, not deleted; moves back up
-                                        # the day it delivers a real feed from the runners.
+    "https://nitter.freedit.eu",        # rotation #6 (2026-10-15): NEW, head of the
+                                        # fallbacks. The only host in existence with
+                                        # full union coverage: 5/5 News-Express accounts
+                                        # (2026-10-14) + 3/3 Game-Express-exclusive
+                                        # handles this round (GenshinImpact,
+                                        # honkaistarrail, ZZZ_EN -- identical top ids to
+                                        # the nitter.cf controls, entries current through
+                                        # Oct 14 10:00 UTC) = 8/8, and zero refusals on
+                                        # record anywhere, from any vantage. Not on
+                                        # d420, zero runner evidence: TRIAL -- the
+                                        # fallback head costs zero requests while the
+                                        # hot path is healthy, and the first degraded
+                                        # day is its runner test.
+    "https://nitter.gravitywell.xyz",   # rotation #6 (2026-10-15): NEW. 5/8 union:
+                                        # honkaistarrail, ZZZ_EN, TYPEII_EN,
+                                        # PomPom_HonkaiSR and Ananta_EN serve current
+                                        # with identical top ids; `User not found` on
+                                        # GenshinImpact (first seen this round) plus the
+                                        # known Wuthering_Waves and HonkaiNA gaps --
+                                        # deterministic account-resolution failures,
+                                        # kareem style, not downtime. Its complement is
+                                        # kareem.one in the refused tier (covers
+                                        # Wuthering_Waves, HonkaiNA, Ananta_EN), so
+                                        # between them every union handle is covered
+                                        # below the hot path. Zero runner evidence:
+                                        # TRIAL; moves per evidence.
+    "https://tw.eir-nya.gay",           # rotation #6 (2026-10-15): passes the no-block
+                                        # rule (it answers the runners HTTP 200) but
+                                        # holds the fleet's only measured runner
+                                        # non-deliveries: NITTER_GRACE race losses
+                                        # (2026-10-03) then HTTP 200 with 0 entries on
+                                        # all 6 handles (rotation #4); this round it
+                                        # 429'd every GE-handle probe, retry included --
+                                        # reachable, throttled, never a hard refusal.
+                                        # Seated behind the two zero-history TRIALs;
+                                        # moves up the day a run log shows a real
+                                        # delivery.
+    "https://shitter.thepixora.com",    # FLAPPING runner 403: blocked on all 6 handles
+                                        # 2026-10-13 (run #2312) three days after
+                                        # 25 ok / 0 fail on 2026-10-10 (runs
+                                        # #1378/#1386); clean body off-runner. Seated
+                                        # below every member that has never refused the
+                                        # runners; moves back up the day it answers
+                                        # again.
     "https://nitter.jaydenha.uk",       # demoted: /rss serves a "click anywhere to enter" splash
     "https://nitter.click",             # browser check (__gandalf) in front of /rss
     "https://nitter.tiekoetter.com",    # last-resort: Anubis proof-of-work wall
@@ -196,6 +244,22 @@ DEFAULT_NITTER = [
                                         # though it serves a clean feed off-runner
     "https://nitter.netbub.com",        # HTTP 403 to GH runners (36305123457); off-runner it
                                         # answers only behind a __goaway_challenge redirect
+    "https://xcopy.uk",                 # rotation #5 TRIAL VERDICT (2026-10-15): HTTP 403
+                                        # on all 6 handles in each of the first four
+                                        # post-merge runs (#2662-#2665, 2026-10-14
+                                        # 17:19-17:30 UTC) across four Azure regions
+                                        # (westus, westus3, eastus2, centralus) -- 24/24
+                                        # fetches refused, the most thoroughly measured
+                                        # hard refusal in this fleet's history, the
+                                        # kareem.one signature: a clean body off-runner
+                                        # (8/8 union handles, nitter.cf parity,
+                                        # 2026-10-14) and a flat refusal to Actions /
+                                        # Azure IPs. The trial worked exactly as
+                                        # designed: the body bought the seat, the
+                                        # every-run probe cashed it in, and the quorum
+                                        # never depended on slot 2. Demoted, not
+                                        # deleted; moves back up the day it answers the
+                                        # runners.
     "https://xcancel.com",              # suspended 2026-09-14
     "https://x.yuuki.sh",               # HTTP 403 to GH runners (2026-09-25)
     "https://x.n0g.xyz",                # dead last, kept as a backup: 404 then 429 in runs

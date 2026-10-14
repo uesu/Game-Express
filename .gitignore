@@ -6,6 +6,7 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.ruff_cache/
 # previews / scratch
 previews/
 state/*.tmp

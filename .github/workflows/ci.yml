@@ -61,13 +61,23 @@ jobs:
         run: uv pip install -r requirements.txt pyyaml -q
 
       - name: Compile every .py file
-        run: python -m compileall -q gamexpress tests
+        run: python -m compileall -q gamexpress tests .github/scripts
 
       - name: Validate config + sample cards
         run: python -m gamexpress validate
 
       - name: Offline smoke + golden tests
         run: python tests/test_smoke.py
+
+      # Every test file has its own plain runner and every one of them is a gate. The two below
+      # held 23 regressions (the 2026-10-08 schedule-card faults, the ZZZ 3.3 "Agent" placeholder)
+      # that only pytest ever ran -- and CI does not run pytest, so they guarded nothing until
+      # 2026-10-15. test_ci_and_the_python_bump_gate_run_every_offline_test_file keeps this list
+      # complete.
+      - name: Schedule regressions (2026-10-08) + gacha-wiki placeholder guard
+        run: |
+          python tests/test_schedule_epithet_and_settled.py
+          python tests/test_gachawiki_placeholder.py
 
       - name: Card preview renders (previews/index.html)
         run: python -m gamexpress preview --out /tmp/previews > /dev/null

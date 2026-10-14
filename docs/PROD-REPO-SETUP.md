@@ -62,9 +62,11 @@ no scratch patch to apply — earlier revisions of this guide told you to merge 
 the tree is green in a clean checkout of `main`:
 
 ```bash
-python -m compileall -q gamexpress tests
+python -m compileall -q gamexpress tests .github/scripts
 python -m gamexpress validate
 python tests/test_smoke.py
+python tests/test_schedule_epithet_and_settled.py
+python tests/test_gachawiki_placeholder.py
 python -m gamexpress preview --out /tmp/previews
 ruff check .
 ```

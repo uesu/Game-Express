@@ -15,7 +15,7 @@ allowed to do**.
 
 | # | What could go wrong | Realistic? | Handled by |
 |---|---|---|---|
-| T1 | A community source (nitter mirror, wiki, code API) is taken over and feeds the bot a hostile payload | Yes — 18 nitter mirrors are run by strangers, and mirrors change hands | §2 |
+| T1 | A community source (nitter mirror, wiki, code API) is taken over and feeds the bot a hostile payload | Yes — 20 nitter mirrors are run by strangers, and mirrors change hands | §2 |
 | T2 | A source floods the bot with hundreds of fake "codes" | Yes — a parser change upstream is enough | §3 |
 | T3 | A webhook URL or `NITTER_RSS_TOKEN` leaks into a public log | Yes, logs are public on a public repo | §4 |
 | T4 | A compromised GitHub Action steals the Discord webhooks or pushes to the repo | Rare but real (supply chain) | §5 |
@@ -115,8 +115,9 @@ thing to revisit if a third-party step is ever added to that job. zizmor's
 
 ## 6. Integrity of state (T5)
 
-`state.py` writes through a temp file + `os.replace()` (atomic) and keeps a `.bak`, so a killed
-run can never leave a half-written file. Every posted card records its message id and webhook
+`state.py` writes through a temp file + `os.replace()` (atomic), so a killed run can never
+leave a half-written file; a file that no longer parses is moved aside as `state.corrupt.json`
+instead of being overwritten, so nothing is lost silently. Every posted card records its message id and webhook
 fingerprint, which is what makes "edit the existing card" and "never post the same thing twice"
 reliable across runs. Primary/standby instances coordinate through `peer_state_url` +
 `failover_after_min`.
