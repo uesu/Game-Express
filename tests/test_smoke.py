@@ -1254,6 +1254,40 @@ def test_workflows_cron_job_org_and_test_bench():
     assert dep["updates"][0]["versioning-strategy"] == "increase-if-necessary"
 
 
+def test_ci_and_the_python_bump_gate_run_every_offline_test_file():
+    """Every tests/test_*.py file has a plain runner, and every one of them is a CI gate.
+
+    Until 2026-10-15 ci.yml ran only tests/test_smoke.py: the 20 regressions in
+    test_schedule_epithet_and_settled.py (the 2026-10-08 schedule-card faults that AGENTS.md
+    invariants #6 and #15 lean on) and the 3 in test_gachawiki_placeholder.py only ever ran under
+    pytest, which CI does not install -- so a PR could break them and merge green. The
+    python-bump workflow promises "the exact commands ci.yml runs", so it is held to the same
+    list. A new test file fails here until both workflows run it.
+    """
+    try:
+        import yaml
+    except ImportError:
+        print("    (pyyaml not installed — workflow checks skipped)")
+        return
+    wf = ROOT / ".github" / "workflows"
+    test_files = sorted(p.name for p in (ROOT / "tests").glob("test_*.py"))
+    assert len(test_files) >= 3, test_files
+    for name in test_files:                                   # each one runs on its own
+        src = (ROOT / "tests" / name).read_text(encoding="utf-8")
+        assert 'if __name__ == "__main__":' in src, f"{name} has no plain runner"
+        assert "sys.path.insert(0, str(ROOT))" in src, f"{name} cannot import gamexpress standalone"
+
+    ci = yaml.safe_load((wf / "ci.yml").read_text(encoding="utf-8"))
+    ci_runs = "\n".join(str(s.get("run", "")) for s in ci["jobs"]["test"]["steps"])
+    bump = yaml.safe_load((wf / "python_version_bump.yml").read_text(encoding="utf-8"))
+    gate = next(s for job in bump["jobs"].values() for s in job["steps"]
+                if "tests/test_smoke.py" in str(s.get("run", "")))
+    for name in test_files:
+        assert f"python tests/{name}" in ci_runs, f"ci.yml's test job does not run tests/{name}"
+        assert f"python tests/{name}" in gate["run"], f"the python-bump gate does not run tests/{name}"
+    assert ".github/scripts" in ci_runs and ".github/scripts" in gate["run"]   # compileall covers the bump script too
+
+
 def test_every_action_is_pinned_to_a_commit_sha_with_a_readable_version_comment():
     """A tag is mutable. In March 2025 an attacker with a stolen bot token repointed every
     tag of tj-actions/changed-files (v1 … v45.0.7) at one malicious commit that dumped runner
@@ -1412,7 +1446,7 @@ def test_an_aggregator_copy_is_never_a_second_independent_source():
             next(h for h in csrc.parse_codehub(hub, "genshin") if h.code == "GS71XAVWDS")]
     info = codeposter.group_hits(hits, LIVE_NOW)["GS71XAVWDS"]
     assert info["families"] == {"ennead"}
-    assert codeposter.passes_gate(info, 2) is False
+    assert codeposter.gate(info, 2)[0] is False
 
 
 def test_valid_until_date_beats_every_other_source():

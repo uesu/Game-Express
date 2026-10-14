@@ -1,5 +1,6 @@
-# Local lint settings (optional: `pip install ruff && ruff check .`). Not run in CI on purpose,
-# so a new ruff release can never block a Dependabot PR or a hot-fix.
+# Lint settings (`pip install ruff && ruff check .`). CI reads this same file in its ADVISORY job
+# only (`continue-on-error: true`), so a new ruff release can never block a Dependabot PR or a
+# hot-fix; the required `test` job never runs ruff.
 # Matches the interpreter pinned in .github/workflows/{ci,monitor}.yml (python-version: '3.14').
 target-version = "py314"
 line-length = 120

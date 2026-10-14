@@ -115,8 +115,9 @@ thing to revisit if a third-party step is ever added to that job. zizmor's
 
 ## 6. Integrity of state (T5)
 
-`state.py` writes through a temp file + `os.replace()` (atomic) and keeps a `.bak`, so a killed
-run can never leave a half-written file. Every posted card records its message id and webhook
+`state.py` writes through a temp file + `os.replace()` (atomic), so a killed run can never
+leave a half-written file; a file that no longer parses is moved aside as `state.corrupt.json`
+instead of being overwritten, so nothing is lost silently. Every posted card records its message id and webhook
 fingerprint, which is what makes "edit the existing card" and "never post the same thing twice"
 reliable across runs. Primary/standby instances coordinate through `peer_state_url` +
 `failover_after_min`.

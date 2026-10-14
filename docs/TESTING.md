@@ -22,13 +22,17 @@ That workflow:
 
 ## 0. Before merging a PR
 
-The PR's **CI — compile + offline tests** check must be green. It runs the whole offline suite, which
-cover:
+The PR's **CI — compile + offline tests** check must be green. It runs every offline test file
+through its own plain runner — `tests/test_smoke.py`, `tests/test_schedule_epithet_and_settled.py`
+and `tests/test_gachawiki_placeholder.py` — which cover:
 
 - the real official posts, which must reproduce your reference cards' timestamps;
-- the golden cards, Discord limits, the code gate, 4★ TBA, fail-over, and the workflow files.
+- the golden cards, Discord limits, the code gate, 4★ TBA, fail-over, and the workflow files;
+- the 2026-10-08 schedule-card regressions and the ZZZ 3.3 "Agent" placeholder guard.
 
-CI needs no secrets and no network.
+CI needs no secrets and no network. A test file that is not wired into `ci.yml` (and into the
+python-bump gate, which runs the same commands) fails
+`test_ci_and_the_python_bump_gate_run_every_offline_test_file`, so none can go un-gated again.
 
 A second job, **CI — advisory checks**, runs beside it and is **informational only** — it is
 allowed to fail and can never block a merge:
@@ -188,8 +192,11 @@ If the title link or the picture is wrong:
 ## 7. Local testing (optional, for developers)
 
 ```bash
-pip install -r requirements.txt pyyaml
-python tests/test_smoke.py                 # the full offline suite
+pip install -r requirements.txt pyyaml pytest
+python tests/test_smoke.py                 # the main offline suite (golden cards, parsers, workflows)
+python tests/test_schedule_epithet_and_settled.py   # the 2026-10-08 schedule regressions
+python tests/test_gachawiki_placeholder.py          # the ZZZ 3.3 "Agent" placeholder guard
+python -m pytest -q tests                  # the same three files in one go
 python -m gamexpress validate              # routing, pings, card limits
 python -m gamexpress preview               # previews/index.html = every card, Discord-style
 ruff check .                               # same ruff.toml the advisory job uses
@@ -228,8 +235,8 @@ agent, unreadable-name fallback, the Genshin and Star Rail traps, the WuWa list)
 titles, healed in place by re-reading the same two posts, lock unmoved). If one of them fails
 after a change to `extract_banner()` or `bare_names()`, the reader is what you broke.
 
-Counts: the CI runner `python tests/test_smoke.py` runs 272 tests (all must pass). `pytest -q tests` runs 295:
-those 272, the 20 in `test_schedule_epithet_and_settled.py` and the 3 in `test_gachawiki_placeholder.py`.
+Counts: each plain runner ends with its own `N/N passed` line and every one must be `N/N`; `pytest -q tests`
+runs the three files together (the totals are not written down anywhere on purpose — they rot).
 The title-search tests sit in `tests/test_smoke.py` before `main()`: title matching (`test_banner_title_match_is_exact_on_version_phase_and_prefix`),
 the HSR 4.6 Phase I outside-lookback case, fan-repost rejection, the HoYoLAB search versus `getNewsList` fallback,
 the budget and throttle (`test_banner_search_budget_settled_never_frozen_never_and_two_clocks`), the `gather_banner_search` integration, WuWa's Kuro discovery

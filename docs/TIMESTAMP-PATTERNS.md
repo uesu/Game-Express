@@ -80,15 +80,16 @@ weekday** is strictly better than arithmetic alone (section 5).
 | game | n | median | min | max | shipped `PREINSTALL_LEAD_H` |
 |---|---|---|---|---|---|
 | Genshin | 10 | **43.0 h** (10/10 identical) | 43 | 43 | 43 ✅ |
-| Star Rail | 11 | 40.0 h (8/11 identical) | 12 | 88 | **88 ⚠️** |
+| Star Rail | 11 | **40.0 h** (8/11 identical) | 12 | 88 | 40 ✅ (shipped as 88 at first — see §6, *One bug fixed along the way*) |
 | ZZZ | 10 | **42.0 h** (9/10) | 42 | 66 | 42 ✅ |
 | WuWa | 18 | **42.0 h** (17/18) | 42 | 42.5 | 42 ✅ |
 
-⚠️ `PREINSTALL_LEAD_H["starrail"] = 88` in `schedule.py:200` is calibrated on version 4.6, which is
-the single largest outlier in the series. The modal and median lead is **40 h** (Mon 14:00 → Wed
-06:00). This only affects cold start — `observed_lead_h()` replaces it with the learned median once
-this installation has seen one real pre-install/maintenance pair — but on a fresh state file the
-first Star Rail card would be ~2 days early. Recommended correction: **40**.
+`PREINSTALL_LEAD_H["starrail"]` first shipped as `88`, calibrated on version 4.6 — the single
+largest outlier in the series. The modal and median lead is **40 h** (Mon 14:00 → Wed 06:00), which
+is what `schedule.PREINSTALL_LEAD_H` holds now. The constant only ever affects cold start —
+`observed_lead_h()` replaces it with the learned median once this installation has seen one real
+pre-install/maintenance pair — but on a fresh state file the old value would have put the first
+Star Rail card ~2 days early.
 
 **Special program lead before maintenance start:** median 11.4 d for Genshin / HSR / ZZZ, 11.9 d for
 WuWa — i.e. *the Friday ~12 days before launch*, at a fixed per-game air time:
@@ -167,14 +168,14 @@ existed. What was already there:
 
 | requirement | where it already lives |
 |---|---|
-| a trust tier below every real source | `PRIORITY["pattern"] = 9` vs `countdown` 10, `launcher` 20, `x` 40, `news` 45, `hoyolab`/`kuro` 50, `override` 100 — `schedule.py:189` |
-| per-field provenance so a guess never overwrites a fact | `prov[key] = [priority, ts]`, merged in the record loop at `schedule.py:789–880` |
-| a working pattern-derived prediction, as precedent | `derive_preinstall()` `schedule.py:568`, writes at `PRIORITY["pattern"]` and refuses to touch a value it did not itself derive (`:582`) |
-| learning the offset from observed history instead of a constant | `observed_lead_h()` + median, `schedule.py:~555` |
-| auto-edit when the real date lands | `edit_on_update` → `schedule.py:1017` |
-| **no edit when the prediction was already right** | `schedule.py:1020-1021`: `h = stable_hash(payload["components"])`; `if h == record.get("payload_hash")` → skip. Identical render ⇒ zero Discord calls |
-| visible "this is a guess" labelling | `cards.py:326-329` — "🕒 … estimated from … — the official notice replaces it automatically" |
-| un-marking a field once the real value arrives | `_unmark_estimated()` `schedule.py:508` |
+| a trust tier below every real source | `PRIORITY["pattern"] = 9` vs `countdown` 10, `launcher` 20, `x` 40, `news` 45, `hoyolab`/`kuro` 50, `override` 100 — `schedule.PRIORITY` |
+| per-field provenance so a guess never overwrites a fact | `prov[key] = [priority, ts]`, merged in the record loop of `schedule.merge()` |
+| a working pattern-derived prediction, as precedent | `schedule.derive_preinstall()` writes at `PRIORITY["pattern"]` and refuses to touch a value it did not itself derive |
+| learning the offset from observed history instead of a constant | `schedule.observed_lead_h()` + median |
+| auto-edit when the real date lands | `edit_on_update`, in `schedule._handle_version()` |
+| **no edit when the prediction was already right** | same place: `h = stable_hash(payload["components"])`; `if h == record.get("payload_hash")` → skip. Identical render ⇒ zero Discord calls |
+| visible "this is a guess" labelling | the schedule card's footer in `cards.py` — "🕒 … estimated from … — the official notice replaces it automatically" |
+| un-marking a field once the real value arrives | `schedule._unmark_estimated()` |
 
 So the three behaviours asked for are already guaranteed by the existing design:
 
@@ -229,7 +230,7 @@ pre-install card two days early. Now `40`, with the cold-start test checking a *
 
 Risks and how they are already contained:
 
-- *A wrong guess is posted publicly.* Contained by the footer label at `cards.py:329` and by the
+- *A wrong guess is posted publicly.* Contained by the footer label in `cards.py` and by the
   fact that any real source immediately outranks and replaces it.
 - *Edit storms.* Contained by the payload-hash comparison — a stable prediction produces no traffic.
 - *Compressed/holiday cycles.* Partly contained by the full-history median (which beats a short

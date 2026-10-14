@@ -421,7 +421,7 @@ make an overlapping trigger safe. **[docs/SCHEDULER.md](docs/SCHEDULER.md)**.
 
 | Gate | What it runs |
 |---|---|
-| **CI** (`ci.yml`, required) | install → `compileall` → `validate` → `tests/test_smoke.py` → preview render. **every test offline — no network, no secrets** |
+| **CI** (`ci.yml`, required) | install → `compileall` → `validate` → every `tests/test_*.py` through its plain runner → preview render. **every test offline — no network, no secrets** |
 | **CI — advisory checks** (never blocks a merge) | `pip-audit` (CVEs in `requirements.txt`), `actionlint` (workflow YAML), `zizmor` (workflow security), `ruff` (the same `ruff.toml` you run locally) |
 | **Monitor test bench** (`mode = test`) | webhooks, real codes, or the real schedule card — against the live sources |
 
@@ -431,7 +431,8 @@ component/character limits, every code parser and the code gate, the 4★ TBA ru
 stale-post suppression, fail-over, parallel fetching, and the workflow files themselves.
 
 ```bash
-python tests/test_smoke.py                       # the full offline suite
+python tests/test_smoke.py                       # the main offline suite (what CI runs first)
+python -m pytest -q tests                        # every test file in one go
 UPDATE_GOLDEN=1 python tests/test_smoke.py       # after an INTENTIONAL card change
 python -m gamexpress preview                     # open previews/index.html
 ```

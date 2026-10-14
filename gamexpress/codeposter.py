@@ -98,10 +98,6 @@ def gate(info: dict, min_sources: int) -> tuple[bool, str]:
     return False, f"only {', '.join(sorted(info['sources']))}"
 
 
-def passes_gate(info: dict, min_sources: int) -> bool:          # kept for callers / tests
-    return gate(info, min_sources)[0]
-
-
 def drop_stale_copies(hits: list[CodeHit], results: dict[str, list[CodeHit] | None]) -> list[CodeHit]:
     """PromoGacha never deletes entries. A copy of a seria / fandom entry is ignored when that
     upstream answered this run and no longer lists the code as active."""

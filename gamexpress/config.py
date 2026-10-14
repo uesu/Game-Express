@@ -45,8 +45,10 @@ DEFAULT_COMMUNITY_BUTTONS = [
      "emoji": "a:starward11:1439878792653832253"},
 ]
 
-# nitter.cf leads: it is the mirror this monitor is built against and the only one with live
-# production evidence. The chain stops at the first TWO instances that answer with real entries.
+# nitter.cf leads: it is the mirror this monitor is built against and the one with the longest
+# unbroken run of live production evidence (6/6 handles, every run). The chain stops at the
+# first TWO instances that answer with real entries. What follows is the fleet's dated audit
+# trail, oldest first -- each rotation is a measurement, and the list below is its verdict.
 #
 # SLOTS 1-4 ARE THE HOT PATH. twitter.py probes NITTER_BATCH (= 4) instances IN PARALLEL on
 # every run, for every handle, whether or not the ones ahead of them answered -- so a mirror

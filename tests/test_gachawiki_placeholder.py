@@ -1,8 +1,19 @@
 """A version page that names a SLOT instead of a character must never reach a card.
 
 Regression: ZZZ 3.3 posted "Agent" as the phase-1, phase-2 and re-run line-up on 2026-10-06.
+
+Run:   python tests/test_gachawiki_placeholder.py     (plain runner, what CI uses)
+   or: python -m pytest -q tests/test_gachawiki_placeholder.py
 """
-from gamexpress.sources.gachawiki import build_lineup, publishable_name
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from gamexpress.sources.gachawiki import build_lineup, publishable_name  # noqa: E402
 
 PLACEHOLDER_CHANNELS = """\
 {{Upcoming}}
@@ -65,3 +76,18 @@ def test_real_channels_are_unaffected():
     assert out["phase1"] == ["Claret", "Nangong Yu"]
     assert out["phase2"] == ["Roxy", "Promeia"]
     assert out["reruns"] == ["Nangong Yu", "Promeia"]
+
+
+TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
+
+if __name__ == "__main__":
+    failed = 0
+    for fn in TESTS:
+        try:
+            fn()
+            print(f"  ok   {fn.__name__}")
+        except Exception as exc:                                  # noqa: BLE001
+            failed += 1
+            print(f"  FAIL {fn.__name__}: {exc}")
+    print(f"\n{len(TESTS) - failed}/{len(TESTS)} passed")
+    sys.exit(1 if failed else 0)
