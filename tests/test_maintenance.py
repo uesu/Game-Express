@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import importlib.util
 import json
+import os
 import platform
 import re
 import shutil
@@ -70,6 +71,7 @@ def _full_ci_check_runs(
             "head_sha": head_sha,
             "status": "COMPLETED",
             "conclusion": "SUCCESS",
+            "app": {"slug": app_slug},
             "app_slug": app_slug,
             "workflow_id": 42,
             "workflow_name": workflow_name,
@@ -119,10 +121,21 @@ def _trusted_provenance(lane: str, head_sha: str = "a" * 40) -> dict[str, Any]:
             "workflow": ".github/workflows/python_version_bump.yml",
             "workflow_name": "Python Version Bump",
             "workflow_run_id": 555,
+            "workflow_run_attempt": 1,
             "workflow_conclusion": "success",
+            "select_conclusion": "success",
+            "validate_conclusion": "success",
+            "publish_conclusion": "success",
+            "dry_run": False,
+            "published_head_sha": head_sha,
+            "source_sha": "b" * 40,
+            "old_version": "3.14.8",
+            "new_version": "3.14.9",
             "update_kind": "patch",
             "review_required": False,
             "auto_merge_eligible": True,
+            "candidate_tree_sha256": "c" * 64,
+            "manifest_verified": True,
             "head_ref": "chore/python-bump",
             "head_sha": head_sha,
         }
@@ -1267,6 +1280,525 @@ def test_ci_adapter_gate_logic_and_registered_tests() -> None:
         text=True,
     ).returncode
     assert rc_fail == 1
+
+
+def test_g1_live_maintenance_merge_adapter_proposer_provenance_binding() -> None:
+    """Execute the actual JavaScript adapter from `.github/workflows/maintenance_merge.yml` via `node`
+    against mocked GitHub API responses and the real `maintenance.py` subprocess."""
+    node_bin = shutil.which("node")
+    assert node_bin, "node is required to execute the live maintenance_merge.yml github-script adapter"
+
+    merge_wf = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "maintenance_merge.yml").read_text(encoding="utf-8")
+    )
+    adapter_script = merge_wf["jobs"]["automerge"]["steps"][0]["with"]["script"]
+
+    # Compute the real candidate manifest for a 3.14.8 -> 3.14.9 bump tree
+    with tempfile.TemporaryDirectory() as tmp_cand:
+        cand_root = Path(tmp_cand)
+        shutil.copytree(ROOT / ".github", cand_root / ".github")
+        for fname in (".python-version", "ruff.toml", "requirements.txt", "requirements-dev.txt"):
+            shutil.copy2(ROOT / fname, cand_root / fname)
+        (cand_root / ".python-version").write_text("3.14.9\n", encoding="utf-8")
+        real_manifest = maintenance.compute_candidate_manifest(cand_root)
+        real_tree_sha = real_manifest["tree_sha256"]
+        cand_contents = {
+            fname: (cand_root / fname).read_text(encoding="utf-8")
+            for fname in (".python-version", "ruff.toml", "requirements.txt", "requirements-dev.txt")
+        }
+
+    def _run_live_adapter(scenario: dict[str, Any]) -> dict[str, Any]:
+        with tempfile.TemporaryDirectory() as run_tmp:
+            scenario_path = Path(run_tmp) / "scenario.json"
+            scenario_path.write_text(json.dumps(scenario), encoding="utf-8")
+            harness_path = Path(run_tmp) / "run_adapter.js"
+            harness_code = """
+const fs = require("fs");
+const path = require("path");
+const scenario = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const repoRoot = scenario.repoRoot;
+const headFiles = scenario.headFiles;
+
+const summaryChunks = [];
+const failedReasons = [];
+const mergedCalls = [];
+
+const core = {
+  summary: {
+    addRaw(txt) { summaryChunks.push(txt); return this; },
+    async write() { return; }
+  },
+  setFailed(msg) { failedReasons.push(String(msg)); }
+};
+
+const context = {
+  repo: { owner: "uesu", repo: "Game-Express" },
+  actor: scenario.actor || "uesu",
+  payload: { pull_request: { number: scenario.pr.number } }
+};
+
+const github = {
+  async paginate(fn, args) {
+    const res = await fn(args);
+    if (Array.isArray(res.data)) return res.data;
+    if (res.data && Array.isArray(res.data.check_runs)) return res.data.check_runs;
+    if (res.data && Array.isArray(res.data.workflow_runs)) return res.data.workflow_runs;
+    if (res.data && Array.isArray(res.data.jobs)) return res.data.jobs;
+    return [];
+  },
+  rest: {
+    repos: {
+      async getContent({ path: relPath, ref }) {
+        if (ref === "heads/main") {
+          const full = path.join(repoRoot, relPath);
+          const raw = fs.readFileSync(full);
+          return { data: { content: raw.toString("base64"), encoding: "base64" } };
+        }
+        if (headFiles && Object.prototype.hasOwnProperty.call(headFiles, relPath)) {
+          const raw = Buffer.from(headFiles[relPath], "utf8");
+          return { data: { content: raw.toString("base64"), encoding: "base64" } };
+        }
+        throw new Error("Missing file: " + relPath + " at " + ref);
+      },
+      async getCombinedStatusForRef() {
+        return { data: { total_count: 0, state: "success", statuses: [] } };
+      }
+    },
+    pulls: {
+      async get() { return { data: scenario.pr }; },
+      async listFiles() { return { data: scenario.files }; },
+      async listCommits() { return { data: scenario.commits }; },
+      async listReviews() { return { data: scenario.reviews || [] }; },
+      async merge(params) {
+        mergedCalls.push(params);
+        return { data: { merged: true, sha: "f".repeat(40), message: "Pull Request successfully merged" } };
+      }
+    },
+    checks: {
+      async listForRef() {
+        return { data: { total_count: scenario.checkRuns.length, check_runs: scenario.checkRuns } };
+      },
+      async listAnnotations() { return { data: [] }; }
+    },
+    actions: {
+      async listWorkflowRunsForRepo() {
+        return { data: { workflow_runs: scenario.ciWorkflowRuns } };
+      },
+      async listWorkflowRuns() {
+        return { data: { workflow_runs: scenario.proposerRuns } };
+      },
+      async listJobsForWorkflowRun({ run_id }) {
+        const jobs = (scenario.jobsByRunId && scenario.jobsByRunId[String(run_id)]) || [];
+        return { data: { jobs } };
+      }
+    }
+  }
+};
+
+(async () => {
+""" + adapter_script + """
+  fs.writeFileSync(process.argv[3], JSON.stringify({
+    summary: summaryChunks.join(""),
+    failedReasons,
+    mergedCalls
+  }), "utf8");
+})().catch((err) => {
+  fs.writeFileSync(process.argv[3], JSON.stringify({
+    error: String(err && err.stack ? err.stack : err),
+    summary: summaryChunks.join(""),
+    failedReasons,
+    mergedCalls
+  }), "utf8");
+  process.exit(1);
+});
+"""
+            harness_path.write_text(harness_code, encoding="utf-8")
+            out_path = Path(run_tmp) / "out.json"
+            env = {
+                "PATH": f"{ROOT / '.venv' / 'bin'}:/usr/local/bin:/usr/bin:/bin",
+                "RUNNER_TEMP": run_tmp,
+                "AUTO_MERGE_PYTHON_BUMP": "yes",
+                "AUTO_MERGE_DEPENDABOT": "yes",
+            }
+            res = subprocess.run(
+                [node_bin, str(harness_path), str(scenario_path), str(out_path)],
+                cwd=str(ROOT),
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert res.returncode == 0, f"Adapter crashed: {res.stderr}\n{res.stdout}"
+            return json.loads(out_path.read_text(encoding="utf-8"))
+
+    head_sha = "a" * 40
+    base_sha = "b" * 40
+    ci_checks = _full_ci_check_runs(head_sha, run_id=1001, run_attempt=1)
+    ci_jobs = [
+        {
+            "id": c["id"],
+            "name": c["name"],
+            "status": "completed",
+            "conclusion": "success",
+            "steps": c["steps"],
+        }
+        for c in ci_checks
+    ]
+
+    def _make_proposer_jobs(
+        *,
+        pr_num: str = "50",
+        pub_head: str = head_sha,
+        src_sha: str = base_sha,
+        old_v: str = "3.14.8",
+        new_v: str = "3.14.9",
+        kind: str = "patch",
+        review: str = "false",
+        eligible: str = "true",
+        tree: str = real_tree_sha,
+        dry_run: str = "false",
+        publish_conclusion: str = "success",
+    ) -> list[dict[str, Any]]:
+        step_name = (
+            f"PROVENANCE pr={pr_num} head={pub_head} source={src_sha} "
+            f"old={old_v} new={new_v} kind={kind} review={review} "
+            f"eligible={eligible} tree={tree} dry_run={dry_run}"
+        )
+        return [
+            {"id": 50101, "name": "Select policy-bounded Python candidate", "conclusion": "success", "steps": []},
+            {"id": 50102, "name": "Validate candidate Python runtime & locks (secret-free)", "conclusion": "success", "steps": []},
+            {"id": 50103, "name": "Publish chore/python-bump Pull Request", "conclusion": publish_conclusion, "steps": []},
+            {
+                "id": 50104,
+                "name": "Record runtime proposer summary",
+                "conclusion": "success",
+                "steps": [{"name": step_name, "status": "completed", "conclusion": "success"}],
+            },
+        ]
+
+    base_pr_body = (
+        "| Field | Value |\n| --- | --- |\n"
+        "| Update classification | `patch` |\n"
+        "| Review required | `false` |\n"
+        "| Auto-merge eligible | `true` |\n"
+    )
+
+    def _make_scenario(
+        *,
+        pr_num: int = 50,
+        pr_head_sha: str = head_sha,
+        pr_body: str = base_pr_body,
+        proposer_runs: list[dict[str, Any]] | None = None,
+        proposer_jobs: dict[str, list[dict[str, Any]]] | None = None,
+        head_files: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "repoRoot": str(ROOT),
+            "headFiles": head_files if head_files is not None else cand_contents,
+            "pr": {
+                "number": pr_num,
+                "title": "chore(python): bump pinned Python from 3.14.8 to 3.14.9",
+                "state": "open",
+                "draft": False,
+                "mergeable": True,
+                "mergeable_state": "clean",
+                "changed_files": 1,
+                "body": pr_body,
+                "user": {"login": "uesu", "type": "User"},
+                "base": {"ref": "main", "sha": base_sha, "repo": {"full_name": "uesu/Game-Express"}},
+                "head": {
+                    "ref": "chore/python-bump",
+                    "sha": pr_head_sha,
+                    "repo": {"full_name": "uesu/Game-Express", "fork": False},
+                },
+                "labels": [],
+            },
+            "files": [{"filename": ".python-version", "patch": "-3.14.8\n+3.14.9\n"}],
+            "commits": [{"sha": pr_head_sha, "author": {"login": "github-actions[bot]"}, "commit": {"message": "bump"}}],
+            "checkRuns": ci_checks if pr_head_sha == head_sha else _full_ci_check_runs(pr_head_sha, run_id=1001, run_attempt=1),
+            "ciWorkflowRuns": [
+                {
+                    "id": 1001,
+                    "name": "CI",
+                    "path": ".github/workflows/ci.yml",
+                    "workflow_id": 42,
+                    "run_attempt": 1,
+                    "head_sha": pr_head_sha,
+                }
+            ],
+            "proposerRuns": proposer_runs
+            if proposer_runs is not None
+            else [
+                {
+                    "id": 501,
+                    "name": "Python Version Bump",
+                    "path": ".github/workflows/python_version_bump.yml",
+                    "head_branch": "main",
+                    "head_sha": base_sha,
+                    "run_attempt": 1,
+                    "event": "schedule",
+                    "conclusion": "success",
+                }
+            ],
+            "jobsByRunId": {
+                "1001": ci_jobs,
+                **(
+                    proposer_jobs
+                    if proposer_jobs is not None
+                    else {"501": _make_proposer_jobs()}
+                ),
+            },
+        }
+
+    # 1. Valid PAT-published patch bump bound to this PR/head/manifest -> merged
+    out_ok = _run_live_adapter(_make_scenario())
+    assert len(out_ok["mergedCalls"]) == 1, out_ok
+    assert out_ok["mergedCalls"][0]["sha"] == head_sha
+    assert "merged" in out_ok["summary"]
+
+    # 2. Successful old proposer run (for PR #40) + a new unrelated Python PR (#55) -> rejected
+    out_old_run = _run_live_adapter(
+        _make_scenario(
+            pr_num=55,
+            proposer_jobs={"501": _make_proposer_jobs(pr_num="40", pub_head="1" * 40)},
+        )
+    )
+    assert out_old_run["mergedCalls"] == [], out_old_run
+    assert "proposer run published PR #40, which does not match current PR #55" in out_old_run["summary"]
+
+    # 3. Dry-run proposer success (workflow conclusion=success, publish job=skipped, dry_run=true) -> rejected
+    out_dry_run = _run_live_adapter(
+        _make_scenario(
+            proposer_jobs={
+                "501": _make_proposer_jobs(
+                    pr_num="none",
+                    pub_head="none",
+                    dry_run="true",
+                    publish_conclusion="skipped",
+                )
+            }
+        )
+    )
+    assert out_dry_run["mergedCalls"] == [], out_dry_run
+    assert "dry_run" in out_dry_run["summary"]
+
+    # 4. Later manually edited head (proposer run published "1"*40 on PR #50, current PR head is "a"*40) -> rejected
+    out_edited_head = _run_live_adapter(
+        _make_scenario(
+            pr_num=50,
+            pr_head_sha=head_sha,
+            proposer_jobs={"501": _make_proposer_jobs(pr_num="50", pub_head="1" * 40)},
+        )
+    )
+    assert out_edited_head["mergedCalls"] == [], out_edited_head
+    assert "does not match current PR head" in out_edited_head["summary"]
+
+    # 5. Mismatched manifest (proposer run recorded a different candidate_tree_sha256 than actual PR files) -> rejected
+    out_bad_manifest = _run_live_adapter(
+        _make_scenario(
+            proposer_jobs={"501": _make_proposer_jobs(tree="d" * 64)},
+        )
+    )
+    assert out_bad_manifest["mergedCalls"] == [], out_bad_manifest
+    assert "does not match validated candidate manifest" in out_bad_manifest["summary"]
+
+    # 6. Editable PR body spoofing (proposer run marked review_required=true / override, PR body edited to claim false/patch) -> rejected
+    out_spoofed_body = _run_live_adapter(
+        _make_scenario(
+            pr_body=base_pr_body,
+            proposer_jobs={
+                "501": _make_proposer_jobs(
+                    kind="override",
+                    review="true",
+                    eligible="false",
+                )
+            },
+        )
+    )
+    assert out_spoofed_body["mergedCalls"] == [], out_spoofed_body
+    assert "review-required" in out_spoofed_body["summary"]
+
+
+def test_g2_live_python_version_bump_workflow_registry_and_cli_subprocesses() -> None:
+    """Verify `python_version_bump.yml` executes the same complete registry before and after rewrite,
+    and test the actual CLI subprocess commands for missing security tools, candidate failure, and publish drift."""
+    bump_wf = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "python_version_bump.yml").read_text(encoding="utf-8")
+    )
+    validate_steps = bump_wf["jobs"]["validate"]["steps"]
+    step_names = [s.get("name", "") for s in validate_steps]
+    run_scripts = [s.get("run", "") for s in validate_steps if "run" in s]
+    uses_steps = [s.get("uses", "") for s in validate_steps if "uses" in s]
+
+    # Pre-rewrite and post-rewrite must both invoke `ci.py run-all` with explicit `--phase` and `--expected-python`
+    assert any(
+        "ci.py run-all --phase pre-rewrite --expected-python" in r and "--with-security" in r
+        for r in run_scripts
+    ), run_scripts
+    assert any(
+        "ci.py run-all --phase post-rewrite --expected-python" in r
+        and "--require-exact-python" in r
+        and "--with-security" in r
+        for r in run_scripts
+    ), run_scripts
+    # Action-based workflow & security audits (actionlint, zizmor, pip-audit) must run in both phases
+    assert sum(1 for u in uses_steps if "reviewdog/action-actionlint@" in u) == 2, step_names
+    assert sum(1 for u in uses_steps if "zizmorcore/zizmor-action@" in u) == 2, step_names
+    assert sum(1 for u in uses_steps if "pypa/gh-action-pip-audit@" in u) == 2, step_names
+
+    # Publish job must assert candidate interpreter, verify manifest before create-pull-request, and record publication provenance
+    publish_steps = bump_wf["jobs"]["publish"]["steps"]
+    pub_runs = [s.get("run", "") for s in publish_steps if "run" in s]
+    assert any(
+        "assert-interpreter --expected" in r
+        and "lock-compile --require-exact-python --expected" in r
+        and "verify-candidate-manifest" in r
+        for r in pub_runs
+    )
+    assert any("record-publication-provenance" in r for r in pub_runs)
+
+    running_py = platform.python_version()
+
+    # Subprocess test 1: Missing security tools when `--require-security-tools` is set -> fails closed
+    res_no_sec = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / ".github" / "scripts" / "ci.py"),
+            "security-audit",
+            "--require-tools",
+        ],
+        cwd=str(ROOT),
+        env={"PATH": ""},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res_no_sec.returncode != 0
+    assert "required security tool 'zizmor' is not installed" in res_no_sec.stderr
+
+    # Subprocess test 2: Candidate interpreter mismatch on `ci.py run-all --phase pre-rewrite` -> fails closed before tests
+    res_bad_py = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / ".github" / "scripts" / "ci.py"),
+            "run-all",
+            "--phase",
+            "pre-rewrite",
+            "--expected-python",
+            "3.99.0",
+        ],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res_bad_py.returncode != 0
+    assert "3.99.0" in res_bad_py.stderr
+
+    # Subprocess test 3: Pre-rewrite vs post-rewrite lock-check and publish drift via real CLI commands
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_repo = Path(tmp_dir)
+        shutil.copytree(ROOT / ".github", tmp_repo / ".github")
+        for fname in (
+            ".python-version",
+            "ruff.toml",
+            "requirements.in",
+            "requirements-dev.in",
+            "requirements.txt",
+            "requirements-dev.txt",
+        ):
+            shutil.copy2(ROOT / fname, tmp_repo / fname)
+        subprocess.run(["git", "init", "-q"], cwd=tmp_repo, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_repo, check=True)
+        subprocess.run(["git", "add", "."], cwd=tmp_repo, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=tmp_repo, check=True)
+
+        # Compute validated manifest via CLI subprocess
+        out_file = tmp_repo / "gh_out.txt"
+        res_cm = subprocess.run(
+            [sys.executable, str(tmp_repo / ".github" / "scripts" / "maintenance.py"), "compute-candidate-manifest"],
+            cwd=str(tmp_repo),
+            env={**os.environ, "GITHUB_OUTPUT": str(out_file)},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert res_cm.returncode == 0, res_cm.stderr
+        out_lines = dict(
+            line.split("=", 1)
+            for line in out_file.read_text(encoding="utf-8").strip().splitlines()
+            if "=" in line
+        )
+        tree_sha = out_lines["candidate_tree_sha256"]
+        manifest_json = out_lines["candidate_manifest_json"]
+
+        # Record publication provenance via CLI subprocess
+        rpp_out = tmp_repo / "rpp_out.txt"
+        res_rpp = subprocess.run(
+            [
+                sys.executable,
+                str(tmp_repo / ".github" / "scripts" / "maintenance.py"),
+                "record-publication-provenance",
+                "--run-id",
+                "777",
+                "--run-attempt",
+                "1",
+                "--source-sha",
+                "b" * 40,
+                "--pr-number",
+                "50",
+                "--published-head-sha",
+                "a" * 40,
+                "--old-version",
+                "3.14.8",
+                "--new-version",
+                running_py,
+                "--update-kind",
+                "patch",
+                "--review-required",
+                "false",
+                "--auto-merge-eligible",
+                "true",
+                "--candidate-tree-sha256",
+                tree_sha,
+                "--candidate-manifest-json",
+                manifest_json,
+            ],
+            cwd=str(tmp_repo),
+            env={**os.environ, "GITHUB_OUTPUT": str(rpp_out)},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert res_rpp.returncode == 0, res_rpp.stderr
+        rpp_lines = dict(
+            line.split("=", 1)
+            for line in rpp_out.read_text(encoding="utf-8").strip().splitlines()
+            if "=" in line
+        )
+        rec_data = json.loads(rpp_lines["publication_provenance_json"])
+        assert rec_data["published_pr_number"] == 50
+        assert rec_data["published_head_sha"] == "a" * 40
+        assert rec_data["candidate_tree_sha256"] == tree_sha
+
+        # Simulate publish drift: modify requirements.txt before verify-candidate-manifest / record-publication-provenance
+        (tmp_repo / "requirements.txt").write_text("# drifted\n", encoding="utf-8")
+        res_drift = subprocess.run(
+            [
+                sys.executable,
+                str(tmp_repo / ".github" / "scripts" / "maintenance.py"),
+                "verify-candidate-manifest",
+                "--expected-json",
+                manifest_json,
+            ],
+            cwd=str(tmp_repo),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert res_drift.returncode != 0
+        assert "mismatch" in res_drift.stderr
 
 
 if __name__ == "__main__":

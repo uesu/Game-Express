@@ -1199,10 +1199,13 @@ def compile_lockfile(
     compile_command: str,
     *,
     require_exact_python: bool = True,
+    expected_python: str | None = None,
     upgrade: bool = False,
 ) -> str:
     """Compile `input_rel` with the real running interpreter and `pip-tools` (no marker spoofing)."""
     pin = read_python_pin(repo_root)
+    if expected_python:
+        assert_target_interpreter(repo_root, expected_python, allow_same_minor=False)
     if require_exact_python:
         assert_target_interpreter(repo_root, pin, allow_same_minor=False)
     else:
@@ -1251,12 +1254,20 @@ def verify_lockfiles(
     recompile: bool = True,
     *,
     require_exact_python: bool = False,
+    expected_python_override: str | None = None,
 ) -> tuple[bool, list[str]]:
     """Verify runtime and dev lockfiles for hash completeness, constraint alignment, and drift."""
     pol = policy or load_policy(repo_root)
     targets = pol.get("locks", DEFAULT_POLICY["locks"]).get("targets", [])
     errors: list[str] = []
     parsed_by_name: dict[str, dict[str, tuple[str, list[str]]]] = {}
+
+    if expected_python_override:
+        try:
+            assert_target_interpreter(repo_root, expected_python_override, allow_same_minor=False)
+        except RuntimeError as exc:
+            errors.append(str(exc))
+            return False, errors
 
     pin = read_python_pin(repo_root, pol)
     pin_tuple = parse_pin_version(pin)
@@ -2565,10 +2576,10 @@ def evaluate_automerge(
             {"name": "python", "from": old_py, "to": new_py, "kind": "patch", "safe": True}
         )
 
-    # 12. Publisher & proposal provenance verification (G2: never optional when required by policy)
+    # 12. Publisher & proposal provenance verification (G1/G2: never optional when required by policy)
     require_provenance = bool(pol.get("require_provenance", True))
     provenance = pr_data.get("provenance")
-    if require_provenance:
+    if require_provenance or isinstance(provenance, dict):
         if not isinstance(provenance, dict):
             return AutoMergeDecision(
                 False,
@@ -2577,25 +2588,25 @@ def evaluate_automerge(
                 merge_method,
                 updates=classified_updates,
             )
-        if provenance.get("verified") is not True:
-            return AutoMergeDecision(
-                False,
-                matched_lane,
-                "Rejected: publisher/proposal provenance is not verified.",
-                merge_method,
-                updates=classified_updates,
-            )
-        prov_sha = str(provenance.get("head_sha") or "").strip()
-        if head_sha and prov_sha and prov_sha != head_sha:
-            return AutoMergeDecision(
-                False,
-                matched_lane,
-                f"Rejected: provenance head_sha {prov_sha!r} does not match PR head_sha {head_sha!r}.",
-                merge_method,
-                classification="deferred",
-                updates=classified_updates,
-            )
         if matched_lane in ("dependabot_pip", "dependabot_actions"):
+            if provenance.get("verified") is not True:
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    "Rejected: publisher/proposal provenance is not verified.",
+                    merge_method,
+                    updates=classified_updates,
+                )
+            prov_sha = str(provenance.get("head_sha") or "").strip()
+            if head_sha and prov_sha and prov_sha != head_sha:
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: provenance head_sha {prov_sha!r} does not match PR head_sha {head_sha!r}.",
+                    merge_method,
+                    classification="deferred",
+                    updates=classified_updates,
+                )
             prov_pub = str(provenance.get("publisher") or "").strip()
             prov_src = str(provenance.get("source") or "").strip().lower()
             if prov_pub not in allowed_lane_authors or prov_src not in (
@@ -2633,6 +2644,95 @@ def evaluate_automerge(
                     merge_method,
                     updates=classified_updates,
                 )
+            if provenance.get("dry_run") is True or str(provenance.get("dry_run") or "").strip().lower() == "true":
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    "Rejected: proposer workflow run was a dry_run and did not publish this PR.",
+                    merge_method,
+                    classification="review-required",
+                    updates=classified_updates,
+                )
+            for job_key in ("select_conclusion", "validate_conclusion", "publish_conclusion"):
+                if job_key in provenance:
+                    job_conc = str(provenance.get(job_key) or "").strip().lower()
+                    if job_conc != "success":
+                        return AutoMergeDecision(
+                            False,
+                            matched_lane,
+                            f"Rejected: proposer workflow {job_key}={job_conc!r} (must be 'success').",
+                            merge_method,
+                            classification="review-required",
+                            updates=classified_updates,
+                        )
+            pr_num_val = pr_data.get("pr_number")
+            prov_pr_num = provenance.get("published_pr_number", provenance.get("pr_number"))
+            if (pr_num_val is not None or prov_pr_num is not None) and (
+                prov_pr_num is None or pr_num_val is None or int(prov_pr_num) != int(pr_num_val)
+            ):
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: proposer run published PR #{prov_pr_num}, which does not match current PR #{pr_num_val}.",
+                    merge_method,
+                    classification="review-required",
+                    updates=classified_updates,
+                )
+            prov_pub_sha = str(
+                provenance.get("published_head_sha")
+                if "published_head_sha" in provenance
+                else (provenance.get("head_sha") or "")
+            ).strip()
+            if not prov_pub_sha or (head_sha and prov_pub_sha != head_sha):
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: proposer run published head {prov_pub_sha!r} does not match current PR head {head_sha!r}.",
+                    merge_method,
+                    classification="review-required",
+                    updates=classified_updates,
+                )
+            prov_source_sha = str(provenance.get("source_sha") or "").strip()
+            pr_base_sha = str(pr_data.get("base_sha") or "").strip()
+            if prov_source_sha and pr_base_sha and prov_source_sha != pr_base_sha:
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: proposer run source_sha {prov_source_sha!r} does not match PR base_sha {pr_base_sha!r}.",
+                    merge_method,
+                    classification="deferred",
+                    updates=classified_updates,
+                )
+            prov_old_ver = str(provenance.get("old_version") or "").strip()
+            prov_new_ver = str(provenance.get("new_version") or "").strip()
+            if prov_old_ver and old_py and prov_old_ver != old_py:
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: proposer provenance old_version {prov_old_ver!r} does not match diff old_version {old_py!r}.",
+                    merge_method,
+                    classification="review-required",
+                    updates=classified_updates,
+                )
+            if prov_new_ver and new_py and prov_new_ver != new_py:
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: proposer provenance new_version {prov_new_ver!r} does not match diff new_version {new_py!r}.",
+                    merge_method,
+                    classification="review-required",
+                    updates=classified_updates,
+                )
+            prov_kind = str(provenance.get("update_kind") or "patch").strip().lower()
+            if prov_kind != "patch":
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: proposer provenance update_kind {prov_kind!r} is not 'patch'.",
+                    merge_method,
+                    classification="review-required",
+                    updates=classified_updates,
+                )
             if provenance.get("review_required") is True or provenance.get("auto_merge_eligible") is False:
                 return AutoMergeDecision(
                     False,
@@ -2642,14 +2742,83 @@ def evaluate_automerge(
                     classification="review-required",
                     updates=classified_updates,
                 )
-    elif isinstance(provenance, dict) and provenance.get("verified") is False:
-        return AutoMergeDecision(
-            False,
-            matched_lane,
-            "Rejected: unverified proposal provenance.",
-            merge_method,
-            updates=classified_updates,
-        )
+            if provenance.get("body_tampered") is True:
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    "Rejected: PR body metadata was modified or contradicts immutable proposer run provenance.",
+                    merge_method,
+                    classification="review-required",
+                    updates=classified_updates,
+                )
+            prov_tree_sha = str(provenance.get("candidate_tree_sha256") or "").strip()
+            actual_tree_sha = str(
+                pr_data.get("actual_candidate_tree_sha256")
+                or provenance.get("actual_candidate_tree_sha256")
+                or ""
+            ).strip()
+            if prov_tree_sha:
+                if not re.fullmatch(r"[0-9a-f]{64}", prov_tree_sha):
+                    return AutoMergeDecision(
+                        False,
+                        matched_lane,
+                        f"Rejected: invalid proposer candidate_tree_sha256 {prov_tree_sha!r}.",
+                        merge_method,
+                        classification="review-required",
+                        updates=classified_updates,
+                    )
+                if actual_tree_sha and actual_tree_sha != prov_tree_sha:
+                    return AutoMergeDecision(
+                        False,
+                        matched_lane,
+                        f"Rejected: published PR tree digest {actual_tree_sha!r} does not match validated candidate manifest {prov_tree_sha!r}.",
+                        merge_method,
+                        classification="review-required",
+                        updates=classified_updates,
+                    )
+            if provenance.get("manifest_verified") is False:
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    "Rejected: published PR tree failed candidate manifest verification.",
+                    merge_method,
+                    classification="review-required",
+                    updates=classified_updates,
+                )
+            prov_manifest = provenance.get("candidate_manifest")
+            actual_manifest = pr_data.get("actual_candidate_manifest") or provenance.get("actual_candidate_manifest")
+            if (
+                isinstance(prov_manifest, dict)
+                and isinstance(actual_manifest, dict)
+                and (
+                    prov_manifest.get("tree_sha256") != actual_manifest.get("tree_sha256")
+                    or prov_manifest.get("files") != actual_manifest.get("files")
+                )
+            ):
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    "Rejected: published PR file manifest does not match validated candidate manifest.",
+                    merge_method,
+                    classification="review-required",
+                    updates=classified_updates,
+                )
+            if provenance.get("verified") is not True:
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    "Rejected: publisher/proposal provenance is not verified.",
+                    merge_method,
+                    updates=classified_updates,
+                )
+        elif provenance.get("verified") is not True:
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                "Rejected: publisher/proposal provenance is not verified.",
+                merge_method,
+                updates=classified_updates,
+            )
 
     # 13. Check runs, producing workflow identity, complete mandatory gate set, and real security evidence (G2)
     if not head_sha:
@@ -3340,6 +3509,138 @@ def verify_candidate_manifest(
     return len(errors) == 0, errors
 
 
+def record_publication_provenance(
+    repo_root: pathlib.Path = REPO_ROOT,
+    *,
+    workflow: str = ".github/workflows/python_version_bump.yml",
+    workflow_name: str = "Python Version Bump",
+    run_id: int | str = "",
+    run_attempt: int | str = 1,
+    source_sha: str = "",
+    pr_number: int | str = "",
+    published_head_sha: str = "",
+    old_version: str = "",
+    new_version: str = "",
+    update_kind: str = "",
+    review_required: bool | str = False,
+    auto_merge_eligible: bool | str = False,
+    candidate_tree_sha256: str = "",
+    candidate_manifest_json: str = "",
+    policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate and emit immutable publication provenance binding the proposer run to the published PR head."""
+    pol = policy or load_policy(repo_root)
+    eff_head_sha = (published_head_sha or "").strip().lower()
+    if not eff_head_sha:
+        for ref_cand in ("refs/remotes/origin/chore/python-bump", "HEAD"):
+            res = subprocess.run(
+                ["git", "rev-parse", ref_cand],
+                cwd=str(repo_root),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", res.stdout.strip().lower()):
+                eff_head_sha = res.stdout.strip().lower()
+                break
+
+    if not re.fullmatch(r"[0-9a-f]{40}", eff_head_sha):
+        raise ValueError(f"Invalid or missing published_head_sha: {published_head_sha!r}")
+
+    eff_source_sha = (source_sha or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", eff_source_sha):
+        raise ValueError(f"Invalid or missing source_sha: {source_sha!r}")
+
+    try:
+        eff_pr_number = int(str(pr_number).strip())
+        if eff_pr_number <= 0:
+            raise ValueError
+    except ValueError as exc:
+        raise ValueError(f"Invalid or missing pr_number: {pr_number!r}") from exc
+
+    try:
+        eff_run_id = int(str(run_id).strip())
+        if eff_run_id <= 0:
+            raise ValueError
+    except ValueError as exc:
+        raise ValueError(f"Invalid or missing workflow run_id: {run_id!r}") from exc
+
+    try:
+        eff_run_attempt = int(str(run_attempt or 1).strip())
+        if eff_run_attempt <= 0:
+            raise ValueError
+    except ValueError as exc:
+        raise ValueError(f"Invalid workflow run_attempt: {run_attempt!r}") from exc
+
+    eff_tree_sha = (candidate_tree_sha256 or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", eff_tree_sha):
+        raise ValueError(f"Invalid or missing candidate_tree_sha256: {candidate_tree_sha256!r}")
+
+    manifest_obj: dict[str, Any] = {}
+    if candidate_manifest_json:
+        raw_m = candidate_manifest_json.strip()
+        if raw_m.startswith("@"):
+            manifest_obj = json.loads(pathlib.Path(raw_m[1:]).read_text(encoding="utf-8"))
+        else:
+            manifest_obj = json.loads(raw_m)
+        ok_m, m_errs = verify_candidate_manifest(repo_root, manifest_obj, pol)
+        if not ok_m:
+            raise ValueError(f"Published tree does not match candidate manifest: {'; '.join(m_errs)}")
+        if str(manifest_obj.get("tree_sha256") or "").strip().lower() != eff_tree_sha:
+            raise ValueError(
+                f"candidate_tree_sha256 {eff_tree_sha!r} does not match manifest tree_sha256 {manifest_obj.get('tree_sha256')!r}"
+            )
+    else:
+        manifest_obj = compute_candidate_manifest(repo_root, pol)
+        if str(manifest_obj.get("tree_sha256") or "").strip().lower() != eff_tree_sha:
+            raise ValueError(
+                f"Working tree manifest {manifest_obj.get('tree_sha256')!r} does not match expected {eff_tree_sha!r}"
+            )
+
+    rev_bool = (
+        review_required
+        if isinstance(review_required, bool)
+        else str(review_required).strip().lower() == "true"
+    )
+    elig_bool = (
+        auto_merge_eligible
+        if isinstance(auto_merge_eligible, bool)
+        else str(auto_merge_eligible).strip().lower() == "true"
+    )
+
+    record = {
+        "workflow": workflow,
+        "workflow_name": workflow_name,
+        "workflow_run_id": eff_run_id,
+        "workflow_run_attempt": eff_run_attempt,
+        "source_sha": eff_source_sha,
+        "published_pr_number": eff_pr_number,
+        "published_head_sha": eff_head_sha,
+        "old_version": str(old_version).strip(),
+        "new_version": str(new_version).strip(),
+        "update_kind": str(update_kind or "patch").strip(),
+        "review_required": rev_bool,
+        "auto_merge_eligible": elig_bool,
+        "candidate_tree_sha256": eff_tree_sha,
+        "candidate_manifest": manifest_obj,
+        "dry_run": False,
+        "select_conclusion": "success",
+        "validate_conclusion": "success",
+        "publish_conclusion": "success",
+    }
+    compact_json = json.dumps(record, separators=(",", ":"), sort_keys=True)
+    write_github_outputs(
+        {
+            "pr_number": str(eff_pr_number),
+            "published_head_sha": eff_head_sha,
+            "source_sha": eff_source_sha,
+            "candidate_tree_sha256": eff_tree_sha,
+            "publication_provenance_json": compact_json,
+        }
+    )
+    return record
+
+
 def run_candidate_validation_pipeline(
     repo_root: pathlib.Path,
     candidate_version: str,
@@ -3347,6 +3648,7 @@ def run_candidate_validation_pipeline(
     *,
     policy: dict[str, Any] | None = None,
     review_required: bool = False,
+    require_exact_python: bool = True,
     registry_runner: Any = None,
     lock_compiler: Any = None,
     publisher: Any = None,
@@ -3357,8 +3659,20 @@ def run_candidate_validation_pipeline(
 
     def _default_registry(stage: str) -> bool:
         ci_script = repo_root / ".github" / "scripts" / "ci.py"
+        cmd = [
+            sys.executable,
+            str(ci_script),
+            "run-all",
+            "--phase",
+            stage,
+            "--expected-python",
+            candidate_version,
+            "--with-security",
+        ]
+        if stage == "post-rewrite" and require_exact_python:
+            cmd.append("--require-exact-python")
         res = subprocess.run(
-            [sys.executable, str(ci_script), "run-all", "--with-security"],
+            cmd,
             cwd=str(repo_root),
             capture_output=True,
             text=True,
@@ -3368,7 +3682,18 @@ def run_candidate_validation_pipeline(
 
     run_reg = registry_runner or _default_registry
 
-    # 1. Pre-rewrite shared validation registry
+    # 1. Pre-rewrite shared validation registry (asserts candidate interpreter when using real registry)
+    if registry_runner is None and require_exact_python:
+        try:
+            assert_target_interpreter(repo_root, candidate_version, allow_same_minor=False)
+        except RuntimeError as exc:
+            return {
+                "ok": False,
+                "stage": "assert-interpreter-pre-rewrite",
+                "published": False,
+                "invocations": invocations,
+                "reason": str(exc),
+            }
     invocations.append("pre-rewrite-registry")
     if not run_reg("pre-rewrite"):
         return {
@@ -3379,19 +3704,25 @@ def run_candidate_validation_pipeline(
             "reason": "Pre-rewrite validation registry failed.",
         }
 
-    # 2. Rewrite candidate pin, ruff target, and recompile lockfiles
+    # 2. Rewrite candidate pin, ruff target, and recompile lockfiles with exact candidate interpreter
     invocations.append("rewrite-candidate")
     changed_files, _ruff_res = apply_python_version(candidate_version, repo_root=repo_root, policy=pol)
     if lock_compiler is not None:
         lock_compiler(repo_root, candidate_version)
     else:
+        assert_target_interpreter(
+            repo_root,
+            candidate_version,
+            allow_same_minor=not require_exact_python,
+        )
         for target in pol.get("locks", DEFAULT_POLICY["locks"]).get("targets", []):
             compiled = compile_lockfile(
                 repo_root,
                 target["input_file"],
                 target["output_file"],
                 target["compile_command"],
-                require_exact_python=False,
+                require_exact_python=require_exact_python,
+                expected_python=candidate_version if require_exact_python else None,
             )
             (repo_root / target["output_file"]).write_text(compiled, encoding="utf-8")
             if target["output_file"] not in changed_files:
@@ -3408,6 +3739,17 @@ def run_candidate_validation_pipeline(
         }
 
     # 3. Post-rewrite shared validation registry on the actual candidate tree
+    if registry_runner is None and require_exact_python:
+        try:
+            assert_target_interpreter(repo_root, candidate_version, allow_same_minor=False)
+        except RuntimeError as exc:
+            return {
+                "ok": False,
+                "stage": "assert-interpreter-post-rewrite",
+                "published": False,
+                "invocations": invocations,
+                "reason": str(exc),
+            }
     invocations.append("post-rewrite-registry")
     if not run_reg("post-rewrite"):
         return {
@@ -3478,11 +3820,39 @@ def main(argv: list[str] | None = None) -> int:
     vcm_p = sub.add_parser("verify-candidate-manifest", help="Verify candidate runtime/lock files match manifest")
     vcm_p.add_argument("--expected-json", required=True, help="Inline JSON or @path to expected manifest")
 
+    rpp_p = sub.add_parser(
+        "record-publication-provenance",
+        help="Validate and emit immutable publication provenance binding run to published PR head",
+    )
+    rpp_p.add_argument("--workflow", default=os.environ.get("PROPOSER_WORKFLOW", ".github/workflows/python_version_bump.yml"))
+    rpp_p.add_argument("--workflow-name", default=os.environ.get("PROPOSER_WORKFLOW_NAME", "Python Version Bump"))
+    rpp_p.add_argument("--run-id", default=os.environ.get("RUN_ID") or os.environ.get("GITHUB_RUN_ID", ""))
+    rpp_p.add_argument("--run-attempt", default=os.environ.get("RUN_ATTEMPT") or os.environ.get("GITHUB_RUN_ATTEMPT", "1"))
+    rpp_p.add_argument("--source-sha", default=os.environ.get("SOURCE_SHA") or os.environ.get("GITHUB_SHA", ""))
+    rpp_p.add_argument("--pr-number", default=os.environ.get("PR_NUMBER", ""))
+    rpp_p.add_argument(
+        "--published-head-sha",
+        default=os.environ.get("PUBLISHED_HEAD_SHA") or os.environ.get("CPR_HEAD_SHA", ""),
+    )
+    rpp_p.add_argument("--old-version", default=os.environ.get("OLD_VERSION", ""))
+    rpp_p.add_argument("--new-version", default=os.environ.get("NEW_VERSION") or os.environ.get("CANDIDATE_VERSION", ""))
+    rpp_p.add_argument("--update-kind", default=os.environ.get("UPDATE_KIND", "patch"))
+    rpp_p.add_argument("--review-required", default=os.environ.get("REVIEW_REQUIRED", "false"))
+    rpp_p.add_argument("--auto-merge-eligible", default=os.environ.get("AUTO_MERGE_ELIGIBLE", "true"))
+    rpp_p.add_argument("--candidate-tree-sha256", default=os.environ.get("CANDIDATE_TREE_SHA256", ""))
+    rpp_p.add_argument(
+        "--candidate-manifest-json",
+        default=os.environ.get("CANDIDATE_MANIFEST_JSON") or os.environ.get("EXPECTED_MANIFEST_JSON", ""),
+    )
+
     lc_p = sub.add_parser("lock-compile", help="Compile requirements.in and requirements-dev.in")
-    lc_p.add_argument("--require-exact-python", action="store_true")
+    lc_p.add_argument("--require-exact-python", action="store_true", default=True)
+    lc_p.add_argument("--allow-same-minor", action="store_true")
+    lc_p.add_argument("--expected", default="", help="Expected X.Y.Z candidate version")
 
     lchk_p = sub.add_parser("lock-check", help="Verify lockfiles are hashed, aligned, and up to date")
     lchk_p.add_argument("--require-exact-python", action="store_true")
+    lchk_p.add_argument("--expected-python", default="", help="Expected X.Y.Z running interpreter override")
 
     am_p = sub.add_parser("evaluate-automerge", help="Evaluate PR auto-merge eligibility (side-effect-free)")
     am_p.add_argument("--pr-json", help="Inline JSON string or @path to PR metadata JSON")
@@ -3614,15 +3984,44 @@ def main(argv: list[str] | None = None) -> int:
         print(f"OK: candidate tree matches validated manifest ({expected_obj.get('tree_sha256')}).")
         return 0
 
+    if cmd == "record-publication-provenance":
+        try:
+            rec = record_publication_provenance(
+                REPO_ROOT,
+                workflow=args.workflow,
+                workflow_name=args.workflow_name,
+                run_id=args.run_id,
+                run_attempt=args.run_attempt,
+                source_sha=args.source_sha,
+                pr_number=args.pr_number,
+                published_head_sha=args.published_head_sha,
+                old_version=args.old_version,
+                new_version=args.new_version,
+                update_kind=args.update_kind,
+                review_required=args.review_required,
+                auto_merge_eligible=args.auto_merge_eligible,
+                candidate_tree_sha256=args.candidate_tree_sha256,
+                candidate_manifest_json=args.candidate_manifest_json,
+                policy=load_policy(REPO_ROOT),
+            )
+            print(json.dumps(rec, indent=2))
+            return 0
+        except Exception as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+
     if cmd == "lock-compile":
         pol = load_policy(REPO_ROOT)
+        req_exact = not bool(getattr(args, "allow_same_minor", False))
+        expected_ver = getattr(args, "expected", "") or None
         for target in pol["locks"]["targets"]:
             content = compile_lockfile(
                 REPO_ROOT,
                 target["input_file"],
                 target["output_file"],
                 target["compile_command"],
-                require_exact_python=bool(args.require_exact_python),
+                require_exact_python=req_exact,
+                expected_python=expected_ver,
             )
             (REPO_ROOT / target["output_file"]).write_text(content, encoding="utf-8")
             print(f"Compiled {target['input_file']} -> {target['output_file']}")
@@ -3634,6 +4033,7 @@ def main(argv: list[str] | None = None) -> int:
             load_policy(REPO_ROOT),
             recompile=True,
             require_exact_python=bool(args.require_exact_python),
+            expected_python_override=getattr(args, "expected_python", "") or None,
         )
         if not ok:
             for err in errors:

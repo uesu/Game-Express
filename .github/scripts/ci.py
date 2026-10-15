@@ -140,6 +140,7 @@ def run_lock_check(
     repo_root: pathlib.Path = REPO_ROOT,
     *,
     require_exact_python: bool = False,
+    expected_python: str | None = None,
 ) -> int:
     maint = _load_maintenance()
     ok, errors = maint.verify_lockfiles(
@@ -147,6 +148,7 @@ def run_lock_check(
         maint.load_policy(repo_root),
         recompile=True,
         require_exact_python=require_exact_python,
+        expected_python_override=expected_python,
     )
     if not ok:
         for err in errors:
@@ -170,7 +172,17 @@ def run_security_audit(
     repo_root: pathlib.Path = REPO_ROOT,
     *,
     require_tools: bool = False,
+    require_actionlint: bool = False,
 ) -> int:
+    actionlint_bin = shutil.which("actionlint")
+    if actionlint_bin:
+        rc = _run_cmd([actionlint_bin], cwd=repo_root)
+        if rc != 0:
+            return rc
+    elif require_actionlint:
+        print("ERROR: required workflow linter 'actionlint' is not installed.", file=sys.stderr)
+        return 1
+
     zizmor_bin = shutil.which("zizmor")
     if zizmor_bin:
         rc = _run_cmd([zizmor_bin, ".github/workflows"], cwd=repo_root)
@@ -198,6 +210,63 @@ def run_security_audit(
     elif require_tools:
         print("ERROR: required security tool 'pip-audit' is not installed.", file=sys.stderr)
         return 1
+    return 0
+
+
+def run_all_registry(
+    repo_root: pathlib.Path = REPO_ROOT,
+    *,
+    profile: str = "development",
+    phase: str = "ci",
+    expected_python: str | None = None,
+    require_exact_python: bool = False,
+    with_security: bool = False,
+    require_security_tools: bool = False,
+    require_actionlint: bool = False,
+) -> int:
+    """Execute the complete unified validation registry across `ci`, `pre-rewrite`, or `post-rewrite` phases."""
+    maint = _load_maintenance()
+    norm_phase = (phase or "ci").strip().lower()
+    if expected_python:
+        try:
+            maint.assert_target_interpreter(
+                repo_root,
+                expected_version=expected_python,
+                allow_same_minor=False,
+            )
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+    if norm_phase == "post-rewrite" or (norm_phase == "ci" and require_exact_python):
+        try:
+            maint.assert_target_interpreter(
+                repo_root,
+                expected_version=None,
+                allow_same_minor=False,
+            )
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+
+    enforce_exact_lock = bool(require_exact_python and norm_phase != "pre-rewrite")
+    for step_fn in (
+        lambda: run_verify(repo_root, profile=profile),
+        lambda: run_lock_check(
+            repo_root,
+            require_exact_python=enforce_exact_lock,
+            expected_python=expected_python,
+        ),
+        lambda: run_ruff(repo_root),
+    ):
+        rc = step_fn()
+        if rc != 0:
+            return rc
+    if with_security:
+        return run_security_audit(
+            repo_root,
+            require_tools=require_security_tools,
+            require_actionlint=require_actionlint,
+        )
     return 0
 
 
@@ -281,21 +350,31 @@ def main(argv: list[str] | None = None) -> int:
 
     lc_p = sub.add_parser("lock-check", help="Verify runtime and dev lockfiles")
     lc_p.add_argument("--require-exact-python", action="store_true")
+    lc_p.add_argument("--expected-python", default="", help="Expected X.Y.Z running interpreter")
 
     sub.add_parser("ruff", help="Run Ruff lint check")
 
-    sec_p = sub.add_parser("security-audit", help="Run zizmor and pip-audit checks")
+    sec_p = sub.add_parser("security-audit", help="Run actionlint, zizmor, and pip-audit checks")
     sec_p.add_argument("--require-tools", action="store_true")
+    sec_p.add_argument("--require-actionlint", action="store_true")
 
-    all_p = sub.add_parser("run-all", help="Run verify, lock-check, and ruff from one registry")
+    all_p = sub.add_parser("run-all", help="Run verify, lock-check, ruff, and optional security checks from one registry")
     all_p.add_argument(
         "--profile",
         choices=("auto", "development", "production"),
         default=None,
     )
+    all_p.add_argument(
+        "--phase",
+        choices=("ci", "pre-rewrite", "post-rewrite"),
+        default="ci",
+        help="Validation phase (`pre-rewrite` validates candidate interpreter before .python-version is updated)",
+    )
+    all_p.add_argument("--expected-python", default="", help="Expected X.Y.Z candidate interpreter")
     all_p.add_argument("--require-exact-python", action="store_true")
     all_p.add_argument("--with-security", action="store_true")
     all_p.add_argument("--require-security-tools", action="store_true")
+    all_p.add_argument("--require-actionlint", action="store_true")
 
     gate_p = sub.add_parser("gate", help="Evaluate final `maintenance-ci` aggregate gate")
     gate_p.add_argument(
@@ -332,6 +411,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_lock_check(
             REPO_ROOT,
             require_exact_python=bool(getattr(args, "require_exact_python", False)),
+            expected_python=getattr(args, "expected_python", "") or None,
         )
     if cmd == "ruff":
         return run_ruff(REPO_ROOT)
@@ -339,25 +419,19 @@ def main(argv: list[str] | None = None) -> int:
         return run_security_audit(
             REPO_ROOT,
             require_tools=bool(getattr(args, "require_tools", False)),
+            require_actionlint=bool(getattr(args, "require_actionlint", False)),
         )
     if cmd == "run-all":
-        for step_fn in (
-            lambda: run_verify(REPO_ROOT, profile=profile),
-            lambda: run_lock_check(
-                REPO_ROOT,
-                require_exact_python=bool(getattr(args, "require_exact_python", False)),
-            ),
-            lambda: run_ruff(REPO_ROOT),
-        ):
-            rc = step_fn()
-            if rc != 0:
-                return rc
-        if getattr(args, "with_security", False):
-            return run_security_audit(
-                REPO_ROOT,
-                require_tools=bool(getattr(args, "require_security_tools", False)),
-            )
-        return 0
+        return run_all_registry(
+            REPO_ROOT,
+            profile=profile,
+            phase=str(getattr(args, "phase", "ci") or "ci"),
+            expected_python=getattr(args, "expected_python", "") or None,
+            require_exact_python=bool(getattr(args, "require_exact_python", False)),
+            with_security=bool(getattr(args, "with_security", False)),
+            require_security_tools=bool(getattr(args, "require_security_tools", False)),
+            require_actionlint=bool(getattr(args, "require_actionlint", False)),
+        )
     if cmd == "gate":
         blocking: dict[str, str] = {}
         if args.results_json:

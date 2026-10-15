@@ -619,6 +619,117 @@ def test_render_run_summary_cli_writes_step_summary() -> None:
         assert "| Final persistence outcome | **`saved_and_pushed`** |" in written
 
 
+def test_g3_complete_outcome_matrix_source_outage_partial_delivery_local_save_failure_and_zero_extra_requests() -> None:
+    async def _run() -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+
+            # 1. Source outage + partial delivery + local_save_failed summary rendering
+            rep_save_fail = {
+                "schema_version": 1,
+                "code_sha": "68529e8",
+                "python_version": "3.14.8",
+                "runner_image": "ubuntu-24.04",
+                "lock_sha256": "abcdef123456",
+                "setup_duration_s": 4.2,
+                "mode": "live",
+                "only": "codes",
+                "game": "genshin",
+                "execution_result": "failed",
+                "started_at": 1760000000,
+                "finished_at": 1760000003,
+                "duration_s": 3.0,
+                "state": {
+                    "load_status": "loaded_local",
+                    "save_status": "failed_local",
+                    "local_save_outcome": "failed_local",
+                },
+                "cards": {"posted": 1, "patched": 0, "failed": 1},
+                "targets": {"configured": 2, "attempted": 2, "usable": 1},
+                "warnings": ["Genshin: no announcement source answered this run"],
+                "errors": ["state save failed: OSError: disk full"],
+            }
+            md_save_fail = render_run_summary.render_summary_markdown(
+                rep_save_fail,
+                mode="live",
+                run_outcome="failure",
+            )
+            assert "| Final persistence outcome | **`local_save_failed`** |" in md_save_fail
+            assert "| Local state save | `failed_local` |" in md_save_fail
+            assert "`posted=1` `patched=0` `failed=1`" in md_save_fail
+            assert "`configured=2` `attempted=2` `usable=1`" in md_save_fail
+
+            # 2. Verify zero extra source requests & identical state/webhook payloads with vs without GAMEXPRESS_RUN_REPORT
+            results_by_mode: list[tuple[list[str], list[dict], dict]] = []
+            for enable_report in (False, True):
+                st_path = tmp_dir / f"state_{enable_report}.json"
+                rep_file = tmp_dir / f"report_{enable_report}.json"
+                old_env = os.environ.get("GAMEXPRESS_RUN_REPORT")
+                if enable_report:
+                    os.environ["GAMEXPRESS_RUN_REPORT"] = str(rep_file)
+                else:
+                    os.environ.pop("GAMEXPRESS_RUN_REPORT", None)
+                try:
+                    settings = load_settings(
+                        {
+                            "ENABLED_FEATURES": "codes",
+                            "GAMES": "genshin",
+                            "STATE_PATH": str(st_path),
+                            "DRY_RUN": "1",
+                            "X_ENABLED": "0",
+                        }
+                    )
+                    source_calls: list[str] = []
+
+                    async def _fake_gather_versions(_ctx, _sc=source_calls):
+                        _sc.append("gather_versions")
+
+                    async def _fake_gather_items(ctx, _sc=source_calls):
+                        _sc.append("gather_items")
+                        for g in ctx.games:
+                            ctx.items[g.key] = []
+                            ctx.reachable[g.key] = False
+
+                    async def _fake_codeposter_run(ctx, _sc=source_calls):
+                        _sc.append("codeposter_run")
+                        await ctx.webhook.send(
+                            "https://discord.com/api/webhooks/111111/aaaaaa_token",
+                            {"flags": 32768, "components": [{"type": 10, "content": "test"}]},
+                        )
+
+                    with (
+                        mock.patch.object(runner, "gather_versions", side_effect=_fake_gather_versions),
+                        mock.patch.object(runner, "gather_items", side_effect=_fake_gather_items),
+                        mock.patch.object(runner.codeposter, "run", side_effect=_fake_codeposter_run),
+                    ):
+                        ctx = await runner.run_once(settings, overrides={})
+                        results_by_mode.append(
+                            (
+                                list(source_calls),
+                                list(ctx.webhook.sent),
+                                json.loads(json.dumps(ctx.state.data)),
+                            )
+                        )
+                    if enable_report:
+                        assert rep_file.is_file()
+                        rep_json = json.loads(rep_file.read_text(encoding="utf-8"))
+                        assert rep_json["cards"]["posted"] == 1
+                        assert rep_json["cards"]["failed"] == 0
+                        assert any("no announcement source answered" in w for w in rep_json["warnings"])
+                finally:
+                    if old_env is None:
+                        os.environ.pop("GAMEXPRESS_RUN_REPORT", None)
+                    else:
+                        os.environ["GAMEXPRESS_RUN_REPORT"] = old_env
+
+            # Assert 100% parity in source calls, webhook payloads, and state between uninstrumented and instrumented runs
+            assert results_by_mode[0][0] == results_by_mode[1][0]
+            assert results_by_mode[0][1] == results_by_mode[1][1]
+            assert results_by_mode[0][2] == results_by_mode[1][2]
+
+    asyncio.run(_run())
+
+
 if __name__ == "__main__":
     tests = [
         v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)

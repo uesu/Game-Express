@@ -51,6 +51,7 @@ jobs:
           script: |
             const fs = require("fs");
             const path = require("path");
+            const crypto = require("crypto");
             const { execFileSync } = require("child_process");
 
             const owner = context.repo.owner;
@@ -128,6 +129,17 @@ jobs:
               fs.writeFileSync(path.join(tempRoot, relPath), content, "utf8");
             }
             const maintScript = path.join(tempRoot, ".github", "scripts", "maintenance.py");
+            const trustedPolicy = JSON.parse(
+              fs.readFileSync(path.join(tempRoot, ".github", "maintenance.json"), "utf8")
+            );
+            const trackedBumpFiles = (
+              (trustedPolicy.python && trustedPolicy.python.allowed_bump_files) || [
+                ".python-version",
+                "ruff.toml",
+                "requirements.txt",
+                "requirements-dev.txt",
+              ]
+            ).slice().sort();
 
             function extractFindingsFromText(...texts) {
               const found = [];
@@ -147,11 +159,95 @@ jobs:
               return found;
             }
 
+            function parseProvenanceStepOrSummary(jobs, runObj) {
+              if (runObj && runObj.publication_provenance && typeof runObj.publication_provenance === "object") {
+                return runObj.publication_provenance;
+              }
+              for (const job of jobs || []) {
+                if (!job) continue;
+                if (job.publication_provenance && typeof job.publication_provenance === "object") {
+                  return job.publication_provenance;
+                }
+                const outSummary = (job.output && job.output.summary) || "";
+                const outText = (job.output && job.output.text) || "";
+                for (const blob of [outSummary, outText]) {
+                  const cm = /<!--\s*GAMEXPRESS_PROPOSER_PROVENANCE:\s*(\{[\s\S]*?\})\s*-->/.exec(blob);
+                  if (cm) {
+                    try {
+                      return JSON.parse(cm[1]);
+                    } catch (_e) {
+                      // continue
+                    }
+                  }
+                }
+                for (const step of job.steps || []) {
+                  const sname = (step && step.name) || "";
+                  if (!sname.startsWith("PROVENANCE ")) continue;
+                  const kv = {};
+                  const tokRe = /([a-z_]+)=([^\s]+)/gi;
+                  let m;
+                  while ((m = tokRe.exec(sname)) !== null) {
+                    kv[m[1].toLowerCase()] = m[2];
+                  }
+                  return {
+                    published_pr_number:
+                      kv.pr && kv.pr !== "none" && /^\d+$/.test(kv.pr) ? Number(kv.pr) : null,
+                    published_head_sha: kv.head && kv.head !== "none" ? kv.head : "",
+                    source_sha: kv.source && kv.source !== "none" ? kv.source : "",
+                    old_version: kv.old && kv.old !== "none" ? kv.old : "",
+                    new_version: kv.new && kv.new !== "none" ? kv.new : "",
+                    update_kind: kv.kind && kv.kind !== "none" ? kv.kind : "",
+                    review_required: kv.review ? kv.review.toLowerCase() === "true" : true,
+                    auto_merge_eligible: kv.eligible ? kv.eligible.toLowerCase() === "true" : false,
+                    candidate_tree_sha256: kv.tree && kv.tree !== "none" ? kv.tree : "",
+                    dry_run: kv.dry_run ? kv.dry_run.toLowerCase() === "true" : false,
+                  };
+                }
+              }
+              return null;
+            }
+
+            async function computeActualCandidateManifest(refSha) {
+              const fileDigests = {};
+              const combined = crypto.createHash("sha256");
+              let pyVer = "";
+              for (const rel of trackedBumpFiles) {
+                try {
+                  const fResp = await github.rest.repos.getContent({
+                    owner,
+                    repo,
+                    path: rel,
+                    ref: refSha,
+                  });
+                  const rawBuf = Buffer.from(
+                    fResp.data.content || "",
+                    fResp.data.encoding || "base64"
+                  );
+                  const digest = crypto.createHash("sha256").update(rawBuf).digest("hex");
+                  fileDigests[rel] = digest;
+                  combined.update(`${rel}:${digest}\n`, "utf8");
+                  if (rel === ".python-version") {
+                    pyVer = rawBuf.toString("utf8").trim();
+                  }
+                } catch (_err) {
+                  return { complete: false, python_version: "", files: {}, tree_sha256: "" };
+                }
+              }
+              return {
+                complete: true,
+                python_version: pyVer,
+                files: fileDigests,
+                tree_sha256: combined.digest("hex"),
+              };
+            }
+
             async function collectPrSnapshot(prNumber, initialHeadSha) {
               const detailResp = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
               const pr = detailResp.data;
               const headSha = pr.head && pr.head.sha ? pr.head.sha : "";
               const headRef = pr.head && pr.head.ref ? pr.head.ref : "";
+              const baseRef = pr.base && pr.base.ref ? pr.base.ref : "";
+              const baseSha = pr.base && pr.base.sha ? pr.base.sha : "";
               const baseRepo = pr.base && pr.base.repo ? pr.base.repo.full_name : "";
               const headRepo = pr.head && pr.head.repo ? pr.head.repo.full_name : "";
               const headRepoFork = Boolean(pr.head && pr.head.repo && pr.head.repo.fork);
@@ -254,8 +350,10 @@ jobs:
                 publisher_type: prAuthorType,
                 source: "unknown",
                 head_ref: headRef,
-                head_sha: headSha,
+                head_sha: "",
               };
+              let actualCandidateManifest = null;
+              let actualCandidateTreeSha256 = "";
 
               if (
                 headRef.startsWith("dependabot/pip/") ||
@@ -280,13 +378,18 @@ jobs:
                   publisher_type: prAuthorType,
                   source: isDepBot ? "github-dependabot" : "untrusted",
                   head_ref: headRef,
-                  head_sha: headSha,
+                  head_sha: isDepBot ? headSha : "",
                 };
               } else if (
                 headRef === "chore/python-bump" ||
                 headRef === "chore/python-version-bump"
               ) {
-                let matchedBumpRun = null;
+                actualCandidateManifest = await computeActualCandidateManifest(headSha);
+                actualCandidateTreeSha256 = actualCandidateManifest.complete
+                  ? actualCandidateManifest.tree_sha256
+                  : "";
+
+                const inspectedRecords = [];
                 try {
                   const bumpRunsResp = await github.rest.actions.listWorkflowRuns({
                     owner,
@@ -298,11 +401,110 @@ jobs:
                   });
                   const bumpRuns =
                     (bumpRunsResp.data && bumpRunsResp.data.workflow_runs) || [];
-                  matchedBumpRun =
-                    bumpRuns.find((r) => r && r.conclusion === "success") || null;
+                  for (const r of bumpRuns) {
+                    if (!r || !r.id) continue;
+                    let rJobs = [];
+                    try {
+                      rJobs = await github.paginate(
+                        github.rest.actions.listJobsForWorkflowRun,
+                        {
+                          owner,
+                          repo,
+                          run_id: r.id,
+                          per_page: 100,
+                        }
+                      );
+                    } catch (_jErr) {
+                      rJobs = [];
+                    }
+                    const selectJob =
+                      rJobs.find((j) => j && /select/i.test(j.name || "")) || null;
+                    const validateJob =
+                      rJobs.find((j) => j && /validate/i.test(j.name || "")) || null;
+                    const publishJob =
+                      rJobs.find((j) => j && /publish/i.test(j.name || "")) || null;
+                    const pubMeta = parseProvenanceStepOrSummary(rJobs, r) || {};
+
+                    const selectConc = selectJob
+                      ? String(selectJob.conclusion || "").toLowerCase()
+                      : pubMeta.select_conclusion || "missing";
+                    const validateConc = validateJob
+                      ? String(validateJob.conclusion || "").toLowerCase()
+                      : pubMeta.validate_conclusion || "missing";
+                    const publishConc = publishJob
+                      ? String(publishJob.conclusion || "").toLowerCase()
+                      : pubMeta.publish_conclusion || "missing";
+                    const isDryRun = Boolean(
+                      pubMeta.dry_run === true ||
+                        String(pubMeta.dry_run || "").toLowerCase() === "true" ||
+                        publishConc === "skipped"
+                    );
+                    const pubPrNum =
+                      pubMeta.published_pr_number !== undefined &&
+                      pubMeta.published_pr_number !== null
+                        ? Number(pubMeta.published_pr_number)
+                        : pubMeta.pr_number !== undefined && pubMeta.pr_number !== null
+                          ? Number(pubMeta.pr_number)
+                          : null;
+                    const pubHeadSha = String(pubMeta.published_head_sha || "").trim();
+                    const pubSourceSha = String(
+                      pubMeta.source_sha || r.head_sha || ""
+                    ).trim();
+                    const pubTreeSha = String(
+                      pubMeta.candidate_tree_sha256 || ""
+                    ).trim();
+
+                    inspectedRecords.push({
+                      workflow: r.path || "",
+                      workflow_name: r.name || "",
+                      workflow_run_id: r.id,
+                      workflow_run_attempt: r.run_attempt || 1,
+                      workflow_event: r.event || "",
+                      workflow_conclusion: String(r.conclusion || "").toLowerCase(),
+                      head_branch: r.head_branch || "main",
+                      source_sha: pubSourceSha,
+                      select_conclusion: selectConc,
+                      validate_conclusion: validateConc,
+                      publish_conclusion: publishConc,
+                      dry_run: isDryRun,
+                      published_pr_number: pubPrNum,
+                      published_head_sha: pubHeadSha,
+                      old_version: String(pubMeta.old_version || "").trim(),
+                      new_version: String(pubMeta.new_version || "").trim(),
+                      update_kind: String(pubMeta.update_kind || "").trim(),
+                      review_required:
+                        typeof pubMeta.review_required === "boolean"
+                          ? pubMeta.review_required
+                          : String(pubMeta.review_required || "true").toLowerCase() === "true",
+                      auto_merge_eligible:
+                        typeof pubMeta.auto_merge_eligible === "boolean"
+                          ? pubMeta.auto_merge_eligible
+                          : String(pubMeta.auto_merge_eligible || "false").toLowerCase() ===
+                            "true",
+                      candidate_tree_sha256: pubTreeSha,
+                      candidate_manifest: pubMeta.candidate_manifest || null,
+                    });
+                  }
                 } catch (_err) {
-                  matchedBumpRun = null;
+                  // Fail closed if workflow runs cannot be inspected
                 }
+
+                // Prefer exact (pr_number + published_head_sha) match, then pr_number match, then latest run
+                let matchedRec =
+                  inspectedRecords.find(
+                    (rec) =>
+                      rec.published_pr_number === Number(pr.number) &&
+                      rec.published_head_sha !== "" &&
+                      rec.published_head_sha === headSha
+                  ) ||
+                  inspectedRecords.find(
+                    (rec) => rec.published_pr_number === Number(pr.number)
+                  ) ||
+                  inspectedRecords[0] ||
+                  null;
+
+                // Non-authoritative consistency check on PR body (editable text can NEVER grant permission,
+                // but tampering or an explicit Review required: true in the body blocks auto-merge).
                 const bodyText = pr.body || "";
                 const revMatch = /\|\s*Review required\s*\|\s*`(true|false)`/i.exec(bodyText);
                 const eligMatch = /\|\s*Auto-merge eligible\s*\|\s*`(true|false)`/i.exec(
@@ -316,32 +518,91 @@ jobs:
                   ? eligMatch[1].toLowerCase() === "true"
                   : null;
                 const bodyUpdateKind = kindMatch ? kindMatch[1].trim() : "";
-                const verifiedBump = Boolean(
-                  matchedBumpRun &&
-                    matchedBumpRun.conclusion === "success" &&
-                    matchedBumpRun.path === ".github/workflows/python_version_bump.yml" &&
-                    !headRepoFork &&
-                    baseRepo === headRepo &&
-                    bodyReviewRequired === false &&
-                    bodyAutoMergeEligible === true &&
-                    bodyUpdateKind === "patch"
+
+                let bodyTampered = false;
+                if (matchedRec) {
+                  if (
+                    bodyReviewRequired !== null &&
+                    bodyReviewRequired !== matchedRec.review_required
+                  ) {
+                    bodyTampered = true;
+                  }
+                  if (
+                    bodyAutoMergeEligible !== null &&
+                    bodyAutoMergeEligible !== matchedRec.auto_merge_eligible
+                  ) {
+                    bodyTampered = true;
+                  }
+                  if (bodyUpdateKind && bodyUpdateKind !== matchedRec.update_kind) {
+                    bodyTampered = true;
+                  }
+                }
+
+                const manifestVerified = Boolean(
+                  matchedRec &&
+                    matchedRec.candidate_tree_sha256 &&
+                    /^[0-9a-f]{64}$/.test(matchedRec.candidate_tree_sha256) &&
+                    actualCandidateManifest &&
+                    actualCandidateManifest.complete &&
+                    actualCandidateManifest.tree_sha256 === matchedRec.candidate_tree_sha256
                 );
+
+                const verifiedBump = Boolean(
+                  matchedRec &&
+                    matchedRec.workflow === ".github/workflows/python_version_bump.yml" &&
+                    matchedRec.head_branch === "main" &&
+                    matchedRec.workflow_conclusion === "success" &&
+                    matchedRec.select_conclusion === "success" &&
+                    matchedRec.validate_conclusion === "success" &&
+                    matchedRec.publish_conclusion === "success" &&
+                    !matchedRec.dry_run &&
+                    matchedRec.published_pr_number === Number(pr.number) &&
+                    matchedRec.published_head_sha !== "" &&
+                    matchedRec.published_head_sha === headSha &&
+                    matchedRec.source_sha !== "" &&
+                    (!baseSha || matchedRec.source_sha === baseSha) &&
+                    matchedRec.update_kind === "patch" &&
+                    matchedRec.review_required === false &&
+                    matchedRec.auto_merge_eligible === true &&
+                    manifestVerified &&
+                    !bodyTampered &&
+                    !headRepoFork &&
+                    baseRepo !== "" &&
+                    baseRepo === headRepo
+                );
+
                 provenance = {
                   verified: verifiedBump,
                   lane: "python_bump",
                   publisher: prAuthor,
                   publisher_type: prAuthorType,
                   source: "python-version-bump-workflow",
-                  workflow: matchedBumpRun ? matchedBumpRun.path || "" : "",
-                  workflow_name: matchedBumpRun ? matchedBumpRun.name || "" : "",
-                  workflow_run_id: matchedBumpRun ? matchedBumpRun.id : null,
-                  workflow_event: matchedBumpRun ? matchedBumpRun.event || "" : "",
-                  workflow_conclusion: matchedBumpRun ? matchedBumpRun.conclusion || "" : "",
-                  update_kind: bodyUpdateKind,
-                  review_required: bodyReviewRequired,
-                  auto_merge_eligible: bodyAutoMergeEligible,
+                  workflow: matchedRec ? matchedRec.workflow : "",
+                  workflow_name: matchedRec ? matchedRec.workflow_name : "",
+                  workflow_run_id: matchedRec ? matchedRec.workflow_run_id : null,
+                  workflow_run_attempt: matchedRec ? matchedRec.workflow_run_attempt : null,
+                  workflow_event: matchedRec ? matchedRec.workflow_event : "",
+                  workflow_conclusion: matchedRec ? matchedRec.workflow_conclusion : "",
+                  select_conclusion: matchedRec ? matchedRec.select_conclusion : "missing",
+                  validate_conclusion: matchedRec ? matchedRec.validate_conclusion : "missing",
+                  publish_conclusion: matchedRec ? matchedRec.publish_conclusion : "missing",
+                  dry_run: matchedRec ? matchedRec.dry_run : false,
+                  published_pr_number: matchedRec ? matchedRec.published_pr_number : null,
+                  published_head_sha: matchedRec ? matchedRec.published_head_sha : "",
+                  source_sha: matchedRec ? matchedRec.source_sha : "",
+                  old_version: matchedRec ? matchedRec.old_version : "",
+                  new_version: matchedRec ? matchedRec.new_version : "",
+                  update_kind: matchedRec ? matchedRec.update_kind : "",
+                  review_required: matchedRec ? matchedRec.review_required : true,
+                  auto_merge_eligible: matchedRec ? matchedRec.auto_merge_eligible : false,
+                  candidate_tree_sha256: matchedRec ? matchedRec.candidate_tree_sha256 : "",
+                  candidate_manifest: matchedRec ? matchedRec.candidate_manifest : null,
+                  actual_candidate_tree_sha256: actualCandidateTreeSha256,
+                  manifest_verified: manifestVerified,
+                  body_tampered: bodyTampered,
                   head_ref: headRef,
-                  head_sha: headSha,
+                  // Never copy pr.head.sha into provenance.head_sha; use only the proposer run's published SHA
+                  head_sha: matchedRec ? matchedRec.published_head_sha : "",
                 };
               }
 
@@ -487,7 +748,8 @@ jobs:
                 base_repo: baseRepo,
                 head_repo: headRepo,
                 head_repo_fork: headRepoFork,
-                base_ref: pr.base ? pr.base.ref : "",
+                base_ref: baseRef,
+                base_sha: baseSha,
                 head_ref: headRef,
                 head_sha: initialHeadSha || headSha,
                 refreshed_head_sha: headSha,
@@ -506,6 +768,11 @@ jobs:
                 })),
                 commits: mappedCommits,
                 provenance,
+                actual_candidate_tree_sha256: actualCandidateTreeSha256,
+                actual_candidate_manifest:
+                  actualCandidateManifest && actualCandidateManifest.complete
+                    ? actualCandidateManifest
+                    : null,
                 changed_files: (files || []).map((f) => f.filename),
                 files_total_count: Number(pr.changed_files || files.length),
                 file_diffs: fileDiffs,

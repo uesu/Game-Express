@@ -1285,7 +1285,10 @@ def test_ci_and_the_python_bump_gate_run_every_offline_test_file():
     )
     ci_script_src = (ROOT / ".github" / "scripts" / "ci.py").read_text(encoding="utf-8")
     assert "python .github/scripts/ci.py verify" in ci_runs
-    assert "python .github/scripts/ci.py verify" in bump_runs
+    assert (
+        "python .github/scripts/ci.py run-all" in bump_runs
+        or "python .github/scripts/ci.py verify" in bump_runs
+    )
     assert 'glob("test_*.py")' in ci_script_src
     assert '".github/scripts"' in ci_script_src
 
