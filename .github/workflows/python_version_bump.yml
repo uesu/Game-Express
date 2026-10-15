@@ -74,6 +74,9 @@ jobs:
       contents: read
       security-events: write
       actions: read
+    outputs:
+      candidate_tree_sha256: ${{ steps.manifest.outputs.candidate_tree_sha256 }}
+      candidate_manifest_json: ${{ steps.manifest.outputs.candidate_manifest_json }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -86,25 +89,27 @@ jobs:
           python-version: ${{ needs.select.outputs.new_version }}
           check-latest: false
 
-      - name: Assert candidate Python interpreter & install locked wheels
+      - name: Assert candidate Python interpreter, install locked wheels & run pre-rewrite registry
         env:
           CANDIDATE_VERSION: ${{ needs.select.outputs.new_version }}
         run: |
           python .github/scripts/maintenance.py assert-interpreter --expected "${CANDIDATE_VERSION}"
           python -m pip install --require-hashes --only-binary=:all: -r requirements.txt -r requirements-dev.txt
+          python .github/scripts/ci.py verify
+          python .github/scripts/ci.py ruff
 
-      - name: Apply candidate pin, recompile locks & run unified CI registry
+      - name: Apply candidate pin, recompile locks & run post-rewrite unified CI registry
         env:
           CANDIDATE_VERSION: ${{ needs.select.outputs.new_version }}
           OLD_VERSION: ${{ needs.select.outputs.old_version }}
+          REVIEW_REQUIRED: ${{ needs.select.outputs.review_required }}
+          UPDATE_KIND: ${{ needs.select.outputs.update_kind }}
           PR_BODY_PATH: ${{ runner.temp }}/python-bump-body.md
         run: |
-          python .github/scripts/maintenance.py apply --version "${CANDIDATE_VERSION}" --old-version "${OLD_VERSION}"
+          python .github/scripts/maintenance.py apply --version "${CANDIDATE_VERSION}" --old-version "${OLD_VERSION}" --review-required "${REVIEW_REQUIRED}" --update-kind "${UPDATE_KIND}"
           python .github/scripts/maintenance.py lock-compile --require-exact-python
           python .github/scripts/maintenance.py verify-bump-diff
-          python .github/scripts/ci.py verify
-          python .github/scripts/ci.py lock-check --require-exact-python
-          python .github/scripts/ci.py ruff
+          python .github/scripts/ci.py run-all --require-exact-python
 
       - name: Run actionlint on candidate tree
         uses: reviewdog/action-actionlint@a8ac3eea598697a830f7d8e701fc9fcbfde88974  # v1.80.0
@@ -119,6 +124,11 @@ jobs:
         with:
           inputs: requirements.txt
           vulnerability-service: osv
+
+      - name: Record validated candidate tree manifest
+        id: manifest
+        run: |
+          python .github/scripts/maintenance.py compute-candidate-manifest
 
   publish:
     name: Publish chore/python-bump Pull Request
@@ -153,18 +163,22 @@ jobs:
           python-version: ${{ needs.select.outputs.new_version }}
           check-latest: false
 
-      - name: Install locked compiler tools & apply validated candidate changes
+      - name: Install locked compiler tools, apply validated candidate changes & verify manifest parity
         id: apply
         env:
           CANDIDATE_VERSION: ${{ needs.select.outputs.new_version }}
           OLD_VERSION: ${{ needs.select.outputs.old_version }}
+          REVIEW_REQUIRED: ${{ needs.select.outputs.review_required }}
+          UPDATE_KIND: ${{ needs.select.outputs.update_kind }}
+          EXPECTED_MANIFEST_JSON: ${{ needs.validate.outputs.candidate_manifest_json }}
           PR_BODY_PATH: ${{ runner.temp }}/python-bump-body.md
         run: |
           python .github/scripts/maintenance.py assert-interpreter --expected "${CANDIDATE_VERSION}"
           python -m pip install --require-hashes --only-binary=:all: -r requirements.txt -r requirements-dev.txt
-          python .github/scripts/maintenance.py apply --version "${CANDIDATE_VERSION}" --old-version "${OLD_VERSION}"
+          python .github/scripts/maintenance.py apply --version "${CANDIDATE_VERSION}" --old-version "${OLD_VERSION}" --review-required "${REVIEW_REQUIRED}" --update-kind "${UPDATE_KIND}"
           python .github/scripts/maintenance.py lock-compile --require-exact-python
           python .github/scripts/maintenance.py verify-bump-diff
+          python .github/scripts/maintenance.py verify-candidate-manifest --expected-json "${EXPECTED_MANIFEST_JSON}"
 
       - name: Create or update chore/python-bump Pull Request
         id: cpr
@@ -198,6 +212,7 @@ jobs:
           DEFERRED_CAND: ${{ needs.select.outputs.deferred_candidate }}
           REASON: ${{ needs.select.outputs.reason }}
           VALIDATE_RES: ${{ needs.validate.result }}
+          TREE_SHA: ${{ needs.validate.outputs.candidate_tree_sha256 }}
           PUBLISH_RES: ${{ needs.publish.result }}
           PR_NUMBER: ${{ needs.publish.outputs.pr_number }}
           PR_URL: ${{ needs.publish.outputs.pr_url }}
@@ -215,7 +230,7 @@ jobs:
             echo "| Deferred candidate | \`${DEFERRED_CAND:-none}\` |"
             echo "| Proposer status | **\`${STATUS:-failed}\`** |"
             echo "| Update classification | \`${UPDATE_KIND:-none}\` (review_required=\`${REVIEW_REQ:-false}\`) |"
-            echo "| Validation job | \`${VALIDATE_RES:-skipped}\` |"
+            echo "| Validation job | \`${VALIDATE_RES:-skipped}\` (tree_sha256=\`${TREE_SHA:-n/a}\`) |"
             echo "| Publish job | \`${PUBLISH_RES:-skipped}\` (dry_run=\`${DRY_RUN}\`) |"
             echo "| Pull request | ${PR_URL:-#${PR_NUMBER:-none}} |"
             echo "| Reason | ${REASON:-n/a} |"

@@ -31,6 +31,118 @@ PERSISTENCE_OUTCOMES = frozenset(
 )
 
 
+def _safe_float(val: Any) -> float | None:
+    if val is None or isinstance(val, bool):
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    txt = str(val).strip()
+    if not txt or txt in ("unavailable", "not_reached", "n/a", "not-run"):
+        return None
+    try:
+        return float(txt)
+    except (ValueError, TypeError):
+        return None
+
+
+def _safe_int(val: Any) -> int | None:
+    if val is None or isinstance(val, bool):
+        return None
+    if isinstance(val, int):
+        return val
+    txt = str(val).strip()
+    if not txt or txt in ("unavailable", "not_reached", "n/a", "not-run"):
+        return None
+    try:
+        return int(txt)
+    except (ValueError, TypeError):
+        return None
+
+
+def _format_timing_token(val: Any, fallback: Any = None, default: str = "unavailable") -> str:
+    for candidate in (val, fallback):
+        num = _safe_float(candidate)
+        if num is not None:
+            return f"{num:.1f}s"
+    for candidate in (val, fallback):
+        txt = str(candidate or "").strip()
+        if txt in ("not_reached", "not-run", "unavailable"):
+            return txt
+    return default
+
+
+def _format_cards_cell(runs: list[dict[str, Any]], safe_report: dict[str, Any]) -> str:
+    source_runs = [r for r in runs if isinstance(r.get("cards"), dict) and r.get("cards")]
+    if not source_runs and isinstance(safe_report.get("cards"), dict) and safe_report.get("cards"):
+        source_runs = [safe_report]
+    if not source_runs:
+        return "`unavailable` (card counters missing)"
+
+    all_not_reached = True
+    any_numeric = False
+    total_posted = 0
+    total_patched = 0
+    total_failed_cards = 0
+    skipped_tokens: list[str] = []
+    held_tokens: list[str] = []
+
+    for r in source_runs:
+        c = r.get("cards") or {}
+        if (
+            c.get("posted") == "not_reached"
+            and c.get("patched") == "not_reached"
+            and c.get("failed") == "not_reached"
+        ):
+            continue
+        p_int = _safe_int(c.get("posted"))
+        pa_int = _safe_int(c.get("patched"))
+        f_int = _safe_int(c.get("failed"))
+        if p_int is not None or pa_int is not None or f_int is not None:
+            all_not_reached = False
+            any_numeric = True
+            total_posted += p_int or 0
+            total_patched += pa_int or 0
+            total_failed_cards += f_int or 0
+        sk = c.get("skipped")
+        if sk not in (None, "", "unavailable", "not_reached"):
+            skipped_tokens.append(str(sk))
+        hd = c.get("held")
+        if hd not in (None, "", "unavailable", "not_reached"):
+            held_tokens.append(str(hd))
+
+    if all_not_reached:
+        return "`posted=not_reached` `patched=not_reached` `failed=not_reached`"
+    if not any_numeric:
+        return "`unavailable` (card counters non-numeric)"
+
+    parts = [
+        f"`posted={total_posted}`",
+        f"`patched={total_patched}`",
+        f"`failed={total_failed_cards}`",
+    ]
+    if skipped_tokens:
+        parts.append(f"`skipped={skipped_tokens[-1]}`")
+    if held_tokens:
+        parts.append(f"`held={held_tokens[-1]}`")
+    return " ".join(parts)
+
+
+def _format_targets_cell(runs: list[dict[str, Any]], safe_report: dict[str, Any]) -> str:
+    last_targets: dict[str, Any] | None = None
+    for r in runs:
+        t = r.get("targets")
+        if isinstance(t, dict) and t:
+            last_targets = t
+    if last_targets is None and isinstance(safe_report.get("targets"), dict) and safe_report.get("targets"):
+        last_targets = safe_report["targets"]
+    if last_targets is None:
+        return "`unavailable`"
+    cfg = last_targets.get("configured", "unavailable")
+    att = last_targets.get("attempted", "unavailable")
+    us = last_targets.get("usable", "unavailable")
+    return f"`configured={cfg}` `attempted={att}` `usable={us}`"
+
+
 def resolve_persistence_outcome(
     *,
     mode: str = "live",
@@ -93,7 +205,7 @@ def render_summary_markdown(
     safe_persist: dict[str, Any] = redact_value(persistence or {}) if isinstance(persistence, dict) else {}
 
     runs: list[dict[str, Any]] = (
-        list(safe_report.get("runs", []))
+        [r for r in safe_report.get("runs", []) if isinstance(r, dict)]
         if isinstance(safe_report.get("runs"), list) and safe_report.get("runs")
         else ([safe_report] if safe_report else [])
     )
@@ -133,11 +245,11 @@ def render_summary_markdown(
         lock_sha = lock_sha[:12]
 
     state_block = safe_report.get("state") if isinstance(safe_report.get("state"), dict) else {}
-    load_status = str(state_block.get("load_status") or ("loaded_local" if has_report else "unavailable"))
+    load_status = str(state_block.get("load_status") or "unavailable")
     save_status = str(
         state_block.get("local_save_outcome")
         or state_block.get("save_status")
-        or ("unchanged_local" if has_report else "unavailable")
+        or "unavailable"
     )
 
     eff_persist_outcome = str(persist_outcome or safe_persist.get("persist_outcome") or "")
@@ -176,25 +288,34 @@ def render_summary_markdown(
         push_outcome=push_outcome,
     )
 
-    started_at = safe_report.get("started_at", "unavailable" if not has_report else "n/a")
-    finished_at = safe_report.get("finished_at", "unavailable" if not has_report else "n/a")
-    setup_dur = float(safe_report.get("setup_duration_s") or os.environ.get("GAMEXPRESS_SETUP_DURATION_S") or 0.0)
-    persist_dur = float(safe_persist.get("persist_duration_s") or 0.0)
-    total_duration = round(
-        sum(float(r.get("duration_s") or 0.0) for r in runs)
-        or float(safe_report.get("duration_s") or 0.0),
-        2,
+    started_at = safe_report.get("started_at", "unavailable")
+    finished_at = safe_report.get("finished_at", "unavailable")
+    setup_token = _format_timing_token(
+        safe_report.get("setup_duration_s"),
+        os.environ.get("GAMEXPRESS_SETUP_DURATION_S"),
+        default="unavailable",
     )
+    persist_token = _format_timing_token(
+        safe_persist.get("persist_duration_s"),
+        default="not-run" if final_persistence in ("skipped_test_mode", "skipped_after_run_failure", "push_skipped") else "unavailable",
+    )
+    run_durs = [_safe_float(r.get("duration_s")) for r in runs]
+    valid_run_durs = [d for d in run_durs if d is not None]
+    if valid_run_durs:
+        run_token = f"{round(sum(valid_run_durs), 2)}s"
+    else:
+        top_dur = _safe_float(safe_report.get("duration_s"))
+        run_token = f"{round(top_dur, 2)}s" if top_dur is not None else "unavailable"
 
     if has_report:
-        total_posted = sum(int((r.get("cards") or {}).get("posted", 0)) for r in runs)
-        total_patched = sum(int((r.get("cards") or {}).get("patched", 0)) for r in runs)
-        total_failed_cards = sum(int((r.get("cards") or {}).get("failed", 0)) for r in runs)
-        cards_cell = f"`posted={total_posted}` `patched={total_patched}` `failed={total_failed_cards}`"
-        report_status_str = f"`available` (`execution_result={safe_report.get('execution_result', 'success')}`)"
+        cards_cell = _format_cards_cell(runs, safe_report)
+        targets_cell = _format_targets_cell(runs, safe_report)
+        exec_res = str(safe_report.get("execution_result") or "unavailable")
+        report_status_str = f"`available` (`execution_result={exec_res}`)"
     else:
         reason_tag = redact_text(report_error or "report file missing or unreadable")
         cards_cell = f"`unavailable` ({reason_tag})"
+        targets_cell = f"`unavailable` ({reason_tag})"
         report_status_str = f"`unavailable` ({reason_tag})"
 
     lines: list[str] = [
@@ -213,8 +334,9 @@ def render_summary_markdown(
         f"| Python / Runner | `{redact_text(py_ver)}` on `{redact_text(runner_img)}` |",
         f"| Lockfile SHA-256 | `{redact_text(lock_sha)}` |",
         f"| Report status | {report_status_str} |",
-        f"| Window / Timing | `start={started_at}` `end={finished_at}` `setup={setup_dur:.1f}s` `run={total_duration}s` `persist={persist_dur:.1f}s` |",
+        f"| Window / Timing | `start={started_at}` `end={finished_at}` `setup={setup_token}` `run={run_token}` `persist={persist_token}` |",
         f"| Cards | {cards_cell} |",
+        f"| Targets | {targets_cell} |",
         "",
     ]
 
@@ -241,6 +363,8 @@ def render_summary_markdown(
     elif report_bullets:
         for item in report_bullets:
             lines.append(f"- {redact_text(item)}")
+    elif "not_reached" in cards_cell or safe_report.get("execution_result") == "failed":
+        lines.append("- execution failed before completing announcement / code processing")
     else:
         lines.append("- nothing new (no matching announcements / codes)")
     for w in warnings:
@@ -260,9 +384,9 @@ def render_summary_markdown(
             lane = redact_text(str(o.get("lane") or "—"))
             gm = redact_text(str(o.get("game") or "—"))
             tr = redact_text(str(o.get("transport_status") or "—"))
-            parsed = int(o.get("parsed_count") or 0)
-            usable = int(o.get("usable_count") or 0)
-            selected = int(o.get("selected_count") or 0)
+            parsed = _safe_int(o.get("parsed_count")) or 0
+            usable = _safe_int(o.get("usable_count")) or 0
+            selected = _safe_int(o.get("selected_count")) or 0
             fb = "yes" if o.get("fallback_used") else "no"
             st = redact_text(str(o.get("status") or "—"))
             rsn = redact_text(str(o.get("reason") or "—"))
@@ -285,7 +409,7 @@ def render_summary_markdown(
             method = redact_text(str(d.get("method") or "POST"))
             target = redact_url(str(d.get("target") or ""))
             fp = redact_text(str(d.get("fingerprint") or "—"))
-            status_code = int(d.get("status") or 0)
+            status_code = _safe_int(d.get("status")) or 0
             ok_str = "ok" if d.get("ok") else f"failed ({redact_text(str(d.get('error') or 'error'))})"
             lines.append(f"| `{method}` | `{target}` | `{fp}` | `{status_code}` | {ok_str} |")
     else:
@@ -385,9 +509,15 @@ def main(argv: list[str] | None = None) -> int:
 
     out_path = args.output or os.environ.get("GITHUB_STEP_SUMMARY", "")
     if out_path:
-        pathlib.Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-        with open(out_path, "a", encoding="utf-8") as fh:
-            fh.write(md)
+        try:
+            pathlib.Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+            with open(out_path, "a", encoding="utf-8") as fh:
+                fh.write(md)
+        except OSError as exc:
+            print(
+                f"WARNING: failed to write step summary to {out_path}: {redact_text(str(exc))}",
+                file=sys.stderr,
+            )
     else:
         sys.stdout.write(md)
     return 0

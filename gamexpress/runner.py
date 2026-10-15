@@ -62,6 +62,7 @@ class Ctx:
     execution_result: str = "success"
     started_at: int = 0
     finished_at: int = 0
+    cards_reached: bool = False
 
 
 async def gather_versions(ctx: Ctx) -> None:
@@ -353,24 +354,159 @@ def _instrument_webhook(webhook: WebhookClient) -> None:
     webhook.edit = _tracked_edit  # type: ignore[method-assign]
 
 
+def _parse_optional_float(raw: Any) -> float | str:
+    if raw is None:
+        return "unavailable"
+    txt = str(raw).strip()
+    if not txt:
+        return "unavailable"
+    try:
+        return round(float(txt), 2)
+    except (ValueError, TypeError):
+        return "unavailable"
+
+
+def _configured_target_fingerprints(settings: Settings, games: list[Game] | None = None) -> list[str]:
+    urls: list[str] = []
+    for attr in ("schedule_webhook", "codes_webhook"):
+        val = getattr(settings, attr, "")
+        if val:
+            urls.append(str(val))
+    for g in games or []:
+        for attr in ("schedule_webhook", "codes_webhook"):
+            val = getattr(g, attr, "")
+            if val:
+                urls.append(str(val))
+    fps = {webhook_fingerprint(u) for u in urls if u}
+    return sorted(fps)
+
+
+def _write_report_envelope(
+    report: dict[str, Any],
+    report_path: str | pathlib.Path | None = None,
+) -> None:
+    raw_env = os.environ.get("GAMEXPRESS_RUN_REPORT", "").strip()
+    target = (
+        pathlib.Path(report_path)
+        if report_path is not None
+        else (pathlib.Path(raw_env) if raw_env else None)
+    )
+    if target is None:
+        return
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        runs: list[dict[str, Any]] = []
+        if target.is_file():
+            try:
+                existing = json.loads(target.read_text(encoding="utf-8"))
+                if isinstance(existing, dict) and isinstance(existing.get("runs"), list):
+                    runs = [r for r in existing["runs"] if isinstance(r, dict)]
+            except (OSError, json.JSONDecodeError, ValueError, TypeError):
+                runs = []
+        runs.append(report)
+        envelope = dict(report)
+        envelope["runs"] = runs
+        target.write_text(
+            json.dumps(envelope, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        log.warning("failed to write run report to %s: %s", target, redact_text(str(exc)))
+
+
+def _write_early_failure_report(
+    settings: Settings,
+    exc: BaseException,
+    *,
+    started_wall: int,
+    elapsed: float,
+    load_status: str,
+    games_all: dict[str, Game] | None = None,
+    report_path: str | pathlib.Path | None = None,
+) -> dict[str, Any]:
+    mode = (
+        "test"
+        if getattr(settings, "test_mode", False)
+        else ("dry_run" if getattr(settings, "dry_run", False) else "live")
+    )
+    feats = getattr(settings, "features", set()) or set()
+    gfilter = getattr(settings, "games_filter", None)
+    cfg_fps = _configured_target_fingerprints(
+        settings, list(games_all.values()) if isinstance(games_all, dict) else None
+    )
+    err_str = f"{type(exc).__name__}: {exc}"
+    raw_report = {
+        "schema_version": 1,
+        "code_sha": build_id(),
+        "python_version": platform.python_version(),
+        "runner_image": os.environ.get("GAMEXPRESS_RUNNER_IMAGE", platform.platform()),
+        "lock_sha256": os.environ.get("GAMEXPRESS_LOCK_SHA256", ""),
+        "setup_duration_s": _parse_optional_float(os.environ.get("GAMEXPRESS_SETUP_DURATION_S")),
+        "instance_name": getattr(settings, "instance_name", "unavailable"),
+        "instance_role": getattr(settings, "instance_role", "unavailable"),
+        "mode": mode,
+        "only": ",".join(sorted(feats)) if feats else "none",
+        "game": ",".join(sorted(gfilter)) if gfilter else "all",
+        "repost": str(getattr(settings, "repost", "") or ""),
+        "test_mode": bool(getattr(settings, "test_mode", False)),
+        "dry_run": bool(getattr(settings, "dry_run", False)),
+        "no_ping": bool(getattr(settings, "no_ping", False)),
+        "active": "not_reached",
+        "execution_result": "failed",
+        "started_at": started_wall,
+        "finished_at": int(time.time()),
+        "duration_s": round(float(elapsed), 2),
+        "state": {
+            "load_status": load_status,
+            "save_status": "not_reached",
+            "local_save_outcome": "not_reached",
+            "path": str(getattr(settings, "state_path", "unavailable")),
+        },
+        "cards": {
+            "posted": "not_reached",
+            "patched": "not_reached",
+            "failed": "not_reached",
+            "skipped": "not_reached",
+            "held": "not_reached",
+        },
+        "targets": {
+            "configured": len(cfg_fps),
+            "attempted": "not_reached",
+            "usable": "not_reached",
+        },
+        "report_lines": [],
+        "warnings": [],
+        "errors": [redact_text(err_str)],
+        "sources_summary": "not_reached",
+        "source_health": {},
+        "source_outcomes": [],
+        "transport_events": [],
+        "webhook_deliveries": [],
+    }
+    redacted = redact_value(raw_report)
+    _write_report_envelope(redacted, report_path=report_path)
+    return redacted
+
+
 async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
                    overrides: dict | None = None, session: aiohttp.ClientSession | None = None) -> Ctx:
-    games_all = games_all if games_all is not None else load_games()
-    overrides = overrides if overrides is not None else load_overrides()
-    had_local = settings.state_path.exists()
-    state = State.load(settings.state_path)
-    has_records = bool(
-        state.data.get("bootstrapped")
-        or state.data.get("schedule")
-        or state.data.get("codes")
-    )
-    initial_load_status = "loaded_local" if (had_local and has_records) else "fresh_bootstrap"
-    own_session = session is None
-    session = session or aiohttp.ClientSession(headers={"User-Agent": BOT_UA})
-    ctx: Ctx | None = None
     started = time.monotonic()
     started_wall = int(time.time())
+    initial_load_status = "not_reached"
+    own_session = session is None
+    ctx: Ctx | None = None
     try:
+        games_all = games_all if games_all is not None else load_games()
+        overrides = overrides if overrides is not None else load_overrides()
+        had_local = settings.state_path.exists()
+        state = State.load(settings.state_path)
+        has_records = bool(
+            state.data.get("bootstrapped")
+            or state.data.get("schedule")
+            or state.data.get("codes")
+        )
+        initial_load_status = "loaded_local" if (had_local and has_records) else "fresh_bootstrap"
+        session = session or aiohttp.ClientSession(headers={"User-Agent": BOT_UA})
         fetcher = Fetcher(session, timeout=settings.http_timeout)
         webhook = WebhookClient(session, dry_run=settings.dry_run)
         _instrument_webhook(webhook)
@@ -388,10 +524,13 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
                 if not ctx.reachable.get(g.key, True):
                     ctx.warnings.append(f"{g.short}: no announcement source answered this run — the next run "
                                         f"re-reads the last {settings.lookback_hours}h, so nothing is missed")
+            ctx.cards_reached = True
             if "schedule" in features:
                 await schedule.run(ctx)
             if "codes" in features:
                 await codeposter.run(ctx)
+        else:
+            ctx.cards_reached = True
         if not features:
             ctx.report.append("⏸️ no active features this run (ENABLED_FEATURES=none or passive standby)")
         ephemeral = settings.dry_run or settings.test_mode
@@ -437,9 +576,21 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
                 write_run_report(ctx)
             except Exception:
                 pass
+        else:
+            try:
+                _write_early_failure_report(
+                    settings,
+                    exc,
+                    started_wall=started_wall,
+                    elapsed=time.monotonic() - started,
+                    load_status=initial_load_status,
+                    games_all=games_all if isinstance(games_all, dict) else None,
+                )
+            except Exception:
+                pass
         raise
     finally:
-        if own_session:
+        if own_session and session is not None:
             await session.close()
 
 
@@ -454,6 +605,53 @@ def build_run_report(ctx: Ctx) -> dict[str, Any]:
     if not deliveries and ctx.webhook.sent:
         posted_count = sum(1 for d in ctx.webhook.sent if d.get("method") == "POST")
         patched_count = sum(1 for d in ctx.webhook.sent if d.get("method") == "PATCH")
+
+    cfg_fps = _configured_target_fingerprints(s, ctx.games)
+    attempted_fps = {
+        str(d.get("fingerprint", ""))
+        for d in deliveries
+        if d.get("fingerprint")
+    }
+    usable_fps = {
+        str(d.get("fingerprint", ""))
+        for d in deliveries
+        if d.get("fingerprint") and d.get("ok")
+    }
+    if not deliveries and ctx.webhook.sent:
+        for sent_d in ctx.webhook.sent:
+            u = str(sent_d.get("url", ""))
+            if u:
+                fp = webhook_fingerprint(u)
+                attempted_fps.add(fp)
+                usable_fps.add(fp)
+
+    cards_reached = bool(getattr(ctx, "cards_reached", True))
+    if not cards_reached and ctx.execution_result == "failed" and not deliveries and not ctx.webhook.sent:
+        cards_obj: dict[str, Any] = {
+            "posted": "not_reached",
+            "patched": "not_reached",
+            "failed": "not_reached",
+            "skipped": "not_reached",
+            "held": "not_reached",
+        }
+        targets_obj: dict[str, Any] = {
+            "configured": len(cfg_fps),
+            "attempted": "not_reached",
+            "usable": "not_reached",
+        }
+    else:
+        cards_obj = {
+            "posted": posted_count,
+            "patched": patched_count,
+            "failed": failed_deliveries,
+            "skipped": "unavailable",
+            "held": "unavailable",
+        }
+        targets_obj = {
+            "configured": len(cfg_fps),
+            "attempted": len(attempted_fps),
+            "usable": len(usable_fps),
+        }
 
     source_outcomes = list(ctx.fetcher.source_outcomes)
     for g in ctx.games:
@@ -478,7 +676,7 @@ def build_run_report(ctx: Ctx) -> dict[str, Any]:
         "python_version": platform.python_version(),
         "runner_image": os.environ.get("GAMEXPRESS_RUNNER_IMAGE", platform.platform()),
         "lock_sha256": os.environ.get("GAMEXPRESS_LOCK_SHA256", ""),
-        "setup_duration_s": round(float(os.environ.get("GAMEXPRESS_SETUP_DURATION_S", "0") or 0), 2),
+        "setup_duration_s": _parse_optional_float(os.environ.get("GAMEXPRESS_SETUP_DURATION_S")),
         "instance_name": s.instance_name,
         "instance_role": s.instance_role,
         "mode": mode,
@@ -499,11 +697,8 @@ def build_run_report(ctx: Ctx) -> dict[str, Any]:
             "local_save_outcome": ctx.state_save_status,
             "path": str(s.state_path),
         },
-        "cards": {
-            "posted": posted_count,
-            "patched": patched_count,
-            "failed": failed_deliveries,
-        },
+        "cards": cards_obj,
+        "targets": targets_obj,
         "report_lines": [redact_text(r) for r in ctx.report],
         "warnings": [redact_text(w) for w in ctx.warnings],
         "errors": [redact_text(e) for e in ctx.errors],
@@ -518,64 +713,47 @@ def build_run_report(ctx: Ctx) -> dict[str, Any]:
 
 def write_run_report(ctx: Ctx, report_path: str | pathlib.Path | None = None) -> dict[str, Any]:
     """Write the redacted run report JSON to `GAMEXPRESS_RUN_REPORT` when configured."""
-    report = build_run_report(ctx)
-    target = pathlib.Path(report_path) if report_path else (
-        pathlib.Path(os.environ["GAMEXPRESS_RUN_REPORT"])
-        if os.environ.get("GAMEXPRESS_RUN_REPORT")
-        else None
-    )
-    if target is not None:
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            runs: list[dict[str, Any]] = []
-            if target.is_file():
-                try:
-                    existing = json.loads(target.read_text(encoding="utf-8"))
-                    if isinstance(existing, dict) and isinstance(existing.get("runs"), list):
-                        runs = list(existing["runs"])
-                except (OSError, json.JSONDecodeError):
-                    runs = []
-            runs.append(report)
-            envelope = dict(report)
-            envelope["runs"] = runs
-            target.write_text(
-                json.dumps(envelope, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-        except OSError as exc:
-            log.warning("failed to write run report to %s: %s", target, redact_text(str(exc)))
+    try:
+        report = build_run_report(ctx)
+    except Exception as exc:
+        log.warning("failed to build run report: %s", redact_text(str(exc)))
+        return {}
+    _write_report_envelope(report, report_path=report_path)
     return report
 
 
 def write_summary(ctx: Ctx) -> None:
-    write_run_report(ctx)
-    lines = [f"### Game-Express {build_id()} — {ctx.settings.instance_name} ({ctx.settings.instance_role})"]
-    if ctx.settings.dry_run:
-        lines.append("> **DRY RUN** — nothing was posted or saved; \"posted\" below means *would post*. "
-                     "The full card JSON is in the job log (paste it into discohook.app to see it).")
-    elif ctx.settings.test_mode:
-        lines.append("> **TEST MODE** — real data, throwaway cards. Every card is a NEW message "
-                     "labelled 🧪 TEST, posted from the sources this run actually fetched; live cards "
-                     "and their copies are never edited and the state file is not saved. "
-                     "Delete the test cards afterwards.")
-    lines += [f"- {redact_text(r)}" for r in ctx.report] or ["- nothing new (no matching announcements / codes)"]
-    for w in ctx.warnings:
-        safe_w = redact_text(w)
-        lines.append(f"- ⚠️ {safe_w}")
-        print(f"::warning::{safe_w}")
-    for e in ctx.errors:
-        safe_e = redact_text(e)
-        lines.append(f"- ❌ {safe_e}")
-        print(f"::error::{safe_e}")
-    lines.append(f"- sources: {redact_text(ctx.fetcher.summary())}")
-    if ctx.elapsed:
-        lines.append(f"- ⏱️ run took {ctx.elapsed:.1f}s")
-    text = "\n".join(lines)
-    log.info("\n%s", text)
-    path = os.getenv("GITHUB_STEP_SUMMARY")
-    if path and not os.getenv("GAMEXPRESS_RUN_REPORT"):
-        try:
-            with open(path, "a", encoding="utf-8") as fh:
-                fh.write(text + "\n")
-        except OSError:
-            pass
+    try:
+        write_run_report(ctx)
+        lines = [f"### Game-Express {build_id()} — {ctx.settings.instance_name} ({ctx.settings.instance_role})"]
+        if ctx.settings.dry_run:
+            lines.append("> **DRY RUN** — nothing was posted or saved; \"posted\" below means *would post*. "
+                         "The full card JSON is in the job log (paste it into discohook.app to see it).")
+        elif ctx.settings.test_mode:
+            lines.append("> **TEST MODE** — real data, throwaway cards. Every card is a NEW message "
+                         "labelled 🧪 TEST, posted from the sources this run actually fetched; live cards "
+                         "and their copies are never edited and the state file is not saved. "
+                         "Delete the test cards afterwards.")
+        lines += [f"- {redact_text(r)}" for r in ctx.report] or ["- nothing new (no matching announcements / codes)"]
+        for w in ctx.warnings:
+            safe_w = redact_text(w)
+            lines.append(f"- ⚠️ {safe_w}")
+            print(f"::warning::{safe_w}")
+        for e in ctx.errors:
+            safe_e = redact_text(e)
+            lines.append(f"- ❌ {safe_e}")
+            print(f"::error::{safe_e}")
+        lines.append(f"- sources: {redact_text(ctx.fetcher.summary())}")
+        if ctx.elapsed:
+            lines.append(f"- ⏱️ run took {ctx.elapsed:.1f}s")
+        text = "\n".join(lines)
+        log.info("\n%s", text)
+        path = os.getenv("GITHUB_STEP_SUMMARY")
+        if path and not os.getenv("GAMEXPRESS_RUN_REPORT"):
+            try:
+                with open(path, "a", encoding="utf-8") as fh:
+                    fh.write(text + "\n")
+            except OSError:
+                pass
+    except Exception as exc:
+        log.warning("failed to render run summary: %s", redact_text(str(exc)))

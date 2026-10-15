@@ -4,6 +4,9 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
+  check_suite:
+    types: [completed]
+  status:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled, edited]
     branches: [main]
@@ -20,7 +23,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: maintenance-merge-${{ github.event.pull_request.number || github.event.workflow_run.id || inputs.pr_number || github.run_id }}
+  group: maintenance-merge-${{ github.event.pull_request.number || github.event.workflow_run.id || github.event.check_suite.id || inputs.pr_number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -66,6 +69,7 @@ jobs:
                 prNumbers.add(parsed);
               }
             }
+            const refShaCandidates = [];
             if (context.payload.workflow_run) {
               const wfRun = context.payload.workflow_run;
               for (const pr of wfRun.pull_requests || []) {
@@ -73,18 +77,35 @@ jobs:
                   prNumbers.add(Number(pr.number));
                 }
               }
-              if (prNumbers.size === 0 && wfRun.head_sha) {
-                const openPrs = await github.rest.pulls.list({
-                  owner,
-                  repo,
-                  state: "open",
-                  base: "main",
-                  per_page: 50,
-                });
-                for (const p of openPrs.data || []) {
-                  if (p.head && p.head.sha === wfRun.head_sha) {
-                    prNumbers.add(Number(p.number));
-                  }
+              if (wfRun.head_sha) {
+                refShaCandidates.push(wfRun.head_sha);
+              }
+            }
+            if (context.payload.check_suite) {
+              const cs = context.payload.check_suite;
+              for (const pr of cs.pull_requests || []) {
+                if (pr && pr.number) {
+                  prNumbers.add(Number(pr.number));
+                }
+              }
+              if (cs.head_sha) {
+                refShaCandidates.push(cs.head_sha);
+              }
+            }
+            if (context.payload.sha) {
+              refShaCandidates.push(context.payload.sha);
+            }
+            if (prNumbers.size === 0 && refShaCandidates.length > 0) {
+              const openPrs = await github.rest.pulls.list({
+                owner,
+                repo,
+                state: "open",
+                base: "main",
+                per_page: 50,
+              });
+              for (const p of openPrs.data || []) {
+                if (p.head && refShaCandidates.includes(p.head.sha)) {
+                  prNumbers.add(Number(p.number));
                 }
               }
             }
@@ -108,10 +129,34 @@ jobs:
             }
             const maintScript = path.join(tempRoot, ".github", "scripts", "maintenance.py");
 
+            function extractFindingsFromText(...texts) {
+              const found = [];
+              const advRe = /\b(?:GHSA-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}|PYSEC-\d{4}-\d+|CVE-\d{4}-\d{4,})\b/g;
+              const cntRe = /found\s+(\d+)\s+known\s+vulnerabilit/i;
+              for (const txt of texts) {
+                if (!txt) continue;
+                let m;
+                while ((m = advRe.exec(txt)) !== null) {
+                  if (!found.includes(m[0])) found.push(m[0]);
+                }
+                const cm = cntRe.exec(txt);
+                if (cm && Number(cm[1]) > 0 && found.length === 0) {
+                  found.push(`UNIDENTIFIED_VULNERABILITY_COUNT_${cm[1]}`);
+                }
+              }
+              return found;
+            }
+
             async function collectPrSnapshot(prNumber, initialHeadSha) {
               const detailResp = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
               const pr = detailResp.data;
               const headSha = pr.head && pr.head.sha ? pr.head.sha : "";
+              const headRef = pr.head && pr.head.ref ? pr.head.ref : "";
+              const baseRepo = pr.base && pr.base.repo ? pr.base.repo.full_name : "";
+              const headRepo = pr.head && pr.head.repo ? pr.head.repo.full_name : "";
+              const headRepoFork = Boolean(pr.head && pr.head.repo && pr.head.repo.fork);
+              const prAuthor = pr.user && pr.user.login ? pr.user.login : "";
+              const prAuthorType = pr.user && pr.user.type ? pr.user.type : "";
 
               const files = await github.paginate(github.rest.pulls.listFiles, {
                 owner,
@@ -143,6 +188,39 @@ jobs:
                 ref: headSha,
                 per_page: 100,
               });
+              const wfRunsForSha = await github.paginate(
+                github.rest.actions.listWorkflowRunsForRepo,
+                {
+                  owner,
+                  repo,
+                  head_sha: headSha,
+                  per_page: 100,
+                }
+              );
+
+              const wfRunsById = new Map();
+              const jobsById = new Map();
+              for (const wfRun of wfRunsForSha || []) {
+                if (!wfRun || !wfRun.id) continue;
+                wfRunsById.set(Number(wfRun.id), wfRun);
+                if (wfRun.path === ".github/workflows/ci.yml" || wfRun.name === "CI") {
+                  const wfJobs = await github.paginate(
+                    github.rest.actions.listJobsForWorkflowRun,
+                    {
+                      owner,
+                      repo,
+                      run_id: wfRun.id,
+                      per_page: 100,
+                    }
+                  );
+                  for (const job of wfJobs || []) {
+                    if (job && job.id) {
+                      jobsById.set(Number(job.id), { job, wfRun });
+                    }
+                  }
+                }
+              }
+
               const combinedStatusResp = await github.rest.repos.getCombinedStatusForRef({
                 owner,
                 repo,
@@ -152,12 +230,248 @@ jobs:
               const fileDiffs = {};
               let patchMissing = false;
               for (const f of files) {
-                if (typeof f.patch === "string") {
+                if (typeof f.patch === "string" && f.patch.trim().length > 0) {
                   fileDiffs[f.filename] = f.patch;
                 } else {
                   patchMissing = true;
                 }
               }
+
+              const mappedCommits = (commits || []).map((c) => ({
+                sha: c.sha,
+                author:
+                  (c.author && c.author.login) ||
+                  (c.commit && c.commit.author && c.commit.author.name) ||
+                  "",
+                message: (c.commit && c.commit.message) || "",
+              }));
+
+              // Resolve publisher & proposal provenance against trusted base policy
+              let provenance = {
+                verified: false,
+                lane: "",
+                publisher: prAuthor,
+                publisher_type: prAuthorType,
+                source: "unknown",
+                head_ref: headRef,
+                head_sha: headSha,
+              };
+
+              if (
+                headRef.startsWith("dependabot/pip/") ||
+                headRef.startsWith("dependabot/github_actions/") ||
+                headRef.startsWith("dependabot/github-actions/")
+              ) {
+                const isDepBot =
+                  (prAuthor === "dependabot[bot]" || prAuthor === "app/dependabot") &&
+                  !headRepoFork &&
+                  baseRepo !== "" &&
+                  baseRepo === headRepo &&
+                  mappedCommits.length > 0 &&
+                  mappedCommits.every(
+                    (c) => c.author === "dependabot[bot]" || c.author === "app/dependabot"
+                  );
+                provenance = {
+                  verified: isDepBot,
+                  lane: headRef.startsWith("dependabot/pip/")
+                    ? "dependabot_pip"
+                    : "dependabot_actions",
+                  publisher: prAuthor,
+                  publisher_type: prAuthorType,
+                  source: isDepBot ? "github-dependabot" : "untrusted",
+                  head_ref: headRef,
+                  head_sha: headSha,
+                };
+              } else if (
+                headRef === "chore/python-bump" ||
+                headRef === "chore/python-version-bump"
+              ) {
+                let matchedBumpRun = null;
+                try {
+                  const bumpRunsResp = await github.rest.actions.listWorkflowRuns({
+                    owner,
+                    repo,
+                    workflow_id: "python_version_bump.yml",
+                    branch: "main",
+                    status: "completed",
+                    per_page: 20,
+                  });
+                  const bumpRuns =
+                    (bumpRunsResp.data && bumpRunsResp.data.workflow_runs) || [];
+                  matchedBumpRun =
+                    bumpRuns.find((r) => r && r.conclusion === "success") || null;
+                } catch (_err) {
+                  matchedBumpRun = null;
+                }
+                const bodyText = pr.body || "";
+                const revMatch = /\|\s*Review required\s*\|\s*`(true|false)`/i.exec(bodyText);
+                const eligMatch = /\|\s*Auto-merge eligible\s*\|\s*`(true|false)`/i.exec(
+                  bodyText
+                );
+                const kindMatch = /\|\s*Update classification\s*\|\s*`([^`]+)`/i.exec(bodyText);
+                const bodyReviewRequired = revMatch
+                  ? revMatch[1].toLowerCase() === "true"
+                  : null;
+                const bodyAutoMergeEligible = eligMatch
+                  ? eligMatch[1].toLowerCase() === "true"
+                  : null;
+                const bodyUpdateKind = kindMatch ? kindMatch[1].trim() : "";
+                const verifiedBump = Boolean(
+                  matchedBumpRun &&
+                    matchedBumpRun.conclusion === "success" &&
+                    matchedBumpRun.path === ".github/workflows/python_version_bump.yml" &&
+                    !headRepoFork &&
+                    baseRepo === headRepo &&
+                    bodyReviewRequired === false &&
+                    bodyAutoMergeEligible === true &&
+                    bodyUpdateKind === "patch"
+                );
+                provenance = {
+                  verified: verifiedBump,
+                  lane: "python_bump",
+                  publisher: prAuthor,
+                  publisher_type: prAuthorType,
+                  source: "python-version-bump-workflow",
+                  workflow: matchedBumpRun ? matchedBumpRun.path || "" : "",
+                  workflow_name: matchedBumpRun ? matchedBumpRun.name || "" : "",
+                  workflow_run_id: matchedBumpRun ? matchedBumpRun.id : null,
+                  workflow_event: matchedBumpRun ? matchedBumpRun.event || "" : "",
+                  workflow_conclusion: matchedBumpRun ? matchedBumpRun.conclusion || "" : "",
+                  update_kind: bodyUpdateKind,
+                  review_required: bodyReviewRequired,
+                  auto_merge_eligible: bodyAutoMergeEligible,
+                  head_ref: headRef,
+                  head_sha: headSha,
+                };
+              }
+
+              // Map check runs with producing workflow/run metadata and inner job steps
+              const mappedCheckRuns = [];
+              for (const run of allCheckRuns || []) {
+                const jobEntry = jobsById.get(Number(run.id)) || null;
+                let wfRun = jobEntry ? jobEntry.wfRun : null;
+                if (!wfRun && run.details_url) {
+                  const dm = /\/actions\/runs\/(\d+)/.exec(run.details_url);
+                  if (dm) {
+                    wfRun = wfRunsById.get(Number(dm[1])) || null;
+                  }
+                }
+                const annotations = [];
+                if (
+                  (run.name === "Dependency CVE audit (pip-audit, advisory)" ||
+                    run.name === "pip-audit") &&
+                  run.output &&
+                  Number(run.output.annotations_count || 0) > 0
+                ) {
+                  try {
+                    const annResp = await github.rest.checks.listAnnotations({
+                      owner,
+                      repo,
+                      check_run_id: run.id,
+                      per_page: 50,
+                    });
+                    for (const a of annResp.data || []) {
+                      annotations.push({
+                        title: a.title || "",
+                        message: a.message || "",
+                        annotation_level: a.annotation_level || "",
+                      });
+                    }
+                  } catch (_err) {
+                    // Fail closed if security annotations cannot be read
+                    annotations.push({
+                      title: "ANNOTATION_FETCH_ERROR",
+                      message: "Found 1 known vulnerability (annotations unreadable)",
+                    });
+                  }
+                }
+                mappedCheckRuns.push({
+                  id: run.id,
+                  name: run.name || "",
+                  head_sha: run.head_sha || "",
+                  status: run.status || "",
+                  conclusion: run.conclusion || "",
+                  app_slug: run.app && run.app.slug ? run.app.slug : "",
+                  workflow_id: wfRun ? wfRun.workflow_id : null,
+                  workflow_name: wfRun ? wfRun.name || "" : "",
+                  workflow_path: wfRun ? wfRun.path || "" : "",
+                  run_id: wfRun ? wfRun.id : null,
+                  run_attempt: wfRun ? wfRun.run_attempt || 1 : null,
+                  steps:
+                    jobEntry && Array.isArray(jobEntry.job.steps)
+                      ? jobEntry.job.steps.map((s) => ({
+                          name: s.name || "",
+                          status: s.status || "",
+                          conclusion: s.conclusion || "",
+                        }))
+                      : [],
+                  output_title: run.output && run.output.title ? run.output.title : "",
+                  output_summary: run.output && run.output.summary ? run.output.summary : "",
+                  output_text: run.output && run.output.text ? run.output.text : "",
+                  annotations,
+                });
+              }
+
+              // Build real security_scan evidence from the pip-audit check run & inner step
+              const pipAuditCandidates = mappedCheckRuns.filter(
+                (r) =>
+                  (r.name === "Dependency CVE audit (pip-audit, advisory)" ||
+                    r.name === "pip-audit") &&
+                  r.workflow_path === ".github/workflows/ci.yml"
+              );
+              const pipAuditRun =
+                pipAuditCandidates.length > 0
+                  ? pipAuditCandidates[pipAuditCandidates.length - 1]
+                  : null;
+              const auditStep =
+                pipAuditRun && Array.isArray(pipAuditRun.steps)
+                  ? pipAuditRun.steps.find((s) =>
+                      /audit|pip-audit|osv|vulnerability/i.test(s.name || "")
+                    ) || null
+                  : null;
+              const annTexts =
+                pipAuditRun && Array.isArray(pipAuditRun.annotations)
+                  ? pipAuditRun.annotations.map((a) => `${a.title || ""} ${a.message || ""}`)
+                  : [];
+              const scanFindings = pipAuditRun
+                ? extractFindingsFromText(
+                    pipAuditRun.output_title,
+                    pipAuditRun.output_summary,
+                    pipAuditRun.output_text,
+                    ...annTexts
+                  )
+                : [];
+              let scanStatus = "unavailable";
+              if (pipAuditRun && auditStep) {
+                if (
+                  String(pipAuditRun.status).toLowerCase() !== "completed" ||
+                  String(auditStep.status).toLowerCase() !== "completed"
+                ) {
+                  scanStatus = "pending";
+                } else if (scanFindings.length > 0) {
+                  scanStatus = "vulnerable";
+                } else if (
+                  String(auditStep.conclusion).toLowerCase() !== "success" ||
+                  String(pipAuditRun.conclusion).toLowerCase() !== "success"
+                ) {
+                  scanStatus = "failed";
+                } else {
+                  scanStatus = "clean";
+                }
+              }
+
+              const securityScan = {
+                present: Boolean(pipAuditRun && auditStep),
+                check_name: pipAuditRun ? pipAuditRun.name : "",
+                head_sha: pipAuditRun ? pipAuditRun.head_sha : "",
+                workflow_path: pipAuditRun ? pipAuditRun.workflow_path : "",
+                run_id: pipAuditRun ? pipAuditRun.run_id : null,
+                wrapper_conclusion: pipAuditRun ? pipAuditRun.conclusion : "",
+                step_name: auditStep ? auditStep.name : "",
+                step_conclusion: auditStep ? auditStep.conclusion : "",
+                status: scanStatus,
+                findings: scanFindings,
+              };
 
               // Never manufacture passing checks or convert null mergeability to MERGEABLE
               const mergeableVal =
@@ -170,14 +484,14 @@ jobs:
               return {
                 pr_number: pr.number,
                 title: pr.title || "",
-                base_repo: pr.base && pr.base.repo ? pr.base.repo.full_name : "",
-                head_repo: pr.head && pr.head.repo ? pr.head.repo.full_name : "",
-                head_repo_fork: Boolean(pr.head && pr.head.repo && pr.head.repo.fork),
+                base_repo: baseRepo,
+                head_repo: headRepo,
+                head_repo_fork: headRepoFork,
                 base_ref: pr.base ? pr.base.ref : "",
-                head_ref: pr.head ? pr.head.ref : "",
+                head_ref: headRef,
                 head_sha: initialHeadSha || headSha,
                 refreshed_head_sha: headSha,
-                author: pr.user ? pr.user.login : "",
+                author: prAuthor,
                 actor: context.actor || "",
                 state: pr.state ? pr.state.toUpperCase() : "CLOSED",
                 is_draft: Boolean(pr.draft),
@@ -190,26 +504,18 @@ jobs:
                   state: r.state || "",
                   submitted_at: r.submitted_at || "",
                 })),
-                commits: (commits || []).map((c) => ({
-                  sha: c.sha,
-                  author: (c.author && c.author.login) || (c.commit && c.commit.author && c.commit.author.name) || "",
-                  message: (c.commit && c.commit.message) || "",
-                })),
+                commits: mappedCommits,
+                provenance,
                 changed_files: (files || []).map((f) => f.filename),
                 files_total_count: Number(pr.changed_files || files.length),
                 file_diffs: fileDiffs,
                 require_diff_metadata: true,
                 pagination_incomplete: Boolean(patchMissing),
-                check_runs: (allCheckRuns || []).map((run) => ({
-                  name: run.name,
-                  head_sha: run.head_sha,
-                  status: run.status,
-                  conclusion: run.conclusion,
-                  app_slug: run.app && run.app.slug ? run.app.slug : "",
-                })),
+                check_runs: mappedCheckRuns,
                 checks_total_count: Number(
                   (checksFirst.data && checksFirst.data.total_count) || allCheckRuns.length
                 ),
+                security_scan: securityScan,
                 combined_status:
                   combinedStatusResp.data && combinedStatusResp.data.total_count > 0
                     ? combinedStatusResp.data.state
@@ -303,6 +609,7 @@ jobs:
                 ],
                 { cwd: tempRoot, encoding: "utf8" }
               );
+
               summaryLines.push(
                 `- **PR #${prNumber}** (\`${snap2.head_ref}\` @ \`${snap2.head_sha.slice(0, 7)}\`): ✅ merged (\`${mergeResult.sha.slice(0, 7)}\`)`
               );

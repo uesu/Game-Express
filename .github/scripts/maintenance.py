@@ -51,9 +51,13 @@ PY_BUMP_TITLE_RE = re.compile(
     r"^chore\(python\):\s*bump\s+(?:pinned\s+)?python\s+(?:from\s+(\d+\.\d+\.\d+)\s+)?to\s+(\d+\.\d+\.\d+)\b",
     re.IGNORECASE,
 )
-REQ_PIN_LINE_RE = re.compile(
-    r"^([A-Za-z0-9_.-]+)==([A-Za-z0-9_.+-]+)(?:\s*;\s*[^\\]+)?(?:\s*\\)?$"
+REQ_PIN_LINE_RE = re.compile(r"^([A-Za-z0-9_.-]+)==([A-Za-z0-9_.+-]+)$")
+IN_REQ_LINE_RE = re.compile(r"^([A-Za-z0-9_.-]+)\s*(==|>=)\s*([A-Za-z0-9_.+-]+)$")
+HASH_LINE_RE = re.compile(r"^--hash=sha256:([0-9a-f]{64})$")
+ADVISORY_ID_RE = re.compile(
+    r"\b(?:GHSA-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}|PYSEC-\d{4}-\d+|CVE-\d{4}-\d{4,})\b"
 )
+VULN_COUNT_RE = re.compile(r"found\s+(\d+)\s+known\s+vulnerabilit", re.IGNORECASE)
 
 DEFAULT_POLICY: dict[str, Any] = {
     "schema_version": 2,
@@ -66,6 +70,8 @@ DEFAULT_POLICY: dict[str, Any] = {
         "release_dates_fallback_url": RELEASE_DATES_FALLBACK_URL,
         "supported_major": 3,
         "min_minor": 11,
+        "max_validated_minor": 14,
+        "allow_minor_upgrades": False,
         "max_minor_jump": 1,
         "minor_soak_days": 30,
         "runner_os": "linux",
@@ -100,7 +106,7 @@ DEFAULT_POLICY: dict[str, Any] = {
         ],
     },
     "locks": {
-        "compiler": {"pip": "26.1.1", "pip_tools": "7.5.3"},
+        "compiler": {"pip": "26.2.1", "pip_tools": "7.5.3"},
         "targets": [
             {
                 "name": "runtime",
@@ -125,6 +131,8 @@ DEFAULT_POLICY: dict[str, Any] = {
         ],
     },
     "ci": {
+        "workflow_name": "CI",
+        "workflow_path": ".github/workflows/ci.yml",
         "final_gate_name": "maintenance-ci",
         "blocking_checks": ["verify", "lock-check", "ruff", "actionlint", "zizmor"],
         "blocking_check_run_names": [
@@ -137,6 +145,15 @@ DEFAULT_POLICY: dict[str, Any] = {
         ],
         "advisory_checks": ["pip-audit"],
         "advisory_check_run_names": ["Dependency CVE audit (pip-audit, advisory)"],
+        "mandatory_check_groups": {
+            "verify": ["Verify (syntax, workflow contract & offline tests)", "verify"],
+            "lock-check": ["Dependency lockfile consistency", "lock-check"],
+            "ruff": ["Ruff lint", "ruff"],
+            "actionlint": ["Workflow lint (actionlint)", "actionlint"],
+            "zizmor": ["Workflow security audit (zizmor)", "zizmor"],
+            "pip-audit": ["Dependency CVE audit (pip-audit, advisory)", "pip-audit"],
+            "maintenance-ci": ["maintenance-ci"],
+        },
         "registered_tests": [
             "tests/test_configuration_contract.py",
             "tests/test_gachawiki_placeholder.py",
@@ -152,7 +169,22 @@ DEFAULT_POLICY: dict[str, Any] = {
         "merge_method": "SQUASH",
         "fallback_merge_methods": ["MERGE", "REBASE"],
         "trusted_check_apps": ["github-actions"],
-        "required_checks": ["maintenance-ci"],
+        "trusted_ci_workflow_paths": [".github/workflows/ci.yml"],
+        "trusted_ci_workflow_names": ["CI", "CI — compile + offline tests"],
+        "trusted_proposer_workflow_paths": [".github/workflows/python_version_bump.yml"],
+        "trusted_proposer_workflow_names": ["Python Version Bump"],
+        "require_complete_check_set": True,
+        "require_security_scan_evidence": True,
+        "require_provenance": True,
+        "required_checks": [
+            "Verify (syntax, workflow contract & offline tests)",
+            "Dependency lockfile consistency",
+            "Ruff lint",
+            "Workflow lint (actionlint)",
+            "Workflow security audit (zizmor)",
+            "Dependency CVE audit (pip-audit, advisory)",
+            "maintenance-ci",
+        ],
         "blocking_checks": ["verify", "lock-check", "ruff", "actionlint", "zizmor"],
         "security_checks": ["pip-audit", "Dependency CVE audit (pip-audit, advisory)"],
         "hold_labels": [
@@ -198,25 +230,12 @@ DEFAULT_POLICY: dict[str, Any] = {
                 "authors": ["github-actions[bot]", "app/github-actions", "uesu"],
                 "opt_in_var": "AUTO_MERGE_PYTHON_BUMP",
                 "opt_in_value": "yes",
-                "branch_names": ["chore/python-bump"],
+                "branch_names": ["chore/python-bump", "chore/python-version-bump"],
                 "allowed_files": [
                     ".python-version",
                     "ruff.toml",
                     "requirements.txt",
                     "requirements-dev.txt",
-                    "README.md",
-                    "AGENTS.md",
-                    "docs/MAINTENANCE.md",
-                    "docs/PYTHON_VERSION.md",
-                    "docs/CONFIGURATION.md",
-                    "docs/DEPENDABOT.md",
-                    "docs/PROD-REPO-SETUP.md",
-                    "docs/ROLLOUT.md",
-                    "docs/SCHEDULER.md",
-                    "docs/SECURITY.md",
-                    "docs/TESTING.md",
-                    "docs/TROUBLESHOOTING.md",
-                    "docs/changelog/CHANGELOG.md",
                 ],
                 "allowed_update_types": ["patch"],
             },
@@ -1373,59 +1392,296 @@ def classify_version_update(old_raw: str, new_raw: str) -> tuple[str, bool, str]
     return "patch", True, f"Patch update {old_raw} -> {new_raw}"
 
 
+def classify_dependency_change(upd: dict[str, Any]) -> tuple[str, bool, str]:
+    """Classify a dependency/action change item (`updated`, `added`, `removed`, `hash-mutation`, etc.)."""
+    name = str(upd.get("name") or "")
+    old_raw = str(upd.get("from") or "").strip()
+    new_raw = str(upd.get("to") or "").strip()
+    change_kind = str(upd.get("change") or "updated").strip()
+    file_rel = str(upd.get("file") or "").strip()
+    loc_suffix = f" in {file_rel}" if file_rel else ""
+
+    if change_kind == "added" or (not old_raw and new_raw):
+        return (
+            "added",
+            False,
+            f"Added new dependency {name}=={new_raw}{loc_suffix} requires human review",
+        )
+    if change_kind == "removed" or (old_raw and not new_raw):
+        return (
+            "removed",
+            False,
+            f"Removed dependency {name}=={old_raw}{loc_suffix} requires human review",
+        )
+    if change_kind == "hash-mutation":
+        return (
+            "hash-mutation",
+            False,
+            f"Hash-only or non-version mutation for {name} ({old_raw} -> {new_raw}){loc_suffix} requires human review",
+        )
+    if change_kind in ("ambiguous", "constraint-operator-change", "extras-or-marker-change", "sha-mutation"):
+        return (
+            change_kind,
+            False,
+            f"Unsafe {change_kind} for {name} ({old_raw} -> {new_raw}){loc_suffix} requires human review",
+        )
+    return classify_version_update(old_raw, new_raw)
+
+
 def _extract_pip_updates_from_diffs(
     file_diffs: dict[str, str],
 ) -> tuple[list[dict[str, str]], list[str]]:
-    """Extract package version transitions and validate diff lines for `requirements*` files."""
+    """Extract all package transitions, additions, deletions, and hash mutations across `requirements*` diffs."""
     errors: list[str] = []
-    removed_versions: dict[str, str] = {}
-    added_versions: dict[str, str] = {}
+    updates: list[dict[str, str]] = []
 
-    for path, patch in file_diffs.items():
-        if not isinstance(patch, str):
+    for path in sorted(file_diffs.keys()):
+        patch = file_diffs.get(path)
+        if not isinstance(patch, str) or not patch.strip():
+            errors.append(f"{path}: missing or empty diff patch")
             continue
+
+        removed_entries: dict[str, list[dict[str, Any]]] = {}
+        added_entries: dict[str, list[dict[str, Any]]] = {}
+        orphan_hash_changes: list[str] = []
+        active_removed_pkg: str | None = None
+        active_added_pkg: str | None = None
+
         for raw_line in patch.splitlines():
             if raw_line.startswith(("+++", "---", "@@")):
+                active_removed_pkg = None
+                active_added_pkg = None
+                continue
+            if raw_line.startswith(" "):
+                ctx_text = raw_line[1:].strip()
+                if (
+                    ctx_text
+                    and not ctx_text.startswith("#")
+                    and not ctx_text.startswith("--hash=")
+                    and ctx_text != "\\"
+                ):
+                    active_removed_pkg = None
+                    active_added_pkg = None
                 continue
             if not raw_line.startswith(("+", "-")):
                 continue
+
             sign = raw_line[0]
             content = raw_line[1:].strip()
-            if not content or content.startswith("#"):
+            if not content or content.startswith("#") or content == "\\":
                 continue
-            if content.startswith("--hash=sha256:") or content == "\\":
-                continue
-            if content.startswith("-c "):
-                if content != "-c requirements.txt":
-                    errors.append(f"{path}: unexpected constraint line {content!r}")
-                continue
-            if any(
-                bad in content.lower()
-                for bad in ("git+", "http://", "https://", "file:", "-e ", "--extra-index-url", "--index-url", "--find-links")
-            ):
-                errors.append(f"{path}: forbidden URL/VCS/index directive in diff: {content!r}")
-                continue
-            m = REQ_PIN_LINE_RE.match(content)
-            if m:
-                pkg = m.group(1).lower().replace("_", "-")
-                ver = m.group(2)
-                if sign == "-":
-                    removed_versions[pkg] = ver
-                else:
-                    added_versions[pkg] = ver
-            elif path.endswith(".in"):
-                # Allow simple requirement specifiers in .in files
-                if not re.match(r"^[A-Za-z0-9_.-]+(\[[A-Za-z0-9_,.-]+\])?[><=!~0-9.,\s]*$", content):
-                    errors.append(f"{path}: invalid requirement specifier {content!r}")
-            else:
-                errors.append(f"{path}: unexpected non-pinned diff line {content!r}")
 
-    updates: list[dict[str, str]] = []
-    for pkg, new_ver in sorted(added_versions.items()):
-        old_ver = removed_versions.get(pkg)
-        if old_ver and old_ver != new_ver:
-            updates.append({"name": pkg, "from": old_ver, "to": new_ver})
-    return updates, errors
+            line_body = content[:-1].strip() if content.endswith("\\") else content
+
+            if line_body.startswith("--hash="):
+                hm = HASH_LINE_RE.match(line_body)
+                if not hm:
+                    errors.append(f"{path}: malformed hash line {content!r}")
+                    continue
+                digest = hm.group(1)
+                if sign == "-":
+                    if active_removed_pkg and removed_entries.get(active_removed_pkg):
+                        removed_entries[active_removed_pkg][-1]["hashes"].append(digest)
+                    else:
+                        orphan_hash_changes.append(f"-{digest[:12]}")
+                else:
+                    if active_added_pkg and added_entries.get(active_added_pkg):
+                        added_entries[active_added_pkg][-1]["hashes"].append(digest)
+                    else:
+                        orphan_hash_changes.append(f"+{digest[:12]}")
+                continue
+
+            active_removed_pkg = None
+            active_added_pkg = None
+
+            lowered = line_body.lower()
+            if (
+                line_body.startswith("-")
+                or any(
+                    bad in lowered
+                    for bad in (
+                        "git+",
+                        "hg+",
+                        "svn+",
+                        "bzr+",
+                        "http://",
+                        "https://",
+                        "ftp://",
+                        "file:",
+                        "ssh://",
+                        " @ ",
+                        "@http",
+                        "@git",
+                        "@file",
+                        "--extra-index-url",
+                        "--index-url",
+                        "--find-links",
+                        "--trusted-host",
+                    )
+                )
+                or line_body.startswith(("./", "../", "/"))
+            ):
+                errors.append(f"{path}: forbidden option/URL/VCS/constraint directive in diff: {content!r}")
+                continue
+
+            if ";" in line_body or "[" in line_body or "]" in line_body:
+                errors.append(
+                    f"{path}: environment marker or package extras change requires human review: {content!r}"
+                )
+                pkg_token = re.split(r"[;\[\]=<>!~\s]", line_body, maxsplit=1)[0].strip().lower().replace("_", "-")
+                updates.append(
+                    {
+                        "name": pkg_token or f"<marker:{path}>",
+                        "from": line_body if sign == "-" else "",
+                        "to": line_body if sign == "+" else "",
+                        "file": path,
+                        "change": "extras-or-marker-change",
+                    }
+                )
+                continue
+
+            if path.endswith(".in"):
+                im = IN_REQ_LINE_RE.match(line_body)
+                if not im:
+                    errors.append(f"{path}: unpinned or complex requirement change {content!r} requires human review")
+                    pkg_token = re.split(r"[=<>!~\s]", line_body, maxsplit=1)[0].strip().lower().replace("_", "-")
+                    updates.append(
+                        {
+                            "name": pkg_token or f"<spec:{path}>",
+                            "from": line_body if sign == "-" else "",
+                            "to": line_body if sign == "+" else "",
+                            "file": path,
+                            "change": "constraint-operator-change",
+                        }
+                    )
+                    continue
+                pkg = im.group(1).lower().replace("_", "-")
+                op = im.group(2)
+                ver = im.group(3)
+                entry = {"version": ver, "op": op, "hashes": []}
+            else:
+                pm = REQ_PIN_LINE_RE.match(line_body)
+                if not pm:
+                    errors.append(f"{path}: unexpected non-pinned lockfile diff line {content!r}")
+                    continue
+                pkg = pm.group(1).lower().replace("_", "-")
+                ver = pm.group(2)
+                entry = {"version": ver, "op": "==", "hashes": []}
+
+            if sign == "-":
+                removed_entries.setdefault(pkg, []).append(entry)
+                active_removed_pkg = pkg
+            else:
+                added_entries.setdefault(pkg, []).append(entry)
+                active_added_pkg = pkg
+
+        if orphan_hash_changes:
+            errors.append(f"{path}: hash-only mutation without package version transition requires human review")
+            updates.append(
+                {
+                    "name": f"<hash-only:{path}>",
+                    "from": "hash",
+                    "to": "hash-modified",
+                    "file": path,
+                    "change": "hash-mutation",
+                }
+            )
+
+        for pkg in sorted(set(removed_entries.keys()) | set(added_entries.keys())):
+            rem_list = removed_entries.get(pkg, [])
+            add_list = added_entries.get(pkg, [])
+            if not rem_list and add_list:
+                for a in add_list:
+                    updates.append(
+                        {
+                            "name": pkg,
+                            "from": "",
+                            "to": str(a["version"]),
+                            "file": path,
+                            "change": "added",
+                        }
+                    )
+            elif rem_list and not add_list:
+                for r in rem_list:
+                    updates.append(
+                        {
+                            "name": pkg,
+                            "from": str(r["version"]),
+                            "to": "",
+                            "file": path,
+                            "change": "removed",
+                        }
+                    )
+            elif len(rem_list) != 1 or len(add_list) != 1:
+                errors.append(f"{path}: duplicate or unbalanced entries for {pkg}")
+                updates.append(
+                    {
+                        "name": pkg,
+                        "from": str(rem_list[0]["version"]),
+                        "to": str(add_list[-1]["version"]),
+                        "file": path,
+                        "change": "ambiguous",
+                    }
+                )
+            else:
+                r0 = rem_list[0]
+                a0 = add_list[0]
+                old_ver = str(r0["version"])
+                new_ver = str(a0["version"])
+                if r0.get("op", "==") != a0.get("op", "=="):
+                    updates.append(
+                        {
+                            "name": pkg,
+                            "from": f"{r0.get('op')}{old_ver}",
+                            "to": f"{a0.get('op')}{new_ver}",
+                            "file": path,
+                            "change": "constraint-operator-change",
+                        }
+                    )
+                elif old_ver == new_ver:
+                    errors.append(
+                        f"{path}: package {pkg}=={old_ver} modified without version change (hash/metadata mutation)"
+                    )
+                    updates.append(
+                        {
+                            "name": pkg,
+                            "from": old_ver,
+                            "to": new_ver,
+                            "file": path,
+                            "change": "hash-mutation",
+                        }
+                    )
+                else:
+                    updates.append(
+                        {
+                            "name": pkg,
+                            "from": old_ver,
+                            "to": new_ver,
+                            "file": path,
+                            "change": "updated",
+                        }
+                    )
+
+    # Deduplicate identical transitions across files (e.g. requirements.txt and requirements-dev.txt)
+    # while preserving any conflicting transitions for the same package across files.
+    deduped: list[dict[str, str]] = []
+    seen_keys: set[tuple[str, str, str, str]] = set()
+    by_pkg: dict[str, set[tuple[str, str, str]]] = {}
+    for u in updates:
+        key = (u["name"], u["from"], u["to"], u.get("change", "updated"))
+        by_pkg.setdefault(u["name"], set()).add((u["from"], u["to"], u.get("change", "updated")))
+        if key not in seen_keys:
+            seen_keys.add(key)
+            deduped.append(u)
+
+    for pkg, transitions in sorted(by_pkg.items()):
+        if len(transitions) > 1:
+            errors.append(
+                f"Conflicting transitions for {pkg} across files: "
+                + ", ".join(f"{f or '<none>'}->{t or '<none>'} ({c})" for f, t, c in sorted(transitions))
+            )
+
+    return deduped, errors
 
 
 def _extract_action_updates_from_diffs(
@@ -1433,13 +1689,17 @@ def _extract_action_updates_from_diffs(
 ) -> tuple[list[dict[str, str]], list[str]]:
     """Validate that a workflow diff modifies only `uses: owner/repo@<40-sha> # vX.Y.Z` lines."""
     errors: list[str] = []
-    removed_uses: list[tuple[str, str, str]] = []
-    added_uses: list[tuple[str, str, str]] = []
+    updates: list[dict[str, str]] = []
 
-    for path, patch in file_diffs.items():
+    for path in sorted(file_diffs.keys()):
+        patch = file_diffs.get(path)
         if not isinstance(patch, str) or not patch.strip():
             errors.append(f"{path}: missing diff content for workflow file")
             continue
+
+        removed_by_repo: dict[str, list[tuple[str, str]]] = {}
+        added_by_repo: dict[str, list[tuple[str, str]]] = {}
+
         for raw_line in patch.splitlines():
             if raw_line.startswith(("+++", "---", "@@")):
                 continue
@@ -1457,24 +1717,69 @@ def _extract_action_updates_from_diffs(
                 continue
             repo_id, sha, ver = m.group(1), m.group(2), m.group(3)
             if sign == "-":
-                removed_uses.append((repo_id, sha, ver))
+                removed_by_repo.setdefault(repo_id, []).append((sha, ver))
             else:
-                added_uses.append((repo_id, sha, ver))
+                added_by_repo.setdefault(repo_id, []).append((sha, ver))
 
-    if not added_uses or len(added_uses) != len(removed_uses):
-        errors.append("Workflow diff does not contain a balanced 1:1 action pin update.")
-        return [], errors
-
-    updates: list[dict[str, str]] = []
-    for (old_repo, _old_sha, old_ver), (new_repo, _new_sha, new_ver) in zip(
-        removed_uses, added_uses
-    ):
-        if old_repo != new_repo:
-            errors.append(
-                f"Action source repository changed from {old_repo!r} to {new_repo!r}; requires human review."
-            )
+        all_repos = sorted(set(removed_by_repo.keys()) | set(added_by_repo.keys()))
+        if not all_repos:
+            errors.append(f"{path}: workflow diff contains no valid uses: updates.")
             continue
-        updates.append({"name": new_repo, "from": old_ver, "to": new_ver})
+
+        for repo_id in all_repos:
+            rem_list = removed_by_repo.get(repo_id, [])
+            add_list = added_by_repo.get(repo_id, [])
+            if not rem_list and add_list:
+                errors.append(f"{path}: added new action {repo_id!r}; requires human review.")
+                for _sha, ver in add_list:
+                    updates.append(
+                        {"name": repo_id, "from": "", "to": ver, "file": path, "change": "added"}
+                    )
+            elif rem_list and not add_list:
+                errors.append(f"{path}: removed action {repo_id!r}; requires human review.")
+                for _sha, ver in rem_list:
+                    updates.append(
+                        {"name": repo_id, "from": ver, "to": "", "file": path, "change": "removed"}
+                    )
+            elif len(rem_list) != len(add_list):
+                errors.append(
+                    f"{path}: unbalanced uses: count for {repo_id!r} ({len(rem_list)} removed vs {len(add_list)} added)."
+                )
+                updates.append(
+                    {
+                        "name": repo_id,
+                        "from": rem_list[0][1],
+                        "to": add_list[-1][1],
+                        "file": path,
+                        "change": "ambiguous",
+                    }
+                )
+            else:
+                for (old_sha, old_ver), (new_sha, new_ver) in zip(rem_list, add_list):
+                    if old_sha == new_sha or old_ver == new_ver:
+                        errors.append(
+                            f"{path}: SHA-only or version-comment-only mutation for {repo_id!r} ({old_ver}@{old_sha[:7]} -> {new_ver}@{new_sha[:7]})."
+                        )
+                        updates.append(
+                            {
+                                "name": repo_id,
+                                "from": old_ver,
+                                "to": new_ver,
+                                "file": path,
+                                "change": "sha-mutation",
+                            }
+                        )
+                    else:
+                        updates.append(
+                            {
+                                "name": repo_id,
+                                "from": old_ver,
+                                "to": new_ver,
+                                "file": path,
+                                "change": "updated",
+                            }
+                        )
+
     return updates, errors
 
 
@@ -1522,6 +1827,22 @@ def _evaluate_reviews(
     return True, "ok"
 
 
+def _extract_security_findings_from_text(*texts: str) -> list[str]:
+    """Extract unique CVE / GHSA / PYSEC identifiers or vulnerability count markers from scan text."""
+    found: list[str] = []
+    for txt in texts:
+        if not txt:
+            continue
+        for m in ADVISORY_ID_RE.finditer(txt):
+            aid = m.group(0)
+            if aid not in found:
+                found.append(aid)
+        vm = VULN_COUNT_RE.search(txt)
+        if vm and int(vm.group(1)) > 0 and not found:
+            found.append(f"UNIDENTIFIED_VULNERABILITY_COUNT_{vm.group(1)}")
+    return found
+
+
 def evaluate_automerge(
     pr_data: dict[str, Any],
     policy: dict[str, Any] | None = None,
@@ -1532,9 +1853,33 @@ def evaluate_automerge(
     target_branch = str(pol.get("target_branch", "main"))
     merge_method = str(pol.get("merge_method", "SQUASH"))
     trusted_apps = {str(a).lower() for a in pol.get("trusted_check_apps", ["github-actions"])}
-    required_checks = list(pol.get("required_checks", ["maintenance-ci"]))
-    blocking_checks = list(
-        pol.get("blocking_checks", ["verify", "lock-check", "ruff", "actionlint", "zizmor"])
+    trusted_ci_paths = {
+        str(p).strip()
+        for p in pol.get("trusted_ci_workflow_paths", [".github/workflows/ci.yml"])
+        if str(p).strip()
+    }
+    trusted_ci_names = {
+        str(n).strip()
+        for n in pol.get("trusted_ci_workflow_names", ["CI", "CI — compile + offline tests"])
+        if str(n).strip()
+    }
+    trusted_proposer_paths = {
+        str(p).strip()
+        for p in pol.get(
+            "trusted_proposer_workflow_paths", [".github/workflows/python_version_bump.yml"]
+        )
+        if str(p).strip()
+    }
+    trusted_proposer_names = {
+        str(n).strip()
+        for n in pol.get("trusted_proposer_workflow_names", ["Python Version Bump"])
+        if str(n).strip()
+    }
+    mandatory_groups: dict[str, list[str]] = dict(
+        pol_root.get("ci", {}).get(
+            "mandatory_check_groups",
+            DEFAULT_POLICY["ci"]["mandatory_check_groups"],
+        )
     )
     security_checks = list(
         pol.get("security_checks", ["pip-audit", "Dependency CVE audit (pip-audit, advisory)"])
@@ -1701,7 +2046,7 @@ def evaluate_automerge(
             classification="deferred",
         )
 
-    # 8. Author & proposal provenance (never trust event actor or branch name alone)
+    # 8. Author & lane matching (never trust event actor or branch name alone)
     author_raw = pr_data.get("author")
     actor_raw = pr_data.get("actor")
     pr_author = str(author_raw if author_raw is not None else (actor_raw or "")).strip()
@@ -1799,118 +2144,268 @@ def evaluate_automerge(
             merge_method,
         )
 
-    # 11. Structural diff & version update risk classification per lane
+    # 11. Structural diff & version update risk classification per lane (G1)
+    if pr_data.get("diff_truncated"):
+        return AutoMergeDecision(
+            False,
+            matched_lane,
+            "Rejected: missing or truncated diff patch (diff_truncated=true).",
+            merge_method,
+            classification="review-required",
+        )
     file_diffs = pr_data.get("file_diffs") if isinstance(pr_data.get("file_diffs"), dict) else {}
     pr_title = str(pr_data.get("title") or pr_data.get("pr_title") or "").strip()
     classified_updates: list[dict[str, Any]] = []
 
-    if matched_lane == "dependabot_pip":
-        raw_updates = pr_data.get("dependency_updates")
-        updates_list: list[dict[str, str]] = []
-        if isinstance(raw_updates, list) and raw_updates:
-            for item in raw_updates:
-                if isinstance(item, dict):
-                    updates_list.append(
-                        {
-                            "name": str(item.get("name") or item.get("package") or ""),
-                            "from": str(item.get("from") or item.get("old_version") or ""),
-                            "to": str(item.get("to") or item.get("new_version") or ""),
-                        }
-                    )
-        if file_diffs:
-            diff_updates, diff_errors = _extract_pip_updates_from_diffs(file_diffs)
-            if diff_errors:
-                return AutoMergeDecision(
-                    False,
-                    matched_lane,
-                    f"Rejected: invalid dependency diff content: {'; '.join(diff_errors)}",
-                    merge_method,
-                )
-            if not updates_list:
-                updates_list = diff_updates
-        if not updates_list and pr_title:
-            m = DEP_BUMP_TITLE_RE.search(pr_title)
-            if m:
-                updates_list.append({"name": m.group(1), "from": m.group(2), "to": m.group(3)})
-
-        if pr_data.get("require_diff_metadata") and not (raw_updates or file_diffs):
+    if file_diffs:
+        missing_patches = [
+            f
+            for f in changed_files
+            if f not in file_diffs
+            or not isinstance(file_diffs.get(f), str)
+            or not str(file_diffs.get(f) or "").strip()
+        ]
+        if missing_patches:
             return AutoMergeDecision(
                 False,
                 matched_lane,
-                "Rejected: missing dependency diff or version metadata.",
+                f"Rejected: missing or truncated diff patch for {', '.join(missing_patches)}.",
+                merge_method,
+                classification="review-required",
+            )
+        extra_diff_files = [
+            f
+            for f in sorted(file_diffs.keys())
+            if f not in changed_files
+            and not any(fnmatch.fnmatch(f, pat) for pat in allowed_patterns)
+        ]
+        if extra_diff_files:
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                f"Rejected: file_diffs contains disallowed path(s): {', '.join(extra_diff_files)}.",
                 merge_method,
             )
-        if ("dependency_updates" in pr_data or "file_diffs" in pr_data or "title" in pr_data or "pr_title" in pr_data) and not updates_list:
+
+    if matched_lane == "dependabot_pip":
+        raw_updates = pr_data.get("dependency_updates")
+        supplied_list: list[dict[str, str]] = []
+        if isinstance(raw_updates, list) and raw_updates:
+            for item in raw_updates:
+                if isinstance(item, dict):
+                    supplied_list.append(
+                        {
+                            "name": str(item.get("name") or item.get("package") or "")
+                            .strip()
+                            .lower()
+                            .replace("_", "-"),
+                            "from": str(item.get("from") or item.get("old_version") or "").strip(),
+                            "to": str(item.get("to") or item.get("new_version") or "").strip(),
+                            "change": str(item.get("change") or "updated").strip(),
+                        }
+                    )
+
+        diff_updates: list[dict[str, str]] = []
+        diff_errors: list[str] = []
+        if file_diffs:
+            diff_updates, diff_errors = _extract_pip_updates_from_diffs(file_diffs)
+
+        if diff_updates:
+            active_updates = list(diff_updates)
+        elif supplied_list:
+            active_updates = list(supplied_list)
+        elif pr_title:
+            m = DEP_BUMP_TITLE_RE.search(pr_title)
+            if m:
+                active_updates = [
+                    {
+                        "name": m.group(1).strip().lower().replace("_", "-"),
+                        "from": m.group(2).strip(),
+                        "to": m.group(3).strip(),
+                        "change": "updated",
+                    }
+                ]
+            else:
+                active_updates = []
+        else:
+            active_updates = []
+
+        # Classify EVERY update item first so `decision.updates` is always complete
+        for upd in active_updates:
+            kind, safe, reason = classify_dependency_change(upd)
+            classified_updates.append({**upd, "kind": kind, "safe": safe, "reason": reason})
+
+        # Also classify any supplied_list items not already in classified_updates so conflicting metadata is visible
+        if supplied_list and diff_updates:
+            diff_tuples = {
+                (u["name"], u["from"], u["to"], u.get("change", "updated")) for u in diff_updates
+            }
+            supplied_tuples = {
+                (u["name"], u["from"], u["to"], u.get("change", "updated")) for u in supplied_list
+            }
+            for sup in supplied_list:
+                st = (sup["name"], sup["from"], sup["to"], sup.get("change", "updated"))
+                if st not in diff_tuples:
+                    kind, safe, reason = classify_dependency_change(sup)
+                    classified_updates.append(
+                        {**sup, "kind": kind, "safe": safe, "reason": f"metadata-mismatch: {reason}"}
+                    )
+            if supplied_tuples != diff_tuples:
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    "Rejected: supplied dependency_updates metadata disagrees with authoritative diff content.",
+                    merge_method,
+                    classification="review-required",
+                    updates=classified_updates,
+                )
+
+        if pr_title and diff_updates:
+            tm = DEP_BUMP_TITLE_RE.search(pr_title)
+            if tm:
+                t_pkg = tm.group(1).strip().lower().replace("_", "-")
+                t_old = tm.group(2).strip()
+                t_new = tm.group(3).strip()
+                pkg_in_diff = [u for u in diff_updates if u["name"] == t_pkg]
+                if not pkg_in_diff or any(
+                    u["from"] != t_old or u["to"] != t_new for u in pkg_in_diff
+                ):
+                    return AutoMergeDecision(
+                        False,
+                        matched_lane,
+                        f"Rejected: PR title ({t_pkg} {t_old} -> {t_new}) disagrees with authoritative diff content.",
+                        merge_method,
+                        classification="review-required",
+                        updates=classified_updates,
+                    )
+
+        if pr_data.get("require_diff_metadata") and not file_diffs:
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                "Rejected: missing authoritative file_diffs for dependency PR.",
+                merge_method,
+                updates=classified_updates,
+            )
+
+        if diff_errors:
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                f"Rejected: invalid dependency diff content: {'; '.join(diff_errors)}",
+                merge_method,
+                classification="review-required",
+                updates=classified_updates,
+            )
+
+        if not classified_updates:
             return AutoMergeDecision(
                 False,
                 matched_lane,
                 "Rejected: missing or unparseable dependency version transition metadata.",
                 merge_method,
+                updates=classified_updates,
             )
 
-        for upd in updates_list:
-            kind, safe, reason = classify_version_update(upd.get("from", ""), upd.get("to", ""))
+        unsafe_items = [u for u in classified_updates if not u.get("safe")]
+        if unsafe_items:
+            first_bad = unsafe_items[0]
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                f"Rejected: {first_bad.get('name')}: {first_bad.get('reason')}",
+                merge_method,
+                classification="review-required",
+                updates=classified_updates,
+            )
+
+    elif matched_lane == "dependabot_actions":
+        raw_updates = pr_data.get("action_updates")
+        supplied_actions: list[dict[str, str]] = []
+        if isinstance(raw_updates, list) and raw_updates:
+            for item in raw_updates:
+                if isinstance(item, dict):
+                    supplied_actions.append(
+                        {
+                            "name": str(item.get("name") or item.get("action") or "").strip(),
+                            "from": str(item.get("from") or item.get("old_version") or "")
+                            .strip()
+                            .lstrip("v"),
+                            "to": str(item.get("to") or item.get("new_version") or "")
+                            .strip()
+                            .lstrip("v"),
+                            "change": str(item.get("change") or "updated").strip(),
+                        }
+                    )
+
+        diff_updates = []
+        diff_errors = []
+        if file_diffs:
+            diff_updates, diff_errors = _extract_action_updates_from_diffs(file_diffs)
+
+        active_actions = list(diff_updates) if diff_updates else list(supplied_actions)
+        for upd in active_actions:
+            kind, safe, reason = classify_dependency_change(upd)
             classified_updates.append({**upd, "kind": kind, "safe": safe, "reason": reason})
-            if not safe:
+
+        if supplied_actions and diff_updates:
+            diff_set = {
+                (u["name"].lower(), u["from"].lstrip("v"), u["to"].lstrip("v"))
+                for u in diff_updates
+            }
+            sup_set = {
+                (u["name"].lower(), u["from"].lstrip("v"), u["to"].lstrip("v"))
+                for u in supplied_actions
+            }
+            if sup_set != diff_set:
                 return AutoMergeDecision(
                     False,
                     matched_lane,
-                    f"Rejected: {upd.get('name')}: {reason}",
+                    "Rejected: supplied action_updates metadata disagrees with authoritative workflow diff.",
                     merge_method,
                     classification="review-required",
                     updates=classified_updates,
                 )
 
-    elif matched_lane == "dependabot_actions":
-        raw_updates = pr_data.get("action_updates")
-        updates_list = []
-        if file_diffs:
-            diff_updates, diff_errors = _extract_action_updates_from_diffs(file_diffs)
-            if diff_errors:
-                return AutoMergeDecision(
-                    False,
-                    matched_lane,
-                    f"Rejected: unsafe workflow diff: {'; '.join(diff_errors)}",
-                    merge_method,
-                )
-            updates_list = diff_updates
-        elif isinstance(raw_updates, list) and raw_updates:
-            for item in raw_updates:
-                if isinstance(item, dict):
-                    updates_list.append(
-                        {
-                            "name": str(item.get("name") or item.get("action") or ""),
-                            "from": str(item.get("from") or item.get("old_version") or ""),
-                            "to": str(item.get("to") or item.get("new_version") or ""),
-                        }
-                    )
-        else:
+        if pr_data.get("require_diff_metadata") and not file_diffs:
             return AutoMergeDecision(
                 False,
                 matched_lane,
-                "Rejected: workflow update requires verified file_diffs or action_updates metadata.",
+                "Rejected: missing authoritative file_diffs for workflow update.",
                 merge_method,
+                updates=classified_updates,
             )
 
-        if not updates_list:
+        if diff_errors:
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                f"Rejected: unsafe workflow diff: {'; '.join(diff_errors)}",
+                merge_method,
+                classification="review-required",
+                updates=classified_updates,
+            )
+
+        if not classified_updates:
             return AutoMergeDecision(
                 False,
                 matched_lane,
                 "Rejected: no valid SHA-pinned action updates found in workflow diff.",
                 merge_method,
+                updates=classified_updates,
             )
-        for upd in updates_list:
-            kind, safe, reason = classify_version_update(upd.get("from", ""), upd.get("to", ""))
-            classified_updates.append({**upd, "kind": kind, "safe": safe, "reason": reason})
-            if not safe:
-                return AutoMergeDecision(
-                    False,
-                    matched_lane,
-                    f"Rejected: {upd.get('name')}: {reason}",
-                    merge_method,
-                    classification="review-required",
-                    updates=classified_updates,
-                )
+
+        unsafe_actions = [u for u in classified_updates if not u.get("safe")]
+        if unsafe_actions:
+            first_bad = unsafe_actions[0]
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                f"Rejected: {first_bad.get('name')}: {first_bad.get('reason')}",
+                merge_method,
+                classification="review-required",
+                updates=classified_updates,
+            )
 
     elif matched_lane == "python_bump":
         if ".python-version" not in changed_files:
@@ -1930,98 +2425,249 @@ def evaluate_automerge(
                 merge_method,
                 classification="review-required",
             )
-        provenance = pr_data.get("provenance")
-        if isinstance(provenance, dict):
-            if provenance.get("verified") is False:
+
+        # Also inspect any lockfile diffs in python_bump PRs so unrequested package mutations cannot slip in
+        lock_diffs = {
+            k: v for k, v in file_diffs.items() if k.startswith("requirements")
+        }
+        if lock_diffs:
+            lock_updates, lock_errors = _extract_pip_updates_from_diffs(lock_diffs)
+            if lock_errors or lock_updates:
+                for lu in lock_updates:
+                    kind, safe, reason = classify_dependency_change(lu)
+                    classified_updates.append({**lu, "kind": kind, "safe": False, "reason": reason})
                 return AutoMergeDecision(
                     False,
                     matched_lane,
-                    "Rejected: unverified python-bump proposal provenance.",
+                    "Rejected: python_bump PR contains unexpected package or hash mutations in lockfiles.",
+                    merge_method,
+                    classification="review-required",
+                    updates=classified_updates,
+                )
+
+        py_upd = pr_data.get("python_update")
+        sup_old_py = ""
+        sup_new_py = ""
+        if isinstance(py_upd, dict):
+            sup_old_py = str(py_upd.get("from") or py_upd.get("old_version") or "").strip()
+            sup_new_py = str(py_upd.get("to") or py_upd.get("new_version") or "").strip()
+
+        diff_old_py = ""
+        diff_new_py = ""
+        if ".python-version" in file_diffs:
+            patch_text = str(file_diffs[".python-version"])
+            rem_lines: list[str] = []
+            add_lines: list[str] = []
+            for ln in patch_text.splitlines():
+                if ln.startswith(("+++", "---", "@@")):
+                    continue
+                if ln.startswith("-"):
+                    val = ln[1:].strip()
+                    if val:
+                        rem_lines.append(val)
+                elif ln.startswith("+"):
+                    val = ln[1:].strip()
+                    if val:
+                        add_lines.append(val)
+            if len(rem_lines) != 1 or len(add_lines) != 1:
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    "Rejected: .python-version diff must contain exactly one removed and one added version line.",
                     merge_method,
                 )
-            wf_name = str(provenance.get("workflow") or "")
-            if wf_name and wf_name not in (
-                "Python Version Bump",
-                ".github/workflows/python_version_bump.yml",
+            diff_old_py = rem_lines[0]
+            diff_new_py = add_lines[0]
+
+        title_old_py = ""
+        title_new_py = ""
+        if pr_title:
+            m = PY_BUMP_TITLE_RE.match(pr_title)
+            if m:
+                title_old_py = (m.group(1) or "").strip()
+                title_new_py = (m.group(2) or "").strip()
+
+        old_py = diff_old_py or sup_old_py or title_old_py
+        new_py = diff_new_py or sup_new_py or title_new_py
+
+        if diff_new_py and sup_new_py and (diff_new_py != sup_new_py or (diff_old_py and sup_old_py and diff_old_py != sup_old_py)):
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                "Rejected: python_update metadata disagrees with .python-version diff content.",
+                merge_method,
+                classification="review-required",
+            )
+        if diff_new_py and title_new_py and (diff_new_py != title_new_py or (diff_old_py and title_old_py and diff_old_py != title_old_py)):
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                "Rejected: PR title disagrees with .python-version diff content.",
+                merge_method,
+                classification="review-required",
+            )
+
+        if not new_py:
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                "Rejected: unverified python-bump version transition or missing .python-version metadata.",
+                merge_method,
+            )
+
+        new_tuple = parse_exact_version(new_py)
+        if new_tuple is None:
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                f"Rejected: invalid target Python version {new_py!r}.",
+                merge_method,
+            )
+        if old_py:
+            old_tuple = parse_exact_version(old_py)
+            if old_tuple is None:
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: invalid previous Python version {old_py!r}.",
+                    merge_method,
+                )
+            if new_tuple[0] != old_tuple[0] or new_tuple[1] != old_tuple[1]:
+                classified_updates.append(
+                    {
+                        "name": "python",
+                        "from": old_py,
+                        "to": new_py,
+                        "kind": "minor" if new_tuple[0] == old_tuple[0] else "major",
+                        "safe": False,
+                    }
+                )
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: Python minor/major transition {old_py} -> {new_py} requires human review.",
+                    merge_method,
+                    classification="review-required",
+                    updates=classified_updates,
+                )
+            if new_tuple[2] <= old_tuple[2]:
+                classified_updates.append(
+                    {"name": "python", "from": old_py, "to": new_py, "kind": "downgrade", "safe": False}
+                )
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: Python patch downgrade or no-op {old_py} -> {new_py}.",
+                    merge_method,
+                    updates=classified_updates,
+                )
+        classified_updates.append(
+            {"name": "python", "from": old_py, "to": new_py, "kind": "patch", "safe": True}
+        )
+
+    # 12. Publisher & proposal provenance verification (G2: never optional when required by policy)
+    require_provenance = bool(pol.get("require_provenance", True))
+    provenance = pr_data.get("provenance")
+    if require_provenance:
+        if not isinstance(provenance, dict):
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                "Rejected: missing publisher/proposal provenance object.",
+                merge_method,
+                updates=classified_updates,
+            )
+        if provenance.get("verified") is not True:
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                "Rejected: publisher/proposal provenance is not verified.",
+                merge_method,
+                updates=classified_updates,
+            )
+        prov_sha = str(provenance.get("head_sha") or "").strip()
+        if head_sha and prov_sha and prov_sha != head_sha:
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                f"Rejected: provenance head_sha {prov_sha!r} does not match PR head_sha {head_sha!r}.",
+                merge_method,
+                classification="deferred",
+                updates=classified_updates,
+            )
+        if matched_lane in ("dependabot_pip", "dependabot_actions"):
+            prov_pub = str(provenance.get("publisher") or "").strip()
+            prov_src = str(provenance.get("source") or "").strip().lower()
+            if prov_pub not in allowed_lane_authors or prov_src not in (
+                "github-dependabot",
+                "dependabot",
             ):
                 return AutoMergeDecision(
                     False,
                     matched_lane,
-                    f"Rejected: unexpected proposer workflow provenance {wf_name!r}.",
+                    f"Rejected: untrusted Dependabot provenance (publisher={prov_pub!r}, source={prov_src!r}).",
                     merge_method,
+                    updates=classified_updates,
                 )
-
-        py_upd = pr_data.get("python_update")
-        old_py = ""
-        new_py = ""
-        if isinstance(py_upd, dict):
-            old_py = str(py_upd.get("from") or py_upd.get("old_version") or "").strip()
-            new_py = str(py_upd.get("to") or py_upd.get("new_version") or "").strip()
-        if (not old_py or not new_py) and ".python-version" in file_diffs:
-            patch_text = str(file_diffs[".python-version"])
-            for ln in patch_text.splitlines():
-                if ln.startswith("-") and not ln.startswith("---"):
-                    old_py = ln[1:].strip()
-                elif ln.startswith("+") and not ln.startswith("+++"):
-                    new_py = ln[1:].strip()
-        if not new_py and pr_title:
-            m = PY_BUMP_TITLE_RE.match(pr_title)
-            if m:
-                if m.group(1):
-                    old_py = old_py or m.group(1)
-                new_py = m.group(2)
-
-        if ("python_update" in pr_data or "file_diffs" in pr_data or "title" in pr_data or "pr_title" in pr_data) and not new_py:
-            return AutoMergeDecision(
-                False,
-                matched_lane,
-                "Rejected: unverified python-bump title/provenance or missing Python version metadata.",
-                merge_method,
-            )
-
-        if new_py:
-            new_tuple = parse_exact_version(new_py)
-            if new_tuple is None:
+        elif matched_lane == "python_bump":
+            wf_ident = str(provenance.get("workflow") or "").strip()
+            wf_name = str(provenance.get("workflow_name") or "").strip()
+            wf_run_id = provenance.get("workflow_run_id")
+            wf_conc = str(provenance.get("workflow_conclusion") or "").strip().lower()
+            if (
+                wf_ident not in (trusted_proposer_paths | trusted_proposer_names)
+                and wf_name not in trusted_proposer_names
+            ):
                 return AutoMergeDecision(
                     False,
                     matched_lane,
-                    f"Rejected: invalid target Python version {new_py!r}.",
+                    f"Rejected: unexpected proposer workflow provenance {wf_ident or wf_name!r}.",
                     merge_method,
+                    updates=classified_updates,
                 )
-            if old_py:
-                old_tuple = parse_exact_version(old_py)
-                if old_tuple is None:
-                    return AutoMergeDecision(
-                        False,
-                        matched_lane,
-                        f"Rejected: invalid previous Python version {old_py!r}.",
-                        merge_method,
-                    )
-                if new_tuple[0] != old_tuple[0] or new_tuple[1] != old_tuple[1]:
-                    return AutoMergeDecision(
-                        False,
-                        matched_lane,
-                        f"Rejected: Python minor/major transition {old_py} -> {new_py} requires human review.",
-                        merge_method,
-                        classification="review-required",
-                    )
-                if new_tuple[2] <= old_tuple[2]:
-                    return AutoMergeDecision(
-                        False,
-                        matched_lane,
-                        f"Rejected: Python patch downgrade or no-op {old_py} -> {new_py}.",
-                        merge_method,
-                    )
-            classified_updates.append(
-                {"name": "python", "from": old_py, "to": new_py, "kind": "patch", "safe": True}
-            )
+            if not wf_run_id or wf_conc != "success":
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: proposer workflow run provenance is missing or unsuccessful (run_id={wf_run_id!r}, conclusion={wf_conc!r}).",
+                    merge_method,
+                    updates=classified_updates,
+                )
+            if provenance.get("review_required") is True or provenance.get("auto_merge_eligible") is False:
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    "Rejected: proposer provenance marks this update as review-required.",
+                    merge_method,
+                    classification="review-required",
+                    updates=classified_updates,
+                )
+    elif isinstance(provenance, dict) and provenance.get("verified") is False:
+        return AutoMergeDecision(
+            False,
+            matched_lane,
+            "Rejected: unverified proposal provenance.",
+            merge_method,
+            updates=classified_updates,
+        )
 
-    # 12. Check runs, commit statuses, and security/advisory evidence
+    # 13. Check runs, producing workflow identity, complete mandatory gate set, and real security evidence (G2)
+    if not head_sha:
+        return AutoMergeDecision(
+            False,
+            matched_lane,
+            "Rejected: missing PR head_sha for check verification.",
+            merge_method,
+            updates=classified_updates,
+        )
+
     check_runs_raw = pr_data.get("check_runs")
     checks_raw = pr_data.get("checks")
     checks_total = pr_data.get("checks_total_count")
 
-    check_map: dict[str, str] = {}
+    # Convert structured `checks` list if `check_runs` is not passed, but reject bare name->status dicts
+    # when full workflow/app/SHA provenance is required.
+    structured_runs: list[dict[str, Any]] = []
     if isinstance(check_runs_raw, list):
         if isinstance(checks_total, int) and checks_total > len(check_runs_raw):
             return AutoMergeDecision(
@@ -2030,137 +2676,173 @@ def evaluate_automerge(
                 f"Rejected: check_runs pagination is incomplete ({len(check_runs_raw)}/{checks_total}).",
                 merge_method,
                 classification="deferred",
+                updates=classified_updates,
             )
-        for run in check_runs_raw:
-            if not isinstance(run, dict) or not run.get("name"):
-                continue
-            name = str(run["name"])
-            run_sha = str(run.get("head_sha") or "").strip()
-            if head_sha and run_sha and run_sha != head_sha:
-                return AutoMergeDecision(
-                    False,
-                    matched_lane,
-                    f"Rejected: check run {name!r} is for stale head {run_sha!r} (expected {head_sha!r}).",
-                    merge_method,
-                    classification="deferred",
-                )
-            app_slug = str(
-                run.get("app_slug") or (run.get("app") or {}).get("slug") or ""
-            ).strip().lower()
-            if app_slug and app_slug not in trusted_apps:
-                return AutoMergeDecision(
-                    False,
-                    matched_lane,
-                    f"Rejected: check run {name!r} comes from untrusted app {app_slug!r}.",
-                    merge_method,
-                )
-            run_status = str(run.get("status") or "COMPLETED").strip().upper()
-            conclusion = str(run.get("conclusion") or "").strip().upper()
-            if run_status != "COMPLETED":
-                check_map[name] = run_status
-            else:
-                check_map[name] = conclusion or "MISSING"
-
-    if isinstance(checks_raw, dict):
-        for k, v in checks_raw.items():
-            check_map.setdefault(str(k), str(v or "").strip().upper())
+        structured_runs = [r for r in check_runs_raw if isinstance(r, dict) and r.get("name")]
     elif isinstance(checks_raw, list):
-        for item in checks_raw:
-            if isinstance(item, dict) and item.get("name"):
-                name = str(item["name"])
-                run_sha = str(item.get("head_sha") or "").strip()
-                if head_sha and run_sha and run_sha != head_sha:
+        structured_runs = [r for r in checks_raw if isinstance(r, dict) and r.get("name")]
+
+    if not structured_runs:
+        if isinstance(checks_raw, dict) and checks_raw:
+            # Bare dict checks have no head_sha, app_slug, producing workflow, or security step evidence.
+            for check_name, raw_state in sorted(checks_raw.items()):
+                st = str(raw_state or "").strip().upper()
+                if st in ("PENDING", "IN_PROGRESS", "QUEUED", "WAITING", "REQUESTED"):
                     return AutoMergeDecision(
                         False,
                         matched_lane,
-                        f"Rejected: check {name!r} is for stale head {run_sha!r}.",
+                        f"Rejected: check {check_name!r} is still {st!r}.",
                         merge_method,
                         classification="deferred",
+                        updates=classified_updates,
                     )
-                app_slug = str(
-                    item.get("app_slug") or (item.get("app") or {}).get("slug") or ""
-                ).strip().lower()
-                if app_slug and app_slug not in trusted_apps:
+                if st not in ("SUCCESS", "PASSED"):
                     return AutoMergeDecision(
                         False,
                         matched_lane,
-                        f"Rejected: check {name!r} comes from untrusted app {app_slug!r}.",
+                        f"Rejected: check {check_name!r} has non-passing state {st or 'EMPTY'!r}.",
                         merge_method,
+                        updates=classified_updates,
                     )
-                run_status = str(item.get("status") or "COMPLETED").strip().upper()
-                conclusion = str(item.get("conclusion") or item.get("state") or "").strip().upper()
-                check_map[name] = run_status if run_status != "COMPLETED" else (conclusion or "MISSING")
-
-    if not check_map:
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                "Rejected: check evidence lacks required head_sha, app_slug, producing workflow identity, and complete mandatory gate set.",
+                merge_method,
+                updates=classified_updates,
+            )
         return AutoMergeDecision(
             False,
             matched_lane,
             "Rejected: zero checks reported on PR head; refusing to manufacture passing checks.",
             merge_method,
             classification="deferred",
+            updates=classified_updates,
         )
 
-    for check_name, state_val in sorted(check_map.items()):
-        if state_val in ("PENDING", "IN_PROGRESS", "QUEUED", "WAITING", "REQUESTED"):
+    all_mandatory_names: set[str] = {
+        alias for aliases in mandatory_groups.values() for alias in aliases
+    }
+    latest_by_check_name: dict[str, dict[str, Any]] = {}
+    latest_rank_by_check_name: dict[str, tuple[int, int, int]] = {}
+
+    for idx, run in enumerate(structured_runs):
+        name = str(run.get("name") or "").strip()
+        run_sha = str(run.get("head_sha") or "").strip()
+        if not run_sha or run_sha != head_sha:
             return AutoMergeDecision(
                 False,
                 matched_lane,
-                f"Rejected: check {check_name!r} is still {state_val!r}.",
+                f"Rejected: check run {name!r} has missing or stale head_sha {run_sha!r} (expected {head_sha!r}).",
+                merge_method,
+                classification="deferred" if run_sha else "rejected",
+                updates=classified_updates,
+            )
+
+        app_slug = (
+            str(run.get("app_slug") or (run.get("app") or {}).get("slug") or "")
+            .strip()
+            .lower()
+        )
+        if not app_slug or app_slug not in trusted_apps:
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                f"Rejected: check run {name!r} has missing or untrusted app_slug {app_slug!r}.",
+                merge_method,
+                updates=classified_updates,
+            )
+
+        wf_path = str(run.get("workflow_path") or "").strip()
+        wf_name = str(run.get("workflow_name") or "").strip()
+        run_id_val = run.get("run_id")
+        run_id_str = str(run_id_val).strip() if run_id_val is not None else ""
+
+        if name in all_mandatory_names:
+            is_trusted_ci_wf = (
+                wf_path in trusted_ci_paths
+                and (not wf_name or wf_name in trusted_ci_names)
+                and bool(run_id_str)
+            )
+            if not is_trusted_ci_wf:
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: mandatory check {name!r} has missing or untrusted producing workflow provenance (workflow_path={wf_path!r}, workflow_name={wf_name!r}, run_id={run_id_str!r}).",
+                    merge_method,
+                    updates=classified_updates,
+                )
+
+        rid_num = int(run_id_str) if run_id_str.isdigit() else 0
+        att_val = run.get("run_attempt")
+        att_num = int(att_val) if str(att_val or "").isdigit() else 1
+        id_val = run.get("id")
+        id_num = int(id_val) if str(id_val or "").isdigit() else idx
+        rank = (rid_num, att_num, id_num)
+        if name not in latest_rank_by_check_name or rank >= latest_rank_by_check_name[name]:
+            latest_rank_by_check_name[name] = rank
+            latest_by_check_name[name] = run
+
+    trusted_ci_runs_by_id: dict[str, list[dict[str, Any]]] = {}
+    for name, run in sorted(latest_by_check_name.items()):
+        run_status = str(run.get("status") or "").strip().upper()
+        conclusion = str(run.get("conclusion") or run.get("state") or "").strip().upper()
+        if run_status != "COMPLETED":
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                f"Rejected: check {name!r} is still {run_status or 'INCOMPLETE'!r}.",
                 merge_method,
                 classification="deferred",
+                updates=classified_updates,
             )
-        if state_val in (
-            "FAILURE",
-            "ERROR",
-            "TIMED_OUT",
-            "CANCELLED",
-            "ACTION_REQUIRED",
-            "STALE",
-            "SKIPPED",
-            "NEUTRAL",
-            "MISSING",
-            "",
-        ):
+        if conclusion not in ("SUCCESS", "PASSED"):
             return AutoMergeDecision(
                 False,
                 matched_lane,
-                f"Rejected: check {check_name!r} has non-passing state {state_val or 'EMPTY'!r}.",
+                f"Rejected: check {name!r} has non-passing conclusion {conclusion or 'MISSING'!r}.",
                 merge_method,
+                updates=classified_updates,
             )
+        if name in all_mandatory_names:
+            run_id_str = str(run.get("run_id") or "").strip()
+            trusted_ci_runs_by_id.setdefault(run_id_str, []).append(run)
 
-    for req_check in required_checks:
-        state_val = check_map.get(req_check)
-        if state_val not in ("SUCCESS", "PASSED"):
-            return AutoMergeDecision(
-                False,
-                matched_lane,
-                f"Rejected: required check {req_check!r} is {state_val or 'MISSING'!r}.",
-                merge_method,
-                classification="deferred" if state_val is None else "rejected",
-            )
+    if not trusted_ci_runs_by_id:
+        return AutoMergeDecision(
+            False,
+            matched_lane,
+            "Rejected: no check runs from trusted CI workflow (.github/workflows/ci.yml) found on PR head.",
+            merge_method,
+            classification="deferred",
+            updates=classified_updates,
+        )
 
-    # Also verify blocking checks if full CI check set is supplied
-    full_names = pol_root.get("ci", {}).get("blocking_check_run_names", [])
-    if any(n in check_map for n in full_names if n != "maintenance-ci"):
-        for req_name in full_names:
-            if check_map.get(req_name) not in ("SUCCESS", "PASSED"):
-                return AutoMergeDecision(
-                    False,
-                    matched_lane,
-                    f"Rejected: mandatory CI check {req_name!r} is {check_map.get(req_name) or 'MISSING'!r}.",
-                    merge_method,
-                )
-    elif any(n in check_map for n in blocking_checks):
-        for req_short in blocking_checks:
-            if req_short in check_map and check_map[req_short] not in ("SUCCESS", "PASSED"):
-                return AutoMergeDecision(
-                    False,
-                    matched_lane,
-                    f"Rejected: mandatory check {req_short!r} is {check_map[req_short]!r}.",
-                    merge_method,
-                )
+    # Select the latest CI workflow run_id on head_sha and require that ALL mandatory check groups
+    # succeeded in that single workflow run (preventing partial/split rerun bypasses).
+    latest_run_id = sorted(
+        trusted_ci_runs_by_id.keys(),
+        key=lambda rid: (int(rid) if rid.isdigit() else 0, rid),
+    )[-1]
+    latest_ci_runs = trusted_ci_runs_by_id[latest_run_id]
+    latest_ci_names = {str(r.get("name") or "").strip() for r in latest_ci_runs}
 
-    # Legacy commit statuses check
+    missing_groups: list[str] = []
+    for group_key, accepted_names in mandatory_groups.items():
+        if not any(alias in latest_ci_names for alias in accepted_names):
+            missing_groups.append(accepted_names[0] if accepted_names else group_key)
+
+    if missing_groups:
+        return AutoMergeDecision(
+            False,
+            matched_lane,
+            f"Rejected: incomplete mandatory CI check set on run {latest_run_id}; missing: {', '.join(missing_groups)}.",
+            merge_method,
+            classification="deferred",
+            updates=classified_updates,
+        )
+
+    # 14. Legacy commit statuses check
     combined_status = str(pr_data.get("combined_status") or "").strip().lower()
     if combined_status in ("failure", "error", "pending"):
         return AutoMergeDecision(
@@ -2169,6 +2851,7 @@ def evaluate_automerge(
             f"Rejected: commit combined_status is {combined_status!r}.",
             merge_method,
             classification="deferred" if combined_status == "pending" else "rejected",
+            updates=classified_updates,
         )
     commit_statuses = pr_data.get("commit_statuses")
     if isinstance(commit_statuses, list):
@@ -2182,30 +2865,165 @@ def evaluate_automerge(
                         matched_lane,
                         f"Rejected: commit status {ctx_name!r} is {st_val!r}.",
                         merge_method,
+                        classification="deferred" if st_val == "pending" else "rejected",
+                        updates=classified_updates,
                     )
 
-    # Security / advisory evidence check
+    # 15. Real security scan evidence & advisory check (G2: never trust advisory wrapper conclusion alone)
     sec_audit = str(pr_data.get("security_audit") or "").strip().lower()
-    if sec_audit in ("failure", "failed", "error", "unavailable", "missing", "timed_out"):
+    if sec_audit in ("failure", "failed", "error", "unavailable", "missing", "timed_out", "vulnerable"):
         return AutoMergeDecision(
             False,
             matched_lane,
             f"Rejected: security audit evidence is {sec_audit!r}.",
             merge_method,
             classification="review-required",
+            updates=classified_updates,
         )
-    for sec_name in security_checks:
-        if sec_name in check_map and check_map[sec_name] not in ("SUCCESS", "PASSED"):
+
+    latest_pip_audit_runs = [
+        r
+        for r in latest_ci_runs
+        if str(r.get("name") or "").strip() in mandatory_groups.get("pip-audit", security_checks)
+    ]
+    if not latest_pip_audit_runs:
+        return AutoMergeDecision(
+            False,
+            matched_lane,
+            "Rejected: required pip-audit security check run is missing from CI run.",
+            merge_method,
+            classification="review-required",
+            updates=classified_updates,
+        )
+
+    pip_audit_run = latest_pip_audit_runs[-1]
+    security_scan = pr_data.get("security_scan") if isinstance(pr_data.get("security_scan"), dict) else {}
+    if bool(pol.get("require_security_scan_evidence", True)) and not security_scan:
+        return AutoMergeDecision(
+            False,
+            matched_lane,
+            "Rejected: required security_scan evidence is missing.",
+            merge_method,
+            classification="review-required",
+            updates=classified_updates,
+        )
+
+    # Inspect inner steps of the pip-audit job (because the outer job has continue-on-error: true)
+    audit_steps = pip_audit_run.get("steps") if isinstance(pip_audit_run.get("steps"), list) else []
+    real_audit_steps = [
+        s
+        for s in audit_steps
+        if isinstance(s, dict)
+        and any(
+            tok in str(s.get("name") or "").lower()
+            for tok in ("audit", "pip-audit", "osv", "vulnerability")
+        )
+    ]
+
+    if not real_audit_steps and not security_scan.get("present"):
+        return AutoMergeDecision(
+            False,
+            matched_lane,
+            "Rejected: pip-audit check run has only outer wrapper status without inner audit step or security_scan evidence.",
+            merge_method,
+            classification="review-required",
+            updates=classified_updates,
+        )
+
+    for st_item in audit_steps:
+        if not isinstance(st_item, dict):
+            continue
+        st_name = str(st_item.get("name") or "step")
+        st_status = str(st_item.get("status") or "completed").strip().lower()
+        st_conc = str(st_item.get("conclusion") or "").strip().lower()
+        if st_status != "completed" or st_conc not in ("success", "skipped"):
             return AutoMergeDecision(
                 False,
                 matched_lane,
-                f"Rejected: security check {sec_name!r} is {check_map[sec_name]!r}.",
+                f"Rejected: pip-audit inner step {st_name!r} concluded with {st_conc or st_status!r} inside advisory wrapper.",
                 merge_method,
                 classification="review-required",
+                updates=classified_updates,
             )
 
-    advisories = pr_data.get("advisories")
-    if isinstance(advisories, list) and advisories:
+    for st_item in real_audit_steps:
+        st_name = str(st_item.get("name") or "audit")
+        st_conc = str(st_item.get("conclusion") or "").strip().lower()
+        if st_conc != "success":
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                f"Rejected: pip-audit inner scan step {st_name!r} did not succeed (conclusion={st_conc!r}).",
+                merge_method,
+                classification="review-required",
+                updates=classified_updates,
+            )
+
+    if security_scan:
+        scan_status = str(security_scan.get("status") or "").strip().lower()
+        step_conc = str(security_scan.get("step_conclusion") or "").strip().lower()
+        scan_sha = str(security_scan.get("head_sha") or "").strip()
+        if scan_sha and scan_sha != head_sha:
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                f"Rejected: security_scan head_sha {scan_sha!r} does not match PR head_sha {head_sha!r}.",
+                merge_method,
+                classification="deferred",
+                updates=classified_updates,
+            )
+        if step_conc and step_conc != "success":
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                f"Rejected: security_scan step_conclusion is {step_conc!r} despite advisory wrapper.",
+                merge_method,
+                classification="review-required",
+                updates=classified_updates,
+            )
+        if scan_status and scan_status != "clean":
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                f"Rejected: security_scan status is {scan_status!r} (expected 'clean').",
+                merge_method,
+                classification="review-required",
+                updates=classified_updates,
+            )
+
+    # Collect findings from advisories, security_scan.findings, pip-audit output_title/summary/text, and annotations
+    raw_findings: list[str] = []
+    for src_list in (
+        pr_data.get("advisories"),
+        security_scan.get("findings") if security_scan else None,
+        pip_audit_run.get("findings"),
+    ):
+        if isinstance(src_list, list):
+            for item in src_list:
+                fid = str(item.get("id") if isinstance(item, dict) else item).strip()
+                if fid and fid not in raw_findings:
+                    raw_findings.append(fid)
+
+    annotations_text_parts: list[str] = []
+    if isinstance(pip_audit_run.get("annotations"), list):
+        for ann in pip_audit_run["annotations"]:
+            if isinstance(ann, dict):
+                annotations_text_parts.append(str(ann.get("message") or ""))
+                annotations_text_parts.append(str(ann.get("title") or ""))
+            else:
+                annotations_text_parts.append(str(ann))
+
+    text_findings = _extract_security_findings_from_text(
+        str(pip_audit_run.get("output_title") or ""),
+        str(pip_audit_run.get("output_summary") or ""),
+        str(pip_audit_run.get("output_text") or ""),
+        "\n".join(annotations_text_parts),
+    )
+    for tf in text_findings:
+        if tf not in raw_findings:
+            raw_findings.append(tf)
+
+    if raw_findings:
         waivers = pol.get("waivers") or []
         now_dt = datetime.datetime.now(datetime.timezone.utc)
         active_waiver_ids: set[str] = set()
@@ -2216,18 +3034,15 @@ def evaluate_automerge(
             exp_dt = parse_iso_timestamp(str(w.get("expires_at") or ""))
             if w_id and exp_dt and exp_dt > now_dt:
                 active_waiver_ids.add(w_id)
-        unwaived = [
-            str(a.get("id") if isinstance(a, dict) else a)
-            for a in advisories
-            if str(a.get("id") if isinstance(a, dict) else a) not in active_waiver_ids
-        ]
+        unwaived = [fid for fid in raw_findings if fid not in active_waiver_ids]
         if unwaived:
             return AutoMergeDecision(
                 False,
                 matched_lane,
-                f"Rejected: unresolved security advisories: {', '.join(unwaived)}.",
+                f"Rejected: unresolved security advisories from pip-audit scan: {', '.join(unwaived)}.",
                 merge_method,
                 classification="review-required",
+                updates=classified_updates,
             )
 
     return AutoMergeDecision(
@@ -2305,7 +3120,9 @@ def render_bump_pr_body(
         f"| Previous `.python-version` | `{selection.current_version}` |\n"
         f"| Selected `.python-version` | `{selection.selected_version}` |\n"
         f"| Update classification | `{selection.update_kind}` (`{selection.status}`) |\n"
+        f"| Review required | `{str(selection.review_required).lower()}` |\n"
         f"| Auto-merge eligible | `{str(selection.auto_merge_eligible).lower()}` |\n"
+        f"| Proposer workflow | `.github/workflows/python_version_bump.yml` |\n"
         f"| `ruff.toml` `target-version` | {ruff_line} |\n\n"
         f"## Policy & Compatibility Notes\n\n"
         f"{notes_block}\n\n"
@@ -2467,6 +3284,169 @@ def verify_bump_diff(
     return len(unexpected) == 0, unexpected
 
 
+def compute_candidate_manifest(
+    repo_root: pathlib.Path = REPO_ROOT,
+    policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compute SHA-256 digests of the candidate runtime and lockfiles after validation."""
+    pol = policy or load_policy(repo_root)
+    tracked_files = list(
+        pol.get("python", {}).get(
+            "allowed_bump_files",
+            [".python-version", "ruff.toml", "requirements.txt", "requirements-dev.txt"],
+        )
+    )
+    file_digests: dict[str, str] = {}
+    combined_hasher = hashlib.sha256()
+    for rel in sorted(tracked_files):
+        fpath = repo_root / rel
+        if fpath.is_file():
+            raw = fpath.read_bytes()
+            digest = hashlib.sha256(raw).hexdigest()
+            file_digests[rel] = digest
+            combined_hasher.update(f"{rel}:{digest}\n".encode())
+    return {
+        "python_version": read_python_pin(repo_root, pol),
+        "files": file_digests,
+        "tree_sha256": combined_hasher.hexdigest(),
+    }
+
+
+def verify_candidate_manifest(
+    repo_root: pathlib.Path,
+    expected_manifest: dict[str, Any],
+    policy: dict[str, Any] | None = None,
+) -> tuple[bool, list[str]]:
+    """Verify that the candidate tree to be published matches the validated candidate manifest byte-for-byte."""
+    if not isinstance(expected_manifest, dict) or not expected_manifest.get("tree_sha256"):
+        return False, ["Missing or invalid expected candidate manifest."]
+    actual = compute_candidate_manifest(repo_root, policy)
+    errors: list[str] = []
+    if actual.get("python_version") != expected_manifest.get("python_version"):
+        errors.append(
+            f"Candidate .python-version mismatch: expected {expected_manifest.get('python_version')!r}, got {actual.get('python_version')!r}"
+        )
+    exp_files = expected_manifest.get("files") if isinstance(expected_manifest.get("files"), dict) else {}
+    act_files = actual.get("files") if isinstance(actual.get("files"), dict) else {}
+    for rel in sorted(set(exp_files.keys()) | set(act_files.keys())):
+        if exp_files.get(rel) != act_files.get(rel):
+            errors.append(
+                f"Candidate file digest mismatch for {rel}: expected {exp_files.get(rel)!r}, got {act_files.get(rel)!r}"
+            )
+    if actual.get("tree_sha256") != expected_manifest.get("tree_sha256"):
+        errors.append(
+            f"Candidate tree_sha256 mismatch: expected {expected_manifest.get('tree_sha256')!r}, got {actual.get('tree_sha256')!r}"
+        )
+    return len(errors) == 0, errors
+
+
+def run_candidate_validation_pipeline(
+    repo_root: pathlib.Path,
+    candidate_version: str,
+    old_version: str,
+    *,
+    policy: dict[str, Any] | None = None,
+    review_required: bool = False,
+    registry_runner: Any = None,
+    lock_compiler: Any = None,
+    publisher: Any = None,
+) -> dict[str, Any]:
+    """Execute the proposer's pre-rewrite + rewrite + post-rewrite validation and gated publication pipeline."""
+    pol = policy or load_policy(repo_root)
+    invocations: list[str] = []
+
+    def _default_registry(stage: str) -> bool:
+        ci_script = repo_root / ".github" / "scripts" / "ci.py"
+        res = subprocess.run(
+            [sys.executable, str(ci_script), "run-all", "--with-security"],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return res.returncode == 0
+
+    run_reg = registry_runner or _default_registry
+
+    # 1. Pre-rewrite shared validation registry
+    invocations.append("pre-rewrite-registry")
+    if not run_reg("pre-rewrite"):
+        return {
+            "ok": False,
+            "stage": "pre-rewrite-registry",
+            "published": False,
+            "invocations": invocations,
+            "reason": "Pre-rewrite validation registry failed.",
+        }
+
+    # 2. Rewrite candidate pin, ruff target, and recompile lockfiles
+    invocations.append("rewrite-candidate")
+    changed_files, _ruff_res = apply_python_version(candidate_version, repo_root=repo_root, policy=pol)
+    if lock_compiler is not None:
+        lock_compiler(repo_root, candidate_version)
+    else:
+        for target in pol.get("locks", DEFAULT_POLICY["locks"]).get("targets", []):
+            compiled = compile_lockfile(
+                repo_root,
+                target["input_file"],
+                target["output_file"],
+                target["compile_command"],
+                require_exact_python=False,
+            )
+            (repo_root / target["output_file"]).write_text(compiled, encoding="utf-8")
+            if target["output_file"] not in changed_files:
+                changed_files.append(target["output_file"])
+
+    diff_ok, unexpected = verify_bump_diff(repo_root, pol)
+    if not diff_ok:
+        return {
+            "ok": False,
+            "stage": "verify-bump-diff",
+            "published": False,
+            "invocations": invocations,
+            "reason": f"Unexpected files in candidate diff: {', '.join(unexpected)}",
+        }
+
+    # 3. Post-rewrite shared validation registry on the actual candidate tree
+    invocations.append("post-rewrite-registry")
+    if not run_reg("post-rewrite"):
+        return {
+            "ok": False,
+            "stage": "post-rewrite-registry",
+            "published": False,
+            "invocations": invocations,
+            "reason": "Post-rewrite validation registry failed on candidate tree.",
+        }
+
+    validated_manifest = compute_candidate_manifest(repo_root, pol)
+
+    # 4. Gated publication: verify candidate tree matches validated manifest before publishing
+    published = False
+    if publisher is not None:
+        ok_manifest, manifest_errors = verify_candidate_manifest(repo_root, validated_manifest, pol)
+        if not ok_manifest:
+            return {
+                "ok": False,
+                "stage": "verify-candidate-manifest",
+                "published": False,
+                "invocations": invocations,
+                "reason": "; ".join(manifest_errors),
+            }
+        invocations.append("publish")
+        publisher(repo_root, validated_manifest)
+        published = True
+
+    return {
+        "ok": True,
+        "stage": "complete",
+        "published": published,
+        "invocations": invocations,
+        "manifest": validated_manifest,
+        "changed_files": changed_files,
+        "review_required": review_required,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="cmd")
@@ -2477,6 +3457,8 @@ def main(argv: list[str] | None = None) -> int:
     apply_p = sub.add_parser("apply", help="Apply a selected Python version to .python-version and ruff.toml")
     apply_p.add_argument("--version", required=True, help="Exact X.Y.Z version to apply")
     apply_p.add_argument("--old-version", default="", help="Previous X.Y.Z version for PR body")
+    apply_p.add_argument("--review-required", default="", help="Explicit true/false override for review_required")
+    apply_p.add_argument("--update-kind", default="", help="Explicit update_kind (patch, minor, manual-override)")
 
     bump_p = sub.add_parser("bump", help="Select and apply a policy-bounded Python runtime update")
     bump_p.add_argument("--override", default="", help="Optional manual X.Y.Z override version")
@@ -2491,6 +3473,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Verify .python-version, setup-python pins, SHA pins, and workflow expression rules",
     )
     sub.add_parser("verify-bump-diff", help="Verify only allowlisted runtime files changed")
+
+    sub.add_parser("compute-candidate-manifest", help="Compute SHA-256 manifest of candidate runtime/lock files")
+    vcm_p = sub.add_parser("verify-candidate-manifest", help="Verify candidate runtime/lock files match manifest")
+    vcm_p.add_argument("--expected-json", required=True, help="Inline JSON or @path to expected manifest")
 
     lc_p = sub.add_parser("lock-compile", help="Compile requirements.in and requirements-dev.in")
     lc_p.add_argument("--require-exact-python", action="store_true")
@@ -2524,15 +3510,20 @@ def main(argv: list[str] | None = None) -> int:
         parsed = parse_pin_version(args.version)
         old_parsed = parse_pin_version(old_ver)
         is_minor = parsed[1] != old_parsed[1]
+        explicit_rev = str(getattr(args, "review_required", "") or "").strip().lower()
+        rev_req = is_minor or explicit_rev == "true"
+        upd_kind = str(getattr(args, "update_kind", "") or "").strip() or (
+            "minor" if is_minor else ("manual-override" if rev_req else "patch")
+        )
         sel = SelectionResult(
             current_version=old_ver,
             selected_version=args.version,
             selected_minor=f"{parsed[0]}.{parsed[1]}",
             changed=bool(changed_files),
-            status="review-required" if is_minor else "proposed",
-            update_kind="minor" if is_minor else "patch",
-            review_required=is_minor,
-            auto_merge_eligible=not is_minor,
+            status="review-required" if rev_req else "proposed",
+            update_kind=upd_kind,
+            review_required=rev_req,
+            auto_merge_eligible=not rev_req,
             highest_upstream_version=args.version,
             clamped_by_policy=False,
             reason=f"Applied {args.version} (from {old_ver}).",
@@ -2547,6 +3538,8 @@ def main(argv: list[str] | None = None) -> int:
                 "changed": "true" if changed_files else "false",
                 "old_version": old_ver,
                 "new_version": args.version,
+                "review_required": "true" if rev_req else "false",
+                "auto_merge_eligible": "true" if not rev_req else "false",
                 "ruff_bumped": "true" if ruff_res.changed else "false",
                 "ruff_target": ruff_res.target_version,
                 "ruff_clamped": "true" if ruff_res.clamped else "false",
@@ -2594,6 +3587,31 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
         print("OK: only allowlisted runtime bump files changed.")
+        return 0
+
+    if cmd == "compute-candidate-manifest":
+        manifest_obj = compute_candidate_manifest(REPO_ROOT, load_policy(REPO_ROOT))
+        manifest_json = json.dumps(manifest_obj, separators=(",", ":"), sort_keys=True)
+        write_github_outputs(
+            {
+                "candidate_tree_sha256": str(manifest_obj["tree_sha256"]),
+                "candidate_manifest_json": manifest_json,
+            }
+        )
+        return 0
+
+    if cmd == "verify-candidate-manifest":
+        raw = args.expected_json
+        if raw.startswith("@"):
+            expected_obj = json.loads(pathlib.Path(raw[1:]).read_text(encoding="utf-8"))
+        else:
+            expected_obj = json.loads(raw)
+        ok, errors = verify_candidate_manifest(REPO_ROOT, expected_obj, load_policy(REPO_ROOT))
+        if not ok:
+            for err in errors:
+                print(f"ERROR: {err}", file=sys.stderr)
+            return 1
+        print(f"OK: candidate tree matches validated manifest ({expected_obj.get('tree_sha256')}).")
         return 0
 
     if cmd == "lock-compile":

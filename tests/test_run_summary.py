@@ -332,6 +332,42 @@ def test_run_once_observational_invariants_on_normal_exception_and_save_failure(
                 rep3 = json.loads(report_path.read_text(encoding="utf-8"))
                 assert rep3["execution_result"] == "failed"
                 assert rep3["state"]["local_save_outcome"] == "failed_local"
+
+                # 4. G3: Early initialization failure BEFORE ctx exists (e.g. State.load raising) ->
+                # writes failed report with load_status="not_reached", cards="not_reached", targets.attempted="not_reached"
+                report_path.unlink()
+                with mock.patch("gamexpress.state.State.load", side_effect=RuntimeError("corrupt state init")):
+                    try:
+                        await runner.run_once(settings_live, games_all={}, overrides={})
+                    except RuntimeError as exc:
+                        assert "corrupt state init" in str(exc)
+                    else:
+                        raise AssertionError("Expected RuntimeError to be re-raised")
+                rep4 = json.loads(report_path.read_text(encoding="utf-8"))
+                assert rep4["execution_result"] == "failed"
+                assert rep4["state"]["load_status"] == "not_reached"
+                assert rep4["state"]["local_save_outcome"] == "not_reached"
+                assert rep4["cards"]["posted"] == "not_reached"
+                assert rep4["targets"]["attempted"] == "not_reached"
+                assert rep4["sources_summary"] == "not_reached"
+
+                # 5. G3: Report-write error (GAMEXPRESS_RUN_REPORT points to a directory) and malformed
+                # GAMEXPRESS_SETUP_DURATION_S must never break run_once or fabricate 0.0s
+                bad_dir_report = tmp_dir / "report_is_a_dir"
+                bad_dir_report.mkdir(exist_ok=True)
+                os.environ["GAMEXPRESS_RUN_REPORT"] = str(bad_dir_report)
+                old_setup = os.environ.get("GAMEXPRESS_SETUP_DURATION_S")
+                os.environ["GAMEXPRESS_SETUP_DURATION_S"] = "not-a-float"
+                try:
+                    ctx_ok = await runner.run_once(settings, games_all={}, overrides={})
+                    assert ctx_ok.execution_result == "success"
+                    built = runner.build_run_report(ctx_ok)
+                    assert built["setup_duration_s"] == "unavailable"
+                finally:
+                    if old_setup is None:
+                        os.environ.pop("GAMEXPRESS_SETUP_DURATION_S", None)
+                    else:
+                        os.environ["GAMEXPRESS_SETUP_DURATION_S"] = old_setup
             finally:
                 if old_rep is None:
                     os.environ.pop("GAMEXPRESS_RUN_REPORT", None)
@@ -339,6 +375,125 @@ def test_run_once_observational_invariants_on_normal_exception_and_save_failure(
                     os.environ["GAMEXPRESS_RUN_REPORT"] = old_rep
 
     asyncio.run(_run())
+
+
+def test_g3_render_summary_missing_optional_counters_and_not_reached_states() -> None:
+    # 1. Early failure report where cards/targets were not reached -> renders `not_reached`, never `posted=0`
+    early_report = {
+        "schema_version": 1,
+        "code_sha": "68529e8",
+        "python_version": "3.14.8",
+        "runner_image": "ubuntu-24.04",
+        "lock_sha256": "abcdef123456",
+        "setup_duration_s": "unavailable",
+        "mode": "live",
+        "only": "all",
+        "game": "all",
+        "execution_result": "failed",
+        "started_at": 1760000000,
+        "finished_at": 1760000001,
+        "duration_s": 0.5,
+        "state": {
+            "load_status": "not_reached",
+            "save_status": "not_reached",
+            "local_save_outcome": "not_reached",
+        },
+        "cards": {
+            "posted": "not_reached",
+            "patched": "not_reached",
+            "failed": "not_reached",
+        },
+        "targets": {
+            "configured": 2,
+            "attempted": "not_reached",
+            "usable": "not_reached",
+        },
+        "errors": ["RuntimeError: corrupt state init"],
+    }
+    md_early = render_run_summary.render_summary_markdown(
+        early_report,
+        mode="live",
+        run_outcome="failure",
+    )
+    assert "`posted=not_reached` `patched=not_reached` `failed=not_reached`" in md_early
+    assert "posted=0" not in md_early
+    assert "`setup=unavailable`" in md_early
+    assert "setup=0.0s" not in md_early
+    assert "`configured=2` `attempted=not_reached` `usable=not_reached`" in md_early
+    assert "| State load status | `not_reached` |" in md_early
+    assert "| Local state save | `not_reached` |" in md_early
+
+    # 2. Report missing optional `cards`, `targets`, `state`, and `execution_result` -> explicit `unavailable`
+    sparse_report = {
+        "schema_version": 1,
+        "code_sha": "68529e8",
+        "mode": "live",
+    }
+    md_sparse = render_run_summary.render_summary_markdown(
+        sparse_report,
+        mode="live",
+        run_outcome="success",
+    )
+    assert "`execution_result=unavailable`" in md_sparse
+    assert "`execution_result=success`" not in md_sparse
+    assert "| Cards | `unavailable` (card counters missing) |" in md_sparse
+    assert "| Targets | `unavailable` |" in md_sparse
+    assert "| State load status | `unavailable` |" in md_sparse
+    assert "| Local state save | `unavailable` |" in md_sparse
+
+
+def test_g3_baseline_payload_state_parity_and_measured_overhead() -> None:
+    import time
+
+    from gamexpress import cards
+    from gamexpress.config import Ping, load_games, load_settings
+    from gamexpress.state import stable_hash
+
+    settings = load_settings({})
+    games = load_games()
+    g = games["genshin"]
+
+    # Verify deterministic schedule & code card payload parity and state hashing
+    sched_card = cards.schedule_payload(
+        g,
+        {
+            "version": "5.3",
+            "title_url": "https://www.hoyolab.com/article/12345",
+            "program_ts": 1735300800,
+            "maint_start_ts": 1735682400,
+            "maint_end_ts": 1735700400,
+            "banners": {},
+        },
+        settings,
+        Ping("<@&123>", {"roles": ["123"]}),
+    )
+    assert cards.validate_payload(sched_card) == []
+    assert stable_hash(sched_card) == stable_hash(json.loads(json.dumps(sched_card)))
+
+    code_card = cards.codes_card(
+        g,
+        [{"code": "GENSHIN53", "rewards": "Primogem ×100", "verified": True}],
+        settings,
+        Ping("", {"parse": []}),
+        detected_ts=1735300800,
+    )
+    assert cards.validate_payload(code_card) == []
+    assert "GENSHIN53" in json.dumps(code_card)
+    assert stable_hash(code_card) == stable_hash(json.loads(json.dumps(code_card)))
+
+    # Measure reporting + summary rendering overhead over 20 iterations (< 50 ms per cycle)
+    sample_report = json.loads((FIXTURES / "run_report_sample.json").read_text(encoding="utf-8"))
+    t0 = time.perf_counter()
+    for _ in range(20):
+        md = render_run_summary.render_summary_markdown(
+            sample_report,
+            mode="live",
+            run_outcome="success",
+            persist_outcome="no_changes",
+        )
+        assert "### Game-Express" in md
+    avg_ms = ((time.perf_counter() - t0) * 1000.0) / 20.0
+    assert avg_ms < 50.0, f"Expected < 50 ms per summary render, got {avg_ms:.2f} ms"
 
 
 def test_render_run_summary_persistence_outcomes_and_missing_report_truthfulness() -> None:

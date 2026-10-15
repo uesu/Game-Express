@@ -51,7 +51,7 @@
   },
   "locks": {
     "compiler": {
-      "pip": "26.1.1",
+      "pip": "26.2.1",
       "pip_tools": "7.5.3"
     },
     "targets": [
@@ -70,6 +70,8 @@
     ]
   },
   "ci": {
+    "workflow_name": "CI",
+    "workflow_path": ".github/workflows/ci.yml",
     "final_gate_name": "maintenance-ci",
     "blocking_checks": [
       "verify",
@@ -92,6 +94,35 @@
     "advisory_check_run_names": [
       "Dependency CVE audit (pip-audit, advisory)"
     ],
+    "mandatory_check_groups": {
+      "verify": [
+        "Verify (syntax, workflow contract & offline tests)",
+        "verify"
+      ],
+      "lock-check": [
+        "Dependency lockfile consistency",
+        "lock-check"
+      ],
+      "ruff": [
+        "Ruff lint",
+        "ruff"
+      ],
+      "actionlint": [
+        "Workflow lint (actionlint)",
+        "actionlint"
+      ],
+      "zizmor": [
+        "Workflow security audit (zizmor)",
+        "zizmor"
+      ],
+      "pip-audit": [
+        "Dependency CVE audit (pip-audit, advisory)",
+        "pip-audit"
+      ],
+      "maintenance-ci": [
+        "maintenance-ci"
+      ]
+    },
     "registered_tests": [
       "tests/test_configuration_contract.py",
       "tests/test_gachawiki_placeholder.py",
@@ -116,7 +147,29 @@
     "trusted_check_apps": [
       "github-actions"
     ],
+    "trusted_ci_workflow_paths": [
+      ".github/workflows/ci.yml"
+    ],
+    "trusted_ci_workflow_names": [
+      "CI",
+      "CI — compile + offline tests"
+    ],
+    "trusted_proposer_workflow_paths": [
+      ".github/workflows/python_version_bump.yml"
+    ],
+    "trusted_proposer_workflow_names": [
+      "Python Version Bump"
+    ],
+    "require_complete_check_set": true,
+    "require_security_scan_evidence": true,
+    "require_provenance": true,
     "required_checks": [
+      "Verify (syntax, workflow contract & offline tests)",
+      "Dependency lockfile consistency",
+      "Ruff lint",
+      "Workflow lint (actionlint)",
+      "Workflow security audit (zizmor)",
+      "Dependency CVE audit (pip-audit, advisory)",
       "maintenance-ci"
     ],
     "blocking_checks": [
@@ -194,26 +247,14 @@
         "opt_in_var": "AUTO_MERGE_PYTHON_BUMP",
         "opt_in_value": "yes",
         "branch_names": [
-          "chore/python-bump"
+          "chore/python-bump",
+          "chore/python-version-bump"
         ],
         "allowed_files": [
           ".python-version",
           "ruff.toml",
           "requirements.txt",
-          "requirements-dev.txt",
-          "README.md",
-          "AGENTS.md",
-          "docs/MAINTENANCE.md",
-          "docs/PYTHON_VERSION.md",
-          "docs/CONFIGURATION.md",
-          "docs/DEPENDABOT.md",
-          "docs/PROD-REPO-SETUP.md",
-          "docs/ROLLOUT.md",
-          "docs/SCHEDULER.md",
-          "docs/SECURITY.md",
-          "docs/TESTING.md",
-          "docs/TROUBLESHOOTING.md",
-          "docs/changelog/CHANGELOG.md"
+          "requirements-dev.txt"
         ],
         "allowed_update_types": [
           "patch"

@@ -20,7 +20,7 @@ outcomes accurately.** CPython is now pinned to an exact version in `.python-ver
 every workflow uses `actions/setup-python` with `python-version-file: .python-version`, and runtime
 plus developer dependencies are split into `requirements.in` → hashed `requirements.txt` and
 `requirements-dev.in` → hashed `requirements-dev.txt` (generated via `pip-tools==7.5.3` /
-`pip==26.1.1` and installed with `--require-hashes --only-binary=:all:`). Machine-readable update
+`pip==26.2.1` and installed with `--require-hashes --only-binary=:all:`). Machine-readable update
 policy in `.github/maintenance.json` and `.github/scripts/maintenance.py` (with
 `.github/scripts/python_version_bump.py` kept as a compatibility adapter) drives
 `python_version_bump.yml` (`select` → secret-free `validate` → `publish` using `BUMP_PAT`),

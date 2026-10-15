@@ -295,6 +295,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     all_p.add_argument("--require-exact-python", action="store_true")
     all_p.add_argument("--with-security", action="store_true")
+    all_p.add_argument("--require-security-tools", action="store_true")
 
     gate_p = sub.add_parser("gate", help="Evaluate final `maintenance-ci` aggregate gate")
     gate_p.add_argument(
@@ -352,7 +353,10 @@ def main(argv: list[str] | None = None) -> int:
             if rc != 0:
                 return rc
         if getattr(args, "with_security", False):
-            return run_security_audit(REPO_ROOT, require_tools=False)
+            return run_security_audit(
+                REPO_ROOT,
+                require_tools=bool(getattr(args, "require_security_tools", False)),
+            )
         return 0
     if cmd == "gate":
         blocking: dict[str, str] = {}

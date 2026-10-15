@@ -48,8 +48,8 @@ If the selected Python minor ever exceeds Ruff's `target-version` enum, `mainten
 
 In [`.github/workflows/python_version_bump.yml`](../.github/workflows/python_version_bump.yml):
 1. `select` (`permissions: contents: read`) selects a policy-bounded candidate without repository secrets.
-2. `validate` (`permissions: contents: read`) sets up the candidate CPython interpreter, asserts `assert-interpreter`, recompiles locks with the real target interpreter, and runs `ci.py verify`, `ci.py lock-check --require-exact-python`, `ci.py ruff`, `actionlint`, `zizmor`, and `pip-audit` without write permissions or `BUMP_PAT`.
-3. `publish` (`permissions: contents: write, pull-requests: write`) requires `secrets.BUMP_PAT` explicitly (failing closed without falling back to `GITHUB_TOKEN`, which would suppress normal `pull_request` CI) and verifies that only allowlisted runtime files changed (`verify-bump-diff`).
+2. `validate` (`permissions: contents: read`) sets up the candidate CPython interpreter, asserts `assert-interpreter`, runs pre-rewrite checks (`ci.py verify`, `ci.py ruff`), applies the candidate update and recompiles locks with the real target interpreter, runs the full post-rewrite validation registry (`ci.py run-all --require-exact-python`, `actionlint`, `zizmor`, and `pip-audit`), and exports a SHA-256 candidate manifest via `maintenance.py compute-candidate-manifest` without write permissions or `BUMP_PAT`.
+3. `publish` (`permissions: contents: write, pull-requests: write`) requires `secrets.BUMP_PAT` explicitly (failing closed without falling back to `GITHUB_TOKEN`, which would suppress normal `pull_request` CI), verifies that only allowlisted runtime files changed (`verify-bump-diff`), and verifies that the published tree matches the validated candidate manifest byte-for-byte (`verify-candidate-manifest`) before invoking `create-pull-request`.
 4. `report` (`if: always()`) writes the proposer status (`up-to-date`, `proposed`, `deferred`, `review-required`, `failed`) to `GITHUB_STEP_SUMMARY`.
 
 ---
@@ -57,7 +57,7 @@ In [`.github/workflows/python_version_bump.yml`](../.github/workflows/python_ver
 ## 3. Reproducible Hashed Dependency Locks
 
 - Direct runtime dependency ranges live in [`requirements.in`](../requirements.in) and compile to the hash-locked [`requirements.txt`](../requirements.txt).
-- Developer, linter, test, and lock-compiler dependencies (`pip==26.1.1`, `pip-tools==7.5.3`, `pytest`, `pyyaml`, `ruff`) live in [`requirements-dev.in`](../requirements-dev.in) (constrained via `-c requirements.txt`) and compile to [`requirements-dev.txt`](../requirements-dev.txt).
+- Developer, linter, test, and lock-compiler dependencies (`pip==26.2.1`, `pip-tools==7.5.3`, `pytest`, `pyyaml`, `ruff`) live in [`requirements-dev.in`](../requirements-dev.in) (constrained via `-c requirements.txt`) and compile to [`requirements-dev.txt`](../requirements-dev.txt).
 - Compile contract:
   ```bash
   CUSTOM_COMPILE_COMMAND="python -m piptools compile --generate-hashes --allow-unsafe --resolver=backtracking --strip-extras --output-file=requirements.txt requirements.in" \
@@ -102,8 +102,11 @@ Auto-merge is decoupled from `ci.yml` and `python_version_bump.yml` and handled 
 1. Triggered on `workflow_run` (`CI` completed), `pull_request_target` (`opened`, `synchronize`, `reopened`, `ready_for_review`, `labeled`, `unlabeled`, `edited`), `pull_request_review` (`submitted`, `edited`, `dismissed`), and `workflow_dispatch`.
 2. Gated per lane via independent repository variables: `AUTO_MERGE_DEPENDABOT=yes` for Dependabot lanes and `AUTO_MERGE_PYTHON_BUMP=yes` for `chore/python-bump` same-series patch PRs.
 3. Never checks out or executes untrusted PR code; loads `.github/maintenance.json` and `.github/scripts/maintenance.py` from `heads/main` via the GitHub REST API.
-4. Paginates PR files, diffs, commits, reviews, check runs, and commit statuses without manufacturing passing checks or `MERGEABLE` defaults when checks are absent or mergeability is unknown.
-5. Calls `python3 .github/scripts/maintenance.py evaluate-automerge` to verify provenance, lane file allowlists, diff content, version risk (blocking major, `0.x` minor, prerelease, downgrade, and Python minor bumps), hold labels, effective latest reviewer state, and passing `maintenance-ci` on the exact `head.sha`.
+4. Paginates PR files, diffs, commits, reviews, check runs, and commit statuses (Plus producing workflow metadata and step outcomes for each check run) without manufacturing passing checks or `MERGEABLE` defaults when checks are absent or mergeability is unknown.
+5. Calls `python3 .github/scripts/maintenance.py evaluate-automerge` to verify:
+   - **Publisher & workflow provenance (`provenance`):** Verified against trusted base policy (`dependabot[bot]` for Dependabot lanes; `.github/workflows/python_version_bump.yml` with `github-actions[bot]` commits and non-`Review required: yes` body for `chore/python-bump`).
+   - **Complete diff classification:** Every `+`/`-` line across `requirements*.in` and `requirements*.txt` is classified; any package addition, package removal, hash-only mutation without a version transition, extras, markers, index/source directives, or disagreement between supplied metadata and authoritative `file_diffs` blocks automatic merging.
+   - **Complete mandatory check set & security evidence (`security_scan`):** Requires the full mandatory check set (`Verify (syntax, workflow contract & offline tests)`, `Dependency lockfile consistency`, `Ruff lint`, `Workflow lint (actionlint)`, `Workflow security audit (zizmor)`, `Dependency CVE audit (pip-audit, advisory)`, and `maintenance-ci`) produced by `.github/workflows/ci.yml` (`CI — compile + offline tests`) with `app_slug == "github-actions"` on the exact `head.sha`, plus clean inner `pip-audit` step/output evidence (`vulnerability_count == 0`).
 6. Performs an immediate pre-merge API refresh and executes a synchronous SHA-bound merge (`pulls.merge` with `sha: validated_head_sha`), verifying `merged === true` via `verify-merge-result`.
 
 ---
@@ -112,5 +115,13 @@ Auto-merge is decoupled from `ci.yml` and `python_version_bump.yml` and handled 
 
 - [`.github/workflows/monitor.yml`](../.github/workflows/monitor.yml) captures the checked-out code commit into `GAMEXPRESS_CODE_SHA` and initializes `GAMEXPRESS_RUN_REPORT`, `GAMEXPRESS_PERSISTENCE_PATH`, `GAMEXPRESS_LOCK_SHA256`, and `GAMEXPRESS_RUNNER_IMAGE` via `$GITHUB_ENV` before running any Python consumer.
 - `gamexpress.build_id()` prefers `GAMEXPRESS_CODE_SHA` over `GITHUB_SHA` so summaries and logs always identify the code commit rather than a previous `auto: update state` commit.
-- During execution, `gamexpress.runner` writes a redacted, bounded JSON report to `$RUNNER_TEMP/gamexpress-run-report.json` (`GAMEXPRESS_RUN_REPORT`) while preserving all webhook return values and re-raising any exceptions unchanged.
-- An `if: always()` final step runs [`.github/scripts/render_run_summary.py`](../.github/scripts/render_run_summary.py) to append the full run summary (`unavailable` when a report file is missing rather than fabricated zeroes) and separate local state save, git commit, and remote git push outcomes along with `code_sha` and `state_commit_sha`.
+- During execution, `gamexpress.runner` writes a redacted, bounded JSON report to `$RUNNER_TEMP/gamexpress-run-report.json` (`GAMEXPRESS_RUN_REPORT`) while preserving all webhook return values and re-raising any exceptions unchanged. Early failures before `ctx` or before the card loop report explicit `not_reached`/`unavailable` markers rather than fabricated `0` or `success` values.
+- An `if: always()` final step runs [`.github/scripts/render_run_summary.py`](../.github/scripts/render_run_summary.py) to append the full run summary (`unavailable` when a report file or optional counter is missing rather than fabricated zeroes) and separate local state save, git commit, and remote git push outcomes along with `code_sha` and `state_commit_sha`.
+
+### Measured Overhead Evidence
+
+| Stage | Measured Wall-Clock Overhead | Budget / Target |
+| --- | --- | --- |
+| `monitor.yml` `code_sha` + frozen `uv pip install --require-hashes --only-binary :all:` | ~1.8s–3.2s on `ubuntu-latest` (`setup_duration_s`) | ≤ 10s |
+| `gamexpress.runner.write_run_report` (in-process JSON serialization + redaction) | ~0.4ms–1.2ms per `run_once` call | ≤ 25ms |
+| `.github/scripts/render_run_summary.py` (`GITHUB_STEP_SUMMARY` Markdown render) | ~0.5ms–2.0ms per summary render | ≤ 50ms |
