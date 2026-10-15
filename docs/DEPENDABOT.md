@@ -36,7 +36,7 @@ python -m pip install --require-hashes --only-binary=:all: -r requirements.txt -
 2. **`github-actions` (`/`):**
    - Updates full 40-character commit SHAs and `# vX.Y.Z` version comments in `.github/workflows/*.yml`
    - `open-pull-requests-limit: 10`
-   - `cooldown`: `default-days: 3`, `semver-major-days: 7`
+   - `cooldown`: `default-days: 3`
    - `groups`: `minor-and-patch` (`minor`, `patch`) and `major` (`major`)
 
 ## Auto-Merge Policy (`maintenance_merge.yml`)
