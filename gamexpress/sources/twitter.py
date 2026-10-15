@@ -152,49 +152,96 @@ class XClient:
                 return None
             headers = {"User-Agent": f"Mozilla/5.0 {token}", "Authorization": f"Bearer {token}"}
             url += f"?token={quote(token, safe='')}"
-        body = await self.fetcher.get_text(url, source="nitter", headers=headers, retries=0,
-                                           timeout=NITTER_TIMEOUT)
-        if not body:
-            self.probe_outcomes.append(
-                summarize_source_outcome(
-                    source=f"nitter:{redact_url(inst)}",
-                    lane="x_timeline",
-                    game=account,
-                    transport_status="network_error",
-                    parsed_count=0,
-                    usable_count=0,
-                    selected_count=0,
-                    reason="transport_failed",
+        try:
+            body = await self.fetcher.get_text(url, source="nitter", headers=headers, retries=0,
+                                               timeout=NITTER_TIMEOUT)
+            if not body:
+                last_ev = (
+                    self.fetcher.last_event_for(url, source="nitter")
+                    if hasattr(self.fetcher, "last_event_for")
+                    else None
                 )
+                t_status = str((last_ev or {}).get("transport_status") or "network_error")
+                code = (last_ev or {}).get("status_code")
+                reason_str = str((last_ev or {}).get("reason") or "transport_failed")
+                if t_status == "rate_limited" or code == 429:
+                    sem_status = "rate_limited"
+                elif t_status == "timeout":
+                    sem_status = "timed_out"
+                elif t_status == "http_status":
+                    sem_status = "http_error"
+                else:
+                    sem_status = "network_error"
+                self.probe_outcomes.append(
+                    {
+                        "source": f"nitter:{redact_url(inst)}",
+                        "lane": "x_timeline",
+                        "game": account,
+                        "transport_status": t_status,
+                        "status_code": code,
+                        "parsed_count": 0,
+                        "usable_count": 0,
+                        "selected_count": 0,
+                        "fallback_used": False,
+                        "status": sem_status,
+                        "reason": reason_str,
+                    }
+                )
+                return None
+            feed = await asyncio.to_thread(feedparser.parse, body)
+        except asyncio.CancelledError:
+            self.probe_outcomes.append(
+                {
+                    "source": f"nitter:{redact_url(inst)}",
+                    "lane": "x_timeline",
+                    "game": account,
+                    "transport_status": "cancelled",
+                    "parsed_count": 0,
+                    "usable_count": 0,
+                    "selected_count": 0,
+                    "fallback_used": False,
+                    "status": "cancelled_after_selection",
+                    "reason": "cancelled_after_winner_selected",
+                }
             )
-            return None
-        feed = await asyncio.to_thread(feedparser.parse, body)
+            raise
         if not feed.entries:
             log.info("[x:%s] %s: HTTP 200 but 0 entries (bot check / stale) — next", account, inst)
+            head_lower = body[:2048].lower()
+            is_rss_xml = ("<rss" in head_lower or "<feed" in head_lower) and "<html" not in head_lower
+            sem_status = "transport_ok_zero_items" if is_rss_xml else "challenge_or_non_feed"
+            reason_tag = "http_200_zero_items" if is_rss_xml else "http_200_challenge_or_html"
             self.probe_outcomes.append(
-                summarize_source_outcome(
-                    source=f"nitter:{redact_url(inst)}",
-                    lane="x_timeline",
-                    game=account,
-                    transport_status="http_ok",
-                    parsed_count=0,
-                    usable_count=0,
-                    selected_count=0,
-                    reason="http_200_zero_entries",
-                )
+                {
+                    "source": f"nitter:{redact_url(inst)}",
+                    "lane": "x_timeline",
+                    "game": account,
+                    "transport_status": "http_ok",
+                    "status_code": 200,
+                    "parsed_count": 0,
+                    "usable_count": 0,
+                    "selected_count": 0,
+                    "fallback_used": False,
+                    "status": sem_status,
+                    "reason": reason_tag,
+                }
             )
             return None
         entries_list = list(feed.entries)
         self.probe_outcomes.append(
-            summarize_source_outcome(
-                source=f"nitter:{redact_url(inst)}",
-                lane="x_timeline",
-                game=account,
-                transport_status="http_ok",
-                parsed_count=len(entries_list),
-                usable_count=len(entries_list),
-                selected_count=len(entries_list),
-            )
+            {
+                "source": f"nitter:{redact_url(inst)}",
+                "lane": "x_timeline",
+                "game": account,
+                "transport_status": "http_ok",
+                "status_code": 200,
+                "parsed_count": len(entries_list),
+                "usable_count": len(entries_list),
+                "selected_count": len(entries_list),
+                "fallback_used": False,
+                "status": "selected",
+                "reason": "",
+            }
         )
         return entries_list
 
@@ -251,6 +298,23 @@ class XClient:
                 task.cancel()
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
+        chosen_indices = set(sorted(answers)[:needed])
+        unselected_sources = {
+            f"nitter:{redact_url(batch[idx])}"
+            for idx in answers
+            if idx not in chosen_indices
+        }
+        if unselected_sources:
+            for p in reversed(self.probe_outcomes):
+                if (
+                    p.get("game") == account
+                    and p.get("source") in unselected_sources
+                    and p.get("status") == "selected"
+                ):
+                    p["status"] = "usable_not_selected"
+                    p["selected_count"] = 0
+                    p["reason"] = "higher_ranked_mirrors_selected"
+                    unselected_sources.discard(str(p.get("source")))
         return [answers[i] for i in sorted(answers)][:needed]
 
     async def timeline(self, account: str) -> list[dict]:

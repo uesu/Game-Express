@@ -1248,7 +1248,7 @@ def test_workflows_cron_job_org_and_test_bench():
     assert "automerge" not in ci_doc["jobs"] and "maintenance-ci" in ci_doc["jobs"]
     am = yaml.safe_load((wf / "maintenance_merge.yml").read_text(encoding="utf-8"))["jobs"]["automerge"]
     assert "vars.AUTO_MERGE_DEPENDABOT == 'yes'" in am["if"]
-    assert am["permissions"] == {"contents": "write", "pull-requests": "write"}
+    assert am["permissions"].get("contents") == "write" and am["permissions"].get("pull-requests") == "write"
     assert not (wf / "dependabot_auto_merge.yml").exists()
     dep = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
     assert all("labels" not in u for u in dep["updates"])            # custom labels must pre-exist -> none

@@ -5,17 +5,22 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import gamexpress  # noqa: E402
+from gamexpress import runner  # noqa: E402
 from gamexpress.config import load_settings  # noqa: E402
+from gamexpress.discord import SendResult, WebhookClient  # noqa: E402
 from gamexpress.http import (  # noqa: E402
-     classify_transport_status,
+    Fetcher,
+    classify_transport_status,
     redact_text,
     redact_url,
     summarize_source_outcome,
@@ -38,9 +43,7 @@ def _load_renderer():
 render_run_summary = _load_renderer()
 
 
-def test_build_id_prefers_gamexpress_code_sha(monkeypatch=None) -> None:
-    import os
-
+def test_build_id_prefers_gamexpress_code_sha() -> None:
     old_code = os.environ.get("GAMEXPRESS_CODE_SHA")
     old_gh = os.environ.get("GITHUB_SHA")
     try:
@@ -61,7 +64,7 @@ def test_build_id_prefers_gamexpress_code_sha(monkeypatch=None) -> None:
             os.environ["GITHUB_SHA"] = old_gh
 
 
-def test_redaction_strips_tokens_and_webhooks() -> None:
+def test_redaction_strips_tokens_pats_and_encoded_webhooks() -> None:
     raw_url = "https://nitter.miningtcup.me/GenshinImpact/rss?token=supersecret123&foo=bar"
     redacted_url = redact_url(raw_url)
     assert "supersecret123" not in redacted_url
@@ -69,14 +72,33 @@ def test_redaction_strips_tokens_and_webhooks() -> None:
 
     raw_text = (
         "Webhook https://discord.com/api/webhooks/123456789/abcdefGHIJK_secret "
+        "and encoded https%3A%2F%2Fdiscord.com%2Fapi%2Fwebhooks%2F9999%2Fsecret_encoded_tok "
         "and Authorization: Bearer secret_bearer_tok "
+        "and PAT ghp_1234567890abcdefghij1234567890 "
         "and https://example.com/feed?api_key=my_secret_key"
     )
     cleaned = redact_text(raw_text)
     assert "abcdefGHIJK_secret" not in cleaned
+    assert "secret_encoded_tok" not in cleaned
     assert "secret_bearer_tok" not in cleaned
+    assert "ghp_1234567890abcdefghij1234567890" not in cleaned
     assert "my_secret_key" not in cleaned
     assert "https://discord.com/api/webhooks/<redacted>" in cleaned
+
+
+def test_fetcher_summary_reports_request_level_http_counts() -> None:
+    f = Fetcher(session=None)  # type: ignore[arg-type]
+    f._mark("nitter", True)
+    f._mark("nitter", False, "HTTP 403")
+    f._record_event(
+        source="nitter",
+        url="https://nitter.example/GenshinImpact/rss",
+        transport_status="http_ok",
+        status_code=200,
+    )
+    summary = f.summary()
+    assert "1 http_200 / 1 transport_fail [1 host(s)]" in summary
+    assert "1 ok" not in summary
 
 
 def test_source_outcome_distinguishes_transport_and_parsed_items() -> None:
@@ -138,12 +160,37 @@ def test_source_outcome_distinguishes_transport_and_parsed_items() -> None:
     assert o4["status"] == "source_failed"
 
 
-def test_xclient_probe_records_zero_entry_rss_truthfully() -> None:
+def test_xclient_probe_records_semantic_statuses_truthfully() -> None:
     class StubFetcher:
+        def __init__(self) -> None:
+            self.events: list[dict] = []
+
+        def last_event_for(self, url_prefix: str, source: str = ""):
+            for ev in reversed(self.events):
+                if ev["url"].startswith(url_prefix):
+                    return ev
+            return None
+
         async def get_text(self, url: str, **_kwargs):
             if "empty.example" in url:
                 return "<?xml version='1.0'?><rss><channel><title>ok</title></channel></rss>"
-            if "good.example" in url:
+            if "challenge.example" in url:
+                return "<html><body>Just a moment... Cloudflare challenge</body></html>"
+            if "ratelimit.example" in url:
+                self.events.append(
+                    {"url": url, "transport_status": "rate_limited", "status_code": 429, "reason": "HTTP 429"}
+                )
+                return None
+            if "timeout.example" in url:
+                self.events.append(
+                    {"url": url, "transport_status": "timeout", "status_code": None, "reason": "TimeoutError"}
+                )
+                return None
+            if "good1" in url:
+                await asyncio.sleep(0.02)
+            if "slow.example" in url:
+                await asyncio.sleep(5.0)
+            if "good" in url:
                 return (
                     "<?xml version='1.0'?><rss><channel>"
                     "<item><title>Post 1</title><link>https://x.com/a/status/1234567890</link>"
@@ -155,25 +202,158 @@ def test_xclient_probe_records_zero_entry_rss_truthfully() -> None:
     async def _run() -> None:
         settings = load_settings({})
         client = XClient(StubFetcher(), settings)
-        entries_empty = await client._probe("https://empty.example", "GenshinImpact")
-        entries_good = await client._probe("https://good.example", "GenshinImpact")
-        assert entries_empty is None
-        assert entries_good is not None and len(entries_good) == 1
+        assert await client._probe("https://empty.example", "GenshinImpact") is None
+        assert await client._probe("https://challenge.example", "GenshinImpact") is None
+        assert await client._probe("https://ratelimit.example", "GenshinImpact") is None
+        assert await client._probe("https://timeout.example", "GenshinImpact") is None
+
+        # Probe batch where good2 and good3 finish first, then higher-ranked good1 finishes within grace
+        # -> good1 & good2 are selected, good3 is usable_not_selected, and slow.example is cancelled_after_selection
+        res_batch = await client._probe_batch(
+            ["https://good1.example", "https://good2.example", "https://good3.example", "https://slow.example"],
+            "GenshinImpact",
+            2,
+        )
+        assert len(res_batch) == 2
+
         by_src = {o["source"]: o for o in client.probe_outcomes}
         assert by_src["nitter:https://empty.example"]["status"] == "transport_ok_zero_items"
-        assert by_src["nitter:https://empty.example"]["parsed_count"] == 0
-        assert by_src["nitter:https://good.example"]["status"] == "selected"
-        assert by_src["nitter:https://good.example"]["parsed_count"] == 1
+        assert by_src["nitter:https://challenge.example"]["status"] == "challenge_or_non_feed"
+        assert by_src["nitter:https://ratelimit.example"]["status"] == "rate_limited"
+        assert by_src["nitter:https://timeout.example"]["status"] == "timed_out"
+        assert by_src["nitter:https://good1.example"]["status"] == "selected"
+        assert by_src["nitter:https://good2.example"]["status"] == "selected"
+        assert by_src["nitter:https://good3.example"]["status"] == "usable_not_selected"
+        assert by_src["nitter:https://slow.example"]["status"] == "cancelled_after_selection"
 
     asyncio.run(_run())
 
 
-def test_render_run_summary_all_six_persistence_outcomes() -> None:
+def test_webhook_instrumentation_preserves_return_values_and_reraises_exceptions() -> None:
+    async def _run() -> None:
+        wh = WebhookClient(session=None, dry_run=True)  # type: ignore[arg-type]
+
+        calls: list[str] = []
+
+        async def _mock_send(url: str, payload: dict):
+            calls.append(url)
+            if "fail-bool" in url:
+                return False
+            if "ok-bool" in url:
+                return True
+            if "raise-err" in url:
+                raise RuntimeError("boom secret https://discord.com/api/webhooks/111/222_tok")
+            return SendResult(ok=True, status=200, message_id="m123")
+
+        wh.send = _mock_send  # type: ignore[method-assign]
+        runner._instrument_webhook(wh)
+
+        r1 = await wh.send("https://discord.com/api/webhooks/1/ok-bool", {})
+        assert r1 is True
+        r2 = await wh.send("https://discord.com/api/webhooks/1/fail-bool", {})
+        assert r2 is False
+        r3 = await wh.send("https://discord.com/api/webhooks/1/deliv-res", {})
+        assert isinstance(r3, SendResult) and r3.ok is True
+
+        try:
+            await wh.send("https://discord.com/api/webhooks/1/raise-err", {})
+        except RuntimeError as exc:
+            assert "boom secret" in str(exc)
+        else:
+            raise AssertionError("Expected RuntimeError to be re-raised unchanged")
+
+        deliveries = getattr(wh, "deliveries", [])
+        assert len(deliveries) == 4
+        assert [d["ok"] for d in deliveries] == [True, False, True, False]
+        assert "222_tok" not in deliveries[3]["error"]
+        assert "<redacted>" in deliveries[3]["error"]
+
+    asyncio.run(_run())
+
+
+def test_run_once_observational_invariants_on_normal_exception_and_save_failure() -> None:
+    async def _run() -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            state_path = tmp_dir / "state.json"
+            report_path = tmp_dir / "run-report.json"
+            old_rep = os.environ.get("GAMEXPRESS_RUN_REPORT")
+            os.environ["GAMEXPRESS_RUN_REPORT"] = str(report_path)
+            try:
+                # 1. Passive no-activity run
+                settings = load_settings(
+                    {
+                        "ENABLED_FEATURES": "none",
+                        "STATE_PATH": str(state_path),
+                        "DRY_RUN": "1",
+                    }
+                )
+                ctx = await runner.run_once(settings, games_all={}, overrides={})
+                assert ctx.execution_result == "success"
+                assert report_path.is_file()
+                rep1 = json.loads(report_path.read_text(encoding="utf-8"))
+                assert rep1["execution_result"] == "success"
+                assert len(rep1["runs"]) == 1
+
+                # 2. Early unhandled exception inside run_once -> emits single failed report and re-raises
+                report_path.unlink()
+                settings_live = load_settings(
+                    {
+                        "ENABLED_FEATURES": "codes",
+                        "STATE_PATH": str(state_path),
+                        "DRY_RUN": "0",
+                    }
+                )
+                with mock.patch.object(
+                    runner, "failover_check", side_effect=ValueError("simulated early crash")
+                ):
+                    try:
+                        await runner.run_once(settings_live, games_all={}, overrides={})
+                    except ValueError as exc:
+                        assert "simulated early crash" in str(exc)
+                    else:
+                        raise AssertionError("Expected ValueError to be re-raised")
+                assert report_path.is_file()
+                rep2 = json.loads(report_path.read_text(encoding="utf-8"))
+                assert rep2["execution_result"] == "failed"
+                assert rep2["state"]["local_save_outcome"] == "not_reached"
+                assert any("simulated early crash" in e for e in rep2["errors"])
+                assert len(rep2["runs"]) == 1
+
+                # 3. Local state save failure -> records failed_local, emits report, and re-raises OSError
+                report_path.unlink()
+                with mock.patch("gamexpress.state.State.save", side_effect=OSError("disk full")):
+                    try:
+                        await runner.run_once(settings_live, games_all={}, overrides={})
+                    except OSError as exc:
+                        assert "disk full" in str(exc)
+                    else:
+                        raise AssertionError("Expected OSError to be re-raised")
+                rep3 = json.loads(report_path.read_text(encoding="utf-8"))
+                assert rep3["execution_result"] == "failed"
+                assert rep3["state"]["local_save_outcome"] == "failed_local"
+            finally:
+                if old_rep is None:
+                    os.environ.pop("GAMEXPRESS_RUN_REPORT", None)
+                else:
+                    os.environ["GAMEXPRESS_RUN_REPORT"] = old_rep
+
+    asyncio.run(_run())
+
+
+def test_render_run_summary_persistence_outcomes_and_missing_report_truthfulness() -> None:
     report = json.loads((FIXTURES / "run_report_sample.json").read_text(encoding="utf-8"))
 
-    # 1. saved_and_pushed
+    # 1. saved_and_pushed with persistence JSON
     out_saved = render_run_summary.render_summary_markdown(
         report,
+        persistence={
+            "persist_outcome": "saved_and_pushed",
+            "commit_outcome": "committed",
+            "push_outcome": "pushed",
+            "state_commit_sha": "9999999",
+            "persist_duration_s": 2,
+        },
         mode="live",
         run_outcome="success",
         persist_outcome="saved_and_pushed",
@@ -181,6 +361,9 @@ def test_render_run_summary_all_six_persistence_outcomes() -> None:
         state_commit_sha="9999999888888877777776666666555555544444",
     )
     assert "| Final persistence outcome | **`saved_and_pushed`** |" in out_saved
+    assert "| Local state save | `saved_local` |" in out_saved
+    assert "| Git commit | `committed` |" in out_saved
+    assert "| Remote git push | `pushed` |" in out_saved
     assert "| Checked-out `code_sha` | `68529e8` |" in out_saved
     assert "| Committed `state_commit_sha` | `9999999` |" in out_saved
     assert "transport_ok_zero_items" in out_saved
@@ -196,60 +379,71 @@ def test_render_run_summary_all_six_persistence_outcomes() -> None:
         state_commit_sha="",
     )
     assert "| Final persistence outcome | **`no_changes`** |" in out_no_changes
-    assert "| Committed `state_commit_sha` | `none` |" in out_no_changes
+    assert "| Git commit | `unchanged` |" in out_no_changes
+    assert "| Remote git push | `unchanged` |" in out_no_changes
 
-    # 3. skipped_test_mode
-    out_test = render_run_summary.render_summary_markdown(
+    # 3. commit_failed vs push_failed vs local_save_failed
+    out_commit_failed = render_run_summary.render_summary_markdown(
         report,
-        mode="test",
+        persistence={"persist_outcome": "commit_failed", "commit_outcome": "failed", "push_outcome": "not-run"},
+        mode="live",
         run_outcome="success",
-        persist_outcome="",
-        code_sha="68529e83fdc2bede720529c35a6fd377b345710a",
-        state_commit_sha="",
+        persist_outcome="commit_failed",
     )
-    assert "| Final persistence outcome | **`skipped_test_mode`** |" in out_test
+    assert "| Final persistence outcome | **`commit_failed`** |" in out_commit_failed
+    assert "| Git commit | `failed` |" in out_commit_failed
+    assert "| Remote git push | `not-run` |" in out_commit_failed
 
-    # 4. skipped_after_run_failure
-    out_failed_run = render_run_summary.render_summary_markdown(
+    out_push_failed = render_run_summary.render_summary_markdown(
+        report,
+        persistence={"persist_outcome": "push_failed", "commit_outcome": "committed", "push_outcome": "failed"},
+        mode="live",
+        run_outcome="success",
+        persist_outcome="push_failed",
+        state_commit_sha="9999999",
+    )
+    assert "| Final persistence outcome | **`push_failed`** |" in out_push_failed
+    assert "| Git commit | `committed` |" in out_push_failed
+    assert "| Remote git push | `failed` |" in out_push_failed
+
+    # 4. Missing or corrupt report file -> renders `unavailable` instead of fake zero counts (G5)
+    out_missing_report = render_run_summary.render_summary_markdown(
         None,
+        report_error="missing report file (gamexpress-run-report.json)",
         mode="live",
         run_outcome="failure",
         persist_outcome="",
         code_sha="68529e83fdc2bede720529c35a6fd377b345710a",
         state_commit_sha="",
     )
-    assert "| Final persistence outcome | **`skipped_after_run_failure`** |" in out_failed_run
-
-    # 5. push_failed
-    out_push_failed = render_run_summary.render_summary_markdown(
-        report,
-        mode="live",
-        run_outcome="success",
-        persist_outcome="push_failed",
-        code_sha="68529e83fdc2bede720529c35a6fd377b345710a",
-        state_commit_sha="9999999888888877777776666666555555544444",
-    )
-    assert "| Final persistence outcome | **`push_failed`** |" in out_push_failed
-
-    # 6. push_skipped
-    out_push_skipped = render_run_summary.render_summary_markdown(
-        report,
-        mode="live",
-        run_outcome="success",
-        persist_outcome="push_skipped",
-        code_sha="68529e83fdc2bede720529c35a6fd377b345710a",
-        state_commit_sha="",
-    )
-    assert "| Final persistence outcome | **`push_skipped`** |" in out_push_skipped
+    assert "| Report status | `unavailable` (missing report file (gamexpress-run-report.json)) |" in out_missing_report
+    assert "| Cards | `unavailable` (missing report file (gamexpress-run-report.json)) |" in out_missing_report
+    assert "posted=0" not in out_missing_report
+    assert "| Final persistence outcome | **`skipped_after_run_failure`** |" in out_missing_report
 
 
 def test_render_run_summary_cli_writes_step_summary() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         summary_file = Path(tmp) / "step_summary.md"
+        persist_file = Path(tmp) / "persistence.json"
+        persist_file.write_text(
+            json.dumps(
+                {
+                    "persist_outcome": "saved_and_pushed",
+                    "commit_outcome": "committed",
+                    "push_outcome": "pushed",
+                    "state_commit_sha": "1111111",
+                    "persist_duration_s": 3,
+                }
+            ),
+            encoding="utf-8",
+        )
         rc = render_run_summary.main(
             [
                 "--report",
                 str(FIXTURES / "run_report_sample.json"),
+                "--persistence",
+                str(persist_file),
                 "--output",
                 str(summary_file),
                 "--mode",

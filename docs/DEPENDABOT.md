@@ -43,6 +43,7 @@ python -m pip install --require-hashes --only-binary=:all: -r requirements.txt -
 
 Dependabot auto-merge is handled by [`.github/workflows/maintenance_merge.yml`](../.github/workflows/maintenance_merge.yml) (not `ci.yml`):
 
-- When repository variable `AUTO_MERGE_DEPENDABOT=yes` is set, `maintenance_merge.yml` evaluates PR metadata using `.github/maintenance.json` and `.github/scripts/maintenance.py` from the trusted `main` base commit.
-- **`pip` PRs** (`dependabot[bot]` on `dependabot/pip/*` touching only `requirements.in`, `requirements.txt`, `requirements-dev.in`, `requirements-dev.txt`) are eligible for `SQUASH` auto-merge once `maintenance-ci` succeeds.
-- **`github-actions` PRs** modify `.github/workflows/*.yml` and are intentionally **excluded from auto-merge** by `.github/maintenance.json` (`forbidden_path_prefixes: [".github/workflows/"]`) so workflow changes always receive explicit human review.
+- When repository variable `AUTO_MERGE_DEPENDABOT=yes` is set, `maintenance_merge.yml` evaluates PR metadata, diffs, reviews, and check runs using `.github/maintenance.json` and `.github/scripts/maintenance.py` from `heads/main`.
+- **`pip` patch and `>=1.0` minor PRs** (`dependabot[bot]` on `dependabot/pip/*` touching only `requirements.in`, `requirements.txt`, `requirements-dev.in`, `requirements-dev.txt`) are eligible for synchronous SHA-bound squash merge once `maintenance-ci` succeeds.
+- **`github-actions` patch and `>=1.0` minor PRs** (`dependabot[bot]` on `dependabot/github_actions/*` modifying only 40-character SHA-pinned `uses:` lines in `.github/workflows/*.yml`) are eligible once `maintenance-ci` succeeds.
+- Major version bumps, `0.x` minor bumps, prereleases, downgrades, and workflow logic edits are classified as `review-required` and never auto-merged.

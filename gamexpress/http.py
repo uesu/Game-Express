@@ -45,14 +45,27 @@ DISCORD_WEBHOOK_URL_RE = re.compile(
     r"\d+/[\w-]+",
     re.IGNORECASE,
 )
+ENCODED_DISCORD_WEBHOOK_RE = re.compile(
+    r"(https?%3A%2F%2F(?:(?:ptb|canary)\.)?discord(?:app)?\.com%2Fapi(?:%2Fv\d+)?%2Fwebhooks%2F)"
+    r"\d+%2F[\w%-]+",
+    re.IGNORECASE,
+)
+GITHUB_TOKEN_RE = re.compile(
+    r"\b(?:ghp_[A-Za-z0-9]{20,}|ghs_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"
+)
 URL_IN_TEXT_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
 AUTH_BEARER_RE = re.compile(
     r"\b(Bearer|Bot|Basic)\s+[A-Za-z0-9._~+/=-]{4,}",
     re.IGNORECASE,
 )
 QUERY_SECRET_TEXT_RE = re.compile(
-    r"([?&](?:key|token|sig|secret|auth|password|webhook|api_key|access_token|signature)=)"
+    r"([?&](?:key|token|sig|secret|auth|password|webhook|api_key|access_token|signature|client_secret)=)"
     r"[^&#\s\"'<>)\]]+",
+    re.IGNORECASE,
+)
+ENCODED_QUERY_SECRET_RE = re.compile(
+    r"((?:%3F|%26)(?:key|token|sig|secret|auth|password|webhook|api_key|access_token|signature|client_secret)%3D)"
+    r"[^%&#\s\"'<>)\]]+",
     re.IGNORECASE,
 )
 
@@ -179,8 +192,11 @@ def redact_text(text: str, worker_url: str = "") -> str:
     if not text:
         return ""
     out = DISCORD_WEBHOOK_URL_RE.sub(r"\1<redacted>", str(text))
+    out = ENCODED_DISCORD_WEBHOOK_RE.sub(r"\1<redacted>", out)
+    out = GITHUB_TOKEN_RE.sub("<redacted>", out)
     out = URL_IN_TEXT_RE.sub(lambda m: redact_url(m.group(0), worker_url=worker_url), out)
     out = QUERY_SECRET_TEXT_RE.sub(r"\1<redacted>", out)
+    out = ENCODED_QUERY_SECRET_RE.sub(r"\1<redacted>", out)
     out = AUTH_BEARER_RE.sub(r"\1 <redacted>", out)
     return out
 
@@ -364,6 +380,17 @@ class Fetcher:
         self.source_outcomes.append(outcome)
         return outcome
 
+    def last_event_for(self, url_prefix: str, source: str = "") -> dict[str, Any] | None:
+        """Return the most recent transport event matching `url_prefix` (and optional `source`)."""
+        safe_prefix = redact_url(url_prefix)
+        for ev in reversed(self.events):
+            if source and ev.get("source") != source:
+                continue
+            ev_url = str(ev.get("url") or "")
+            if ev_url == safe_prefix or ev_url.startswith(safe_prefix):
+                return ev
+        return None
+
     async def get_text(self, url: str, *, source: str, headers: dict | None = None,
                        params: dict | None = None, retries: int = 2,
                        ok_statuses: tuple[int, ...] = (200,), timeout: float | None = None) -> str | None:
@@ -460,8 +487,17 @@ class Fetcher:
 
     def summary(self) -> str:
         parts = []
+        hosts_by_source: dict[str, set[str]] = {}
+        for ev in self.events:
+            src = str(ev.get("source") or "")
+            host = str(ev.get("host") or "")
+            if src and host:
+                hosts_by_source.setdefault(src, set()).add(host)
         for name, h in sorted(self.health.items()):
-            parts.append(f"{name}: {h.ok} ok / {h.fail} fail" + (f" ({h.last_error})" if h.fail and not h.ok else ""))
+            host_cnt = len(hosts_by_source.get(name, set()))
+            host_sfx = f" [{host_cnt} host(s)]" if host_cnt else ""
+            err_sfx = f" ({h.last_error})" if h.fail and not h.ok else ""
+            parts.append(f"{name}: {h.ok} http_200 / {h.fail} transport_fail{host_sfx}{err_sfx}")
         return "; ".join(parts) if parts else "no requests"
 
 

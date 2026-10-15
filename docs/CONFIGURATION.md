@@ -159,14 +159,19 @@ being dropped. A codes drop split across several messages mentions the role on *
 | `LOG_LEVEL` | `INFO` | Python log level for the run |
 | `GAMEXPRESS_CODE_SHA` | — | checked-out code commit short SHA captured by `monitor.yml` before state commits (preferred by `gamexpress.build_id()` over `GITHUB_SHA`) |
 | `GAMEXPRESS_RUN_REPORT` | — | temporary path (`$RUNNER_TEMP/gamexpress-run-report.json`) where `gamexpress.runner` writes the internal redacted run report for `.github/scripts/render_run_summary.py` |
+| `GAMEXPRESS_PERSISTENCE_PATH` | — | temporary path (`$RUNNER_TEMP/gamexpress-persistence.json`) where `monitor.yml` records local-save, commit, and remote-push outcomes for `.github/scripts/render_run_summary.py` |
+| `GAMEXPRESS_LOCK_SHA256` | — | SHA-256 digest of `requirements.txt` exported by `monitor.yml` for the run report and summary table |
+| `GAMEXPRESS_RUNNER_IMAGE` | — | runner OS/image label exported by `monitor.yml` for the run report and summary table |
+| `GAMEXPRESS_SETUP_DURATION_S` | `0` | setup phase duration in seconds exported by `monitor.yml` before running `gamexpress` |
 
 ### Fail-over and automation
 
 | Name | Default | Meaning |
 |---|---|---|
 | `INSTANCE_NAME` / `INSTANCE_ROLE` / `PEER_STATE_URL` / `HEARTBEAT_MINUTES` / `FAILOVER_AFTER_MINUTES` | alpha / primary / — / 1440 / 90 | two-instance fail-over, see [README → Reliability](../README.md#-reliability) |
-| `AUTO_MERGE_DEPENDABOT` | — | `yes` = enable [`.github/workflows/maintenance_merge.yml`](../.github/workflows/maintenance_merge.yml) to squash-merge eligible Dependabot `pip` and `chore/python-bump` PRs once `maintenance-ci` passes ([MAINTENANCE.md](MAINTENANCE.md), [DEPENDABOT.md](DEPENDABOT.md), [PYTHON_VERSION.md](PYTHON_VERSION.md)) |
-| `BUMP_PAT` | — | optional repository secret PAT used by [`.github/workflows/python_version_bump.yml`](../.github/workflows/python_version_bump.yml) when opening `chore/python-bump` PRs so `pull_request` CI triggers automatically ([PYTHON_VERSION.md](PYTHON_VERSION.md)) |
+| `AUTO_MERGE_DEPENDABOT` | — | `yes` = enable [`.github/workflows/maintenance_merge.yml`](../.github/workflows/maintenance_merge.yml) to squash-merge eligible Dependabot `pip` and `github-actions` patch/minor PRs once `maintenance-ci` passes ([MAINTENANCE.md](MAINTENANCE.md), [DEPENDABOT.md](DEPENDABOT.md)) |
+| `AUTO_MERGE_PYTHON_BUMP` | — | `yes` = enable [`.github/workflows/maintenance_merge.yml`](../.github/workflows/maintenance_merge.yml) to squash-merge eligible `chore/python-bump` same-series patch PRs once `maintenance-ci` passes ([MAINTENANCE.md](MAINTENANCE.md), [PYTHON_VERSION.md](PYTHON_VERSION.md)) |
+| `BUMP_PAT` | — | required repository secret PAT used by [`.github/workflows/python_version_bump.yml`](../.github/workflows/python_version_bump.yml) (`publish` job) when opening `chore/python-bump` PRs so `pull_request` CI triggers automatically ([PYTHON_VERSION.md](PYTHON_VERSION.md)) |
 
 ---
 

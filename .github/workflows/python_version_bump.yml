@@ -5,21 +5,42 @@ on:
     # Weekly on Mondays at 08:00 UTC.
     - cron: "0 8 * * 1"
   workflow_dispatch:
+    inputs:
+      target_version:
+        description: "Optional manual candidate override (exact X.Y.Z; always marked review-required)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Run selection and secret-free candidate validation without opening/updating a PR"
+        type: boolean
+        default: false
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: python-version-bump
   cancel-in-progress: true
 
 jobs:
-  bump:
-    name: Select, validate & open Python pin PR
+  select:
+    name: Select policy-bounded Python candidate
     if: github.repository_owner == 'uesu'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+      status: ${{ steps.check.outputs.status }}
+      update_kind: ${{ steps.check.outputs.update_kind }}
+      review_required: ${{ steps.check.outputs.review_required }}
+      auto_merge_eligible: ${{ steps.check.outputs.auto_merge_eligible }}
+      old_version: ${{ steps.check.outputs.old_version }}
+      new_version: ${{ steps.check.outputs.new_version }}
+      selected_minor: ${{ steps.check.outputs.selected_minor }}
+      deferred_candidate: ${{ steps.check.outputs.deferred_candidate }}
+      reason: ${{ steps.check.outputs.reason }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -32,66 +53,170 @@ jobs:
           python-version-file: .python-version
           check-latest: false
 
-      - name: Install locked tools
-        run: |
-          python -m pip install --require-hashes --only-binary=:all: -r requirements.txt -r requirements-dev.txt
-
-      - name: Select policy-bounded Python release & update pin
+      - name: Select candidate Python version
         id: check
         env:
-          PR_BODY_PATH: ${{ runner.temp }}/python-bump-body.md
+          TARGET_OVERRIDE: ${{ inputs.target_version }}
         run: |
-          python .github/scripts/maintenance.py bump
+          if [ -n "${TARGET_OVERRIDE}" ]; then
+            python .github/scripts/maintenance.py select --override "${TARGET_OVERRIDE}"
+          else
+            python .github/scripts/maintenance.py select
+          fi
 
-      - name: Set up candidate Python from updated .python-version
-        if: steps.check.outputs.changed == 'true'
+  validate:
+    name: Validate candidate Python runtime & locks (secret-free)
+    if: needs.select.outputs.changed == 'true'
+    needs: [select]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up candidate Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
         with:
-          python-version-file: .python-version
+          python-version: ${{ needs.select.outputs.new_version }}
           check-latest: false
 
-      - name: Re-verify locks, syntax, lint & offline suites on candidate Python
-        if: steps.check.outputs.changed == 'true'
+      - name: Assert candidate Python interpreter & install locked wheels
+        env:
+          CANDIDATE_VERSION: ${{ needs.select.outputs.new_version }}
         run: |
+          python .github/scripts/maintenance.py assert-interpreter --expected "${CANDIDATE_VERSION}"
           python -m pip install --require-hashes --only-binary=:all: -r requirements.txt -r requirements-dev.txt
-          python .github/scripts/maintenance.py lock-compile
-          python .github/scripts/ci.py lock-check
+
+      - name: Apply candidate pin, recompile locks & run unified CI registry
+        env:
+          CANDIDATE_VERSION: ${{ needs.select.outputs.new_version }}
+          OLD_VERSION: ${{ needs.select.outputs.old_version }}
+          PR_BODY_PATH: ${{ runner.temp }}/python-bump-body.md
+        run: |
+          python .github/scripts/maintenance.py apply --version "${CANDIDATE_VERSION}" --old-version "${OLD_VERSION}"
+          python .github/scripts/maintenance.py lock-compile --require-exact-python
+          python .github/scripts/maintenance.py verify-bump-diff
           python .github/scripts/ci.py verify
+          python .github/scripts/ci.py lock-check --require-exact-python
           python .github/scripts/ci.py ruff
 
-      - name: Create or updatechore/python-bump Pull Request
-        if: steps.check.outputs.changed == 'true'
+      - name: Run actionlint on candidate tree
+        uses: reviewdog/action-actionlint@a8ac3eea598697a830f7d8e701fc9fcbfde88974  # v1.80.0
+        with:
+          fail_level: error
+
+      - name: Run zizmor workflow audit on candidate tree
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482  # v0.6.4
+
+      - name: Audit candidate requirements.txt against OSV
+        uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266  # v1.1.0
+        with:
+          inputs: requirements.txt
+          vulnerability-service: osv
+
+  publish:
+    name: Publish chore/python-bump Pull Request
+    if: needs.select.outputs.changed == 'true' && inputs.dry_run != true
+    needs: [select, validate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      pr_number: ${{ steps.cpr.outputs.pull-request-number }}
+      pr_url: ${{ steps.cpr.outputs.pull-request-url }}
+    steps:
+      - name: Require BUMP_PAT secret for publication
+        env:
+          HAS_BUMP_PAT: ${{ secrets.BUMP_PAT != '' && 'true' || 'false' }}
+        run: |
+          if [ "${HAS_BUMP_PAT}" != "true" ]; then
+            echo "::error::Missing required secret BUMP_PAT for runtime proposal publication; refusing to fall back to GITHUB_TOKEN because it suppresses normal pull_request CI."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up candidate Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
+        with:
+          python-version: ${{ needs.select.outputs.new_version }}
+          check-latest: false
+
+      - name: Install locked compiler tools & apply validated candidate changes
+        id: apply
+        env:
+          CANDIDATE_VERSION: ${{ needs.select.outputs.new_version }}
+          OLD_VERSION: ${{ needs.select.outputs.old_version }}
+          PR_BODY_PATH: ${{ runner.temp }}/python-bump-body.md
+        run: |
+          python .github/scripts/maintenance.py assert-interpreter --expected "${CANDIDATE_VERSION}"
+          python -m pip install --require-hashes --only-binary=:all: -r requirements.txt -r requirements-dev.txt
+          python .github/scripts/maintenance.py apply --version "${CANDIDATE_VERSION}" --old-version "${OLD_VERSION}"
+          python .github/scripts/maintenance.py lock-compile --require-exact-python
+          python .github/scripts/maintenance.py verify-bump-diff
+
+      - name: Create or update chore/python-bump Pull Request
         id: cpr
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1  # v8
         with:
-          token: ${{ secrets.BUMP_PAT || github.token }}
+          token: ${{ secrets.BUMP_PAT }}
           branch: chore/python-bump
           delete-branch: true
-          commit-message: "chore(python): bump pinned Python to ${{ steps.check.outputs.new_version }}"
-          title: "chore(python): bump pinned Python to ${{ steps.check.outputs.new_version }}"
-          body-path: ${{ steps.check.outputs.body_path }}
+          commit-message: "chore(python): bump pinned Python from ${{ needs.select.outputs.old_version }} to ${{ needs.select.outputs.new_version }}"
+          title: "chore(python): bump pinned Python from ${{ needs.select.outputs.old_version }} to ${{ needs.select.outputs.new_version }}"
+          body-path: ${{ steps.apply.outputs.body_path }}
+          labels: ${{ needs.select.outputs.review_required == 'true' && 'review-required' || '' }}
 
-      - name: Record bump summary
-        if: always()
+  report:
+    name: Record runtime proposer summary
+    if: always()
+    needs: [select, validate, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Write proposer outcome to step summary
         env:
-          CHANGED: ${{ steps.check.outputs.changed }}
-          OLD_VER: ${{ steps.check.outputs.old_version }}
-          NEW_VER: ${{ steps.check.outputs.new_version }}
-          PR_NUMBER: ${{ steps.cpr.outputs.pull-request-number }}
-          HAS_BUMP_PAT: ${{ secrets.BUMP_PAT != '' && 'true' || 'false' }}
+          STATUS: ${{ needs.select.outputs.status }}
+          CHANGED: ${{ needs.select.outputs.changed }}
+          UPDATE_KIND: ${{ needs.select.outputs.update_kind }}
+          REVIEW_REQ: ${{ needs.select.outputs.review_required }}
+          OLD_VER: ${{ needs.select.outputs.old_version }}
+          NEW_VER: ${{ needs.select.outputs.new_version }}
+          DEFERRED_CAND: ${{ needs.select.outputs.deferred_candidate }}
+          REASON: ${{ needs.select.outputs.reason }}
+          VALIDATE_RES: ${{ needs.validate.result }}
+          PUBLISH_RES: ${{ needs.publish.result }}
+          PR_NUMBER: ${{ needs.publish.outputs.pr_number }}
+          PR_URL: ${{ needs.publish.outputs.pr_url }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           {
             echo "### Python Runtime Maintenance"
             echo ""
-            if [ "${CHANGED}" = "true" ]; then
-              echo "- Updated \`.python-version\` from \`${OLD_VER}\` to **\`${NEW_VER}\`**."
-              echo "- Pull request: #${PR_NUMBER:-n/a} (\`chore/python-bump\`)."
-              if [ "${HAS_BUMP_PAT}" = "true" ]; then
-                echo "- Opened with \`BUMP_PAT\`: standard \`pull_request\` CI and \`maintenance_merge.yml\` will evaluate the PR."
-              else
-                echo "- Opened with \`GITHUB_TOKEN\`: close and reopen the PR (or trigger CI manually) so required checks run before merge."
-              fi
-            else
-              echo "- Already on highest policy-approved release (\`${OLD_VER}\`). No PR needed."
-            fi
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Source SHA | \`${SOURCE_SHA}\` |"
+            echo "| Previous \`.python-version\` | \`${OLD_VER:-n/a}\` |"
+            echo "| Candidate \`.python-version\` | \`${NEW_VER:-n/a}\` |"
+            echo "| Deferred candidate | \`${DEFERRED_CAND:-none}\` |"
+            echo "| Proposer status | **\`${STATUS:-failed}\`** |"
+            echo "| Update classification | \`${UPDATE_KIND:-none}\` (review_required=\`${REVIEW_REQ:-false}\`) |"
+            echo "| Validation job | \`${VALIDATE_RES:-skipped}\` |"
+            echo "| Publish job | \`${PUBLISH_RES:-skipped}\` (dry_run=\`${DRY_RUN}\`) |"
+            echo "| Pull request | ${PR_URL:-#${PR_NUMBER:-none}} |"
+            echo "| Reason | ${REASON:-n/a} |"
           } >> "${GITHUB_STEP_SUMMARY}"

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import pathlib
 import sys
@@ -31,6 +32,7 @@ def _load_maintenance_module():
 _m = _load_maintenance_module()
 
 MANIFEST_URL = _m.MANIFEST_URL
+RELEASE_DATES_URL = _m.RELEASE_DATES_URL
 PIN_RE = _m.PIN_RE
 RUFF_TARGET_RE = _m.RUFF_TARGET_RE
 
@@ -52,31 +54,50 @@ def fetch_manifest() -> list[dict[str, Any]]:
     return _m.fetch_manifest(MANIFEST_URL)
 
 
-def current_pin() -> str:
-    return _m.read_python_pin(REPO_ROOT, _m.load_policy(REPO_ROOT))
+def fetch_release_dates() -> dict[str, str]:
+    return _m.fetch_release_dates(RELEASE_DATES_URL)
+
+
+def current_pin(root: pathlib.Path = REPO_ROOT) -> str:
+    return _m.read_python_pin(root, _m.load_policy(root))
+
+
+def current_version(root: pathlib.Path = REPO_ROOT) -> str:
+    return current_pin(root)
 
 
 def highest_stable_minor(
     manifest: list[dict[str, Any]],
     current: str | None = None,
+    *,
+    release_dates: dict[str, str] | list[dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
     pin = current or current_pin()
-    sel = _m.select_target_python(manifest, pin, _m.load_policy(REPO_ROOT))
+    sel = _m.select_target_python(
+        manifest, pin, _m.load_policy(REPO_ROOT), release_dates=release_dates
+    )
     return sel.selected_minor, sel.selected_version
 
 
-def bump_workflow_files(old: str, new: str) -> list[pathlib.Path]:
+def bump_workflow_files(
+    old: str, new: str, *, root: pathlib.Path = REPO_ROOT
+) -> list[pathlib.Path]:
     del old
-    rels = _m.write_python_pin(REPO_ROOT, new, _m.load_policy(REPO_ROOT))
-    return [REPO_ROOT / r for r in rels]
+    rels = _m.write_python_pin(root, new, _m.load_policy(root))
+    return [root / r for r in rels]
+
+
+def rewrite_all(new_version: str, *, root: pathlib.Path = REPO_ROOT) -> list[str]:
+    changed, _ruff = _m.apply_python_version(new_version, repo_root=root, policy=_m.load_policy(root))
+    return changed
 
 
 def ruff_understands(target: str) -> bool:
     return _m.ruff_understands(target)
 
 
-def bump_ruff_toml(new_minor: str) -> bool:
-    res = _m.update_ruff_toml(REPO_ROOT, new_minor, _m.load_policy(REPO_ROOT))
+def bump_ruff_toml(new_minor: str, *, root: pathlib.Path = REPO_ROOT) -> bool:
+    res = _m.update_ruff_toml(root, new_minor, _m.load_policy(root))
     return res.changed
 
 
@@ -94,6 +115,10 @@ def write_body(
         selected_version=full,
         selected_minor=".".join(full.split(".")[:2]),
         changed=old != full,
+        status="proposed" if old != full else "up-to-date",
+        update_kind="patch" if old != full else "none",
+        review_required=False,
+        auto_merge_eligible=old != full,
         highest_upstream_version=full,
         clamped_by_policy=False,
         reason=f"Selected stable release {full}.",
@@ -116,8 +141,19 @@ def _out(values: dict[str, str]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    del argv
-    return _m.run_bump(REPO_ROOT, manifest=fetch_manifest(), policy=_m.load_policy(REPO_ROOT))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true", help="Apply selected runtime update")
+    parser.add_argument("--dry-run", action="store_true", help="Select only; do not write files")
+    parser.add_argument("--override", default="", help="Optional manual X.Y.Z override version")
+    args = parser.parse_args(argv if argv is not None else sys.argv[1:])
+    return _m.run_bump(
+        REPO_ROOT,
+        manifest=fetch_manifest(),
+        policy=_m.load_policy(REPO_ROOT),
+        release_dates=fetch_release_dates(),
+        override_version=args.override or None,
+        dry_run=bool(args.dry_run and not args.apply),
+    )
 
 
 if __name__ == "__main__":

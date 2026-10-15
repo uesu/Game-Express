@@ -59,6 +59,7 @@ class Ctx:
     banners: dict = field(default_factory=dict)     # game key -> list of 5★ rate-up banners
     state_load_status: str = "loaded_local"
     state_save_status: str = "unchanged_local"
+    execution_result: str = "success"
     started_at: int = 0
     finished_at: int = 0
 
@@ -294,34 +295,58 @@ def _instrument_webhook(webhook: WebhookClient) -> None:
     orig_send = webhook.send
     orig_edit = webhook.edit
 
+    def _record_delivery(method: str, webhook_url: str, res: Any, fallback_id: str = "", err_str: str = "") -> None:
+        try:
+            if isinstance(res, bool):
+                ok = res
+                status = 200 if ok else 0
+                msg_id = fallback_id
+                err = err_str
+            elif isinstance(res, dict):
+                ok = bool(res.get("ok", True))
+                status = int(res.get("status", 200 if ok else 0))
+                msg_id = str(res.get("message_id") or fallback_id or "")
+                err = str(res.get("error") or err_str or "")
+            elif res is not None:
+                ok = bool(getattr(res, "ok", False))
+                status = int(getattr(res, "status", 0) or 0)
+                msg_id = str(getattr(res, "message_id", None) or fallback_id or "")
+                err = str(getattr(res, "error", "") or err_str or "")
+            else:
+                ok = False
+                status = 0
+                msg_id = fallback_id
+                err = err_str
+            deliveries.append(
+                {
+                    "method": method,
+                    "target": redact_url(webhook_url),
+                    "fingerprint": webhook_fingerprint(webhook_url),
+                    "ok": ok,
+                    "status": status,
+                    "message_id": msg_id or None,
+                    "error": redact_text(err)[:160] if err else "",
+                }
+            )
+        except Exception:
+            pass
+
     async def _tracked_send(webhook_url: str, payload: dict):
-        res = await orig_send(webhook_url, payload)
-        deliveries.append(
-            {
-                "method": "POST",
-                "target": redact_url(webhook_url),
-                "fingerprint": webhook_fingerprint(webhook_url),
-                "ok": bool(res.ok),
-                "status": int(res.status),
-                "message_id": res.message_id,
-                "error": redact_text(res.error)[:160] if res.error else "",
-            }
-        )
+        try:
+            res = await orig_send(webhook_url, payload)
+        except Exception as exc:
+            _record_delivery("POST", webhook_url, None, err_str=f"{type(exc).__name__}: {exc}")
+            raise
+        _record_delivery("POST", webhook_url, res)
         return res
 
     async def _tracked_edit(webhook_url: str, message_id: str, payload: dict):
-        res = await orig_edit(webhook_url, message_id, payload)
-        deliveries.append(
-            {
-                "method": "PATCH",
-                "target": redact_url(webhook_url),
-                "fingerprint": webhook_fingerprint(webhook_url),
-                "ok": bool(res.ok),
-                "status": int(res.status),
-                "message_id": res.message_id or message_id,
-                "error": redact_text(res.error)[:160] if res.error else "",
-            }
-        )
+        try:
+            res = await orig_edit(webhook_url, message_id, payload)
+        except Exception as exc:
+            _record_delivery("PATCH", webhook_url, None, fallback_id=message_id, err_str=f"{type(exc).__name__}: {exc}")
+            raise
+        _record_delivery("PATCH", webhook_url, res, fallback_id=message_id)
         return res
 
     webhook.send = _tracked_send  # type: ignore[method-assign]
@@ -342,9 +367,10 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
     initial_load_status = "loaded_local" if (had_local and has_records) else "fresh_bootstrap"
     own_session = session is None
     session = session or aiohttp.ClientSession(headers={"User-Agent": BOT_UA})
+    ctx: Ctx | None = None
+    started = time.monotonic()
+    started_wall = int(time.time())
     try:
-        started = time.monotonic()
-        started_wall = int(time.time())
         fetcher = Fetcher(session, timeout=settings.http_timeout)
         webhook = WebhookClient(session, dry_run=settings.dry_run)
         _instrument_webhook(webhook)
@@ -373,7 +399,14 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
             state.heartbeat(settings.instance_name, settings.heartbeat_min, ctx.now)
         state.prune(ctx.now)
         if not ephemeral:
-            if state.save():
+            try:
+                saved = state.save()
+            except Exception as save_exc:
+                ctx.state_save_status = "failed_local"
+                ctx.execution_result = "failed"
+                ctx.errors.append(f"state save failed: {type(save_exc).__name__}: {save_exc}")
+                raise
+            if saved:
                 ctx.state_save_status = "saved_local"
                 log.info("state saved -> %s", settings.state_path)
             else:
@@ -384,11 +417,27 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
                                  "from this run's live data. No live card was edited, no copy was "
                                  "touched and the state file was NOT saved. Delete the test cards "
                                  "when you are done")
+        ctx.execution_result = "partial" if ctx.errors else "success"
         log.info("sources: %s", fetcher.summary())
         ctx.elapsed = time.monotonic() - started
         ctx.finished_at = int(time.time())
         write_summary(ctx)
         return ctx
+    except Exception as exc:
+        if ctx is not None:
+            try:
+                ctx.execution_result = "failed"
+                if ctx.state_save_status == "unchanged_local" and not (settings.dry_run or settings.test_mode):
+                    ctx.state_save_status = "not_reached"
+                err_msg = f"{type(exc).__name__}: {exc}"
+                if err_msg not in ctx.errors and f"state save failed: {err_msg}" not in ctx.errors:
+                    ctx.errors.append(err_msg)
+                ctx.elapsed = time.monotonic() - started
+                ctx.finished_at = int(time.time())
+                write_run_report(ctx)
+            except Exception:
+                pass
+        raise
     finally:
         if own_session:
             await session.close()
@@ -427,6 +476,9 @@ def build_run_report(ctx: Ctx) -> dict[str, Any]:
         "schema_version": 1,
         "code_sha": build_id(),
         "python_version": platform.python_version(),
+        "runner_image": os.environ.get("GAMEXPRESS_RUNNER_IMAGE", platform.platform()),
+        "lock_sha256": os.environ.get("GAMEXPRESS_LOCK_SHA256", ""),
+        "setup_duration_s": round(float(os.environ.get("GAMEXPRESS_SETUP_DURATION_S", "0") or 0), 2),
         "instance_name": s.instance_name,
         "instance_role": s.instance_role,
         "mode": mode,
@@ -437,12 +489,14 @@ def build_run_report(ctx: Ctx) -> dict[str, Any]:
         "dry_run": bool(s.dry_run),
         "no_ping": bool(s.no_ping),
         "active": bool(ctx.active),
+        "execution_result": ctx.execution_result,
         "started_at": ctx.started_at or ctx.now,
         "finished_at": ctx.finished_at or int(time.time()),
         "duration_s": round(float(ctx.elapsed), 2),
         "state": {
             "load_status": ctx.state_load_status,
             "save_status": ctx.state_save_status,
+            "local_save_outcome": ctx.state_save_status,
             "path": str(s.state_path),
         },
         "cards": {

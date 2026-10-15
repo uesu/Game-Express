@@ -1,14 +1,21 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "project": "Game-Express",
   "python": {
     "version_file": ".python-version",
     "ruff_config": "ruff.toml",
     "manifest_url": "https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json",
+    "release_dates_url": "https://endoflife.date/api/v1/products/python/",
+    "release_dates_fallback_url": "https://endoflife.date/api/python.json",
     "supported_major": 3,
     "min_minor": 11,
     "max_validated_minor": 14,
     "allow_minor_upgrades": false,
+    "max_minor_jump": 1,
+    "minor_soak_days": 30,
+    "runner_os": "linux",
+    "runner_arch": "x64",
+    "runner_platform_version": "24.04",
     "known_ruff_targets": [
       "py311",
       "py312",
@@ -19,6 +26,12 @@
       ".github/workflows/ci.yml",
       ".github/workflows/monitor.yml",
       ".github/workflows/python_version_bump.yml"
+    ],
+    "allowed_bump_files": [
+      ".python-version",
+      "ruff.toml",
+      "requirements.txt",
+      "requirements-dev.txt"
     ],
     "doc_files": [
       "README.md",
@@ -65,40 +78,121 @@
       "actionlint",
       "zizmor"
     ],
+    "blocking_check_run_names": [
+      "Verify (syntax, workflow contract & offline tests)",
+      "Dependency lockfile consistency",
+      "Ruff lint",
+      "Workflow lint (actionlint)",
+      "Workflow security audit (zizmor)",
+      "maintenance-ci"
+    ],
     "advisory_checks": [
       "pip-audit"
+    ],
+    "advisory_check_run_names": [
+      "Dependency CVE audit (pip-audit, advisory)"
+    ],
+    "registered_tests": [
+      "tests/test_configuration_contract.py",
+      "tests/test_gachawiki_placeholder.py",
+      "tests/test_maintenance.py",
+      "tests/test_run_summary.py",
+      "tests/test_schedule_epithet_and_settled.py",
+      "tests/test_smoke.py"
+    ],
+    "optional_dev_docs": [
+      "README.md",
+      "AGENTS.md",
+      "docs"
     ]
   },
   "automerge": {
     "target_branch": "main",
     "merge_method": "SQUASH",
-    "forbidden_path_prefixes": [
-      ".github/workflows/"
+    "fallback_merge_methods": [
+      "MERGE",
+      "REBASE"
+    ],
+    "trusted_check_apps": [
+      "github-actions"
     ],
     "required_checks": [
       "maintenance-ci"
     ],
+    "blocking_checks": [
+      "verify",
+      "lock-check",
+      "ruff",
+      "actionlint",
+      "zizmor"
+    ],
+    "security_checks": [
+      "pip-audit",
+      "Dependency CVE audit (pip-audit, advisory)"
+    ],
+    "hold_labels": [
+      "hold",
+      "do-not-merge",
+      "do not merge",
+      "dont-merge",
+      "blocked",
+      "needs-review",
+      "review-required",
+      "human-review",
+      "manual-review",
+      "security-review",
+      "wip"
+    ],
+    "waivers": [],
     "lanes": {
       "dependabot_pip": {
-        "actors": [
-          "dependabot[bot]"
+        "authors": [
+          "dependabot[bot]",
+          "app/dependabot"
         ],
+        "opt_in_var": "AUTO_MERGE_DEPENDABOT",
+        "opt_in_value": "yes",
         "branch_prefixes": [
-          "dependabot/pip/",
-          "dependabot/"
+          "dependabot/pip/"
         ],
         "allowed_files": [
           "requirements.in",
           "requirements.txt",
           "requirements-dev.in",
           "requirements-dev.txt"
+        ],
+        "allowed_update_types": [
+          "patch",
+          "minor"
+        ]
+      },
+      "dependabot_actions": {
+        "authors": [
+          "dependabot[bot]",
+          "app/dependabot"
+        ],
+        "opt_in_var": "AUTO_MERGE_DEPENDABOT",
+        "opt_in_value": "yes",
+        "branch_prefixes": [
+          "dependabot/github_actions/",
+          "dependabot/github-actions/"
+        ],
+        "allowed_files": [
+          ".github/workflows/*.yml"
+        ],
+        "allowed_update_types": [
+          "patch",
+          "minor"
         ]
       },
       "python_bump": {
-        "actors": [
+        "authors": [
           "github-actions[bot]",
+          "app/github-actions",
           "uesu"
         ],
+        "opt_in_var": "AUTO_MERGE_PYTHON_BUMP",
+        "opt_in_value": "yes",
         "branch_names": [
           "chore/python-bump"
         ],
@@ -120,6 +214,9 @@
           "docs/TESTING.md",
           "docs/TROUBLESHOOTING.md",
           "docs/changelog/CHANGELOG.md"
+        ],
+        "allowed_update_types": [
+          "patch"
         ]
       }
     }

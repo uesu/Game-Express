@@ -140,7 +140,6 @@ jobs:
       NO_PING: ${{ inputs.mode != 'live' && !inputs.ping && '1' || '0' }}
       PING_FLAG: ${{ inputs.ping && '--ping' || '' }}
       GAME_ARG: ${{ inputs.game != 'all' && inputs.game || '' }}
-      GAMEXPRESS_RUN_REPORT: ${{ runner.temp }}/gamexpress-run-report.json
     steps:
       - name: Check out (branch HEAD, so a queued run sees the previous run's state)
         # zizmor: ignore[artipacked] — the credentials are the point: the last step pushes
@@ -149,15 +148,34 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
-      - name: Capture checked-out code SHA
+      - name: Capture checked-out code SHA & initialize report path
         id: code_sha
         run: |
+          setup_start="$(date +%s)"
           code_sha="$(git log -n 1 --pretty=format:%h -- . ':(exclude)state/state.json' ':(exclude)config/program_announcements.json' 2>/dev/null || true)"
           if [ -z "${code_sha}" ]; then
             code_sha="$(git rev-parse --short=7 HEAD)"
           fi
-          echo "GAMEXPRESS_CODE_SHA=${code_sha}" >> "${GITHUB_ENV}"
-          echo "code_sha=${code_sha}" >> "${GITHUB_OUTPUT}"
+          lock_sha="$(sha256sum requirements.txt | awk '{print $1}')"
+          runner_img="${ImageOS:-${RUNNER_OS:-linux}}-${ImageVersion:-unknown}"
+          report_path="${RUNNER_TEMP:-/tmp}/gamexpress-run-report.json"
+          persist_path="${RUNNER_TEMP:-/tmp}/gamexpress-persistence.json"
+          rm -f "${report_path}" "${persist_path}"
+          {
+            echo "GAMEXPRESS_SETUP_START=${setup_start}"
+            echo "GAMEXPRESS_CODE_SHA=${code_sha}"
+            echo "GAMEXPRESS_LOCK_SHA256=${lock_sha}"
+            echo "GAMEXPRESS_RUNNER_IMAGE=${runner_img}"
+            echo "GAMEXPRESS_RUN_REPORT=${report_path}"
+            echo "GAMEXPRESS_PERSISTENCE_PATH=${persist_path}"
+          } >> "${GITHUB_ENV}"
+          {
+            echo "code_sha=${code_sha}"
+            echo "lock_sha256=${lock_sha}"
+            echo "runner_image=${runner_img}"
+            echo "report_path=${report_path}"
+            echo "persist_path=${persist_path}"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
@@ -185,7 +203,11 @@ jobs:
           uv pip install --require-hashes --only-binary :all: -r requirements.txt -q
 
       - name: Show resolved config (routing, pings, emojis)
-        run: python -m gamexpress validate || true
+        run: |
+          now_ts="$(date +%s)"
+          setup_s=$((now_ts - ${GAMEXPRESS_SETUP_START:-now_ts}))
+          echo "GAMEXPRESS_SETUP_DURATION_S=${setup_s}" >> "${GITHUB_ENV}"
+          python -m gamexpress validate || true
 
       # ══ LIVE RUN ══════════════════════════════════════════════════════════════════════
       - name: LIVE · monitor run
@@ -201,6 +223,7 @@ jobs:
         id: persist
         if: always() && inputs.mode == 'live' && steps.run.conclusion != 'skipped'
         run: |
+          p_start="$(date +%s)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add state/state.json 2>/dev/null || true
@@ -211,30 +234,70 @@ jobs:
           # the real link and the real key art. Same pattern as posted_tweets.json in the X monitor.
           git add -f config/program_announcements.json 2>/dev/null || true
           if git diff --cached --quiet; then
-            echo "persist_outcome=no_changes" >> "${GITHUB_OUTPUT}"
+            p_end="$(date +%s)"
+            p_dur=$((p_end - p_start))
+            {
+              echo "persist_outcome=no_changes"
+              echo "commit_outcome=unchanged"
+              echo "push_outcome=unchanged"
+              echo "persist_duration_s=${p_dur}"
+            } >> "${GITHUB_OUTPUT}"
+            printf '{"persist_outcome":"no_changes","commit_outcome":"unchanged","push_outcome":"unchanged","state_commit_sha":"","persist_duration_s":%s}\n' "${p_dur}" > "${GAMEXPRESS_PERSISTENCE_PATH}"
             echo "state unchanged — nothing to commit"
             exit 0
           fi
-          git commit -m "auto: update state [skip ci]"
+          if ! git commit -m "auto: update state [skip ci]"; then
+            p_end="$(date +%s)"
+            p_dur=$((p_end - p_start))
+            {
+              echo "persist_outcome=commit_failed"
+              echo "commit_outcome=failed"
+              echo "push_outcome=not-run"
+              echo "persist_duration_s=${p_dur}"
+            } >> "${GITHUB_OUTPUT}"
+            printf '{"persist_outcome":"commit_failed","commit_outcome":"failed","push_outcome":"not-run","state_commit_sha":"","persist_duration_s":%s}\n' "${p_dur}" > "${GAMEXPRESS_PERSISTENCE_PATH}"
+            echo "::error::git commit failed for state/state.json"
+            exit 1
+          fi
           state_sha="$(git rev-parse --short=7 HEAD)"
+          echo "commit_outcome=committed" >> "${GITHUB_OUTPUT}"
           echo "state_commit_sha=${state_sha}" >> "${GITHUB_OUTPUT}"
           for i in 1 2 3 4 5; do
             if git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}"; then
               state_sha="$(git rev-parse --short=7 HEAD)"
-              echo "state_commit_sha=${state_sha}" >> "${GITHUB_OUTPUT}"
-              echo "persist_outcome=saved_and_pushed" >> "${GITHUB_OUTPUT}"
+              p_end="$(date +%s)"
+              p_dur=$((p_end - p_start))
+              {
+                echo "state_commit_sha=${state_sha}"
+                echo "persist_outcome=saved_and_pushed"
+                echo "push_outcome=pushed"
+                echo "persist_duration_s=${p_dur}"
+              } >> "${GITHUB_OUTPUT}"
+              printf '{"persist_outcome":"saved_and_pushed","commit_outcome":"committed","push_outcome":"pushed","state_commit_sha":"%s","persist_duration_s":%s}\n' "${state_sha}" "${p_dur}" > "${GAMEXPRESS_PERSISTENCE_PATH}"
               exit 0
             fi
             sleep $((i * 3))
           done
-          echo "persist_outcome=push_failed" >> "${GITHUB_OUTPUT}"
+          p_end="$(date +%s)"
+          p_dur=$((p_end - p_start))
+          {
+            echo "persist_outcome=push_failed"
+            echo "push_outcome=failed"
+            echo "persist_duration_s=${p_dur}"
+          } >> "${GITHUB_OUTPUT}"
+          printf '{"persist_outcome":"push_failed","commit_outcome":"committed","push_outcome":"failed","state_commit_sha":"%s","persist_duration_s":%s}\n' "${state_sha}" "${p_dur}" > "${GAMEXPRESS_PERSISTENCE_PATH}"
           echo "::error::could not push state/state.json after 5 attempts"
           exit 1
 
       # ══ TEST — REAL DATA, posted to the real channels as 🧪 TEST, state never saved ═══
       - name: TEST · webhooks — is every secret there and pointing at the right channel?
         if: inputs.mode == 'test' && (env.TEST == 'webhooks' || env.TEST == 'all')
-        run: python -m gamexpress check-webhooks ${GAME_ARG:+--game "$GAME_ARG"}
+        run: |
+          args=()
+          if [ -n "${GAME_ARG}" ]; then
+            args+=(--game "${GAME_ARG}")
+          fi
+          python -m gamexpress check-webhooks "${args[@]}"
 
       - name: TEST · codes — the REAL codes on the live sources, to each game's codes channel
         if: inputs.mode == 'test' && (env.TEST == 'codes' || env.TEST == 'all')
@@ -252,7 +315,15 @@ jobs:
 
       - name: TEST · codes for games that are not live yet (example codes — nothing real to fetch)
         if: inputs.mode == 'test' && (env.TEST == 'codes' || env.TEST == 'all')
-        run: python -m gamexpress test-card --kind codes --unlaunched ${GAME_ARG:+--game "$GAME_ARG"} $PING_FLAG
+        run: |
+          args=(--kind codes --unlaunched)
+          if [ -n "${GAME_ARG}" ]; then
+            args+=(--game "${GAME_ARG}")
+          fi
+          if [ -n "${PING_FLAG}" ]; then
+            args+=("${PING_FLAG}")
+          fi
+          python -m gamexpress test-card "${args[@]}"
 
       - name: TEST · schedule — the REAL announcement card (link, key art, livestream + maintenance times, banners)
         if: inputs.mode == 'test' && (env.TEST == 'schedule' || env.TEST == 'all')
@@ -283,4 +354,5 @@ jobs:
         run: |
           python .github/scripts/render_run_summary.py \
             --report "${GAMEXPRESS_RUN_REPORT}" \
+            --persistence "${GAMEXPRESS_PERSISTENCE_PATH}" \
             --output "${GITHUB_STEP_SUMMARY}"

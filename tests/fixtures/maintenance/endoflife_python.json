@@ -1,17 +1,23 @@
 [
   {
     "cycle": "3.15",
+    "releaseDate": "2026-10-01",
     "latest": "3.15.0",
+    "latestReleaseDate": "2026-10-01",
     "eol": false
   },
   {
     "cycle": "3.14",
+    "releaseDate": "2025-10-07",
     "latest": "3.14.9",
+    "latestReleaseDate": "2026-09-15",
     "eol": false
   },
   {
     "cycle": "3.13",
+    "releaseDate": "2024-10-07",
     "latest": "3.13.12",
+    "latestReleaseDate": "2026-08-10",
     "eol": false
   }
 ]

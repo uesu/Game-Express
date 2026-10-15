@@ -41,7 +41,8 @@ jobs:
 
       - name: Run verification suite via ci.py adapter
         run: |
-          python .github/scripts/ci.py verify
+          python .github/scripts/maintenance.py assert-interpreter
+          python .github/scripts/ci.py verify --profile development
 
   lock-check:
     name: Dependency lockfile consistency
@@ -65,7 +66,8 @@ jobs:
 
       - name: Verify requirements.txt and requirements-dev.txt match inputs
         run: |
-          python .github/scripts/ci.py lock-check
+          python .github/scripts/maintenance.py assert-interpreter
+          python .github/scripts/ci.py lock-check --require-exact-python
 
   ruff:
     name: Ruff lint

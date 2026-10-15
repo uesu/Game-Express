@@ -36,15 +36,21 @@ Runtime selection and linter compatibility are governed by [`.github/maintenance
 | `min_minor` | `11` | Minimum supported Python minor line |
 | `max_validated_minor` | `14` | Highest minor line validated against wheels, Ruff, and offline suites |
 | `allow_minor_upgrades` | `false` | Restricts automated bumps to patch releases on the current minor line until explicitly enabled |
+| `max_minor_jump` | `1` | Allows at most `current_minor + 1` when minor upgrades are enabled (never skips a minor series) |
+| `minor_soak_days` | `30` | Requires at least 30 days since upstream release date before proposing `current_minor + 1` (missing release dates defer) |
 | `known_ruff_targets` | `["py311", "py312", "py313", "py314"]` | Supported Ruff `target-version` enum values |
 
 ### Ruff Target Clamping
 
 If the selected Python minor ever exceeds Ruff's `target-version` enum, `maintenance.py` clamps `ruff.toml` to the highest supported Ruff target at or below the selected Python minor and documents the clamp in the pull-request body instead of writing an invalid `ruff.toml`.
 
-### Publication Token (`BUMP_PAT`)
+### Privilege Split & Publication Token (`BUMP_PAT`)
 
-In [`.github/workflows/python_version_bump.yml`](../.github/workflows/python_version_bump.yml), the `select` and `validate` jobs run without repository secrets, and the `publish` job uses `secrets.BUMP_PAT || secrets.GITHUB_TOKEN` so pull requests opened with `BUMP_PAT` trigger normal `pull_request` CI runs before `maintenance_merge.yml` evaluates them.
+In [`.github/workflows/python_version_bump.yml`](../.github/workflows/python_version_bump.yml):
+1. `select` (`permissions: contents: read`) selects a policy-bounded candidate without repository secrets.
+2. `validate` (`permissions: contents: read`) sets up the candidate CPython interpreter, asserts `assert-interpreter`, recompiles locks with the real target interpreter, and runs `ci.py verify`, `ci.py lock-check --require-exact-python`, `ci.py ruff`, `actionlint`, `zizmor`, and `pip-audit` without write permissions or `BUMP_PAT`.
+3. `publish` (`permissions: contents: write, pull-requests: write`) requires `secrets.BUMP_PAT` explicitly (failing closed without falling back to `GITHUB_TOKEN`, which would suppress normal `pull_request` CI) and verifies that only allowlisted runtime files changed (`verify-bump-diff`).
+4. `report` (`if: always()`) writes the proposer status (`up-to-date`, `proposed`, `deferred`, `review-required`, `failed`) to `GITHUB_STEP_SUMMARY`.
 
 ---
 
@@ -93,21 +99,18 @@ In [`.github/workflows/python_version_bump.yml`](../.github/workflows/python_ver
 
 Auto-merge is decoupled from `ci.yml` and `python_version_bump.yml` and handled exclusively by [`.github/workflows/maintenance_merge.yml`](../.github/workflows/maintenance_merge.yml):
 
-1. Triggered on `pull_request_target` (`opened`, `synchronize`, `reopened`, `ready_for_review`) targeting `main`.
-2. Never checks out or executes untrusted PR code; loads `.github/maintenance.json` and `.github/scripts/maintenance.py` from `pr.base.sha` via the GitHub API.
-3. Calls `python3 .github/scripts/maintenance.py evaluate-automerge` to verify:
-   - same-repository PR targeting `main`;
-   - trusted automation actor (`dependabot[bot]` for `dependabot/*`, or `github-actions[bot]` / `uesu` for `chore/python-bump`);
-   - zero modifications under `.github/workflows/`;
-   - every changed file matches the lane allowlist in `.github/maintenance.json`;
-   - PR is open, non-draft, mergeable, and has passing `maintenance-ci`.
-4. Enables GitHub GraphQL `enablePullRequestAutoMerge` (`SQUASH`) only when all checks pass.
+1. Triggered on `workflow_run` (`CI` completed), `pull_request_target` (`opened`, `synchronize`, `reopened`, `ready_for_review`, `labeled`, `unlabeled`, `edited`), `pull_request_review` (`submitted`, `edited`, `dismissed`), and `workflow_dispatch`.
+2. Gated per lane via independent repository variables: `AUTO_MERGE_DEPENDABOT=yes` for Dependabot lanes and `AUTO_MERGE_PYTHON_BUMP=yes` for `chore/python-bump` same-series patch PRs.
+3. Never checks out or executes untrusted PR code; loads `.github/maintenance.json` and `.github/scripts/maintenance.py` from `heads/main` via the GitHub REST API.
+4. Paginates PR files, diffs, commits, reviews, check runs, and commit statuses without manufacturing passing checks or `MERGEABLE` defaults when checks are absent or mergeability is unknown.
+5. Calls `python3 .github/scripts/maintenance.py evaluate-automerge` to verify provenance, lane file allowlists, diff content, version risk (blocking major, `0.x` minor, prerelease, downgrade, and Python minor bumps), hold labels, effective latest reviewer state, and passing `maintenance-ci` on the exact `head.sha`.
+6. Performs an immediate pre-merge API refresh and executes a synchronous SHA-bound merge (`pulls.merge` with `sha: validated_head_sha`), verifying `merged === true` via `verify-merge-result`.
 
 ---
 
 ## 6. Accurate Run Summary, Code SHA & Persistence Footer
 
-- [`.github/workflows/monitor.yml`](../.github/workflows/monitor.yml) captures the checked-out code commit into `GAMEXPRESS_CODE_SHA` before running the monitor or creating any state commit.
+- [`.github/workflows/monitor.yml`](../.github/workflows/monitor.yml) captures the checked-out code commit into `GAMEXPRESS_CODE_SHA` and initializes `GAMEXPRESS_RUN_REPORT`, `GAMEXPRESS_PERSISTENCE_PATH`, `GAMEXPRESS_LOCK_SHA256`, and `GAMEXPRESS_RUNNER_IMAGE` via `$GITHUB_ENV` before running any Python consumer.
 - `gamexpress.build_id()` prefers `GAMEXPRESS_CODE_SHA` over `GITHUB_SHA` so summaries and logs always identify the code commit rather than a previous `auto: update state` commit.
-- During execution, `gamexpress.runner` writes a redacted, bounded JSON report to `$RUNNER_TEMP/gamexpress-run-report.json` (`GAMEXPRESS_RUN_REPORT`).
-- An `if: always()` final step runs [`.github/scripts/render_run_summary.py`](../.github/scripts/render_run_summary.py) to append the full run summary and final persistence outcome (`saved_and_pushed`, `no_changes`, `skipped_test_mode`, `skipped_after_run_failure`, `push_failed`, or `push_skipped`) along with both `code_sha` and `state_commit_sha`.
+- During execution, `gamexpress.runner` writes a redacted, bounded JSON report to `$RUNNER_TEMP/gamexpress-run-report.json` (`GAMEXPRESS_RUN_REPORT`) while preserving all webhook return values and re-raising any exceptions unchanged.
+- An `if: always()` final step runs [`.github/scripts/render_run_summary.py`](../.github/scripts/render_run_summary.py) to append the full run summary (`unavailable` when a report file is missing rather than fabricated zeroes) and separate local state save, git commit, and remote git push outcomes along with `code_sha` and `state_commit_sha`.
