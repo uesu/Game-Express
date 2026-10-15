@@ -1180,6 +1180,7 @@ def compile_lockfile(
     compile_command: str,
     *,
     require_exact_python: bool = True,
+    upgrade: bool = False,
 ) -> str:
     """Compile `input_rel` with the real running interpreter and `pip-tools` (no marker spoofing)."""
     pin = read_python_pin(repo_root)
@@ -1188,8 +1189,11 @@ def compile_lockfile(
     else:
         assert_target_interpreter(repo_root, pin, allow_same_minor=True)
 
+    existing_out = repo_root / output_rel
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_out = pathlib.Path(tmp_dir) / pathlib.Path(output_rel).name
+        if existing_out.is_file() and not upgrade:
+            shutil.copy2(existing_out, tmp_out)
         cmd = [
             sys.executable,
             "-m",
@@ -1202,6 +1206,8 @@ def compile_lockfile(
             f"--output-file={tmp_out.as_posix()}",
             input_rel,
         ]
+        if upgrade:
+            cmd.insert(4, "--upgrade")
         env = os.environ.copy()
         env["CUSTOM_COMPILE_COMMAND"] = compile_command
         res = subprocess.run(
