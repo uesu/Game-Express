@@ -1,0 +1,12 @@
+# Developer, test, and lock-compiler dependencies for Game-Express.
+# Constrained against the runtime lockfile so test/dev packages cannot drift
+# from or replace runtime dependency versions.
+# Compile into the hashed lockfile (requirements-dev.txt) with:
+#   CUSTOM_COMPILE_COMMAND="python -m piptools compile --generate-hashes --allow-unsafe --resolver=backtracking --strip-extras --output-file=requirements-dev.txt requirements-dev.in" \
+#   python -m piptools compile --generate-hashes --allow-unsafe --resolver=backtracking --strip-extras --output-file=requirements-dev.txt requirements-dev.in
+-c requirements.txt
+pip==26.1.1
+pip-tools==7.5.3
+pytest>=9.0.0,<10
+pyyaml>=6.0.2,<7
+ruff>=0.15.0,<1

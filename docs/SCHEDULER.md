@@ -14,7 +14,9 @@ GitHub's own `schedule:` trigger is **disabled** (commented out) in
 - **GitHub's schedule is unreliable under load.** It can start 15–60 minutes late or skip runs.
 
 > **Only one scheduler per repo.** To go back to GitHub's schedule, uncomment the two
-> `schedule:` lines in `monitor.yml` **and** pause the cron-job.org job.
+> `schedule:` lines in `monitor.yml` **and** pause the cron-job.org job. See also
+> [MAINTENANCE.md](MAINTENANCE.md) for how `monitor.yml` records `GAMEXPRESS_CODE_SHA` and renders
+> the final persistence footer via `.github/scripts/render_run_summary.py`.
 
 ---
 

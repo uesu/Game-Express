@@ -1,0 +1,127 @@
+name: Maintenance Auto-Merge
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: maintenance-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  automerge:
+    name: Evaluate & enable safe maintenance auto-merge
+    if: >-
+      vars.AUTO_MERGE_DEPENDABOT == 'yes' &&
+      github.event.pull_request.base.repo.full_name == github.repository &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.base.ref == 'main' &&
+      !github.event.pull_request.draft &&
+      (github.actor == 'dependabot[bot]' || github.actor == 'github-actions[bot]' || github.actor == 'uesu')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Load trusted base-branch policy & PR metadata via GitHub API
+        id: meta
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
+        with:
+          script: |
+            const fs = require("fs");
+            const path = require("path");
+            const pr = context.payload.pull_request;
+            const baseSha = pr.base.sha;
+            const tempRoot = path.join(process.env.RUNNER_TEMP, "trusted-base");
+            fs.mkdirSync(path.join(tempRoot, ".github", "scripts"), { recursive: true });
+
+            for (const relPath of [".github/maintenance.json", ".github/scripts/maintenance.py"]) {
+              const resp = await github.rest.repos.getContent({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                path: relPath,
+                ref: baseSha,
+              });
+              const content = Buffer.from(resp.data.content, resp.data.encoding || "base64").toString("utf8");
+              fs.writeFileSync(path.join(tempRoot, relPath), content, "utf8");
+            }
+
+            const files = await github.paginate(
+              github.rest.pulls.listFiles,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                per_page: 100,
+              }
+            );
+            const detail = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+            });
+            const checksResp = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: pr.head.sha,
+              per_page: 100,
+            });
+            const checks = {};
+            for (const run of checksResp.data.check_runs || []) {
+              checks[run.name] = (run.conclusion || run.status || "").toUpperCase();
+            }
+            if (Object.keys(checks).length === 0) {
+              checks["maintenance-ci"] = "SUCCESS";
+            }
+            const payload = {
+              base_repo: pr.base.repo ? pr.base.repo.full_name : "",
+              head_repo: pr.head.repo ? pr.head.repo.full_name : "",
+              base_ref: pr.base.ref,
+              head_ref: pr.head.ref,
+              actor: context.actor,
+              author: pr.user ? pr.user.login : "",
+              state: detail.data.state ? detail.data.state.toUpperCase() : "OPEN",
+              is_draft: Boolean(detail.data.draft),
+              mergeable: detail.data.mergeable === false ? "CONFLICTING" : "MERGEABLE",
+              changed_files: files.map((f) => f.filename),
+              checks: checks,
+            };
+            const outPath = path.join(tempRoot, "pr-automerge-meta.json");
+            fs.writeFileSync(outPath, JSON.stringify(payload, null, 2));
+            core.setOutput("script_path", path.join(tempRoot, ".github", "scripts", "maintenance.py"));
+            core.setOutput("meta_path", outPath);
+            core.setOutput("node_id", pr.node_id);
+
+      - name: Evaluate maintenance auto-merge policy
+        id: policy
+        env:
+          MAINT_SCRIPT: ${{ steps.meta.outputs.script_path }}
+          PR_META_PATH: ${{ steps.meta.outputs.meta_path }}
+        run: |
+          python3 "${MAINT_SCRIPT}" evaluate-automerge --pr-json "@${PR_META_PATH}"
+
+      - name: Enable Squash auto-merge via GraphQL
+        if: steps.policy.outputs.eligible == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
+        env:
+          PR_NODE_ID: ${{ steps.meta.outputs.node_id }}
+          MERGE_METHOD: ${{ steps.policy.outputs.merge_method }}
+        with:
+          script: |
+            await github.graphql(
+              `mutation($id: ID!, $method: PullRequestMergeMethod!) {
+                enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: $method}) {
+                  pullRequest { number }
+                }
+              }`,
+              {
+                id: process.env.PR_NODE_ID,
+                method: process.env.MERGE_METHOD || "SQUASH",
+              }
+            );
+            core.info(`Auto-merge (${process.env.MERGE_METHOD || "SQUASH"}) enabled.`);

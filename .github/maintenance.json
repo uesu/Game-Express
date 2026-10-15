@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "project": "Game-Express",
+  "python": {
+    "version_file": ".python-version",
+    "ruff_config": "ruff.toml",
+    "manifest_url": "https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json",
+    "supported_major": 3,
+    "min_minor": 11,
+    "max_validated_minor": 14,
+    "allow_minor_upgrades": false,
+    "known_ruff_targets": [
+      "py311",
+      "py312",
+      "py313",
+      "py314"
+    ],
+    "workflow_files": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/monitor.yml",
+      ".github/workflows/python_version_bump.yml"
+    ],
+    "doc_files": [
+      "README.md",
+      "AGENTS.md",
+      "docs/MAINTENANCE.md",
+      "docs/PYTHON_VERSION.md",
+      "docs/CONFIGURATION.md",
+      "docs/DEPENDABOT.md",
+      "docs/PROD-REPO-SETUP.md",
+      "docs/ROLLOUT.md",
+      "docs/SCHEDULER.md",
+      "docs/SECURITY.md",
+      "docs/TESTING.md",
+      "docs/TROUBLESHOOTING.md",
+      "docs/changelog/CHANGELOG.md"
+    ]
+  },
+  "locks": {
+    "compiler": {
+      "pip": "26.1.1",
+      "pip_tools": "7.5.3"
+    },
+    "targets": [
+      {
+        "name": "runtime",
+        "input_file": "requirements.in",
+        "output_file": "requirements.txt",
+        "compile_command": "python -m piptools compile --generate-hashes --allow-unsafe --resolver=backtracking --strip-extras --output-file=requirements.txt requirements.in"
+      },
+      {
+        "name": "dev",
+        "input_file": "requirements-dev.in",
+        "output_file": "requirements-dev.txt",
+        "compile_command": "python -m piptools compile --generate-hashes --allow-unsafe --resolver=backtracking --strip-extras --output-file=requirements-dev.txt requirements-dev.in"
+      }
+    ]
+  },
+  "ci": {
+    "final_gate_name": "maintenance-ci",
+    "blocking_checks": [
+      "verify",
+      "lock-check",
+      "ruff",
+      "actionlint",
+      "zizmor"
+    ],
+    "advisory_checks": [
+      "pip-audit"
+    ]
+  },
+  "automerge": {
+    "target_branch": "main",
+    "merge_method": "SQUASH",
+    "forbidden_path_prefixes": [
+      ".github/workflows/"
+    ],
+    "required_checks": [
+      "maintenance-ci"
+    ],
+    "lanes": {
+      "dependabot_pip": {
+        "actors": [
+          "dependabot[bot]"
+        ],
+        "branch_prefixes": [
+          "dependabot/pip/",
+          "dependabot/"
+        ],
+        "allowed_files": [
+          "requirements.in",
+          "requirements.txt",
+          "requirements-dev.in",
+          "requirements-dev.txt"
+        ]
+      },
+      "python_bump": {
+        "actors": [
+          "github-actions[bot]",
+          "uesu"
+        ],
+        "branch_names": [
+          "chore/python-bump"
+        ],
+        "allowed_files": [
+          ".python-version",
+          "ruff.toml",
+          "requirements.txt",
+          "requirements-dev.txt",
+          "README.md",
+          "AGENTS.md",
+          "docs/MAINTENANCE.md",
+          "docs/PYTHON_VERSION.md",
+          "docs/CONFIGURATION.md",
+          "docs/DEPENDABOT.md",
+          "docs/PROD-REPO-SETUP.md",
+          "docs/ROLLOUT.md",
+          "docs/SCHEDULER.md",
+          "docs/SECURITY.md",
+          "docs/TESTING.md",
+          "docs/TROUBLESHOOTING.md",
+          "docs/changelog/CHANGELOG.md"
+        ]
+      }
+    }
+  }
+}

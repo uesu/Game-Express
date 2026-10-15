@@ -417,20 +417,25 @@ make an overlapping trigger safe. **[docs/SCHEDULER.md](docs/SCHEDULER.md)**.
 
 ## 🧪 Testing & CI
 
-**➡️ Full checklist: [docs/TESTING.md](docs/TESTING.md).**
+**➡️ Full checklist: [docs/TESTING.md](docs/TESTING.md) · Maintenance architecture: [docs/MAINTENANCE.md](docs/MAINTENANCE.md).**
 
 | Gate | What it runs |
 |---|---|
-| **CI** (`ci.yml`, required) | install → `compileall` → `validate` → every `tests/test_*.py` through its plain runner → preview render. **every test offline — no network, no secrets** |
-| **CI — advisory checks** (never blocks a merge) | `pip-audit` (CVEs in `requirements.txt`), `actionlint` (workflow YAML), `zizmor` (workflow security), `ruff` (the same `ruff.toml` you run locally) |
+| **`maintenance-ci`** (`ci.yml`, required aggregate gate) | Blocking jobs: `test` (`python .github/scripts/ci.py verify` → `compileall`, workflow pin contract, and all offline suites under `tests/test_*.py`), `lock-check` (`python .github/scripts/ci.py lock-check`), `ruff` (`python .github/scripts/ci.py ruff`), `actionlint`, and `zizmor`. **Every blocking test is offline — no network, no secrets** |
+| **CI — advisory check** (reported in `maintenance-ci`, non-blocking) | `pip-audit` (OSV CVE scan on `requirements.txt`) |
 | **Monitor test bench** (`mode = test`) | webhooks, real codes, or the real schedule card — against the live sources |
 
 The offline suite pins real official posts captured on 2026-09-25 (which must reproduce the
 reference cards' timestamps), golden JSON for the 4 converted cards, button nesting and Discord's
 component/character limits, every code parser and the code gate, the 4★ TBA rules, silent edits,
-stale-post suppression, fail-over, parallel fetching, and the workflow files themselves.
+stale-post suppression, fail-over, parallel fetching, maintenance/automerge/lockfile policy
+(`tests/test_maintenance.py`), run-summary/redaction/persistence reporting
+(`tests/test_run_summary.py`), and configuration/documentation contracts
+(`tests/test_configuration_contract.py`).
 
 ```bash
+python .github/scripts/ci.py verify              # compile + workflow contract + all offline suites
+python .github/scripts/ci.py lock-check          # verify requirements.txt & requirements-dev.txt
 python tests/test_smoke.py                       # the main offline suite (what CI runs first)
 python -m pytest -q tests                        # every test file in one go
 UPDATE_GOLDEN=1 python tests/test_smoke.py       # after an INTENTIONAL card change
@@ -443,6 +448,7 @@ python -m gamexpress preview                     # open previews/index.html
 
 | Doc | What's in it |
 |---|---|
+| **[docs/MAINTENANCE.md](docs/MAINTENANCE.md)** | `.python-version`, `.github/maintenance.json`, hashed `pip-tools` locks, `maintenance-ci` gate, `maintenance_merge.yml`, and run-summary persistence reporting |
 | **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** | every secret, variable, `games.json` field and `overrides.json` key |
 | **[docs/ACCURACY.md](docs/ACCURACY.md)** | how a post becomes a card: detection, extraction, provenance, the code gate |
 | **[docs/SOURCES.md](docs/SOURCES.md)** | every verified endpoint, with why it was chosen or rejected |

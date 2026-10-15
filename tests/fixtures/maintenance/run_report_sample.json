@@ -1,0 +1,69 @@
+{
+  "mode": "live",
+  "only": "all",
+  "game": "all",
+  "repost": "",
+  "no_ping": false,
+  "code_sha": "68529e83fdc2bede720529c35a6fd377b345710a",
+  "python_version": "3.14.8",
+  "started_at": "2026-10-15T12:00:00Z",
+  "finished_at": "2026-10-15T12:00:05Z",
+  "duration_s": 5.4,
+  "state": {
+    "load_status": "loaded_local",
+    "save_status": "saved_local"
+  },
+  "runs": [
+    {
+      "duration_s": 5.4,
+      "cards": {
+        "posted": 0,
+        "patched": 1,
+        "failed": 0
+      },
+      "report_lines": [
+        "**Zenless Zone Zero**: `3.3` tracked (card `1489359824912343040`)",
+        "✏️ `3.3` schedule card updated — banners (`phase_2_chars` ← notice)"
+      ],
+      "warnings": [
+        "nitter:https://tw.eir-nya.gay: transport_ok_zero_items (http_200_zero_entries)"
+      ],
+      "errors": [],
+      "source_outcomes": [
+        {
+          "source": "hoyolab:getNewsList",
+          "lane": "schedule",
+          "game": "zzz",
+          "transport_status": "http_ok",
+          "parsed_count": 15,
+          "usable_count": 15,
+          "selected_count": 3,
+          "fallback_used": false,
+          "status": "selected",
+          "reason": ""
+        },
+        {
+          "source": "nitter:https://tw.eir-nya.gay",
+          "lane": "x_timeline",
+          "game": "ZZZ_EN",
+          "transport_status": "http_ok",
+          "parsed_count": 0,
+          "usable_count": 0,
+          "selected_count": 0,
+          "fallback_used": false,
+          "status": "transport_ok_zero_items",
+          "reason": "http_200_zero_entries"
+        }
+      ],
+      "webhook_deliveries": [
+        {
+          "method": "PATCH",
+          "target": "https://discord.com/api/webhooks/123456789/secret_token_xyz",
+          "fingerprint": "a1b2c3d4e5",
+          "status": 200,
+          "ok": true
+        }
+      ]
+    }
+  ]
+}

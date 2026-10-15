@@ -15,7 +15,8 @@ Merging changes nothing. *You* decide when the fan-out starts, per game.
 > [`PROD-REPO-SETUP.md`](PROD-REPO-SETUP.md) §3), or when adding a seventh game.
 
 See [`CONFIGURATION.md`](CONFIGURATION.md#fan-out--the-same-card-in-two-channels) for what the
-setting does; this page is the operational order.
+setting does and [`MAINTENANCE.md`](MAINTENANCE.md) for the run-summary and persistence reporting;
+this page is the operational order.
 
 ---
 

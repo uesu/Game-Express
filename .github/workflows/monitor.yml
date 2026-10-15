@@ -140,6 +140,7 @@ jobs:
       NO_PING: ${{ inputs.mode != 'live' && !inputs.ping && '1' || '0' }}
       PING_FLAG: ${{ inputs.ping && '--ping' || '' }}
       GAME_ARG: ${{ inputs.game != 'all' && inputs.game || '' }}
+      GAMEXPRESS_RUN_REPORT: ${{ runner.temp }}/gamexpress-run-report.json
     steps:
       - name: Check out (branch HEAD, so a queued run sees the previous run's state)
         # zizmor: ignore[artipacked] — the credentials are the point: the last step pushes
@@ -148,10 +149,21 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
+      - name: Capture checked-out code SHA
+        id: code_sha
+        run: |
+          code_sha="$(git log -n 1 --pretty=format:%h -- . ':(exclude)state/state.json' ':(exclude)config/program_announcements.json' 2>/dev/null || true)"
+          if [ -z "${code_sha}" ]; then
+            code_sha="$(git rev-parse --short=7 HEAD)"
+          fi
+          echo "GAMEXPRESS_CODE_SHA=${code_sha}" >> "${GITHUB_ENV}"
+          echo "code_sha=${code_sha}" >> "${GITHUB_OUTPUT}"
+
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
         with:
-          python-version: '3.14'
+          python-version-file: .python-version
+          check-latest: false
 
       # This step runs every 5 minutes (cron-job.org), so its speed is the one that actually
       # matters: uv installs the exact same packages pip would, just with a much faster resolver.
@@ -169,7 +181,8 @@ jobs:
       - name: Install dependencies
         env:
           UV_SYSTEM_PYTHON: '1'
-        run: uv pip install -r requirements.txt -q
+        run: |
+          uv pip install --require-hashes --only-binary :all: -r requirements.txt -q
 
       - name: Show resolved config (routing, pings, emojis)
         run: python -m gamexpress validate || true
@@ -185,6 +198,7 @@ jobs:
         run: python -m gamexpress run
 
       - name: LIVE · commit state (also after a partial failure, so nothing is ever posted twice)
+        id: persist
         if: always() && inputs.mode == 'live' && steps.run.conclusion != 'skipped'
         run: |
           git config user.name "github-actions[bot]"
@@ -196,14 +210,24 @@ jobs:
           # what lets a later test run resolve the same announcement by id through fxtwitter and show
           # the real link and the real key art. Same pattern as posted_tweets.json in the X monitor.
           git add -f config/program_announcements.json 2>/dev/null || true
-          if git diff --cached --quiet; then echo "state unchanged — nothing to commit"; exit 0; fi
+          if git diff --cached --quiet; then
+            echo "persist_outcome=no_changes" >> "${GITHUB_OUTPUT}"
+            echo "state unchanged — nothing to commit"
+            exit 0
+          fi
           git commit -m "auto: update state [skip ci]"
+          state_sha="$(git rev-parse --short=7 HEAD)"
+          echo "state_commit_sha=${state_sha}" >> "${GITHUB_OUTPUT}"
           for i in 1 2 3 4 5; do
             if git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              state_sha="$(git rev-parse --short=7 HEAD)"
+              echo "state_commit_sha=${state_sha}" >> "${GITHUB_OUTPUT}"
+              echo "persist_outcome=saved_and_pushed" >> "${GITHUB_OUTPUT}"
               exit 0
             fi
             sleep $((i * 3))
           done
+          echo "persist_outcome=push_failed" >> "${GITHUB_OUTPUT}"
           echo "::error::could not push state/state.json after 5 attempts"
           exit 1
 
@@ -243,3 +267,20 @@ jobs:
           INSTANCE_ROLE: primary
           PEER_STATE_URL: none
         run: python -m gamexpress run
+
+      - name: Render run summary & persistence footer
+        if: always()
+        env:
+          MONITOR_MODE: ${{ inputs.mode }}
+          ONLY: ${{ inputs.only }}
+          ONLY_GAMES: ${{ inputs.game }}
+          FORCE_REPOST: ${{ inputs.repost }}
+          MONITOR_TEST: ${{ inputs.test }}
+          GAMEXPRESS_CODE_SHA: ${{ steps.code_sha.outputs.code_sha }}
+          STATE_COMMIT_SHA: ${{ steps.persist.outputs.state_commit_sha }}
+          MONITOR_RUN_OUTCOME: ${{ inputs.mode == 'live' && steps.run.outcome || 'success' }}
+          STATE_PERSIST_OUTCOME: ${{ steps.persist.outputs.persist_outcome || steps.persist.outcome }}
+        run: |
+          python .github/scripts/render_run_summary.py \
+            --report "${GAMEXPRESS_RUN_REPORT}" \
+            --output "${GITHUB_STEP_SUMMARY}"

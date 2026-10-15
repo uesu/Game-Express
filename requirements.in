@@ -1,0 +1,8 @@
+# Runtime dependency ranges for Game-Express.
+# Compile into the hashed lockfile (requirements.txt) with:
+#   CUSTOM_COMPILE_COMMAND="python -m piptools compile --generate-hashes --allow-unsafe --resolver=backtracking --strip-extras --output-file=requirements.txt requirements.in" \
+#   python -m piptools compile --generate-hashes --allow-unsafe --resolver=backtracking --strip-extras --output-file=requirements.txt requirements.in
+aiohttp>=3.14.3,<4
+feedparser>=6.0.14,<7
+python-dotenv>=1.2.3,<2
+typing-extensions>=4.16.0,<5

@@ -15,6 +15,27 @@ Older releases (1.0.0 – 1.7.0, September 2026) live in
 
 ## 2026-10-15
 
+**Maintenance: unify safe updates, pin the Game runtime, and report source and persistence
+outcomes accurately.** CPython is now pinned to an exact version in `.python-version` (`3.14.8`),
+every workflow uses `actions/setup-python` with `python-version-file: .python-version`, and runtime
+plus developer dependencies are split into `requirements.in` → hashed `requirements.txt` and
+`requirements-dev.in` → hashed `requirements-dev.txt` (generated via `pip-tools==7.5.3` /
+`pip==26.1.1` and installed with `--require-hashes --only-binary=:all:`). Machine-readable update
+policy in `.github/maintenance.json` and `.github/scripts/maintenance.py` (with
+`.github/scripts/python_version_bump.py` kept as a compatibility adapter) drives
+`python_version_bump.yml` (`select` → secret-free `validate` → `publish` using `BUMP_PAT`),
+`.github/scripts/ci.py` drives the `maintenance-ci` gate in `ci.yml`, and `.github/workflows/maintenance_merge.yml`
+replaces the embedded auto-merge job in `ci.yml` so only safe narrow Dependabot PRs (`pip` patch/minor
+on `requirements*`, `github-actions` SHA pin bumps on `.github/workflows/*.yml`) and valid
+`chore/python-bump` PRs auto-merge after `maintenance-ci` succeeds. In `gamexpress/http.py`,
+`gamexpress/sources/twitter.py`, `gamexpress/runner.py`, and `.github/scripts/render_run_summary.py`,
+source telemetry now distinguishes transport status from parsed/usable/selected item counts (so HTTP
+200 with 0 parsed items reports `transport_ok_zero_items` / `parse_empty`), `GAMEXPRESS_CODE_SHA`
+captures the pre-run commit SHA before any state commit, and an `always()` step in `monitor.yml`
+renders the final **State & Persistence Footer** (`saved_and_pushed`, `no_changes`,
+`skipped_test_mode`, `skipped_after_run_failure`, `push_failed`, or `push_skipped`). Nothing in card
+payloads, schedule/code logic, routing, pings, fan-out, or `state/state.json` changes.
+
 **Rotation #6: the xcopy.uk trial's verdict lands, and the hot path goes fully
 runner-proven.** The first four post-merge runs delivered the verdict rotation #5 was
 built for: xcopy.uk refused the runners with HTTP 403 on all six handles, every run,

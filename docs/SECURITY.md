@@ -75,11 +75,17 @@ run reports it as an error. Test: `test_a_source_dumping_hundreds_of_codes_canno
 
 ## 4. Secrets (T3)
 
-* Webhook URLs never reach the log: dry-run output rewrites them to `/webhooks/…`, and state
-  stores only `webhook_fingerprint()` — a short, non-reversible id, never the URL.
-* Source logging prints `url.split("?")[0]`, so the token in a token-gated nitter mirror's query
-  string cannot be printed.
-* Discord error bodies are truncated to 500 characters and never include the URL.
+* Centralized redaction helpers in `gamexpress/http.py` (`redact_url`, `redact_headers`,
+  `redact_text`, `redact_value`) scrub Discord webhook URLs/tokens
+  (`https://discord.com/api/webhooks/<redacted>`), URL userinfo (`https://<redacted>@host/...`),
+  proxy/worker path secrets, sensitive query parameters (`key`, `token`, `sig`, `secret`, `auth`,
+  `password`, `webhook`), and authorization/cookie headers across logs, `GITHUB_STEP_SUMMARY`, and
+  the temporary `$RUNNER_TEMP/gamexpress-run-report.json` file.
+* Webhook URLs never reach the log or state: dry-run output rewrites them to `/webhooks/…`, and
+  state stores only `webhook_fingerprint()` — a short, non-reversible id, never the URL.
+* Source logging prints redacted URLs without query tokens, so the token in a token-gated nitter
+  mirror's query string cannot be printed.
+* Discord error bodies are truncated and redacted before logging or reporting.
 * Actions masks every secret value in logs as a second line of defence.
 
 **Residual risk, accepted:** `monitor.yml` passes `toJSON(secrets)` as `GE_SECRETS_JSON` so the
@@ -92,12 +98,18 @@ thing to revisit if a third-party step is ever added to that job. zizmor's
 ## 5. Supply chain and permissions (T4, T6)
 
 * Default `permissions: contents: read`; `contents: write` only where a job must commit state or
-  open a PR; `pull-requests: write` only on the auto-merge jobs. No `pull_request_target`
-  anywhere, so a fork PR never runs with a writable token.
-* Auto-merge jobs do **not** check out the PR's code — untrusted code never executes with the
-  elevated token.
-* Dependabot watches both `pip` and `github-actions` weekly; `pip-audit` runs in CI; `zizmor`
-  audits the workflows; `actionlint` validates them.
+  open a PR; `pull-requests: write` only on `python_version_bump.yml` and
+  [`.github/workflows/maintenance_merge.yml`](../.github/workflows/maintenance_merge.yml).
+* `maintenance_merge.yml` uses `pull_request_target` **without** checking out or executing
+  untrusted PR code: it loads `.github/maintenance.json` and `.github/scripts/maintenance.py` from
+  the trusted base branch (`pr.base.sha`) via the GitHub API and rejects forks, drafts,
+  `.github/workflows/*` modifications, unexpected files, and non-passing `maintenance-ci` checks
+  before enabling `SQUASH` auto-merge ([MAINTENANCE.md](MAINTENANCE.md)).
+* Runtime and dev dependencies are pinned with SHA-256 hashes in `requirements.txt` and
+  `requirements-dev.txt` (generated from `requirements.in` and `requirements-dev.in` with
+  `pip-tools==7.5.3` and `pip==26.1.1`) and installed with `--require-hashes --only-binary=:all:`.
+* Dependabot watches both `pip` and `github-actions` weekly; `pip-audit`, `zizmor`, `actionlint`,
+  `ruff`, and lockfile verification run in CI ([MAINTENANCE.md](MAINTENANCE.md)).
 * **Every action is pinned to a full commit SHA**, with the human-readable version in a
   trailing comment (`uses: actions/checkout@3d3c42e…  # v7`). This is the direct lesson of
   March 2025: an attacker with a stolen bot token repointed *every* tag of

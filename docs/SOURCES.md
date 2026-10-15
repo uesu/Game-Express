@@ -2,7 +2,11 @@
 
 Everything marked ✅ was **fetched live on 2026-09-25** while building v1.0. The response
 shapes are pinned by the fixtures in `tests/fixtures/`. Every source is optional at runtime:
-a dead source is logged and skipped, and the next one in the chain is used.
+a dead source is logged and skipped, and the next one in the chain is used. Source outcome
+telemetry in `gamexpress/http.py` and `gamexpress/sources/twitter.py` records transport status
+alongside parsed, usable, and selected item counts so HTTP 200 responses with 0 parsed items are
+reported as `transport_ok_zero_items` / `parse_empty` rather than healthy content success (see
+[MAINTENANCE.md](MAINTENANCE.md)).
 
 ## Schedule & announcements
 

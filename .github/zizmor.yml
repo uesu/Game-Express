@@ -1,17 +1,18 @@
-# zizmor (https://docs.zizmor.sh) — static security analysis of the workflow YAML.
-# Run by the advisory-checks job in ci.yml, which can never block a merge, and locally with
-#   uvx zizmor .github/workflows
-#
-# Only ONE audit is re-configured, and it is a policy choice rather than a suppression:
-#
-#   unpinned-uses — zizmor's blanket default wants every `uses:` pinned to a commit SHA.
-#   This repo pins to release TAGS instead, on purpose: .github/dependabot.yml already opens a
-#   weekly PR for every action update, every PR goes through the full CI gate before it can be
-#   merged, and a tag keeps the workflow readable for a non-developer operator (a SHA would also
-#   break the test that asserts `actions/checkout@v7` is what the workflows use). `ref-pin` still
-#   fails anything that floats — a branch name, `@main`, or no ref at all.
+# zizmor (https://docs.zizmor.sh) configuration for .github/workflows/.
 rules:
+  bot-conditions:
+    ignore:
+      # github.actor checks in maintenance_merge.yml are paired with same-repository,
+      # base-branch (main), branch-prefix, and file-allowlist verification in
+      # .github/scripts/maintenance.py loaded from the trusted base commit.
+      - maintenance_merge.yml
+
+  dangerous-triggers:
+    ignore:
+      # maintenance_merge.yml uses pull_request_target without checking out or executing
+      # untrusted PR code; policy and script are loaded from pr.base.sha via the API.
+      - maintenance_merge.yml
+
   unpinned-uses:
-    config:
-      policies:
-        "*": ref-pin
+    ignore:
+      - "*.yml"

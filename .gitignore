@@ -1,13 +1,11 @@
-# local secrets
-.env
-# python
 __pycache__/
 *.py[cod]
 .venv/
 venv/
+.env
+*.tmp
+state/*.corrupt.json
+/tmp/
 .pytest_cache/
 .ruff_cache/
-# previews / scratch
-previews/
-state/*.tmp
-state/*.corrupt.json
+*run-report*.json

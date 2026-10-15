@@ -188,18 +188,21 @@ so a newly added variable works without touching the workflow.
 ## 5. How to verify a change (exact commands)
 
 ```bash
-uv venv --python 3.11 && uv pip install -r requirements.txt pyyaml ruff pytest vulture
-.venv/bin/python -m compileall -q gamexpress tests .github/scripts
-.venv/bin/ruff check .                      # ruff.toml is authoritative
-.venv/bin/python tests/test_smoke.py        # must end N/N, 0 failed — the plain runners are what CI uses
-.venv/bin/python tests/test_schedule_epithet_and_settled.py
-.venv/bin/python tests/test_gachawiki_placeholder.py
-.venv/bin/python -m pytest -q tests         # pytest must also pass (all three files in one go)
+python3 -m venv .venv && .venv/bin/python -m pip install --require-hashes --only-binary=:all: -r requirements.txt -r requirements-dev.txt
+.venv/bin/python .github/scripts/ci.py verify
+.venv/bin/python .github/scripts/ci.py lock-check
+.venv/bin/python .github/scripts/ci.py ruff
+.venv/bin/python -m pytest -q tests         # pytest must also pass across all offline test suites
 .venv/bin/python -m gamexpress validate     # routing, pings, card limits -> "config OK"
 .venv/bin/python -m gamexpress preview --out /tmp/previews
 zizmor .github/workflows                    # 0 findings; config in .github/zizmor.yml
 DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-end, posts nothing
 ```
+
+See [`docs/MAINTENANCE.md`](docs/MAINTENANCE.md) for `.python-version`, `.github/maintenance.json`,
+`.github/scripts/maintenance.py`, hashed `pip-tools` lockfiles (`requirements.in` / `requirements.txt`
+and `requirements-dev.in` / `requirements-dev.txt`), the `maintenance-ci` gate,
+`maintenance_merge.yml`, and run-summary persistence reporting.
 
 - **`pyyaml` must be installed** or the workflow-assertion tests silently skip (and a test-count
   claim becomes wrong).

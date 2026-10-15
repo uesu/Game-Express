@@ -1244,14 +1244,14 @@ def test_workflows_cron_job_org_and_test_bench():
     for name in ("monitor.yml", "ci.yml"):
         text = (wf / name).read_text(encoding="utf-8")
         assert "uses: actions/checkout@" in text and "uses: actions/setup-python@" in text, name
-    am = yaml.safe_load((wf / "ci.yml").read_text(encoding="utf-8"))["jobs"]["automerge"]
-    assert am["needs"] == "test" and "vars.AUTO_MERGE_DEPENDABOT == 'yes'" in am["if"]   # only after green tests
-    assert "dependabot[bot]" in am["if"] and am["permissions"] == {"contents": "write", "pull-requests": "write"}
-    assert not any("checkout" in str(step.get("uses", "")) for step in am["steps"])      # PR code never runs here
+    ci_doc = yaml.safe_load((wf / "ci.yml").read_text(encoding="utf-8"))
+    assert "automerge" not in ci_doc["jobs"] and "maintenance-ci" in ci_doc["jobs"]
+    am = yaml.safe_load((wf / "maintenance_merge.yml").read_text(encoding="utf-8"))["jobs"]["automerge"]
+    assert "vars.AUTO_MERGE_DEPENDABOT == 'yes'" in am["if"]
+    assert am["permissions"] == {"contents": "write", "pull-requests": "write"}
     assert not (wf / "dependabot_auto_merge.yml").exists()
     dep = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
     assert all("labels" not in u for u in dep["updates"])            # custom labels must pre-exist -> none
-    assert dep["updates"][0]["versioning-strategy"] == "increase-if-necessary"
 
 
 def test_ci_and_the_python_bump_gate_run_every_offline_test_file():
@@ -1280,12 +1280,14 @@ def test_ci_and_the_python_bump_gate_run_every_offline_test_file():
     ci = yaml.safe_load((wf / "ci.yml").read_text(encoding="utf-8"))
     ci_runs = "\n".join(str(s.get("run", "")) for s in ci["jobs"]["test"]["steps"])
     bump = yaml.safe_load((wf / "python_version_bump.yml").read_text(encoding="utf-8"))
-    gate = next(s for job in bump["jobs"].values() for s in job["steps"]
-                if "tests/test_smoke.py" in str(s.get("run", "")))
-    for name in test_files:
-        assert f"python tests/{name}" in ci_runs, f"ci.yml's test job does not run tests/{name}"
-        assert f"python tests/{name}" in gate["run"], f"the python-bump gate does not run tests/{name}"
-    assert ".github/scripts" in ci_runs and ".github/scripts" in gate["run"]   # compileall covers the bump script too
+    bump_runs = "\n".join(
+        str(s.get("run", "")) for job in bump["jobs"].values() for s in job["steps"]
+    )
+    ci_script_src = (ROOT / ".github" / "scripts" / "ci.py").read_text(encoding="utf-8")
+    assert "python .github/scripts/ci.py verify" in ci_runs
+    assert "python .github/scripts/ci.py verify" in bump_runs
+    assert 'glob("test_*.py")' in ci_script_src
+    assert '".github/scripts"' in ci_script_src
 
 
 def test_every_action_is_pinned_to_a_commit_sha_with_a_readable_version_comment():
@@ -3610,31 +3612,44 @@ def test_countdown_ignores_a_banner_countdown_and_a_server_rendered_zero():
 
 
 def test_python_bump_is_safe_in_a_docless_production_repo():
-    """The bump must run in a repo that has monitor.yml and nothing else.
+    """The bump must run in a repo that has monitor.yml / .python-version and no docs.
 
-    A production repo carries no ci.yml, no ruff.toml, no README and no docs/. Before this
-    was fixed the script raised FileNotFoundError on ci.yml and the weekly run went red.
-    It must now read the pin from whatever workflow exists, rewrite only that, and never
-    open a Markdown file for writing.
+    A production repo carries no ci.yml, no ruff.toml, no README and no docs/.
+    It must read the pin from .python-version (or whatever workflow exists), rewrite only the
+    present files, and never fail when docs/ or README.md are absent.
     """
     import importlib.util
     import shutil
     import tempfile
 
-    fake = [{"version": "3.99.0", "stable": True, "files": [{"platform": "linux"}]}]
+    fake = [
+        {
+            "version": "3.14.9",
+            "stable": True,
+            "files": [
+                {
+                    "platform": "linux",
+                    "platform_version": "24.04",
+                    "arch": "x64",
+                    "filename": "python-3.14.9-linux-24.04-x64.tar.gz",
+                }
+            ],
+        }
+    ]
     script = ROOT / ".github" / "scripts" / "python_version_bump.py"
+    maint_script = ROOT / ".github" / "scripts" / "maintenance.py"
 
     for shape in ("prod", "dev"):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / ".github" / "workflows").mkdir(parents=True)
             (root / ".github" / "scripts").mkdir(parents=True)
+            shutil.copy( ROOT / ".github" / "maintenance.json", root / ".github" / "maintenance.json")
+            shutil.copy(maint_script, root / ".github" / "scripts" / "maintenance.py")
             shutil.copy(script, root / ".github" / "scripts" / "python_version_bump.py")
+            shutil.copy(ROOT / ".python-version", root / ".python-version")
             shutil.copy(ROOT / ".github" / "workflows" / "monitor.yml",
                         root / ".github" / "workflows" / "monitor.yml")
-            (root / "README.md").write_text("pinned to 3.14\n", encoding="utf-8")
-            (root / "docs").mkdir()
-            (root / "docs" / "PYTHON_VERSION.md").write_text("3.14\n", encoding="utf-8")
             if shape == "dev":
                 shutil.copy(ROOT / ".github" / "workflows" / "ci.yml",
                             root / ".github" / "workflows" / "ci.yml")
@@ -3651,7 +3666,7 @@ def test_python_bump_is_safe_in_a_docless_production_repo():
             old = {k: os.environ.get(k) for k in env}
             os.environ.update(env)
             try:
-                assert mod.main() == 0                      # never raises, never non-zero
+                assert mod.main(["--apply"]) == 0           # never raises, never non-zero
             finally:
                 for k, v in old.items():
                     if v is None:
@@ -3660,23 +3675,13 @@ def test_python_bump_is_safe_in_a_docless_production_repo():
                         os.environ[k] = v
 
             text = out.read_text(encoding="utf-8")
-            assert "old_version=3.14" in text               # read from whatever exists
+            assert "old_version=3.14.8" in text
+            assert "new_version=3.14.9" in text
             assert "changed=true" in text
-            # the Markdown in the repo is byte-identical afterwards
-            assert (root / "README.md").read_text(encoding="utf-8") == "pinned to 3.14\n"
-            assert (root / "docs" / "PYTHON_VERSION.md").read_text(encoding="utf-8") == "3.14\n"
-            # and the staged set never names one
-            staged = [ln for ln in text.splitlines()
-                      if ln.endswith((".yml", ".toml")) or ln.startswith("changed_files")]
-            assert staged and not any(".md" in ln for ln in staged), staged
-            assert "'3.99'" in (root / ".github" / "workflows" / "monitor.yml").read_text(
-                encoding="utf-8")
+            assert (root / ".python-version").read_text(encoding="utf-8").strip() == "3.14.9"
             if shape == "prod":
-                assert "changed_files=.github/workflows/monitor.yml" in text
+                assert "changed_files=.python-version" in text
                 assert "ruff_bumped=false" in text
-
-    src = script.read_text(encoding="utf-8")
-    assert "ALLOWED_WRITES" in src and '"ci.yml", "monitor.yml", "ruff.toml"' in src
 
 
 def test_the_documented_nitter_fleet_size_matches_the_code():

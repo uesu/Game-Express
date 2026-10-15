@@ -20,7 +20,7 @@ import feedparser
 
 from .. import schedule
 from ..config import CONFIG_DIR, Game, Settings
-from ..http import Fetcher
+from ..http import Fetcher, redact_url, summarize_source_outcome
 from ..media import nitter_pic_to_twimg, sane_aspect
 from ..models import Item
 from ..textutil import find_urls, html_to_text
@@ -126,6 +126,9 @@ class XClient:
         self.source_used: dict[str, int] = {}  # tweet-data service that answered, per run
         self.status_fails: dict[str, int] = {}  # failed status-feed requests per mirror, this run
         self.reachable: set[str] = set()      # accounts with >= 1 working instance this run
+        self.probe_outcomes: list[dict] = []
+        self.account_outcomes: dict[str, dict] = {}
+        self.game_outcomes: dict[str, dict] = {}
 
     async def _probe(self, inst: str, account: str) -> list | None:
         """One nitter instance -> parsed feed entries, or None (dead / bot-check / stale)."""
@@ -134,18 +137,66 @@ class XClient:
         if inst in TOKEN_GATED:
             token = self.settings.nitter_token
             if not token:
+                self.probe_outcomes.append(
+                    summarize_source_outcome(
+                        source=f"nitter:{redact_url(inst)}",
+                        lane="x_timeline",
+                        game=account,
+                        transport_status="http_status",
+                        parsed_count=0,
+                        usable_count=0,
+                        selected_count=0,
+                        reason="missing_nitter_token",
+                    )
+                )
                 return None
             headers = {"User-Agent": f"Mozilla/5.0 {token}", "Authorization": f"Bearer {token}"}
             url += f"?token={quote(token, safe='')}"
         body = await self.fetcher.get_text(url, source="nitter", headers=headers, retries=0,
                                            timeout=NITTER_TIMEOUT)
         if not body:
+            self.probe_outcomes.append(
+                summarize_source_outcome(
+                    source=f"nitter:{redact_url(inst)}",
+                    lane="x_timeline",
+                    game=account,
+                    transport_status="network_error",
+                    parsed_count=0,
+                    usable_count=0,
+                    selected_count=0,
+                    reason="transport_failed",
+                )
+            )
             return None
         feed = await asyncio.to_thread(feedparser.parse, body)
         if not feed.entries:
             log.info("[x:%s] %s: HTTP 200 but 0 entries (bot check / stale) — next", account, inst)
+            self.probe_outcomes.append(
+                summarize_source_outcome(
+                    source=f"nitter:{redact_url(inst)}",
+                    lane="x_timeline",
+                    game=account,
+                    transport_status="http_ok",
+                    parsed_count=0,
+                    usable_count=0,
+                    selected_count=0,
+                    reason="http_200_zero_entries",
+                )
+            )
             return None
-        return list(feed.entries)
+        entries_list = list(feed.entries)
+        self.probe_outcomes.append(
+            summarize_source_outcome(
+                source=f"nitter:{redact_url(inst)}",
+                lane="x_timeline",
+                game=account,
+                transport_status="http_ok",
+                parsed_count=len(entries_list),
+                usable_count=len(entries_list),
+                selected_count=len(entries_list),
+            )
+        )
+        return entries_list
 
     async def _probe_batch(self, batch: list[str], account: str, needed: int) -> list[list]:
         """Probe a whole batch at once and return the first `needed` answers, in fleet order.
@@ -212,6 +263,7 @@ class XClient:
             return self._timelines[account] or []
         entries: dict[str, dict] = {}
         working = 0
+        raw_parsed = 0
         fleet = list(self.settings.nitter_instances)
         for i in range(0, len(fleet), NITTER_BATCH):
             if working >= NITTER_WORKING:
@@ -219,6 +271,7 @@ class XClient:
             batch = fleet[i:i + NITTER_BATCH]
             for feed_entries in await self._probe_batch(batch, account, NITTER_WORKING - working):
                 working += 1
+                raw_parsed += len(feed_entries)
                 for e in feed_entries:
                     m = STATUS_RE.search(e.get("link", ""))
                     if not m:
@@ -234,10 +287,38 @@ class XClient:
                         "id": tid, "ts": ts, "title": e.get("title") or "", "text": text or e.get("title") or "",
                         "links": links, "images": [nitter_pic_to_twimg(i) for i in imgs],
                     })
+        acct_probes = [p for p in self.probe_outcomes if p.get("game") == account]
+        had_prior_fail = any(
+            p.get("status") in ("source_failed", "transport_ok_zero_items", "parse_empty")
+            for p in acct_probes
+        )
         if not working:
             log.warning("[x:%s] no working nitter instance this run", account)
+            had_zero_ok = any(p.get("status") == "transport_ok_zero_items" for p in acct_probes)
+            self.account_outcomes[account] = summarize_source_outcome(
+                source="nitter",
+                lane="x_timeline",
+                game=account,
+                transport_status="http_ok" if had_zero_ok else "network_error",
+                parsed_count=0,
+                usable_count=0,
+                selected_count=0,
+                fallback_used=False,
+                reason="http_200_zero_entries" if had_zero_ok else "no_working_nitter_instance",
+            )
         else:
             self.reachable.add(account.lower())
+            self.account_outcomes[account] = summarize_source_outcome(
+                source="nitter",
+                lane="x_timeline",
+                game=account,
+                transport_status="http_ok",
+                parsed_count=raw_parsed,
+                usable_count=len(entries),
+                selected_count=len(entries),
+                fallback_used=had_prior_fail,
+                reason="secondary_mirror_merged" if had_prior_fail else "",
+            )
         self._timelines[account] = sorted(entries.values(), key=lambda x: x["ts"], reverse=True) if working else None
         return self._timelines[account] or []
 
@@ -378,6 +459,22 @@ class XClient:
                 title="", text=text, published_ts=(t or {}).get("ts") or e["ts"],
                 images=(t or {}).get("photos") or e["images"],
                 links=(t or {}).get("links") or e["links"]))
+        acct_outcomes = [self.account_outcomes.get(a, {}) for a in game.x_accounts]
+        total_parsed = sum(int(o.get("parsed_count", 0)) for o in acct_outcomes)
+        total_usable = sum(int(o.get("usable_count", 0)) for o in acct_outcomes)
+        any_fallback = any(bool(o.get("fallback_used")) for o in acct_outcomes)
+        any_ok = any(o.get("transport_status") == "http_ok" for o in acct_outcomes)
+        self.game_outcomes[game.key] = summarize_source_outcome(
+            source="x",
+            lane="announcements",
+            game=game.key,
+            transport_status="http_ok" if any_ok else "network_error",
+            parsed_count=total_parsed,
+            usable_count=total_usable,
+            selected_count=len(out),
+            fallback_used=any_fallback,
+            reason="" if out else ("no_working_nitter_instance" if not any_ok else "no_matching_items_for_window"),
+        )
         return out
 
 

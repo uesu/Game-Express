@@ -1,147 +1,44 @@
-# Keeping the Python version current
+# Python Version Policy
 
-**Dependabot cannot do this one job.** It watches `requirements.txt` (a tracked
-`package-ecosystem: pip`) and the `uses: actions/...@vN` lines in workflows (a tracked
-`package-ecosystem: github-actions`) — see [docs/DEPENDABOT.md](DEPENDABOT.md). The interpreter
-itself, `python-version: '3.14'` inside `ci.yml` / `monitor.yml`, is just a plain string in
-workflow YAML, not a file in either of those ecosystems, so it is invisible to Dependabot by
-design. `.github/workflows/python_version_bump.yml` fills that one gap.
+See also: [Maintenance Architecture & Safe Update Guide](MAINTENANCE.md) · [Dependabot Guide](DEPENDABOT.md) · [Testing & Verification](TESTING.md)
 
-## What already happens automatically, with no workflow at all
+## Exact Runtime Pin (`.python-version`)
 
-`python-version:` is pinned to the **minor** series only (`'3.14'`, not `'3.14.8'`). GitHub's
-hosted runners always install the newest available patch of that series, so a bugfix release
-(3.14.8 → 3.14.9 → …) needs **zero** action from anyone — it is already as automatic as it gets.
+Game-Express pins its CPython runtime in a single file at the repository root:
 
-## What the bump workflow does
+- [`.python-version`](../.python-version) → `3.14.8`
 
-Once a week (Monday, same day Dependabot checks), and on demand via *Actions → Python version
-bump (auto) → Run workflow*:
+All GitHub Actions workflows that set up Python ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml), [`.github/workflows/monitor.yml`](../.github/workflows/monitor.yml), and [`.github/workflows/python_version_bump.yml`](../.github/workflows/python_version_bump.yml)) read `.python-version` with `check-latest: false`:
 
-1. Reads the manifest [`actions/python-versions`](https://github.com/actions/python-versions)
-   itself publishes (`versions-manifest.json`) — the **exact list `actions/setup-python`
-   downloads from**. Whatever this workflow proposes is therefore already installable on the
-   runner the moment the PR opens; nothing is guessed from a release-announcement blog post.
-2. Takes the newest series marked `stable: true` there with a Linux build (pre-releases /
-   release candidates are excluded by that flag).
-3. If it's newer than the currently pinned series, it edits `ci.yml` and `monitor.yml`, and
-   tries bumping `ruff.toml`'s `target-version` too — but only after confirming the **installed**
-   `ruff` actually recognises that target (`ruff check --target-version pyNEW`). A brand-new
-   Python series sometimes ships a few weeks before Ruff adds a matching target; when that
-   happens, `ruff.toml` is left untouched and the PR body says so, instead of writing a config
-   value Ruff would reject.
-4. **Proves the bump before proposing it.** It installs the new interpreter, requires every
-   dependency to come from a **prebuilt wheel** (`--only-binary=:all:` — on the day a new series
-   lands, `aiohttp` and its compiled friends have no matching ABI wheels yet), then re-runs CI's
-   own gate — `compileall`, `validate`, the offline suite, the preview render — **under the new
-   interpreter, on the already-rewritten tree**. If the interpreter will not install, if wheels
-   are missing, or if a gate is red, nothing is proposed: the run logs a warning and next Monday
-   tries again. A deferral, never a failure.
-
-   Each of those three steps re-checks that the interpreter *actually* switched. If it did not,
-   `python` would still be the old one and a green gate here would be a lie — so the chain stops
-   instead of producing a PR that claims a validation it never did.
-5. Only then opens a PR (via [`peter-evans/create-pull-request`](https://github.com/peter-evans/create-pull-request))
-   labelled `python-bump`.
-
-> **Why the gate lives in this workflow and not in `ci.yml`.** A PR opened with the built-in
-> `GITHUB_TOKEN` does **not** trigger other workflows, so `ci.yml`'s `pull_request` trigger never
-> fires on it and no check is ever posted. A `needs: test` gate over in `ci.yml` would wait
-> forever — which is exactly why the old `automerge-python-bump` job could never run and has been
-> removed. Validating here is also *strictly more informative*: `ci.yml` would have tested the
-> **old** pin, this tests the new one.
-
-## It never merges blind
-
-A `python-bump` PR only merges automatically when **both** of these hold (the final step of
-`python_version_bump.yml`):
-
-- every dependency installed from a prebuilt wheel **and** `compileall` + `validate` + the
-  offline suite + the preview render all passed under the **new** interpreter — the PR does not
-  exist otherwise, so there is nothing to merge;
-- the repository **variable** `AUTO_MERGE_PYTHON_BUMP` is set to **`all`**. `yes` is deliberately
-  *not* enough here — see the box below.
-
-Leave the variable unset, or set it to `yes`, and the workflow only ever opens the PR for you to
-read and merge by hand — nothing is merged without a human unless you explicitly set `all`.
-
-> **`yes` does NOT merge in this repo, on purpose.** One rule then holds everywhere:
->
-> | value | News-Express family (pins an exact patch, e.g. `3.14.8`) | Game-Express (pins the series, `3.14`) |
-> |---|---|---|
-> | unset | nothing auto-merges | nothing auto-merges |
-> | `yes` | patch bumps auto-merge | **nothing auto-merges** — no patch PRs exist |
-> | `all` | patch **and** series bumps auto-merge | series bumps auto-merge |
->
-> Read it as *“`yes` = merge the routine bumps; `all` = also merge the new-series jump.”* Because
-> this repo pins a **series** (`python-version: '3.14'`) and `setup-python` resolves patches by
-> itself, there are no routine bumps here to merge — so `yes` correctly merges nothing. That is
-> what lets you set `AUTO_MERGE_PYTHON_BUMP=yes` in **every** repo and still be certain a 3.15
-> jump always waits for a human.
-
-The merge tries squash, then merge, then rebase, and settles for a warning if the repository
-has all three disabled. A proven-green bump should never show up as a red run because of a
-repository setting.
-
-**Recommended:** keep `AUTO_MERGE_PYTHON_BUMP` at `yes` (or unset) so the series bump always
-waits for you. Python 3.15.0 final is scheduled for **2026-10-09**
-([PEP 790](https://peps.python.org/pep-0790/)), so the first 3.14 → 3.15 proposal will appear on
-one of the Monday runs right after that — this is the PR that box above is about. A brand-new
-Python *feature* release
-is the riskiest moment for any third-party dependency to have caught up; reading that one PR
-costs a minute and costs nothing if it's clean. Set `all` afterwards if you'd rather not look at
-these at all.
-
-## One-time setup this needs
-
-**1 · Let Actions open pull requests.** *Settings → Actions → General → Workflow permissions →
-"Allow GitHub Actions to create and approve pull requests."* GitHub blocks a workflow from
-opening its own PRs until this is turned on — the same kind of one-time repository setting as
-the classic PAT in [docs/SCHEDULER.md](SCHEDULER.md).
-
-**2 · Add the `BUMP_PAT` secret.** *Settings → Secrets and variables → Actions → Secrets → New
-repository secret*, named exactly `BUMP_PAT`.
-
-This one is not optional. A series bump rewrites `python-version:` inside
-`.github/workflows/ci.yml` and `.github/workflows/monitor.yml`, and **the built-in
-`GITHUB_TOKEN` can never push a change to a file under `.github/workflows/`** — the `workflows`
-permission does not exist for it and cannot be granted in a `permissions:` block. Without
-`BUMP_PAT` the run does all its work, proves the new interpreter green, and then dies on the
-final push with:
-
-```
-refusing to allow a GitHub App to create or update workflow
-.github/workflows/ci.yml without workflows permission
+```yaml
+- name: Set up Python
+  uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
+  with:
+    python-version-file: .python-version
+    check-latest: false
 ```
 
-Use a personal access token with these permissions — fine-grained works, classic works with
-`repo` + `workflow`:
+Floating `'3.x'` or minor-only `'3.14'` workflow pins are not used, ensuring CI, scheduled monitor runs, and dependency compilation all execute on the exact same validated CPython release.
 
-| Permission | Why |
-|---|---|
-| Contents: **Read and write** | push the bump branch |
-| Metadata: Read-only | always required |
-| Pull requests: **Read and write** | open the PR |
-| Workflows: **Read and write** | the one that fixes the error above |
+## Policy Bounds (`.github/maintenance.json`)
 
-A token valid for "all repositories" still has to be added as a secret in **each** repository
-separately — the scope of the token and the existence of the secret are different things.
+Candidate selection is controlled by [`.github/maintenance.json`](../.github/maintenance.json) and enforced by [`.github/scripts/maintenance.py`](../.github/scripts/maintenance.py) (with [`.github/scripts/python_version_bump.py`](../.github/scripts/python_version_bump.py) retained as a compatibility wrapper):
 
-> Add the secret **before** merging any change that references it. `secrets.BUMP_PAT` on a repo
-> that doesn't have it resolves to an empty string, and `token: ''` fails the *checkout* — which
-> is worse than the original bug, because the run then dies at the first step instead of the last.
+- `supported_major`: `3`
+- `min_minor`: `11`
+- `max_validated_minor`: `14`
+- `allow_minor_upgrades`: `false`
 
-## Why this can't quietly break the live monitor
+While `allow_minor_upgrades` is `false`, the weekly bump workflow only selects newer stable patch releases on the validated `3.14.x` line (e.g. `3.14.9`) that publish a valid Linux `x64` archive in `actions/python-versions`, ignoring prereleases, yanked builds, and unvalidated newer minor lines (such as `3.15.x`).
 
-- It can only ever propose a version GitHub's own tooling already considers installable — not a
-  guess based on a release date.
-- It can't merge without a fully green run of the real test suite, and only when you've opted in.
-- Merging to `main` is what deploys (per the README's "Setup" section) — so even an auto-merged
-  bump only reaches the running monitor on its next scheduled run, same as any other change.
-- Worst case it's ever wrong: it's one commit, revertable exactly like a Dependabot bump.
+## Ruff `target-version` Clamping
 
-## To turn it off completely
+`maintenance.py` keeps `target-version` in [`ruff.toml`](../ruff.toml) aligned with the active Python minor, clamped to `known_ruff_targets` (`py311`–`py314`) and probed against the installed `ruff` binary. If a future Python minor exceeds Ruff's supported target enum, `ruff.toml` is clamped to the highest supported target at or below the selected Python minor and the PR body explains the clamp.
 
-Delete `.github/workflows/python_version_bump.yml` (and, if you'd set it, the
-`AUTO_MERGE_PYTHON_BUMP` repository variable). The interpreter version then only changes when you
-edit `python-version:` yourself.
+## Weekly Bump & Safe Auto-Merge Flow
+
+1. [`.github/workflows/python_version_bump.yml`](../.github/workflows/python_version_bump.yml) runs Mondays at `08:00 UTC` (or via `workflow_dispatch`).
+2. It runs `python .github/scripts/maintenance.py bump` to check `actions/python-versions`.
+3. When a newer allowed release is available, it updates `.python-version` (and `ruff.toml` if needed), sets up the candidate Python version, recompiles/verifies hashed lockfiles (`requirements.txt` and `requirements-dev.txt`), and runs `python .github/scripts/ci.py verify` and `python .github/scripts/ci.py ruff`.
+4. It opens or updates the `chore/python-bump` pull request using `secrets.BUMP_PAT` when configured (so standard `pull_request` CI runs automatically) or `github.token` otherwise (noting in the job summary that a close/reopen or manual CI dispatch is required before merge).
+5. The bump workflow never self-merges; once `maintenance-ci` passes on `chore/python-bump`, [`.github/workflows/maintenance_merge.yml`](../.github/workflows/maintenance_merge.yml) verifies the actor, branch, file allowlist, and zero `.github/workflows/*` changes before enabling `SQUASH` auto-merge.

@@ -1,8 +1,12 @@
 # Troubleshooting
 
 Symptom → fix. Start with the **job summary** of the run in question
-(*Actions → Game-Express Monitor → the run*): it lists what was posted, what was skipped and
-why, and the health of every source.
+(*Actions → Game-Express Monitor → the run*): rendered by
+`.github/scripts/render_run_summary.py` ([MAINTENANCE.md](MAINTENANCE.md)), it lists what was
+posted, what was skipped and why, per-source transport vs. parsed/usable/selected item counts, and
+the **State & Persistence Footer** (`saved_and_pushed`, `no_changes`, `skipped_test_mode`,
+`skipped_after_run_failure`, `push_failed`, or `push_skipped`, plus `code_sha` and
+`state_commit_sha`).
 
 - [Nothing is posted](#nothing-is-posted)
 - [The card looks wrong](#the-card-looks-wrong)

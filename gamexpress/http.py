@@ -5,7 +5,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import aiohttp
 
@@ -34,6 +38,270 @@ ordinary source failure instead. The largest real body seen in production is ~1.
 CHUNK_BYTES = 64 * 1024
 """Read size per iteration while streaming a body (see get_text)."""
 
+MAX_EVENTS = 500
+
+DISCORD_WEBHOOK_URL_RE = re.compile(
+    r"(https?://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/api(?:/v\d+)?/webhooks/)"
+    r"\d+/[\w-]+",
+    re.IGNORECASE,
+)
+URL_IN_TEXT_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
+AUTH_BEARER_RE = re.compile(
+    r"\b(Bearer|Bot|Basic)\s+[A-Za-z0-9._~+/=-]{4,}",
+    re.IGNORECASE,
+)
+QUERY_SECRET_TEXT_RE = re.compile(
+    r"([?&](?:key|token|sig|secret|auth|password|webhook|api_key|access_token|signature)=)"
+    r"[^&#\s\"'<>)\]]+",
+    re.IGNORECASE,
+)
+
+SENSITIVE_QUERY_KEYS = frozenset(
+    {
+        "key",
+        "token",
+        "sig",
+        "secret",
+        "auth",
+        "password",
+        "webhook",
+        "api_key",
+        "apikey",
+        "access_token",
+        "signature",
+        "client_secret",
+    }
+)
+SENSITIVE_HEADERS = frozenset(
+    {
+        "authorization",
+        "proxy-authorization",
+        "cookie",
+        "set-cookie",
+        "x-api-key",
+        "x-auth-token",
+    }
+)
+
+TRANSPORT_STATUSES = frozenset(
+    {
+        "http_ok",
+        "http_status",
+        "not_modified",
+        "timeout",
+        "network_error",
+        "invalid_json",
+        "empty_body",
+        "rate_limited",
+    }
+)
+SOURCE_STATUSES = frozenset(
+    {
+        "selected",
+        "usable_empty",
+        "transport_ok_zero_items",
+        "parse_empty",
+        "filtered_out",
+        "fallback_used",
+        "source_failed",
+        "not_modified",
+    }
+)
+
+
+def redact_url(url: str, worker_url: str = "") -> str:
+    """Redact webhook tokens, URL userinfo, sensitive query params, and worker path tokens."""
+    if not url:
+        return ""
+    raw = DISCORD_WEBHOOK_URL_RE.sub(r"\1<redacted>", str(url))
+    try:
+        parts = urlsplit(raw)
+    except ValueError:
+        return QUERY_SECRET_TEXT_RE.sub(r"\1<redacted>", raw)
+
+    if not parts.scheme or not parts.netloc:
+        return QUERY_SECRET_TEXT_RE.sub(r"\1<redacted>", raw)
+
+    netloc = parts.netloc
+    if "@" in netloc:
+        _, hostpart = netloc.rsplit("@", 1)
+        netloc = f"<redacted>@{hostpart}"
+
+    path = parts.path
+    if worker_url:
+        try:
+            w_parts = urlsplit(worker_url)
+            w_host = w_parts.netloc.rsplit("@", 1)[-1].lower()
+            cur_host = netloc.rsplit("@", 1)[-1].lower()
+            if w_host and cur_host == w_host and path not in ("", "/"):
+                path = "/<redacted>"
+        except ValueError:
+            pass
+
+    query = parts.query
+    if query:
+        pairs = parse_qsl(query, keep_blank_values=True)
+        redacted_pairs: list[tuple[str, str]] = []
+        changed = False
+        for k, v in pairs:
+            if k.lower() in SENSITIVE_QUERY_KEYS or any(
+                s in k.lower() for s in ("token", "secret", "password", "sig", "auth", "key", "webhook")
+            ):
+                redacted_pairs.append((k, "<redacted>"))
+                changed = True
+            else:
+                redacted_pairs.append((k, v))
+        if changed:
+            query = urlencode(redacted_pairs)
+            query = query.replace("%3Credacted%3E", "<redacted>")
+
+    return urlunsplit((parts.scheme, netloc, path, query, ""))
+
+
+def redact_headers(headers: Mapping[str, Any] | None, worker_url: str = "") -> dict[str, str]:
+    """Return a copy of HTTP headers with auth, cookie, and token headers redacted."""
+    if not headers:
+        return {}
+    out: dict[str, str] = {}
+    for k, v in headers.items():
+        key_str = str(k)
+        if key_str.lower() in SENSITIVE_HEADERS or any(
+            s in key_str.lower() for s in ("token", "secret", "auth", "cookie", "key", "password")
+        ):
+            out[key_str] = "<redacted>"
+        else:
+            out[key_str] = redact_text(str(v), worker_url=worker_url)
+    return out
+
+
+def redact_text(text: str, worker_url: str = "") -> str:
+    """Redact webhook URLs, userinfo URLs, query credentials, and auth tokens in free text."""
+    if not text:
+        return ""
+    out = DISCORD_WEBHOOK_URL_RE.sub(r"\1<redacted>", str(text))
+    out = URL_IN_TEXT_RE.sub(lambda m: redact_url(m.group(0), worker_url=worker_url), out)
+    out = QUERY_SECRET_TEXT_RE.sub(r"\1<redacted>", out)
+    out = AUTH_BEARER_RE.sub(r"\1 <redacted>", out)
+    return out
+
+
+def redact_value(value: Any, worker_url: str = "") -> Any:
+    """Recursively redact URLs, headers, and secret tokens inside structured data."""
+    if isinstance(value, str):
+        return redact_text(value, worker_url=worker_url)
+    if isinstance(value, Mapping):
+        out: dict[str, Any] = {}
+        for k, v in value.items():
+            ks = str(k)
+            if ks.lower() in SENSITIVE_HEADERS or ks.lower() in SENSITIVE_QUERY_KEYS:
+                out[ks] = "<redacted>"
+            else:
+                out[ks] = redact_value(v, worker_url=worker_url)
+        return out
+    if isinstance(value, list):
+        return [redact_value(x, worker_url=worker_url) for x in value]
+    if isinstance(value, tuple):
+        return [redact_value(x, worker_url=worker_url) for x in value]
+    return value
+
+
+def classify_transport_status(
+    *,
+    status_code: int | None = None,
+    error: str = "",
+    empty_body: bool = False,
+    invalid_json: bool = False,
+    not_modified: bool = False,
+) -> str:
+    """Classify an HTTP transport outcome into one of the canonical transport status codes."""
+    if not_modified or status_code == 304:
+        return "not_modified"
+    if invalid_json:
+        return "invalid_json"
+    if status_code == 429:
+        return "rate_limited"
+    if status_code is not None and status_code >= 400:
+        return "http_status"
+    err_lower = (error or "").lower()
+    if "timeout" in err_lower or "timed out" in err_lower:
+        return "timeout"
+    if error:
+        if error.startswith("HTTP "):
+            code_str = error.split(" ", 1)[1].strip()
+            if code_str == "304":
+                return "not_modified"
+            if code_str == "429":
+                return "rate_limited"
+            return "http_status"
+        if "invalid json" in err_lower:
+            return "invalid_json"
+        return "network_error"
+    if empty_body:
+        return "empty_body"
+    return "http_ok"
+
+
+def summarize_source_outcome(
+    *,
+    source: str,
+    transport_status: str,
+    parsed_count: int = 0,
+    usable_count: int = 0,
+    selected_count: int = 0,
+    fallback_used: bool = False,
+    parse_empty: bool = False,
+    reason: str = "",
+    game: str = "",
+    lane: str = "",
+) -> dict[str, Any]:
+    """Build a canonical source outcome record distinguishing transport from content usability."""
+    t_status = transport_status if transport_status in TRANSPORT_STATUSES else "network_error"
+    parsed = max(0, int(parsed_count))
+    usable = max(0, int(usable_count))
+    selected = max(0, int(selected_count))
+    short_reason = redact_text(reason)
+
+    if t_status == "not_modified":
+        final_status = "not_modified"
+        short_reason = short_reason or "http_304_not_modified"
+    elif t_status != "http_ok":
+        if fallback_used and usable > 0:
+            final_status = "fallback_used"
+            short_reason = short_reason or f"primary_{t_status}_fallback_succeeded"
+        else:
+            final_status = "source_failed"
+            short_reason = short_reason or t_status
+    elif parse_empty:
+        final_status = "parse_empty"
+        short_reason = short_reason or "http_200_parse_empty"
+    elif parsed == 0:
+        final_status = "transport_ok_zero_items"
+        short_reason = short_reason or "http_200_zero_items"
+    elif usable == 0:
+        final_status = "filtered_out"
+        short_reason = short_reason or "all_parsed_items_filtered_out"
+    elif fallback_used:
+        final_status = "fallback_used"
+        short_reason = short_reason or "secondary_source_answered"
+    elif selected > 0:
+        final_status = "selected"
+    else:
+        final_status = "usable_empty"
+        short_reason = short_reason or "no_matching_items_for_window"
+
+    return {
+        "source": source,
+        "lane": lane,
+        "game": game,
+        "transport_status": t_status,
+        "parsed_count": parsed,
+        "usable_count": usable,
+        "selected_count": selected,
+        "fallback_used": bool(fallback_used),
+        "status": final_status,
+        "reason": short_reason,
+    }
+
 
 @dataclass
 class SourceHealth:
@@ -49,6 +317,8 @@ class Fetcher:
     health: dict[str, SourceHealth] = field(default_factory=dict)
     parallel: int = MAX_PARALLEL
     _sem: asyncio.Semaphore | None = field(default=None, repr=False)
+    events: list[dict[str, Any]] = field(default_factory=list, repr=False)
+    source_outcomes: list[dict[str, Any]] = field(default_factory=list, repr=False)
 
     def _gate(self) -> asyncio.Semaphore:
         if self._sem is None:
@@ -61,7 +331,38 @@ class Fetcher:
             h.ok += 1
         else:
             h.fail += 1
-            h.last_error = err[:200]
+            h.last_error = redact_text(err)[:200]
+
+    def _record_event(
+        self,
+        *,
+        source: str,
+        url: str,
+        transport_status: str,
+        status_code: int | None = None,
+        byte_len: int = 0,
+        reason: str = "",
+    ) -> None:
+        if len(self.events) >= MAX_EVENTS:
+            return
+        safe_url = redact_url(url)
+        host = urlsplit(safe_url).netloc or safe_url[:40]
+        self.events.append(
+            {
+                "source": source,
+                "url": safe_url,
+                "host": host,
+                "transport_status": transport_status,
+                "status_code": status_code,
+                "bytes": byte_len,
+                "reason": redact_text(reason)[:160],
+            }
+        )
+
+    def record_source_outcome(self, **kwargs: Any) -> dict[str, Any]:
+        outcome = summarize_source_outcome(**kwargs)
+        self.source_outcomes.append(outcome)
+        return outcome
 
     async def get_text(self, url: str, *, source: str, headers: dict | None = None,
                        params: dict | None = None, retries: int = 2,
@@ -71,10 +372,12 @@ class Fetcher:
             hdrs.update(headers)
         delay = 1.5
         last = ""
+        last_status: int | None = None
         for attempt in range(retries + 1):
             try:
                 async with self._gate(), self.session.get(url, headers=hdrs, params=params,
                                             timeout=aiohttp.ClientTimeout(total=timeout or self.timeout)) as r:
+                    last_status = r.status
                     if r.status in ok_statuses:
                         # read in chunks, NOT `content.read(MAX_BYTES + 1)`: aiohttp's read(n)
                         # returns whatever is buffered RIGHT NOW (up to n), so a body that
@@ -92,6 +395,17 @@ class Fetcher:
                             break   # a source this broken will not fix itself on a retry
                         body = bytes(raw).decode(r.charset or "utf-8", errors="replace")
                         self._mark(source, True)
+                        t_status = classify_transport_status(
+                            status_code=r.status,
+                            empty_body=(len(body.strip()) == 0),
+                        )
+                        self._record_event(
+                            source=source,
+                            url=url,
+                            transport_status=t_status,
+                            status_code=r.status,
+                            byte_len=len(raw),
+                        )
                         return body
                     last = f"HTTP {r.status}"
                     if r.status in (400, 401, 403, 404, 410):
@@ -101,8 +415,18 @@ class Fetcher:
             if attempt < retries:
                 await asyncio.sleep(delay)
                 delay *= 2
-        log.info("[%s] %s -> %s", source, url.split("?")[0], last)
-        self._mark(source, False, last)
+        safe_url = redact_url(url.split("?")[0])
+        safe_last = redact_text(last)
+        log.info("[%s] %s -> %s", source, safe_url, safe_last)
+        self._mark(source, False, safe_last)
+        t_status = classify_transport_status(status_code=last_status, error=safe_last)
+        self._record_event(
+            source=source,
+            url=url,
+            transport_status=t_status,
+            status_code=last_status,
+            reason=safe_last,
+        )
         return None
 
     async def get_json(self, url: str, *, source: str, headers: dict | None = None,
@@ -122,7 +446,16 @@ class Fetcher:
                 except json.JSONDecodeError:
                     pass
             self._mark(source, False, "invalid JSON")
-            log.info("[%s] invalid JSON from %s", source, url.split("?")[0])
+            safe_url = redact_url(url.split("?")[0])
+            log.info("[%s] invalid JSON from %s", source, safe_url)
+            self._record_event(
+                source=source,
+                url=url,
+                transport_status="invalid_json",
+                status_code=200,
+                byte_len=len(body),
+                reason="invalid JSON",
+            )
             return None
 
     def summary(self) -> str:

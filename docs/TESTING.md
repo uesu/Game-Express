@@ -22,27 +22,25 @@ That workflow:
 
 ## 0. Before merging a PR
 
-The PR's **CI — compile + offline tests** check must be green. It runs every offline test file
-through its own plain runner — `tests/test_smoke.py`, `tests/test_schedule_epithet_and_settled.py`
-and `tests/test_gachawiki_placeholder.py` — which cover:
+The PR's **`maintenance-ci`** aggregate check ([MAINTENANCE.md](MAINTENANCE.md)) must be green.
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) delegates verification through
+[`.github/scripts/ci.py`](../.github/scripts/ci.py) and separates deterministic blocking checks
+from external advisory checks:
 
-- the real official posts, which must reproduce your reference cards' timestamps;
-- the golden cards, Discord limits, the code gate, 4★ TBA, fail-over, and the workflow files;
-- the 2026-10-08 schedule-card regressions and the ZZZ 3.3 "Agent" placeholder guard.
-
-CI needs no secrets and no network. A test file that is not wired into `ci.yml` (and into the
-python-bump gate, which runs the same commands) fails
-`test_ci_and_the_python_bump_gate_run_every_offline_test_file`, so none can go un-gated again.
-
-A second job, **CI — advisory checks**, runs beside it and is **informational only** — it is
-allowed to fail and can never block a merge:
-
-| Check | What it looks at |
-|---|---|
-| [`pip-audit`](https://github.com/pypa/gh-action-pip-audit) | known CVEs in `requirements.txt` |
-| [`actionlint`](https://github.com/reviewdog/action-actionlint) | workflow YAML correctness |
-| [`zizmor`](https://github.com/zizmorcore/zizmor) | workflow *security* (credential persistence, injection, over-provisioned secrets). Policy and the three justified ignores live in `.github/zizmor.yml` and in inline `# zizmor: ignore[...]` comments |
-| [`ruff`](https://github.com/astral-sh/ruff-action) | the same `ruff.toml` lint you run locally, annotated inline on the PR diff |
+- **Deterministic blocking checks** (all required by `maintenance-ci`):
+  - `test` (`python .github/scripts/ci.py verify`): compiles `gamexpress`, `tests`, and
+    `.github/scripts`, validates `.python-version` and workflow `setup-python` pins, and runs every
+    offline test suite (`tests/test_smoke.py`, `tests/test_schedule_epithet_and_settled.py`,
+    `tests/test_gachawiki_placeholder.py`, `tests/test_maintenance.py`,
+    `tests/test_run_summary.py`, and `tests/test_configuration_contract.py`).
+  - `lock-check` (`python .github/scripts/ci.py lock-check`): verifies that `requirements.txt` and
+    `requirements-dev.txt` are hash-locked, constrained, and up to date with `requirements.in` and
+    `requirements-dev.in`.
+  - `ruff` (`python .github/scripts/ci.py ruff`): enforces `ruff.toml` lint rules.
+  - `actionlint` (`reviewdog/action-actionlint`): validates workflow YAML syntax and expressions.
+  - `zizmor` (`zizmorcore/zizmor-action`): audits workflow security against `.github/zizmor.yml`.
+- **External advisory check** (reported in `maintenance-ci` without blocking deterministic merges on external feed outages):
+  - `pip-audit` (`pypa/gh-action-pip-audit`): scans `requirements.txt` against OSV advisories.
 
 ## 1. Webhooks: are all channels connected?
 

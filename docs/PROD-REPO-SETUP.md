@@ -121,7 +121,9 @@ config/overrides.json            manual corrections
 config/program_announcements.json  discovered tweet ids — the workflow commits to this
 state/.gitkeep
 state/state.json                 what has been posted (see §4 — copy it, do not start empty)
-requirements.txt
+.python-version                  pinned CPython runtime (3.14.8) read by monitor.yml
+requirements.txt                 hash-pinned runtime dependency lockfile
+.github/scripts/render_run_summary.py  renders GITHUB_STEP_SUMMARY & persistence footer
 .github/workflows/monitor.yml    the only workflow prod needs
 .gitignore
 ```
@@ -129,24 +131,24 @@ requirements.txt
 ### Optionally copy: the weekly Python bump
 
 ```
-.github/workflows/python_version_bump.yml
+.github/maintenance.json
+.github/scripts/maintenance.py
 .github/scripts/python_version_bump.py
+.github/workflows/python_version_bump.yml
 ```
 
-**Why you may want this in prod.** Prod's `monitor.yml` pins `python-version: '3.14'`. Nothing
-else updates it. If you sync from dev regularly the pin rides along with `monitor.yml` and you
-can skip this — but if dev goes quiet for a few months, prod keeps running an ageing
-interpreter with no one telling it.
+**Why you may want this in prod.** Prod's `.python-version` pins `3.14.8` (read by `monitor.yml`
+with `python-version-file: .python-version` and `check-latest: false`; see
+[MAINTENANCE.md](MAINTENANCE.md)). If you sync from dev regularly the pin rides along with
+`.python-version` and you can skip this — but if dev goes quiet for a few months, prod keeps
+running an ageing patch release with no one telling it.
 
-**It is safe to run in a documentation-free repo.** The script writes to exactly three
-filenames — `ci.yml`, `monitor.yml`, `ruff.toml` — and skips every one it cannot find, so in a
-prod repo it rewrites `monitor.yml` and nothing else. It reads the current pin from whichever
-workflow is present. **It never opens a Markdown file for writing**, so there is no README and
-no `docs/` for it to invent or corrupt; the PR body it composes is written to the runner's temp
-directory, not into the repo. The set of files staged in the PR is whatever the script reports
-having rewritten, not a hard-coded list, which is why the same workflow file works in both
-repos with no prod-only edit. `tests/test_smoke.py` asserts all of this against a simulated
-prod repo on every CI run.
+**It is safe to run in a documentation-free repo.** `.github/scripts/maintenance.py` (and the
+compatibility wrapper `.github/scripts/python_version_bump.py`) updates `.python-version` (and
+`ruff.toml` only when present) within the policy bounds in `.github/maintenance.json`. **It never
+opens a Markdown file for writing** when `docs/` is absent; the PR body it composes is written to
+the runner's temp directory, not into the repo. `tests/test_smoke.py` and
+`tests/test_maintenance.py` assert this against a simulated docless prod repo on every CI run.
 
 Two consequences if you do copy it:
 

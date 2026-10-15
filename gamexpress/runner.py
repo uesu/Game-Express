@@ -3,17 +3,28 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+import pathlib
+import platform
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 import aiohttp
 
 from . import build_id, codeposter, schedule
 from .config import Game, Settings, active_games, load_games, load_overrides
-from .discord import WebhookClient
-from .http import BOT_UA, Fetcher, Probe
+from .discord import WebhookClient, webhook_fingerprint
+from .http import (
+    BOT_UA,
+    Fetcher,
+    Probe,
+    redact_text,
+    redact_url,
+    redact_value,
+)
 from .models import Item
 from .sources import bannerfeed, countdown, hoyolab, kuro, launcher, newspage
 from .sources.codes import CodeSources
@@ -46,6 +57,10 @@ class Ctx:
     estimates: dict = field(default_factory=dict)   # game key -> countdown-site estimate
     media: dict = field(default_factory=dict)       # game key -> version -> program announcement
     banners: dict = field(default_factory=dict)     # game key -> list of 5★ rate-up banners
+    state_load_status: str = "loaded_local"
+    state_save_status: str = "unchanged_local"
+    started_at: int = 0
+    finished_at: int = 0
 
 
 async def gather_versions(ctx: Ctx) -> None:
@@ -73,6 +88,20 @@ async def _gather_game(ctx: Ctx, g: Game, since: int) -> None:
     items: list[Item] = [it for part in parts for it in part]
     ctx.items[g.key] = items
     ctx.reachable[g.key] = probe.ok > 0 or any(a.lower() in ctx.x.reachable for a in g.x_accounts)
+    x_out = ctx.x.game_outcomes.get(g.key, {})
+    parsed_total = int(x_out.get("parsed_count", 0)) + len(parts[0]) + len(parts[1])
+    usable_total = int(x_out.get("usable_count", 0)) + len(parts[0]) + len(parts[1])
+    ctx.fetcher.record_source_outcome(
+        source="official_feeds",
+        lane="announcements",
+        game=g.key,
+        transport_status="http_ok" if ctx.reachable[g.key] else "network_error",
+        parsed_count=max(parsed_total, len(items)),
+        usable_count=max(usable_total, len(items)),
+        selected_count=len(items),
+        fallback_used=bool(x_out.get("fallback_used", False)),
+        reason="" if ctx.reachable[g.key] else "no_announcement_source_answered",
+    )
     icons = ctx.state.data.setdefault("icons", {})
     fresh = next((ctx.x.avatars[a.lower()] for a in g.x_accounts if a.lower() in ctx.x.avatars), None)
     if fresh and icons.get(g.key) != fresh:
@@ -236,6 +265,8 @@ async def failover_check(ctx: Ctx) -> None:
     if isinstance(peer, dict):
         n = ctx.state.merge_peer(peer)
         if n:
+            if ctx.state_load_status == "fresh_bootstrap":
+                ctx.state_load_status = "recovered_from_peer"
             ctx.report.append(f"🔄 imported {n} posted key(s) from the peer instance")
     if s.instance_role != "standby":
         return
@@ -256,19 +287,71 @@ async def failover_check(ctx: Ctx) -> None:
                           f"— this standby is now posting")
 
 
+def _instrument_webhook(webhook: WebhookClient) -> None:
+    """Attach redacted delivery telemetry to `webhook.deliveries` without altering `webhook.sent`."""
+    deliveries: list[dict[str, Any]] = []
+    webhook.deliveries = deliveries  # type: ignore[attr-defined]
+    orig_send = webhook.send
+    orig_edit = webhook.edit
+
+    async def _tracked_send(webhook_url: str, payload: dict):
+        res = await orig_send(webhook_url, payload)
+        deliveries.append(
+            {
+                "method": "POST",
+                "target": redact_url(webhook_url),
+                "fingerprint": webhook_fingerprint(webhook_url),
+                "ok": bool(res.ok),
+                "status": int(res.status),
+                "message_id": res.message_id,
+                "error": redact_text(res.error)[:160] if res.error else "",
+            }
+        )
+        return res
+
+    async def _tracked_edit(webhook_url: str, message_id: str, payload: dict):
+        res = await orig_edit(webhook_url, message_id, payload)
+        deliveries.append(
+            {
+                "method": "PATCH",
+                "target": redact_url(webhook_url),
+                "fingerprint": webhook_fingerprint(webhook_url),
+                "ok": bool(res.ok),
+                "status": int(res.status),
+                "message_id": res.message_id or message_id,
+                "error": redact_text(res.error)[:160] if res.error else "",
+            }
+        )
+        return res
+
+    webhook.send = _tracked_send  # type: ignore[method-assign]
+    webhook.edit = _tracked_edit  # type: ignore[method-assign]
+
+
 async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
                    overrides: dict | None = None, session: aiohttp.ClientSession | None = None) -> Ctx:
     games_all = games_all if games_all is not None else load_games()
     overrides = overrides if overrides is not None else load_overrides()
+    had_local = settings.state_path.exists()
     state = State.load(settings.state_path)
+    has_records = bool(
+        state.data.get("bootstrapped")
+        or state.data.get("schedule")
+        or state.data.get("codes")
+    )
+    initial_load_status = "loaded_local" if (had_local and has_records) else "fresh_bootstrap"
     own_session = session is None
     session = session or aiohttp.ClientSession(headers={"User-Agent": BOT_UA})
     try:
         started = time.monotonic()
+        started_wall = int(time.time())
         fetcher = Fetcher(session, timeout=settings.http_timeout)
+        webhook = WebhookClient(session, dry_run=settings.dry_run)
+        _instrument_webhook(webhook)
         ctx = Ctx(settings=settings, games=active_games(games_all, settings), state=state, fetcher=fetcher,
-                  webhook=WebhookClient(session, dry_run=settings.dry_run), x=XClient(fetcher, settings),
-                  code_sources=CodeSources(fetcher), overrides=overrides, now=int(time.time()))
+                  webhook=webhook, x=XClient(fetcher, settings),
+                  code_sources=CodeSources(fetcher), overrides=overrides, now=started_wall,
+                  state_load_status=initial_load_status, started_at=started_wall)
         await failover_check(ctx)
         features = settings.features if ctx.active else set()
         if features and ctx.games:
@@ -291,14 +374,19 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
         state.prune(ctx.now)
         if not ephemeral:
             if state.save():
+                ctx.state_save_status = "saved_local"
                 log.info("state saved -> %s", settings.state_path)
+            else:
+                ctx.state_save_status = "unchanged_local"
         elif settings.test_mode:
+            ctx.state_save_status = "unchanged_local"
             ctx.report.insert(0, "🧪 TEST MODE — every card below is a NEW message marked TEST, built "
                                  "from this run's live data. No live card was edited, no copy was "
                                  "touched and the state file was NOT saved. Delete the test cards "
                                  "when you are done")
         log.info("sources: %s", fetcher.summary())
         ctx.elapsed = time.monotonic() - started
+        ctx.finished_at = int(time.time())
         write_summary(ctx)
         return ctx
     finally:
@@ -306,7 +394,107 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
             await session.close()
 
 
+def build_run_report(ctx: Ctx) -> dict[str, Any]:
+    """Build a bounded, redacted JSON report for `.github/scripts/render_run_summary.py`."""
+    s = ctx.settings
+    deliveries: list[dict[str, Any]] = list(getattr(ctx.webhook, "deliveries", []))
+    posted_count = sum(1 for d in deliveries if d.get("method") == "POST" and d.get("ok"))
+    patched_count = sum(1 for d in deliveries if d.get("method") == "PATCH" and d.get("ok"))
+    failed_deliveries = sum(1 for d in deliveries if not d.get("ok"))
+
+    if not deliveries and ctx.webhook.sent:
+        posted_count = sum(1 for d in ctx.webhook.sent if d.get("method") == "POST")
+        patched_count = sum(1 for d in ctx.webhook.sent if d.get("method") == "PATCH")
+
+    source_outcomes = list(ctx.fetcher.source_outcomes)
+    for g in ctx.games:
+        if g.key in ctx.x.game_outcomes:
+            source_outcomes.append(ctx.x.game_outcomes[g.key])
+    for probe_out in ctx.x.probe_outcomes[:60]:
+        source_outcomes.append(probe_out)
+
+    health_summary = {
+        name: {"ok": h.ok, "fail": h.fail, "last_error": redact_text(h.last_error)}
+        for name, h in sorted(ctx.fetcher.health.items())
+    }
+
+    mode = "test" if s.test_mode else ("dry_run" if s.dry_run else "live")
+    only_val = ",".join(sorted(s.features)) if s.features else "none"
+    game_val = ",".join(sorted(s.games_filter)) if s.games_filter else "all"
+    repost_val = str(s.repost or "")
+
+    raw_report = {
+        "schema_version": 1,
+        "code_sha": build_id(),
+        "python_version": platform.python_version(),
+        "instance_name": s.instance_name,
+        "instance_role": s.instance_role,
+        "mode": mode,
+        "only": only_val,
+        "game": game_val,
+        "repost": repost_val,
+        "test_mode": bool(s.test_mode),
+        "dry_run": bool(s.dry_run),
+        "no_ping": bool(s.no_ping),
+        "active": bool(ctx.active),
+        "started_at": ctx.started_at or ctx.now,
+        "finished_at": ctx.finished_at or int(time.time()),
+        "duration_s": round(float(ctx.elapsed), 2),
+        "state": {
+            "load_status": ctx.state_load_status,
+            "save_status": ctx.state_save_status,
+            "path": str(s.state_path),
+        },
+        "cards": {
+            "posted": posted_count,
+            "patched": patched_count,
+            "failed": failed_deliveries,
+        },
+        "report_lines": [redact_text(r) for r in ctx.report],
+        "warnings": [redact_text(w) for w in ctx.warnings],
+        "errors": [redact_text(e) for e in ctx.errors],
+        "sources_summary": redact_text(ctx.fetcher.summary()),
+        "source_health": health_summary,
+        "source_outcomes": source_outcomes[:120],
+        "transport_events": list(ctx.fetcher.events[:120]),
+        "webhook_deliveries": deliveries[:100],
+    }
+    return redact_value(raw_report)
+
+
+def write_run_report(ctx: Ctx, report_path: str | pathlib.Path | None = None) -> dict[str, Any]:
+    """Write the redacted run report JSON to `GAMEXPRESS_RUN_REPORT` when configured."""
+    report = build_run_report(ctx)
+    target = pathlib.Path(report_path) if report_path else (
+        pathlib.Path(os.environ["GAMEXPRESS_RUN_REPORT"])
+        if os.environ.get("GAMEXPRESS_RUN_REPORT")
+        else None
+    )
+    if target is not None:
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            runs: list[dict[str, Any]] = []
+            if target.is_file():
+                try:
+                    existing = json.loads(target.read_text(encoding="utf-8"))
+                    if isinstance(existing, dict) and isinstance(existing.get("runs"), list):
+                        runs = list(existing["runs"])
+                except (OSError, json.JSONDecodeError):
+                    runs = []
+            runs.append(report)
+            envelope = dict(report)
+            envelope["runs"] = runs
+            target.write_text(
+                json.dumps(envelope, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            log.warning("failed to write run report to %s: %s", target, redact_text(str(exc)))
+    return report
+
+
 def write_summary(ctx: Ctx) -> None:
+    write_run_report(ctx)
     lines = [f"### Game-Express {build_id()} — {ctx.settings.instance_name} ({ctx.settings.instance_role})"]
     if ctx.settings.dry_run:
         lines.append("> **DRY RUN** — nothing was posted or saved; \"posted\" below means *would post*. "
@@ -316,20 +504,22 @@ def write_summary(ctx: Ctx) -> None:
                      "labelled 🧪 TEST, posted from the sources this run actually fetched; live cards "
                      "and their copies are never edited and the state file is not saved. "
                      "Delete the test cards afterwards.")
-    lines += [f"- {r}" for r in ctx.report] or ["- nothing new (no matching announcements / codes)"]
+    lines += [f"- {redact_text(r)}" for r in ctx.report] or ["- nothing new (no matching announcements / codes)"]
     for w in ctx.warnings:
-        lines.append(f"- ⚠️ {w}")
-        print(f"::warning::{w}")
+        safe_w = redact_text(w)
+        lines.append(f"- ⚠️ {safe_w}")
+        print(f"::warning::{safe_w}")
     for e in ctx.errors:
-        lines.append(f"- ❌ {e}")
-        print(f"::error::{e}")
-    lines.append(f"- sources: {ctx.fetcher.summary()}")
+        safe_e = redact_text(e)
+        lines.append(f"- ❌ {safe_e}")
+        print(f"::error::{safe_e}")
+    lines.append(f"- sources: {redact_text(ctx.fetcher.summary())}")
     if ctx.elapsed:
         lines.append(f"- ⏱️ run took {ctx.elapsed:.1f}s")
     text = "\n".join(lines)
     log.info("\n%s", text)
     path = os.getenv("GITHUB_STEP_SUMMARY")
-    if path:
+    if path and not os.getenv("GAMEXPRESS_RUN_REPORT"):
         try:
             with open(path, "a", encoding="utf-8") as fh:
                 fh.write(text + "\n")

@@ -150,18 +150,23 @@ being dropped. A codes drop split across several messages mentions the role on *
 | `DRY_RUN` | off | build and log only |
 | `TEST_MODE` | off | cards get a 🧪 TEST label, the freshness/seed rules are skipped — a test run renders a settled version's card as a **new** message and never edits a live card, its copy, or publishes a replacement for an id that stopped resolving — and the state is never saved (the monitor's test modes set it) |
 | `BOOTSTRAP_POST` | off | first run posts current items instead of seeding |
+| `ONLY` | — | one-run feature filter (`schedule` or `codes`; anything else leaves `ENABLED_FEATURES` unchanged) |
+| `GAME` | — | one-run game filter (merged with `GAMES`) |
+| `REPOST` | — | one-run force repost of a version card as a new message, e.g. `starrail:4.6` |
 | `FORCE_WEBHOOK` | — | send **every** card to this one webhook URL. Testing only; it wins over all routing above |
 | `STATE_PATH` | `state/state.json` | where the dedup state is read and written |
 | `HTTP_TIMEOUT` | 20 | per-request timeout, seconds |
 | `LOG_LEVEL` | `INFO` | Python log level for the run |
+| `GAMEXPRESS_CODE_SHA` | — | checked-out code commit short SHA captured by `monitor.yml` before state commits (preferred by `gamexpress.build_id()` over `GITHUB_SHA`) |
+| `GAMEXPRESS_RUN_REPORT` | — | temporary path (`$RUNNER_TEMP/gamexpress-run-report.json`) where `gamexpress.runner` writes the internal redacted run report for `.github/scripts/render_run_summary.py` |
 
 ### Fail-over and automation
 
 | Name | Default | Meaning |
 |---|---|---|
 | `INSTANCE_NAME` / `INSTANCE_ROLE` / `PEER_STATE_URL` / `HEARTBEAT_MINUTES` / `FAILOVER_AFTER_MINUTES` | alpha / primary / — / 1440 / 90 | two-instance fail-over, see [README → Reliability](../README.md#-reliability) |
-| `AUTO_MERGE_DEPENDABOT` | — | `yes` = merge green Dependabot PRs automatically (dev repo only; [DEPENDABOT.md](DEPENDABOT.md)) |
-| `AUTO_MERGE_PYTHON_BUMP` | — | `all` = merge a green, automated Python-version-bump PR automatically. `yes` deliberately does **not** merge here, so it is safe to set repo-wide ([PYTHON_VERSION.md](PYTHON_VERSION.md)) |
+| `AUTO_MERGE_DEPENDABOT` | — | `yes` = enable [`.github/workflows/maintenance_merge.yml`](../.github/workflows/maintenance_merge.yml) to squash-merge eligible Dependabot `pip` and `chore/python-bump` PRs once `maintenance-ci` passes ([MAINTENANCE.md](MAINTENANCE.md), [DEPENDABOT.md](DEPENDABOT.md), [PYTHON_VERSION.md](PYTHON_VERSION.md)) |
+| `BUMP_PAT` | — | optional repository secret PAT used by [`.github/workflows/python_version_bump.yml`](../.github/workflows/python_version_bump.yml) when opening `chore/python-bump` PRs so `pull_request` CI triggers automatically ([PYTHON_VERSION.md](PYTHON_VERSION.md)) |
 
 ---
 

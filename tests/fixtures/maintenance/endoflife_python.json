@@ -1,0 +1,17 @@
+[
+  {
+    "cycle": "3.15",
+    "latest": "3.15.0",
+    "eol": false
+  },
+  {
+    "cycle": "3.14",
+    "latest": "3.14.9",
+    "eol": false
+  },
+  {
+    "cycle": "3.13",
+    "latest": "3.13.12",
+    "eol": false
+  }
+]
