@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import sys
@@ -701,6 +703,7 @@ def test_g3_complete_outcome_matrix_source_outage_partial_delivery_local_save_fa
                         mock.patch.object(runner, "gather_versions", side_effect=_fake_gather_versions),
                         mock.patch.object(runner, "gather_items", side_effect=_fake_gather_items),
                         mock.patch.object(runner.codeposter, "run", side_effect=_fake_codeposter_run),
+                        contextlib.redirect_stdout(io.StringIO()),
                     ):
                         ctx = await runner.run_once(settings, overrides={})
                         results_by_mode.append(

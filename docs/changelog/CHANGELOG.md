@@ -23,18 +23,22 @@ plus developer dependencies are split into `requirements.in` → hashed `require
 `pip==26.1.1` and installed with `--require-hashes --only-binary=:all:`). Machine-readable update
 policy in `.github/maintenance.json` and `.github/scripts/maintenance.py` (with
 `.github/scripts/python_version_bump.py` kept as a compatibility adapter) drives
-`python_version_bump.yml` (`select` → secret-free `validate` → `publish` using `BUMP_PAT`),
-`.github/scripts/ci.py` drives the `maintenance-ci` gate in `ci.yml`, and `.github/workflows/maintenance_merge.yml`
-replaces the embedded auto-merge job in `ci.yml` so only safe narrow Dependabot PRs (`pip` patch/minor
-on `requirements*`, `github-actions` SHA pin bumps on `.github/workflows/*.yml`) and valid
-`chore/python-bump` PRs auto-merge after `maintenance-ci` succeeds. In `gamexpress/http.py`,
-`gamexpress/sources/twitter.py`, `gamexpress/runner.py`, and `.github/scripts/render_run_summary.py`,
-source telemetry now distinguishes transport status from parsed/usable/selected item counts (so HTTP
-200 with 0 parsed items reports `transport_ok_zero_items` / `parse_empty`), `GAMEXPRESS_CODE_SHA`
-captures the pre-run commit SHA before any state commit, and an `always()` step in `monitor.yml`
-renders the final **State & Persistence Footer** (`saved_and_pushed`, `no_changes`,
-`skipped_test_mode`, `skipped_after_run_failure`, `push_failed`, or `push_skipped`). Nothing in card
-payloads, schedule/code logic, routing, pings, fan-out, or `state/state.json` changes.
+`python_version_bump.yml` (`select` → secret-free `validate` → `publish` using `BUMP_PAT` →
+`report` recording immutable controller-evaluated `PROVENANCE ...` step metadata),
+`.github/scripts/ci.py` drives the `maintenance-ci` gate in `ci.yml` as well as the unified
+`run-all --phase {pre-rewrite,post-rewrite}` validation registry in `python_version_bump.yml`,
+and `.github/workflows/maintenance_merge.yml` replaces the embedded auto-merge job in `ci.yml` so
+only safe narrow Dependabot PRs (`pip` patch/minor on `requirements*`, `github-actions` SHA pin
+bumps on `.github/workflows/*.yml`) and proposal-bound `chore/python-bump` PRs (verified against
+immutable proposer run/job/step provenance and validated candidate tree manifest) auto-merge after
+`maintenance-ci` succeeds. In `gamexpress/http.py`, `gamexpress/sources/twitter.py`,
+`gamexpress/runner.py`, and `.github/scripts/render_run_summary.py`, source telemetry now
+distinguishes transport status from parsed/usable/selected item counts (so HTTP 200 with 0 parsed
+items reports `transport_ok_zero_items` / `parse_empty`), `GAMEXPRESS_CODE_SHA` captures the
+pre-run commit SHA before any state commit, and an `always()` step in `monitor.yml` renders the
+final **State & Persistence Footer** (`saved_and_pushed`, `no_changes`, `skipped_test_mode`,
+`skipped_after_run_failure`, `push_failed`, or `push_skipped`). Nothing in card payloads,
+schedule/code logic, routing, pings, fan-out, or `state/state.json` changes.
 
 **Rotation #6: the xcopy.uk trial's verdict lands, and the hot path goes fully
 runner-proven.** The first four post-merge runs delivered the verdict rotation #5 was
