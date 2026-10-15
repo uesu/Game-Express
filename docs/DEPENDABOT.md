@@ -7,8 +7,8 @@ See also: [Maintenance Architecture & Safe Update Guide](MAINTENANCE.md) · [Pyt
 Game-Express separates human-maintained version ranges from committed, hash-pinned lockfiles:
 
 - [`requirements.in`](../requirements.in) → direct runtime dependency ranges (`aiohttp`, `feedparser`, `python-dotenv`, `typing-extensions`).
-- [`requirements.txt`](../requirements.txt) → exact direct and transitive runtime versions with `--hash=sha256:...` digests compiled by `pip-tools==7.5.3` and `pip==26.2.1`.
-- [`requirements-dev.in`](../requirements-dev.in) → developer, test, linter, and compiler toolchain pins (`-c requirements.txt`, `pip==26.2.1`, `pip-tools==7.5.3`, `pytest`, `pyyaml`, `ruff`).
+- [`requirements.txt`](../requirements.txt) → exact direct and transitive runtime versions with `--hash=sha256:...` digests compiled by `pip-tools==7.5.3` and `pip==26.1.1`.
+- [`requirements-dev.in`](../requirements-dev.in) → developer, test, linter, and compiler toolchain pins (`-c requirements.txt`, `pip==26.1.1`, `pip-tools==7.5.3`, `pytest`, `pyyaml`, `ruff`).
 - [`requirements-dev.txt`](../requirements-dev.txt) → exact hashed dev/test lockfile constrained against `requirements.txt` so test dependencies never drift from or replace runtime packages.
 
 ### Regenerating & Checking Locks

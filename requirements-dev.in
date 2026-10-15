@@ -5,7 +5,7 @@
 #   CUSTOM_COMPILE_COMMAND="python -m piptools compile --generate-hashes --allow-unsafe --resolver=backtracking --strip-extras --output-file=requirements-dev.txt requirements-dev.in" \
 #   python -m piptools compile --generate-hashes --allow-unsafe --resolver=backtracking --strip-extras --output-file=requirements-dev.txt requirements-dev.in
 -c requirements.txt
-pip==26.2.1
+pip==26.1.1
 pip-tools==7.5.3
 pytest>=9.0.0,<10
 pyyaml>=6.0.2,<7

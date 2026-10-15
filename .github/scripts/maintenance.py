@@ -106,7 +106,7 @@ DEFAULT_POLICY: dict[str, Any] = {
         ],
     },
     "locks": {
-        "compiler": {"pip": "26.2.1", "pip_tools": "7.5.3"},
+        "compiler": {"pip": "26.1.1", "pip_tools": "7.5.3"},
         "targets": [
             {
                 "name": "runtime",

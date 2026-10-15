@@ -107,7 +107,7 @@ thing to revisit if a third-party step is ever added to that job. zizmor's
   before enabling `SQUASH` auto-merge ([MAINTENANCE.md](MAINTENANCE.md)).
 * Runtime and dev dependencies are pinned with SHA-256 hashes in `requirements.txt` and
   `requirements-dev.txt` (generated from `requirements.in` and `requirements-dev.in` with
-  `pip-tools==7.5.3` and `pip==26.2.1`) and installed with `--require-hashes --only-binary=:all:`.
+  `pip-tools==7.5.3` and `pip==26.1.1`) and installed with `--require-hashes --only-binary=:all:`.
 * Dependabot watches both `pip` and `github-actions` weekly; `pip-audit`, `zizmor`, `actionlint`,
   `ruff`, and lockfile verification run in CI ([MAINTENANCE.md](MAINTENANCE.md)).
 * **Every action is pinned to a full commit SHA**, with the human-readable version in a

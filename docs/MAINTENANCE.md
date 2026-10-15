@@ -57,7 +57,7 @@ In [`.github/workflows/python_version_bump.yml`](../.github/workflows/python_ver
 ## 3. Reproducible Hashed Dependency Locks
 
 - Direct runtime dependency ranges live in [`requirements.in`](../requirements.in) and compile to the hash-locked [`requirements.txt`](../requirements.txt).
-- Developer, linter, test, and lock-compiler dependencies (`pip==26.2.1`, `pip-tools==7.5.3`, `pytest`, `pyyaml`, `ruff`) live in [`requirements-dev.in`](../requirements-dev.in) (constrained via `-c requirements.txt`) and compile to [`requirements-dev.txt`](../requirements-dev.txt).
+- Developer, linter, test, and lock-compiler dependencies (`pip==26.1.1`, `pip-tools==7.5.3`, `pytest`, `pyyaml`, `ruff`) live in [`requirements-dev.in`](../requirements-dev.in) (constrained via `-c requirements.txt`) and compile to [`requirements-dev.txt`](../requirements-dev.txt).
 - Compile contract:
   ```bash
   CUSTOM_COMPILE_COMMAND="python -m piptools compile --generate-hashes --allow-unsafe --resolver=backtracking --strip-extras --output-file=requirements.txt requirements.in" \
