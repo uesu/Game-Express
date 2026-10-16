@@ -3648,6 +3648,7 @@ def test_python_bump_is_safe_in_a_docless_production_repo():
             (root / ".github" / "workflows").mkdir(parents=True)
             (root / ".github" / "scripts").mkdir(parents=True)
             shutil.copy( ROOT / ".github" / "maintenance.json", root / ".github" / "maintenance.json")
+            shutil.copy(ROOT / ".github" / "scripts" / "maintenance_common.py", root / ".github" / "scripts" / "maintenance_common.py")
             shutil.copy(maint_script, root / ".github" / "scripts" / "maintenance.py")
             shutil.copy(script, root / ".github" / "scripts" / "python_version_bump.py")
             shutil.copy(ROOT / ".python-version", root / ".python-version")

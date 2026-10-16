@@ -7,6 +7,8 @@ import argparse
 import datetime
 import fnmatch
 import hashlib
+import importlib.metadata
+import importlib.util
 import json
 import os
 import pathlib
@@ -21,6 +23,30 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+def _load_maintenance_common():
+    local_candidate = pathlib.Path(__file__).resolve().with_name("maintenance_common.py")
+    if not local_candidate.is_file():
+        alt = REPO_ROOT / ".github" / "scripts" / "maintenance_common.py"
+        if alt.is_file():
+            local_candidate = alt
+        else:
+            for base in sys.path:
+                cand = pathlib.Path(base) / ".github" / "scripts" / "maintenance_common.py"
+                if cand.is_file():
+                    local_candidate = cand
+                    break
+    spec = importlib.util.spec_from_file_location("_gamexpress_maintenance_common", local_candidate)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load maintenance_common from {local_candidate}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+maintenance_common = _load_maintenance_common()
 POLICY_PATH = REPO_ROOT / ".github" / "maintenance.json"
 MANIFEST_URL = (
     "https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json"
@@ -300,8 +326,19 @@ def fetch_release_dates(
     primary_url: str = RELEASE_DATES_URL,
     fallback_url: str = RELEASE_DATES_FALLBACK_URL,
 ) -> dict[str, str]:
-    """Fetch upstream CPython release dates (version -> ISO date string) with bounded timeouts."""
+    """Fetch upstream CPython release dates (version -> ISO date string) with bounded timeouts.
+
+    Consults `maintenance_common.fetch_release_dates` (python.org downloads API v2) first when using
+    default URLs, then merges endoflife.date cycle/release dates as fallback coverage.
+    """
     dates: dict[str, str] = {}
+    if primary_url == RELEASE_DATES_URL:
+        try:
+            py_org_dates, state, _detail = maintenance_common.fetch_release_dates()
+            if state in ("ok", "cache") and isinstance(py_org_dates, dict):
+                dates.update(py_org_dates)
+        except Exception:
+            pass
     for url in (primary_url, fallback_url):
         if not url:
             continue
@@ -315,7 +352,8 @@ def fetch_release_dates(
             )
             with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310
                 payload = json.loads(resp.read().decode("utf-8"))
-            dates.update(_extract_release_dates_from_payload(payload))
+            for k, v in _extract_release_dates_from_payload(payload).items():
+                dates.setdefault(k, v)
             if dates:
                 break
         except Exception:
@@ -2152,19 +2190,22 @@ def evaluate_automerge(
             classification="deferred",
         )
 
-    # 2. Same-repository & target branch verification
+    # 2. Same-repository & target branch verification (delegating to maintenance_common.repo_association_failure)
     base_repo = str(pr_data.get("base_repo") or "").strip()
     head_repo = str(pr_data.get("head_repo") or "").strip()
-    if (
-        not base_repo
-        or not head_repo
-        or base_repo != head_repo
-        or bool(pr_data.get("head_repo_fork", False))
-    ):
+    expected_repo = str(pr_data.get("expected_repo") or base_repo).strip()
+    assoc_failure = maintenance_common.repo_association_failure(
+        {
+            "head": {"repo": {"full_name": head_repo}},
+            "base": {"repo": {"full_name": base_repo}},
+        },
+        expected_repo,
+    )
+    if assoc_failure or bool(pr_data.get("head_repo_fork", False)):
         return AutoMergeDecision(
             False,
             None,
-            "Rejected: PR is from a fork or missing repository identity.",
+            f"Rejected: PR is from a fork or missing repository identity ({assoc_failure or 'fork'}).",
             merge_method,
         )
 
@@ -3061,6 +3102,54 @@ def evaluate_automerge(
                     merge_method,
                     updates=classified_updates,
                 )
+            published_commit_obj = pr_data.get("published_commit") or provenance.get("published_commit")
+            if isinstance(published_commit_obj, dict):
+                exp_login, exp_name, exp_email = maintenance_common.configured_commit_identity(pol_root)
+                commit_id_err = maintenance_common.published_commit_identity_failure(
+                    published_commit_obj,
+                    head=head_sha,
+                    expected_login=exp_login,
+                    expected_name=exp_name,
+                    expected_email=exp_email,
+                )
+                if commit_id_err:
+                    return AutoMergeDecision(
+                        False,
+                        matched_lane,
+                        f"Rejected: {commit_id_err}.",
+                        merge_method,
+                        classification="review-required",
+                        updates=classified_updates,
+                    )
+            pub_ev_obj = pr_data.get("publication_evidence")
+            if isinstance(pub_ev_obj, dict) and pub_ev_obj:
+                pub_mode, pub_wf, pub_files = maintenance_common.publication_policy(pol_root)
+                pinned_pip, pinned_tools = maintenance_common.compiler_pins(pol_root)
+                pub_gate = maintenance_common.verify_publication_gate(
+                    mode=pub_mode,
+                    kind="python_bump",
+                    evidence=pub_ev_obj,
+                    pr={
+                        "number": pr_data.get("pr_number"),
+                        "user": {"login": pr_author},
+                        "head": {"sha": head_sha, "ref": head_ref},
+                    },
+                    candidate_version=new_py,
+                    trusted_proposer_path=pub_wf,
+                    proposal_files=pub_files,
+                    pinned_pip=pinned_pip,
+                    pinned_pip_tools=pinned_tools,
+                    repository=expected_repo,
+                )
+                if pub_gate.get("state") != "ready":
+                    return AutoMergeDecision(
+                        False,
+                        matched_lane,
+                        f"Rejected: {pub_gate.get('reason') or 'publication-evidence'}.",
+                        merge_method,
+                        classification="review-required",
+                        updates=classified_updates,
+                    )
         elif provenance.get("verified") is not True:
             return AutoMergeDecision(
                 False,
@@ -3079,6 +3168,48 @@ def evaluate_automerge(
             merge_method,
             updates=classified_updates,
         )
+
+    producer_ev_obj = pr_data.get("producer_evidence")
+    if isinstance(producer_ev_obj, dict) and producer_ev_obj:
+        prod_policy = pol_root.get("check_producers") or {}
+        expected_prod_names = list(pol_root.get("mandatory_check_names") or pol.get("required_checks") or [])
+        prod_res = maintenance_common.verify_check_producers(
+            producer_ev_obj,
+            expected_names=expected_prod_names,
+            head_sha=head_sha,
+            producers=prod_policy,
+            repository=expected_repo,
+        )
+        if prod_res.get("state") != "ready":
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                f"Rejected: {prod_res.get('reason') or 'producer-evidence'}.",
+                merge_method,
+                updates=classified_updates,
+            )
+
+    sec_ev_obj = pr_data.get("security_evidence")
+    if isinstance(sec_ev_obj, dict):
+        sec_mode, sec_req = maintenance_common.security_policy(pol_root)
+        if pr_data.get("security_evidence_mode"):
+            sec_mode = str(pr_data.get("security_evidence_mode"))
+        if isinstance(pr_data.get("required_security_evidence"), list):
+            sec_req = [str(k) for k in pr_data["required_security_evidence"] if k]
+        sec_res = maintenance_common.verify_security_evidence(
+            sec_ev_obj,
+            sec_req,
+            mode=sec_mode,
+        )
+        if sec_res.get("state") != "ready":
+            return AutoMergeDecision(
+                False,
+                matched_lane,
+                f"Rejected: {sec_res.get('reason') or 'security-evidence'}.",
+                merge_method,
+                classification="deferred" if sec_res.get("state") == "defer" else "review-required",
+                updates=classified_updates,
+            )
 
     check_runs_raw = pr_data.get("check_runs")
     checks_raw = pr_data.get("checks")
@@ -3889,6 +4020,107 @@ def record_publication_provenance(
         }
     )
     return record
+
+
+def _distribution_version(dist_name: str) -> str:
+    """Return installed distribution version via importlib.metadata."""
+    try:
+        return str(importlib.metadata.version(dist_name) or "")
+    except Exception:
+        return ""
+
+
+def emit_validation_notice(
+    repo_root: pathlib.Path = REPO_ROOT,
+    *,
+    candidate: str,
+    source_head: str = "",
+    run_id: int | str = "",
+    run_attempt: int | str = "",
+    interpreter: str = "",
+    pip_version: str = "",
+    pip_tools_version: str = "",
+    policy: dict[str, Any] | None = None,
+) -> str:
+    """Build and return a bounded `maintenance_common` validation notice string."""
+    pol = policy or load_policy(repo_root)
+    if parse_exact_version(candidate) is None:
+        raise ValueError(f"Invalid candidate version for validation notice: {candidate!r}")
+    src_sha = (source_head or os.environ.get("GITHUB_SHA") or "").strip().lower()
+    if not maintenance_common.SHA_RE.fullmatch(src_sha):
+        raise ValueError(f"Invalid source_head for validation notice: {src_sha!r}")
+    eff_interp = interpreter or ".".join(str(p) for p in sys.version_info[:3])
+    eff_pip = pip_version or _distribution_version("pip")
+    eff_tools = pip_tools_version or _distribution_version("pip-tools")
+    pinned_pip, pinned_tools = maintenance_common.compiler_pins(pol)
+    if eff_pip != pinned_pip or eff_tools != pinned_tools:
+        raise ValueError(
+            f"Compiler toolchain mismatch: pip={eff_pip!r} (expected {pinned_pip!r}), "
+            f"pip-tools={eff_tools!r} (expected {pinned_tools!r})"
+        )
+    _mode, _wf, prop_files = maintenance_common.publication_policy(pol)
+    digests = maintenance_common.digest_files(repo_root, prop_files)
+    rid = int(str(run_id or os.environ.get("GITHUB_RUN_ID") or 0) or 0) or None
+    att = int(str(run_attempt or os.environ.get("GITHUB_RUN_ATTEMPT") or 0) or 0) or None
+    rec = maintenance_common.build_validation_record(
+        source_head=src_sha,
+        candidate=candidate,
+        interpreter=eff_interp,
+        pip_version=eff_pip,
+        pip_tools_version=eff_tools,
+        digests=digests,
+        run_id=rid,
+        run_attempt=att,
+    )
+    rendered = maintenance_common.notice(maintenance_common.VALIDATION_NOTICE, rec)
+    if not rendered:
+        raise ValueError("Validation notice exceeds maintenance_common.NOTICE_LIMIT")
+    return rendered
+
+
+def emit_publication_notice(
+    repo_root: pathlib.Path = REPO_ROOT,
+    *,
+    pull_number: int | str,
+    published_head: str,
+    branch: str = "chore/python-bump",
+    pr_author: str = "github-actions[bot]",
+    commit_identity: str = "",
+    run_actor: str = "",
+    run_id: int | str = "",
+    run_attempt: int | str = "",
+    policy: dict[str, Any] | None = None,
+) -> str:
+    """Build and return a bounded `maintenance_common` publication notice string."""
+    pol = policy or load_policy(repo_root)
+    head_sha = (published_head or "").strip().lower()
+    if not maintenance_common.SHA_RE.fullmatch(head_sha):
+        raise ValueError(f"Invalid published_head for publication notice: {published_head!r}")
+    pnum = int(str(pull_number).strip())
+    if pnum <= 0:
+        raise ValueError(f"Invalid pull_number for publication notice: {pull_number!r}")
+    _mode, _wf, prop_files = maintenance_common.publication_policy(pol)
+    exp_login, _exp_name, _exp_email = maintenance_common.configured_commit_identity(pol)
+    eff_commit_id = commit_identity or exp_login or "github-actions[bot]"
+    eff_actor = run_actor or os.environ.get("GITHUB_ACTOR") or "github-actions[bot]"
+    digests = maintenance_common.digest_files(repo_root, prop_files)
+    rid = int(str(run_id or os.environ.get("GITHUB_RUN_ID") or 0) or 0) or None
+    att = int(str(run_attempt or os.environ.get("GITHUB_RUN_ATTEMPT") or 0) or 0) or None
+    rec = maintenance_common.build_publication_record(
+        run_id=rid,
+        run_attempt=att,
+        pull_number=pnum,
+        published_head=head_sha,
+        branch=branch,
+        digests=digests,
+        pr_author=pr_author,
+        commit_identity=eff_commit_id,
+        run_actor=eff_actor,
+    )
+    rendered = maintenance_common.notice(maintenance_common.PUBLICATION_NOTICE, rec)
+    if not rendered:
+        raise ValueError("Publication notice exceeds maintenance_common.NOTICE_LIMIT")
+    return rendered
 
 
 def run_candidate_validation_pipeline(

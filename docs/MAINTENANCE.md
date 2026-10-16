@@ -26,9 +26,9 @@ Related guides:
 
 ---
 
-## 2. Policy-Bounded Python Updates (`.github/maintenance.json` & `.github/scripts/maintenance.py`)
+## 2. Policy-Bounded Python Updates & Shared Maintenance Seam (`.github/maintenance.json`, `.github/scripts/maintenance_common.py`, & `.github/scripts/maintenance.py`)
 
-Runtime selection and linter compatibility are governed by [`.github/maintenance.json`](../.github/maintenance.json) and executed by [`.github/scripts/maintenance.py`](../.github/scripts/maintenance.py) (with [`.github/scripts/python_version_bump.py`](../.github/scripts/python_version_bump.py) retained as a thin compatibility adapter):
+Runtime selection, shared provenance/producer/compiler verification primitives, and linter compatibility are governed by [`.github/maintenance.json`](../.github/maintenance.json), the shared pure-stdlib helper [`.github/scripts/maintenance_common.py`](../.github/scripts/maintenance_common.py), and the repository adapter [`.github/scripts/maintenance.py`](../.github/scripts/maintenance.py) (with [`.github/scripts/python_version_bump.py`](../.github/scripts/python_version_bump.py) retained as a thin compatibility adapter and [`tests/test_maintenance_common.py`](../tests/test_maintenance_common.py) exercising the shared primitives and adapter bindings):
 
 | Policy Key | Value | Purpose |
 | --- | --- | --- |

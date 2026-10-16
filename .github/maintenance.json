@@ -7,6 +7,7 @@
     "manifest_url": "https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json",
     "release_dates_url": "https://endoflife.date/api/v1/products/python/",
     "release_dates_fallback_url": "https://endoflife.date/api/python.json",
+    "release_date_authority": "python.org-downloads-api",
     "supported_major": 3,
     "min_minor": 11,
     "max_validated_minor": 14,
@@ -48,6 +49,88 @@
       "docs/TROUBLESHOOTING.md",
       "docs/changelog/CHANGELOG.md"
     ]
+  },
+  "compiler": {
+    "pip": "26.1.1",
+    "pip_tools": "7.5.3"
+  },
+  "profiles": {
+    "development": {
+      "optional_docs": true,
+      "require_docs": true
+    },
+    "production": {
+      "optional_docs": true,
+      "require_docs": false
+    }
+  },
+  "mandatory_check_names": [
+    "Verify (syntax, workflow contract & offline tests)",
+    "Dependency lockfile consistency",
+    "Ruff lint",
+    "Workflow lint (actionlint)",
+    "Workflow security audit (zizmor)",
+    "Dependency CVE audit (pip-audit, advisory)",
+    "maintenance-ci"
+  ],
+  "final_gate": "maintenance-ci",
+  "ci_workflow_name": "CI",
+  "ci_workflow_path": ".github/workflows/ci.yml",
+  "check_producers": {
+    "Verify (syntax, workflow contract & offline tests)": {
+      "workflow": ".github/workflows/ci.yml",
+      "job": "Verify (syntax, workflow contract & offline tests)"
+    },
+    "Dependency lockfile consistency": {
+      "workflow": ".github/workflows/ci.yml",
+      "job": "Dependency lockfile consistency"
+    },
+    "Ruff lint": {
+      "workflow": ".github/workflows/ci.yml",
+      "job": "Ruff lint"
+    },
+    "Workflow lint (actionlint)": {
+      "workflow": ".github/workflows/ci.yml",
+      "job": "Workflow lint (actionlint)"
+    },
+    "Workflow security audit (zizmor)": {
+      "workflow": ".github/workflows/ci.yml",
+      "job": "Workflow security audit (zizmor)"
+    },
+    "Dependency CVE audit (pip-audit, advisory)": {
+      "workflow": ".github/workflows/ci.yml",
+      "job": "Dependency CVE audit (pip-audit, advisory)"
+    },
+    "maintenance-ci": {
+      "workflow": ".github/workflows/ci.yml",
+      "job": "maintenance-ci"
+    }
+  },
+  "security_evidence": {
+    "mode": "disabled",
+    "required": [],
+    "candidates": [
+      "code-scanning",
+      "secret-scanning"
+    ],
+    "ci_job_security_checks": [
+      "Workflow security audit (zizmor)",
+      "Dependency CVE audit (pip-audit, advisory)"
+    ],
+    "note": "mode=disabled applies only to GitHub CodeQL/secret-scanning REST alert endpoints because this repository runs zizmor workflow security audit and pip-audit OSV dependency scanning in CI and enforces clean pip-audit step/output evidence in evaluate_automerge."
+  },
+  "publication_evidence": {
+    "mode": "required",
+    "proposer_workflow": ".github/workflows/python_version_bump.yml",
+    "proposal_files": [
+      ".python-version",
+      "ruff.toml",
+      "requirements.txt",
+      "requirements-dev.txt"
+    ],
+    "commit_identity": "github-actions[bot]",
+    "commit_name": "github-actions[bot]",
+    "commit_email": "41898282+github-actions[bot]@users.noreply.github.com"
   },
   "locks": {
     "compiler": {
@@ -127,6 +210,7 @@
       "tests/test_configuration_contract.py",
       "tests/test_gachawiki_placeholder.py",
       "tests/test_maintenance.py",
+      "tests/test_maintenance_common.py",
       "tests/test_run_summary.py",
       "tests/test_schedule_epithet_and_settled.py",
       "tests/test_smoke.py"

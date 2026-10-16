@@ -18,3 +18,4 @@ ignore = [
 
 [lint.per-file-ignores]
 "tests/*" = ["E731"]
+".github/scripts/maintenance_common.py" = ["UP035", "SIM102"]

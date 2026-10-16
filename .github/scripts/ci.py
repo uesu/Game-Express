@@ -11,8 +11,22 @@ import pathlib
 import shutil
 import subprocess
 import sys
+from typing import Any
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+def _load_maintenance_common():
+    path = pathlib.Path(__file__).resolve().with_name("maintenance_common.py")
+    if not path.is_file():
+        path = REPO_ROOT / ".github" / "scripts" / "maintenance_common.py"
+    spec = importlib.util.spec_from_file_location("_gamexpress_maintenance_common", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load {path}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def _load_maintenance():
@@ -136,6 +150,29 @@ def run_verify(
     return run_offline_tests(repo_root, profile=profile)
 
 
+def _compiler_pin_failures(repo_root: pathlib.Path, profile: dict[str, Any] | None = None) -> list[str]:
+    """Require the pinned compiler to appear in requirements-dev.txt and match maintenance_common pins."""
+    mc = _load_maintenance_common()
+    pol = profile if isinstance(profile, dict) else {}
+    pinned_pip, pinned_tools = mc.compiler_pins(pol)
+    problems: list[str] = []
+    if pinned_pip != mc.PINNED_PIP or pinned_tools != mc.PINNED_PIP_TOOLS:
+        problems.append(
+            f"profile compiler pip=={pinned_pip} pip-tools=={pinned_tools} "
+            f"does not match helper pins pip=={mc.PINNED_PIP} pip-tools=={mc.PINNED_PIP_TOOLS}"
+        )
+    dev = repo_root / "requirements-dev.txt"
+    if not dev.is_file():
+        problems.append("missing requirements-dev.txt (compiler pins live there)")
+        return problems
+    text = dev.read_text(encoding="utf-8")
+    if f"pip=={pinned_pip}" not in text:
+        problems.append(f"requirements-dev.txt must contain pip=={pinned_pip}")
+    if f"pip-tools=={pinned_tools}" not in text:
+        problems.append(f"requirements-dev.txt must contain pip-tools=={pinned_tools}")
+    return problems
+
+
 def run_lock_check(
     repo_root: pathlib.Path = REPO_ROOT,
     *,
@@ -143,9 +180,15 @@ def run_lock_check(
     expected_python: str | None = None,
 ) -> int:
     maint = _load_maintenance()
+    policy = maint.load_policy(repo_root)
+    pin_problems = _compiler_pin_failures(repo_root, policy)
+    if pin_problems:
+        for err in pin_problems:
+            print(f"ERROR: {err}", file=sys.stderr)
+        return 1
     ok, errors = maint.verify_lockfiles(
         repo_root,
-        maint.load_policy(repo_root),
+        policy,
         recompile=True,
         require_exact_python=require_exact_python,
         expected_python_override=expected_python,

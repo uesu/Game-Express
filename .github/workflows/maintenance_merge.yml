@@ -117,8 +117,12 @@ jobs:
               return;
             }
 
-            // Load trusted maintenance policy & helper from main
-            for (const relPath of [".github/maintenance.json", ".github/scripts/maintenance.py"]) {
+            // Load trusted maintenance policy & helpers from main
+            for (const relPath of [
+              ".github/maintenance.json",
+              ".github/scripts/maintenance_common.py",
+              ".github/scripts/maintenance.py",
+            ]) {
               const resp = await github.rest.repos.getContent({
                 owner,
                 repo,
