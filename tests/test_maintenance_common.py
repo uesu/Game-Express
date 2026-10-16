@@ -42,7 +42,7 @@ REPO = "uesu/Game-Express"
 BOT = "github-actions[bot]"
 BOT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
 EXPECTED_MAINTENANCE_COMMON_SHA256 = (
-    "67e5b379c5de0a4a86fa78a3af4a8389a39155c88d6f08679eb963ffe2ae1d2a"
+    "9e04a5150c407d75e62bfb83cdbab2b386e49f6b1ef4c42710da679d3b1593f3"
 )
 EXPECTED_PYTHON_VERSION_SHA256 = (
     "5abd4dc1efa09469b88916c8e4e027a8c266a9b6d06f43ac9da3e30cd00b4ab5"
