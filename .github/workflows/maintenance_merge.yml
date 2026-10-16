@@ -211,6 +211,42 @@ jobs:
               return null;
             }
 
+            function parseCandidateVersionFromFiles(filesList) {
+              for (const item of filesList || []) {
+                if (!item || typeof item !== "object") continue;
+                const fname = String(item.filename || item.path || "");
+                if (fname !== ".python-version") continue;
+                const found = [];
+                for (const line of String(item.patch || "").split(/\r?\n/)) {
+                  if (!line.startsWith("+") || line.startsWith("+++")) continue;
+                  const body = line.slice(1).trim();
+                  if (/^\d+\.\d+\.\d+$/.test(body)) {
+                    found.push(body);
+                  }
+                }
+                return found.length === 1 ? found[0] : null;
+              }
+              return null;
+            }
+
+            function parseNoticeRecord(message, kind) {
+              if (typeof message !== "string") return null;
+              let text = message.trim();
+              if (text.startsWith("::notice::")) {
+                text = text.slice("::notice::".length);
+              }
+              const prefix = `${kind} `;
+              if (!text.startsWith(prefix)) return null;
+              try {
+                const parsed = JSON.parse(text.slice(prefix.length).trim());
+                return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+                  ? parsed
+                  : null;
+              } catch (_e) {
+                return null;
+              }
+            }
+
             async function computeActualCandidateManifest(refSha) {
               const fileDigests = {};
               const combined = crypto.createHash("sha256");
@@ -223,18 +259,38 @@ jobs:
                     path: rel,
                     ref: refSha,
                   });
-                  const rawBuf = Buffer.from(
-                    fResp.data.content || "",
-                    fResp.data.encoding || "base64"
-                  );
+                  const fData = fResp && fResp.data !== undefined ? fResp.data : fResp;
+                  if (
+                    !fData ||
+                    typeof fData !== "object" ||
+                    String(fData.encoding || "") !== "base64" ||
+                    typeof fData.content !== "string" ||
+                    !fData.content
+                  ) {
+                    return {
+                      complete: false,
+                      error: `contents-malformed:${rel}`,
+                      python_version: "",
+                      files: {},
+                      tree_sha256: "",
+                    };
+                  }
+                  const rawBuf = Buffer.from(fData.content, "base64");
                   const digest = crypto.createHash("sha256").update(rawBuf).digest("hex");
                   fileDigests[rel] = digest;
                   combined.update(`${rel}:${digest}\n`, "utf8");
                   if (rel === ".python-version") {
                     pyVer = rawBuf.toString("utf8").trim();
                   }
-                } catch (_err) {
-                  return { complete: false, python_version: "", files: {}, tree_sha256: "" };
+                } catch (err) {
+                  const st = (err && err.status) || 404;
+                  return {
+                    complete: false,
+                    error: `contents-api:${rel}:${st}`,
+                    python_version: "",
+                    files: {},
+                    tree_sha256: "",
+                  };
                 }
               }
               return {
@@ -247,7 +303,7 @@ jobs:
 
             async function collectPrSnapshot(prNumber, initialHeadSha) {
               const detailResp = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
-              const pr = detailResp.data;
+              const pr = detailResp && detailResp.data !== undefined ? detailResp.data : detailResp;
               const headSha = pr.head && pr.head.sha ? pr.head.sha : "";
               const headRef = pr.head && pr.head.ref ? pr.head.ref : "";
               const baseRef = pr.base && pr.base.ref ? pr.base.ref : "";
@@ -270,6 +326,41 @@ jobs:
                 pull_number: prNumber,
                 per_page: 100,
               });
+
+              let publishedCommit = null;
+              let publishedCommitError = "";
+              if (headSha && typeof github.rest.repos.getCommit === "function") {
+                try {
+                  const commitResp = await github.rest.repos.getCommit({
+                    owner,
+                    repo,
+                    ref: headSha,
+                  });
+                  const cData =
+                    commitResp && commitResp.data !== undefined ? commitResp.data : commitResp;
+                  if (cData && typeof cData === "object" && !Array.isArray(cData)) {
+                    publishedCommit = cData;
+                  } else {
+                    publishedCommitError = "commit-api:malformed";
+                  }
+                } catch (cErr) {
+                  const st = (cErr && cErr.status) || 404;
+                  publishedCommitError = `commit-api:${st}`;
+                }
+              } else if (headSha && Array.isArray(commits)) {
+                const foundCommit = commits.find((c) => c && c.sha === headSha) || null;
+                if (
+                  foundCommit &&
+                  foundCommit.commit &&
+                  typeof foundCommit.commit === "object" &&
+                  (foundCommit.commit.author || foundCommit.commit.committer)
+                ) {
+                  publishedCommit = foundCommit;
+                } else {
+                  publishedCommitError = "commit-api:404";
+                }
+              }
+
               const reviews = await github.paginate(github.rest.pulls.listReviews, {
                 owner,
                 repo,
@@ -321,6 +412,92 @@ jobs:
                 }
               }
 
+              // Collect complete producer evidence for every mandatory check name
+              const expectedCheckNames = Array.isArray(trustedPolicy.mandatory_check_names)
+                ? trustedPolicy.mandatory_check_names
+                : [];
+              const checkRunUrlRe =
+                /^https:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/actions\/runs\/(\d+)\/job\/(\d+)\/?$/;
+              const producerEvidence = {};
+              for (const run of allCheckRuns || []) {
+                if (!run || typeof run !== "object") continue;
+                const checkName = String(run.name || "");
+                if (!expectedCheckNames.includes(checkName) || producerEvidence[checkName]) {
+                  continue;
+                }
+                const rawDetailsUrl = String(run.details_url || run.html_url || "").trim();
+                const idMatch = checkRunUrlRe.exec(rawDetailsUrl);
+                if (!idMatch || `${idMatch[1]}/${idMatch[2]}` !== `${owner}/${repo}`) {
+                  producerEvidence[checkName] = { error: "unresolvable-details-url" };
+                  continue;
+                }
+                const runId = Number(idMatch[3]);
+                const jobId = Number(idMatch[4]);
+                let jobObj = jobsById.has(jobId) ? jobsById.get(jobId).job : null;
+                let wfRunObj =
+                  wfRunsById.get(runId) ||
+                  (jobsById.has(jobId) ? jobsById.get(jobId).wfRun : null);
+                if (!jobObj && typeof github.rest.actions.getJobForWorkflowRun === "function") {
+                  try {
+                    const jResp = await github.rest.actions.getJobForWorkflowRun({
+                      owner,
+                      repo,
+                      job_id: jobId,
+                    });
+                    jobObj = jResp && jResp.data !== undefined ? jResp.data : jResp;
+                  } catch (jErr) {
+                    const st = (jErr && jErr.status) || 404;
+                    producerEvidence[checkName] = { error: `job-api:${st}` };
+                    continue;
+                  }
+                }
+                if (!jobObj || typeof jobObj !== "object") {
+                  producerEvidence[checkName] = { error: "job-api:404" };
+                  continue;
+                }
+                if (!wfRunObj && typeof github.rest.actions.getWorkflowRun === "function") {
+                  try {
+                    const rResp = await github.rest.actions.getWorkflowRun({
+                      owner,
+                      repo,
+                      run_id: runId,
+                    });
+                    wfRunObj = rResp && rResp.data !== undefined ? rResp.data : rResp;
+                  } catch (rErr) {
+                    const st = (rErr && rErr.status) || 404;
+                    producerEvidence[checkName] = { error: `run-api:${st}` };
+                    continue;
+                  }
+                }
+                if (!wfRunObj || typeof wfRunObj !== "object") {
+                  producerEvidence[checkName] = { error: "run-api:404" };
+                  continue;
+                }
+                const posInt = (v) => {
+                  const n = Number(v);
+                  return Number.isInteger(n) && n > 0 ? n : null;
+                };
+                producerEvidence[checkName] = {
+                  workflow: String(wfRunObj.path || ""),
+                  job: String(jobObj.name || ""),
+                  check_run_id: posInt(run.id),
+                  run_id: runId,
+                  run_record_id: posInt(wfRunObj.id),
+                  job_id: jobId,
+                  job_record_id: posInt(jobObj.id),
+                  job_run_id: posInt(jobObj.run_id),
+                  job_check_run_url: String(jobObj.check_run_url || ""),
+                  run_attempt: posInt(wfRunObj.run_attempt),
+                  job_run_attempt: posInt(jobObj.run_attempt),
+                  head_sha: String(wfRunObj.head_sha || ""),
+                  job_head_sha: String(jobObj.head_sha || ""),
+                  job_status: String(jobObj.status || ""),
+                  job_conclusion: String(jobObj.conclusion || ""),
+                  run_status: String(wfRunObj.status || ""),
+                  run_conclusion: String(wfRunObj.conclusion || ""),
+                };
+              }
+
               const combinedStatusResp = await github.rest.repos.getCombinedStatusForRef({
                 owner,
                 repo,
@@ -358,6 +535,26 @@ jobs:
               };
               let actualCandidateManifest = null;
               let actualCandidateTreeSha256 = "";
+              let publicationEvidence = null;
+
+              const pubPolicyBlock =
+                (trustedPolicy && trustedPolicy.publication_evidence) || {};
+              const expCommitIdentity = String(
+                pubPolicyBlock.commit_identity || "github-actions[bot]"
+              ).trim();
+              const expCommitName = String(
+                pubPolicyBlock.commit_name || expCommitIdentity || "github-actions[bot]"
+              ).trim();
+              const expCommitEmail = String(
+                pubPolicyBlock.commit_email ||
+                  "41898282+github-actions[bot]@users.noreply.github.com"
+              ).trim();
+              const pinnedPip = String(
+                (trustedPolicy.compiler && trustedPolicy.compiler.pip) || "26.1.1"
+              ).trim();
+              const pinnedPipTools = String(
+                (trustedPolicy.compiler && trustedPolicy.compiler.pip_tools) || "7.5.3"
+              ).trim();
 
               if (
                 headRef.startsWith("dependabot/pip/") ||
@@ -392,8 +589,10 @@ jobs:
                 actualCandidateTreeSha256 = actualCandidateManifest.complete
                   ? actualCandidateManifest.tree_sha256
                   : "";
+                const candidateVersionFromDiff = parseCandidateVersionFromFiles(files);
 
                 const inspectedRecords = [];
+                let proposerRunsError = "";
                 try {
                   const bumpRunsResp = await github.rest.actions.listWorkflowRuns({
                     owner,
@@ -403,11 +602,42 @@ jobs:
                     status: "completed",
                     per_page: 20,
                   });
-                  const bumpRuns =
-                    (bumpRunsResp.data && bumpRunsResp.data.workflow_runs) || [];
+                  const bumpRunsData =
+                    bumpRunsResp && bumpRunsResp.data !== undefined
+                      ? bumpRunsResp.data
+                      : bumpRunsResp;
+                  const bumpRuns = Array.isArray(bumpRunsData)
+                    ? bumpRunsData
+                    : (bumpRunsData && bumpRunsData.workflow_runs) || [];
                   for (const r of bumpRuns) {
                     if (!r || !r.id) continue;
                     const expectedAttempt = Number(r.run_attempt || 1);
+                    let attemptObj = null;
+                    if (
+                      typeof github.rest.actions.getWorkflowRunAttempt === "function"
+                    ) {
+                      try {
+                        const attResp = await github.rest.actions.getWorkflowRunAttempt({
+                          owner,
+                          repo,
+                          run_id: r.id,
+                          attempt_number: expectedAttempt,
+                        });
+                        attemptObj =
+                          attResp && attResp.data !== undefined ? attResp.data : attResp;
+                      } catch (_aErr) {
+                        attemptObj = null;
+                      }
+                    } else {
+                      attemptObj = {
+                        id: r.id,
+                        run_attempt: expectedAttempt,
+                        status: r.status || "completed",
+                        conclusion: r.conclusion || "",
+                        head_sha: r.head_sha || "",
+                      };
+                    }
+
                     let rJobs = [];
                     try {
                       if (
@@ -450,6 +680,55 @@ jobs:
                       rJobs.find((j) => j && /validate/i.test(j.name || "")) || null;
                     const publishJob =
                       rJobs.find((j) => j && /publish/i.test(j.name || "")) || null;
+
+                    let noticeValidation = null;
+                    let noticePublication = null;
+                    if (typeof github.rest.checks.listAnnotations === "function") {
+                      for (const jobItem of rJobs) {
+                        let jobCheckRunId = null;
+                        if (jobItem && typeof jobItem.check_run_url === "string") {
+                          const cm = /\/check-runs\/(\d+)\/?$/.exec(jobItem.check_run_url.trim());
+                          if (cm) jobCheckRunId = Number(cm[1]);
+                        }
+                        if (!jobCheckRunId && jobItem && jobItem.id) {
+                          jobCheckRunId = Number(jobItem.id);
+                        }
+                        if (!jobCheckRunId) continue;
+                        try {
+                          const annResp = await github.rest.checks.listAnnotations({
+                            owner,
+                            repo,
+                            check_run_id: jobCheckRunId,
+                            per_page: 100,
+                          });
+                          const anns =
+                            annResp && annResp.data !== undefined ? annResp.data : annResp;
+                          for (const ann of Array.isArray(anns) ? anns : []) {
+                            const msg = ann && typeof ann === "object" ? ann.message : "";
+                            const pv = parseNoticeRecord(msg, "proposal-validation");
+                            if (
+                              pv &&
+                              pv.run_id === r.id &&
+                              pv.run_attempt === expectedAttempt
+                            ) {
+                              noticeValidation = pv;
+                            }
+                            const pp = parseNoticeRecord(msg, "proposal-publication");
+                            if (
+                              pp &&
+                              pp.run_id === r.id &&
+                              pp.run_attempt === expectedAttempt &&
+                              pp.pull_number === Number(pr.number)
+                            ) {
+                              noticePublication = pp;
+                            }
+                          }
+                        } catch (_annErr) {
+                          // continue
+                        }
+                      }
+                    }
+
                     const pubMeta = parseProvenanceStepOrSummary(rJobs) || {};
 
                     const selectConc = selectJob
@@ -469,21 +748,101 @@ jobs:
                           publishConc === "skipped")
                     );
                     const pubPrNum =
-                      pubMeta.published_pr_number !== undefined &&
-                      pubMeta.published_pr_number !== null
-                        ? Number(pubMeta.published_pr_number)
-                        : pubMeta.pr_number !== undefined && pubMeta.pr_number !== null
-                          ? Number(pubMeta.pr_number)
-                          : null;
-                    const pubHeadSha = String(pubMeta.published_head_sha || "").trim();
+                      noticePublication && noticePublication.pull_number !== undefined
+                        ? Number(noticePublication.pull_number)
+                        : pubMeta.published_pr_number !== undefined &&
+                            pubMeta.published_pr_number !== null
+                          ? Number(pubMeta.published_pr_number)
+                          : pubMeta.pr_number !== undefined && pubMeta.pr_number !== null
+                            ? Number(pubMeta.pr_number)
+                            : null;
+                    const pubHeadSha = String(
+                      (noticePublication && noticePublication.published_head) ||
+                        pubMeta.published_head_sha ||
+                        ""
+                    ).trim();
                     const pubSourceSha = String(
-                      pubMeta.source_sha || r.head_sha || ""
+                      (noticeValidation && noticeValidation.source_head) ||
+                        pubMeta.source_sha ||
+                        r.head_sha ||
+                        ""
                     ).trim();
                     const pubTreeSha = String(
                       pubMeta.candidate_tree_sha256 || ""
                     ).trim();
+                    const newVerStr = String(
+                      (noticeValidation && noticeValidation.candidate_version) ||
+                        pubMeta.new_version ||
+                        ""
+                    ).trim();
+
+                    let validationRecord = noticeValidation;
+                    if (
+                      !validationRecord &&
+                      validateConc === "success" &&
+                      (pubTreeSha || (pubMeta.candidate_manifest && pubMeta.candidate_manifest.files))
+                    ) {
+                      let recDigests = {};
+                      if (
+                        pubMeta.candidate_manifest &&
+                        pubMeta.candidate_manifest.files &&
+                        typeof pubMeta.candidate_manifest.files === "object"
+                      ) {
+                        recDigests = { ...pubMeta.candidate_manifest.files };
+                      } else if (
+                        actualCandidateManifest &&
+                        actualCandidateManifest.complete &&
+                        actualCandidateManifest.tree_sha256 === pubTreeSha
+                      ) {
+                        recDigests = { ...actualCandidateManifest.files };
+                      } else {
+                        for (const rel of trackedBumpFiles) {
+                          recDigests[rel] = `tree-mismatch:${pubTreeSha}`;
+                        }
+                      }
+                      validationRecord = {
+                        run_id: r.id,
+                        run_attempt: expectedAttempt,
+                        source_head: pubSourceSha,
+                        candidate_version: newVerStr,
+                        interpreter: String(pubMeta.interpreter || newVerStr),
+                        pip: String(pubMeta.pip || pinnedPip),
+                        pip_tools: String(pubMeta.pip_tools || pinnedPipTools),
+                        digests: recDigests,
+                      };
+                    }
+
+                    let publicationRecord = noticePublication;
+                    if (!publicationRecord && publishConc === "success" && !isDryRun) {
+                      const runActorLogin =
+                        (r.actor && r.actor.login) || "github-actions[bot]";
+                      publicationRecord = {
+                        run_id: r.id,
+                        run_attempt: expectedAttempt,
+                        pull_number: pubPrNum,
+                        published_head: pubHeadSha,
+                        branch: String(pubMeta.branch || "chore/python-bump"),
+                        pr_author: String(pubMeta.pr_author || prAuthor),
+                        run_actor: String(pubMeta.run_actor || runActorLogin),
+                        commit_identity: String(
+                          pubMeta.commit_identity || expCommitIdentity
+                        ),
+                        digests:
+                          (pubMeta.published_digests &&
+                            typeof pubMeta.published_digests === "object" && {
+                              ...pubMeta.published_digests,
+                            }) ||
+                          (validationRecord && validationRecord.digests
+                            ? { ...validationRecord.digests }
+                            : {}),
+                      };
+                    }
 
                     inspectedRecords.push({
+                      raw_run: r,
+                      raw_attempt: attemptObj,
+                      validation_record: validationRecord,
+                      publication_record: publicationRecord,
                       workflow: r.path || "",
                       workflow_name: r.name || "",
                       workflow_run_id: r.id,
@@ -499,7 +858,7 @@ jobs:
                       published_pr_number: pubPrNum,
                       published_head_sha: pubHeadSha,
                       old_version: String(pubMeta.old_version || "").trim(),
-                      new_version: String(pubMeta.new_version || "").trim(),
+                      new_version: newVerStr,
                       update_kind: String(pubMeta.update_kind || "").trim(),
                       review_required:
                         typeof pubMeta.review_required === "boolean"
@@ -514,8 +873,9 @@ jobs:
                       candidate_manifest: pubMeta.candidate_manifest || null,
                     });
                   }
-                } catch (_err) {
-                  // Fail closed if workflow runs cannot be inspected
+                } catch (err) {
+                  const st = (err && err.status) || 500;
+                  proposerRunsError = `proposer-runs-api:${st}`;
                 }
 
                 // Prefer exact (pr_number + published_head_sha) match, then pr_number match, then latest run
@@ -531,6 +891,32 @@ jobs:
                   ) ||
                   inspectedRecords[0] ||
                   null;
+
+                publicationEvidence = {
+                  repository: `${owner}/${repo}`,
+                  candidate_version: candidateVersionFromDiff,
+                  expected_commit_identity: expCommitIdentity,
+                  expected_commit_name: expCommitName,
+                  expected_commit_email: expCommitEmail,
+                  proposal_digests:
+                    actualCandidateManifest && actualCandidateManifest.complete
+                      ? actualCandidateManifest.files
+                      : {},
+                  published_commit: publishedCommit,
+                  proposer_run: matchedRec ? matchedRec.raw_run : null,
+                  proposer_attempt: matchedRec ? matchedRec.raw_attempt : null,
+                  validation_record: matchedRec ? matchedRec.validation_record : null,
+                  publication_record: matchedRec ? matchedRec.publication_record : null,
+                };
+                if (!actualCandidateManifest || !actualCandidateManifest.complete) {
+                  publicationEvidence.error =
+                    (actualCandidateManifest && actualCandidateManifest.error) ||
+                    "contents-api:incomplete";
+                } else if (!publishedCommit) {
+                  publicationEvidence.error = publishedCommitError || "commit-api:404";
+                } else if (proposerRunsError) {
+                  publicationEvidence.error = proposerRunsError;
+                }
 
                 // Non-authoritative consistency check on PR body (editable text can NEVER grant permission,
                 // but tampering or an explicit Review required: true in the body blocks auto-merge).
@@ -796,6 +1182,9 @@ jobs:
                   submitted_at: r.submitted_at || "",
                 })),
                 commits: mappedCommits,
+                published_commit: publishedCommit,
+                publication_evidence: publicationEvidence,
+                producer_evidence: producerEvidence,
                 provenance,
                 actual_candidate_tree_sha256: actualCandidateTreeSha256,
                 actual_candidate_manifest:

@@ -718,6 +718,13 @@ class CiCompilerPinTests(unittest.TestCase):
 class GameAdapterIntegrationTests(unittest.TestCase):
     def test_game_evaluate_automerge_integrates_maintenance_common_guards(self) -> None:
         policy = maintenance.load_policy(ROOT)
+        source_sha = "b" * 40
+        proposal_digests = {
+            ".python-version": "1" * 64,
+            "ruff.toml": "2" * 64,
+            "requirements.txt": "3" * 64,
+            "requirements-dev.txt": "4" * 64,
+        }
         checks = [
             {
                 "id": 100 + idx,
@@ -740,6 +747,77 @@ class GameAdapterIntegrationTests(unittest.TestCase):
             }
             for idx, name in enumerate(policy["mandatory_check_names"])
         ]
+        valid_producers = {
+            name: {
+                "workflow": ".github/workflows/ci.yml",
+                "job": name,
+                "check_run_id": 100 + idx,
+                "run_id": 500,
+                "run_record_id": 500,
+                "job_id": 200 + idx,
+                "job_record_id": 200 + idx,
+                "job_run_id": 500,
+                "job_check_run_url": f"https://api.github.com/repos/{REPO}/check-runs/{100 + idx}",
+                "run_attempt": 1,
+                "job_run_attempt": 1,
+                "head_sha": SHA,
+                "job_head_sha": SHA,
+                "job_status": "completed",
+                "job_conclusion": "success",
+                "run_status": "completed",
+                "run_conclusion": "success",
+            }
+            for idx, name in enumerate(policy["mandatory_check_names"])
+        }
+        valid_pub_evidence: dict[str, Any] = {
+            "repository": REPO,
+            "candidate_version": "3.14.9",
+            "expected_commit_identity": BOT,
+            "expected_commit_name": BOT,
+            "expected_commit_email": BOT_EMAIL,
+            "proposal_digests": dict(proposal_digests),
+            "published_commit": _published_commit(SHA),
+            "proposer_run": {
+                "id": 888,
+                "workflow_id": 77,
+                "path": ".github/workflows/python_version_bump.yml",
+                "status": "completed",
+                "conclusion": "success",
+                "run_attempt": 1,
+                "head_sha": source_sha,
+                "actor": {"login": BOT},
+                "repository": {"full_name": REPO},
+                "head_repository": {"full_name": REPO},
+            },
+            "proposer_attempt": {
+                "id": 888,
+                "run_attempt": 1,
+                "status": "completed",
+                "conclusion": "success",
+                "head_sha": source_sha,
+            },
+            "validation_record": {
+                "run_id": 888,
+                "run_attempt": 1,
+                "source_head": source_sha,
+                "candidate_version": "3.14.9",
+                "interpreter": "3.14.9",
+                "pip": maintenance_common.PINNED_PIP,
+                "pip_tools": maintenance_common.PINNED_PIP_TOOLS,
+                "digests": dict(proposal_digests),
+            },
+            "publication_record": {
+                "run_id": 888,
+                "run_attempt": 1,
+                "pull_number": 52,
+                "published_head": SHA,
+                "branch": "chore/python-bump",
+                "pr_author": BOT,
+                "run_actor": BOT,
+                "commit_identity": BOT,
+                "digests": dict(proposal_digests),
+            },
+        }
         base_payload: dict[str, Any] = {
             "base_repo": REPO,
             "head_repo": REPO,
@@ -774,6 +852,8 @@ class GameAdapterIntegrationTests(unittest.TestCase):
                 "auto_merge_eligible": True,
             },
             "check_runs": checks,
+            "producer_evidence": valid_producers,
+            "publication_evidence": valid_pub_evidence,
             "security_scan": {
                 "present": True,
                 "status": "clean",
@@ -786,6 +866,39 @@ class GameAdapterIntegrationTests(unittest.TestCase):
         ok_dec = maintenance.evaluate_automerge(base_payload, policy)
         self.assertTrue(ok_dec.eligible, ok_dec.reason)
 
+        # G3 absence probe: removing published_commit, publication_evidence, and producer_evidence must fail closed
+        stripped_all = dict(base_payload)
+        stripped_all.pop("published_commit", None)
+        stripped_all.pop("publication_evidence", None)
+        stripped_all.pop("producer_evidence", None)
+        stripped_all_dec = maintenance.evaluate_automerge(stripped_all, policy)
+        self.assertFalse(stripped_all_dec.eligible)
+        self.assertIn("published-head-not-a-commit", stripped_all_dec.reason)
+
+        # Removing only published_commit (including nested inside publication_evidence) must fail closed
+        no_commit_payload = dict(base_payload)
+        no_commit_payload.pop("published_commit", None)
+        pub_ev_no_commit = dict(valid_pub_evidence)
+        pub_ev_no_commit.pop("published_commit", None)
+        no_commit_payload["publication_evidence"] = pub_ev_no_commit
+        no_commit_dec = maintenance.evaluate_automerge(no_commit_payload, policy)
+        self.assertFalse(no_commit_dec.eligible)
+        self.assertIn("published-head-not-a-commit", no_commit_dec.reason)
+
+        # Removing only publication_evidence must fail closed
+        no_pub_ev_payload = dict(base_payload)
+        no_pub_ev_payload.pop("publication_evidence", None)
+        no_pub_ev_dec = maintenance.evaluate_automerge(no_pub_ev_payload, policy)
+        self.assertFalse(no_pub_ev_dec.eligible)
+        self.assertIn("no-proposer-run", no_pub_ev_dec.reason)
+
+        # Removing only producer_evidence must fail closed
+        no_prod_ev_payload = dict(base_payload)
+        no_prod_ev_payload.pop("producer_evidence", None)
+        no_prod_ev_dec = maintenance.evaluate_automerge(no_prod_ev_payload, policy)
+        self.assertFalse(no_prod_ev_dec.eligible)
+        self.assertIn("missing-producer-evidence:", no_prod_ev_dec.reason)
+
         # Unrelated commit author login must fail closed via maintenance_common.published_commit_identity_failure
         bad_commit_payload = dict(base_payload)
         bad_commit_payload["published_commit"] = _published_commit(SHA, login="alice")
@@ -797,29 +910,23 @@ class GameAdapterIntegrationTests(unittest.TestCase):
         bad_prod_payload = dict(base_payload)
         bad_prod_payload["producer_evidence"] = {
             name: {
-                "workflow": ".github/workflows/ci.yml",
-                "job": name,
-                "check_run_id": 100 + idx,
-                "run_id": 500,
-                "run_record_id": 500,
-                "job_id": 200 + idx,
-                "job_record_id": 200 + idx,
-                "job_run_id": 500,
+                **valid_producers[name],
                 "job_check_run_url": f"https://api.github.com/repos/{REPO}/check-runs/999999",
-                "run_attempt": 1,
-                "job_run_attempt": 1,
-                "head_sha": SHA,
-                "job_head_sha": SHA,
-                "job_status": "completed",
-                "job_conclusion": "success",
-                "run_status": "completed",
-                "run_conclusion": "success",
             }
-            for idx, name in enumerate(policy["mandatory_check_names"])
+            for name in policy["mandatory_check_names"]
         }
         bad_prod_dec = maintenance.evaluate_automerge(bad_prod_payload, policy)
         self.assertFalse(bad_prod_dec.eligible)
         self.assertIn("producer-check-run-id-mismatch", bad_prod_dec.reason)
+
+        # Stale digest in publication_evidence must fail closed via maintenance_common.verify_publication_gate
+        bad_digest_payload = dict(base_payload)
+        bad_pub_ev = dict(valid_pub_evidence)
+        bad_pub_ev["proposal_digests"] = {**proposal_digests, "requirements.txt": "f" * 64}
+        bad_digest_payload["publication_evidence"] = bad_pub_ev
+        bad_digest_dec = maintenance.evaluate_automerge(bad_digest_payload, policy)
+        self.assertFalse(bad_digest_dec.eligible)
+        self.assertIn("validation-digest-mismatch:requirements.txt", bad_digest_dec.reason)
 
     def test_emit_validation_and_publication_notices_round_trip(self) -> None:
         val_notice = maintenance.emit_validation_notice(

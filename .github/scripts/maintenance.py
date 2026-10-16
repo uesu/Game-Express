@@ -88,6 +88,78 @@ VULN_COUNT_RE = re.compile(r"found\s+(\d+)\s+known\s+vulnerabilit", re.IGNORECAS
 DEFAULT_POLICY: dict[str, Any] = {
     "schema_version": 2,
     "project": "Game-Express",
+    "compiler": {
+        "pip": "26.1.1",
+        "pip_tools": "7.5.3",
+    },
+    "profiles": {
+        "development": {
+            "description": "Development profile with tests and docs present.",
+            "requires_tests": True,
+            "requires_docs": True,
+        },
+        "production": {
+            "description": "Docless/testless production deployment profile.",
+            "requires_tests": False,
+            "requires_docs": False,
+        },
+    },
+    "mandatory_check_names": [
+        "Verify (syntax, workflow contract & offline tests)",
+        "Dependency lockfile consistency",
+        "Ruff lint",
+        "Workflow lint (actionlint)",
+        "Workflow security audit (zizmor)",
+        "Dependency CVE audit (pip-audit, advisory)",
+        "maintenance-ci",
+    ],
+    "final_gate": "maintenance-ci",
+    "check_producers": {
+        "Verify (syntax, workflow contract & offline tests)": {
+            "workflow": ".github/workflows/ci.yml",
+            "job": "Verify (syntax, workflow contract & offline tests)",
+        },
+        "Dependency lockfile consistency": {
+            "workflow": ".github/workflows/ci.yml",
+            "job": "Dependency lockfile consistency",
+        },
+        "Ruff lint": {
+            "workflow": ".github/workflows/ci.yml",
+            "job": "Ruff lint",
+        },
+        "Workflow lint (actionlint)": {
+            "workflow": ".github/workflows/ci.yml",
+            "job": "Workflow lint (actionlint)",
+        },
+        "Workflow security audit (zizmor)": {
+            "workflow": ".github/workflows/ci.yml",
+            "job": "Workflow security audit (zizmor)",
+        },
+        "Dependency CVE audit (pip-audit, advisory)": {
+            "workflow": ".github/workflows/ci.yml",
+            "job": "Dependency CVE audit (pip-audit, advisory)",
+        },
+        "maintenance-ci": {
+            "workflow": ".github/workflows/ci.yml",
+            "job": "maintenance-ci",
+        },
+    },
+    "security_evidence": {
+        "mode": "disabled",
+    },
+    "publication_evidence": {
+        "mode": "required",
+        "workflow": ".github/workflows/python_version_bump.yml",
+        "commit_identity": "github-actions[bot]",
+        "commit_name": "github-actions[bot]",
+        "commit_email": "41898282+github-actions[bot]@users.noreply.github.com",
+        "files": [
+            ".python-version",
+            "ruff.toml",
+            "requirements.txt",
+            "requirements-dev.txt",
+        ],
+    },
     "python": {
         "version_file": ".python-version",
         "ruff_config": "ruff.toml",
@@ -1959,6 +2031,7 @@ def resolve_proposer_provenance_from_api_runs(
 
         inspected.append(
             {
+                "raw_run": r,
                 "workflow": str(r.get("path") or ""),
                 "workflow_name": str(r.get("name") or ""),
                 "workflow_run_id": run_id,
@@ -2031,6 +2104,97 @@ def resolve_proposer_provenance_from_api_runs(
         and matched["auto_merge_eligible"] is True
         and manifest_verified
     )
+
+    # Translate authenticated API proposer run + job provenance into the shared publication_evidence schema
+    pol_obj = load_policy(REPO_ROOT)
+    _pub_mode, _pub_wf, pub_files = maintenance_common.publication_policy(pol_obj)
+    exp_login, exp_name, exp_email = maintenance_common.configured_commit_identity(pol_obj)
+    pinned_pip, pinned_tools = maintenance_common.compiler_pins(pol_obj)
+    repo_name = str(pr_data.get("expected_repo") or pr_data.get("base_repo") or "uesu/Game-Express").strip()
+    cand_ver_diff = maintenance_common.candidate_version_from_files(
+        [
+            {"filename": k, "patch": v}
+            for k, v in (pr_data.get("file_diffs") or {}).items()
+            if isinstance(k, str) and isinstance(v, str)
+        ]
+    ) or (matched["new_version"] if matched else "")
+    actual_files_map = (
+        dict(actual_manifest.get("files") or {})
+        if isinstance(actual_manifest, dict) and isinstance(actual_manifest.get("files"), dict)
+        else {}
+    )
+    raw_run_obj = dict(matched["raw_run"]) if matched and isinstance(matched.get("raw_run"), dict) else None
+    proposer_attempt_obj: dict[str, Any] | None = None
+    val_record_obj: dict[str, Any] | None = None
+    pub_record_obj: dict[str, Any] | None = None
+    if matched and raw_run_obj:
+        att_override = pr_data.get("proposer_attempt")
+        if isinstance(att_override, dict):
+            proposer_attempt_obj = att_override
+        else:
+            proposer_attempt_obj = {
+                "id": matched["workflow_run_id"],
+                "run_attempt": matched["workflow_run_attempt"],
+                "status": str(raw_run_obj.get("status") or "completed"),
+                "conclusion": str(raw_run_obj.get("conclusion") or ""),
+                "head_sha": str(raw_run_obj.get("head_sha") or ""),
+            }
+        if matched["validate_conclusion"] == "success" and matched["candidate_tree_sha256"]:
+            manifest_in_rec = matched.get("candidate_manifest")
+            if isinstance(manifest_in_rec, dict) and isinstance(manifest_in_rec.get("files"), dict):
+                rec_digests = dict(manifest_in_rec["files"])
+            elif (
+                actual_files_map
+                and actual_tree_sha
+                and actual_tree_sha == matched["candidate_tree_sha256"]
+            ):
+                rec_digests = dict(actual_files_map)
+            else:
+                rec_digests = {
+                    f: f"tree-mismatch:{matched['candidate_tree_sha256']}" for f in pub_files
+                }
+            val_record_obj = {
+                "run_id": matched["workflow_run_id"],
+                "run_attempt": matched["workflow_run_attempt"],
+                "source_head": matched["source_sha"],
+                "candidate_version": matched["new_version"],
+                "interpreter": matched["new_version"],
+                "pip": pinned_pip,
+                "pip_tools": pinned_tools,
+                "digests": rec_digests,
+            }
+        if matched["publish_conclusion"] == "success" and not matched["dry_run"]:
+            run_actor_login = (
+                str((raw_run_obj.get("actor") or {}).get("login") or "").strip()
+                if isinstance(raw_run_obj.get("actor"), dict)
+                else "github-actions[bot]"
+            ) or "github-actions[bot]"
+            pub_record_obj = {
+                "run_id": matched["workflow_run_id"],
+                "run_attempt": matched["workflow_run_attempt"],
+                "pull_number": matched["published_pr_number"],
+                "published_head": matched["published_head_sha"],
+                "branch": head_ref or "chore/python-bump",
+                "pr_author": author,
+                "run_actor": run_actor_login,
+                "commit_identity": exp_login,
+                "digests": dict(val_record_obj["digests"]) if val_record_obj else {},
+            }
+
+    translated_pub_evidence = {
+        "repository": repo_name,
+        "candidate_version": cand_ver_diff,
+        "expected_commit_identity": exp_login,
+        "expected_commit_name": exp_name,
+        "expected_commit_email": exp_email,
+        "proposal_digests": actual_files_map,
+        "published_commit": pr_data.get("published_commit"),
+        "proposer_run": raw_run_obj,
+        "proposer_attempt": proposer_attempt_obj,
+        "validation_record": val_record_obj,
+        "publication_record": pub_record_obj,
+    }
+
     return {
         "verified": verified_bump,
         "lane": "python_bump",
@@ -2062,6 +2226,7 @@ def resolve_proposer_provenance_from_api_runs(
         "body_tampered": False,
         "head_ref": head_ref,
         "head_sha": matched["published_head_sha"] if matched else "",
+        "publication_evidence": translated_pub_evidence,
     }
 
 
@@ -2130,7 +2295,7 @@ def evaluate_automerge(
     policy: dict[str, Any] | None = None,
 ) -> AutoMergeDecision:
     """Verify whether a pull request satisfies all safety gates for automatic merge."""
-    pol_root = policy or DEFAULT_POLICY
+    pol_root = policy or load_policy(REPO_ROOT)
     pol = pol_root.get("automerge", DEFAULT_POLICY["automerge"])
     target_branch = str(pol.get("target_branch", "main"))
     merge_method = str(pol.get("merge_method", "SQUASH"))
@@ -3102,54 +3267,82 @@ def evaluate_automerge(
                     merge_method,
                     updates=classified_updates,
                 )
-            published_commit_obj = pr_data.get("published_commit") or provenance.get("published_commit")
-            if isinstance(published_commit_obj, dict):
-                exp_login, exp_name, exp_email = maintenance_common.configured_commit_identity(pol_root)
-                commit_id_err = maintenance_common.published_commit_identity_failure(
-                    published_commit_obj,
-                    head=head_sha,
-                    expected_login=exp_login,
-                    expected_name=exp_name,
-                    expected_email=exp_email,
-                )
-                if commit_id_err:
-                    return AutoMergeDecision(
-                        False,
-                        matched_lane,
-                        f"Rejected: {commit_id_err}.",
-                        merge_method,
-                        classification="review-required",
-                        updates=classified_updates,
-                    )
             pub_ev_obj = pr_data.get("publication_evidence")
-            if isinstance(pub_ev_obj, dict) and pub_ev_obj:
-                pub_mode, pub_wf, pub_files = maintenance_common.publication_policy(pol_root)
-                pinned_pip, pinned_tools = maintenance_common.compiler_pins(pol_root)
-                pub_gate = maintenance_common.verify_publication_gate(
-                    mode=pub_mode,
-                    kind="python_bump",
-                    evidence=pub_ev_obj,
-                    pr={
-                        "number": pr_data.get("pr_number"),
-                        "user": {"login": pr_author},
-                        "head": {"sha": head_sha, "ref": head_ref},
-                    },
-                    candidate_version=new_py,
-                    trusted_proposer_path=pub_wf,
-                    proposal_files=pub_files,
-                    pinned_pip=pinned_pip,
-                    pinned_pip_tools=pinned_tools,
-                    repository=expected_repo,
+            if pub_ev_obj is None and isinstance(provenance.get("publication_evidence"), dict):
+                pub_ev_obj = provenance.get("publication_evidence")
+            published_commit_obj = (
+                pr_data.get("published_commit")
+                or (pub_ev_obj.get("published_commit") if isinstance(pub_ev_obj, dict) else None)
+                or provenance.get("published_commit")
+            )
+            exp_login, exp_name, exp_email = maintenance_common.configured_commit_identity(pol_root)
+            commit_id_err = maintenance_common.published_commit_identity_failure(
+                published_commit_obj if isinstance(published_commit_obj, dict) else None,
+                head=head_sha,
+                expected_login=exp_login,
+                expected_name=exp_name,
+                expected_email=exp_email,
+            )
+            if commit_id_err:
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: {commit_id_err}.",
+                    merge_method,
+                    classification="review-required",
+                    updates=classified_updates,
                 )
-                if pub_gate.get("state") != "ready":
-                    return AutoMergeDecision(
-                        False,
-                        matched_lane,
-                        f"Rejected: {pub_gate.get('reason') or 'publication-evidence'}.",
-                        merge_method,
-                        classification="review-required",
-                        updates=classified_updates,
-                    )
+            if isinstance(pub_ev_obj, dict) and pub_ev_obj.get("error"):
+                err_code = str(pub_ev_obj.get("error") or "publication-evidence-error")
+                is_api_defer = any(
+                    tok in err_code
+                    for tok in ("api:403", "api:429", "api:500", "api:502", "api:503", "api:504")
+                )
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: {err_code}.",
+                    merge_method,
+                    classification="deferred" if is_api_defer else "review-required",
+                    updates=classified_updates,
+                )
+            pub_mode, pub_wf, pub_files = maintenance_common.publication_policy(pol_root)
+            pinned_pip, pinned_tools = maintenance_common.compiler_pins(pol_root)
+            cand_ver_for_gate = (
+                maintenance_common.candidate_version_from_files(
+                    [
+                        {"filename": k, "patch": v}
+                        for k, v in (pr_data.get("file_diffs") or {}).items()
+                        if isinstance(k, str) and isinstance(v, str)
+                    ]
+                )
+                or new_py
+            )
+            pub_gate = maintenance_common.verify_publication_gate(
+                mode=pub_mode,
+                kind="python_bump",
+                evidence=pub_ev_obj if isinstance(pub_ev_obj, dict) else None,
+                pr={
+                    "number": pr_data.get("pr_number"),
+                    "user": {"login": pr_author},
+                    "head": {"sha": head_sha, "ref": head_ref},
+                },
+                candidate_version=cand_ver_for_gate,
+                trusted_proposer_path=pub_wf,
+                proposal_files=pub_files,
+                pinned_pip=pinned_pip,
+                pinned_pip_tools=pinned_tools,
+                repository=expected_repo,
+            )
+            if pub_gate.get("state") != "ready":
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: {pub_gate.get('reason') or 'publication-evidence'}.",
+                    merge_method,
+                    classification="deferred" if pub_gate.get("state") == "defer" else "review-required",
+                    updates=classified_updates,
+                )
         elif provenance.get("verified") is not True:
             return AutoMergeDecision(
                 False,
@@ -3158,6 +3351,27 @@ def evaluate_automerge(
                 merge_method,
                 updates=classified_updates,
             )
+        else:
+            pub_mode, _pub_wf, _pub_files = maintenance_common.publication_policy(pol_root)
+            dep_pub_gate = maintenance_common.verify_publication_gate(
+                mode=pub_mode,
+                kind="dependabot",
+                evidence=None,
+                pr={
+                    "number": pr_data.get("pr_number"),
+                    "user": {"login": pr_author},
+                    "head": {"sha": head_sha, "ref": head_ref},
+                },
+                repository=expected_repo,
+            )
+            if dep_pub_gate.get("state") != "ready":
+                return AutoMergeDecision(
+                    False,
+                    matched_lane,
+                    f"Rejected: {dep_pub_gate.get('reason') or 'publication-evidence'}.",
+                    merge_method,
+                    updates=classified_updates,
+                )
 
     # 13. Check runs, producing workflow identity, complete mandatory gate set, and real security evidence (G2)
     if not head_sha:
@@ -3168,48 +3382,6 @@ def evaluate_automerge(
             merge_method,
             updates=classified_updates,
         )
-
-    producer_ev_obj = pr_data.get("producer_evidence")
-    if isinstance(producer_ev_obj, dict) and producer_ev_obj:
-        prod_policy = pol_root.get("check_producers") or {}
-        expected_prod_names = list(pol_root.get("mandatory_check_names") or pol.get("required_checks") or [])
-        prod_res = maintenance_common.verify_check_producers(
-            producer_ev_obj,
-            expected_names=expected_prod_names,
-            head_sha=head_sha,
-            producers=prod_policy,
-            repository=expected_repo,
-        )
-        if prod_res.get("state") != "ready":
-            return AutoMergeDecision(
-                False,
-                matched_lane,
-                f"Rejected: {prod_res.get('reason') or 'producer-evidence'}.",
-                merge_method,
-                updates=classified_updates,
-            )
-
-    sec_ev_obj = pr_data.get("security_evidence")
-    if isinstance(sec_ev_obj, dict):
-        sec_mode, sec_req = maintenance_common.security_policy(pol_root)
-        if pr_data.get("security_evidence_mode"):
-            sec_mode = str(pr_data.get("security_evidence_mode"))
-        if isinstance(pr_data.get("required_security_evidence"), list):
-            sec_req = [str(k) for k in pr_data["required_security_evidence"] if k]
-        sec_res = maintenance_common.verify_security_evidence(
-            sec_ev_obj,
-            sec_req,
-            mode=sec_mode,
-        )
-        if sec_res.get("state") != "ready":
-            return AutoMergeDecision(
-                False,
-                matched_lane,
-                f"Rejected: {sec_res.get('reason') or 'security-evidence'}.",
-                merge_method,
-                classification="deferred" if sec_res.get("state") == "defer" else "review-required",
-                updates=classified_updates,
-            )
 
     check_runs_raw = pr_data.get("check_runs")
     checks_raw = pr_data.get("checks")
@@ -3389,6 +3561,52 @@ def evaluate_automerge(
             f"Rejected: incomplete mandatory CI check set on run {latest_run_id}; missing: {', '.join(missing_groups)}.",
             merge_method,
             classification="deferred",
+            updates=classified_updates,
+        )
+
+    # Unconditional producer binding via maintenance_common.verify_check_producers
+    producer_ev_obj = pr_data.get("producer_evidence")
+    prod_policy = pol_root.get("check_producers") or {}
+    expected_prod_names = list(
+        pol_root.get("mandatory_check_names") or pol.get("required_checks") or []
+    )
+    prod_res = maintenance_common.verify_check_producers(
+        producer_ev_obj if isinstance(producer_ev_obj, dict) else None,
+        expected_names=expected_prod_names,
+        head_sha=head_sha,
+        producers=prod_policy,
+        repository=expected_repo,
+    )
+    if prod_res.get("state") != "ready":
+        return AutoMergeDecision(
+            False,
+            matched_lane,
+            f"Rejected: {prod_res.get('reason') or 'producer-evidence'}.",
+            merge_method,
+            updates=classified_updates,
+        )
+
+    # Unconditional security evidence policy gate via maintenance_common.verify_security_evidence
+    sec_mode, sec_req = maintenance_common.security_policy(pol_root)
+    if pr_data.get("security_evidence_mode") is not None:
+        sec_mode = str(pr_data.get("security_evidence_mode"))
+    if isinstance(pr_data.get("required_security_evidence"), list):
+        sec_req = [str(k) for k in pr_data["required_security_evidence"] if k]
+        if sec_req and sec_mode != "required":
+            sec_mode = "required"
+    sec_ev_obj = pr_data.get("security_evidence")
+    sec_res = maintenance_common.verify_security_evidence(
+        sec_ev_obj if isinstance(sec_ev_obj, dict) else None,
+        sec_req,
+        mode=sec_mode,
+    )
+    if sec_res.get("state") != "ready":
+        return AutoMergeDecision(
+            False,
+            matched_lane,
+            f"Rejected: {sec_res.get('reason') or 'security-evidence'}.",
+            merge_method,
+            classification="deferred" if sec_res.get("state") == "defer" else "review-required",
             updates=classified_updates,
         )
 
@@ -4348,8 +4566,66 @@ def main(argv: list[str] | None = None) -> int:
     vm_p.add_argument("--response-json", required=True, help="Inline JSON or @path to merge response")
     vm_p.add_argument("--expected-head-sha", default="", help="Expected head SHA")
 
+    evn_p = sub.add_parser("emit-validation-notice", help="Emit bounded proposal-validation notice")
+    evn_p.add_argument("--candidate", default=os.environ.get("CANDIDATE_VERSION", ""), required=False)
+    evn_p.add_argument("--source-head", default=os.environ.get("SOURCE_SHA") or os.environ.get("GITHUB_SHA", ""))
+    evn_p.add_argument("--run-id", default=os.environ.get("RUN_ID") or os.environ.get("GITHUB_RUN_ID", ""))
+    evn_p.add_argument("--run-attempt", default=os.environ.get("RUN_ATTEMPT") or os.environ.get("GITHUB_RUN_ATTEMPT", "1"))
+    evn_p.add_argument("--interpreter", default="")
+
+    epn_p = sub.add_parser("emit-publication-notice", help="Emit bounded proposal-publication notice")
+    epn_p.add_argument("--pull-number", default=os.environ.get("PR_NUMBER", ""), required=False)
+    epn_p.add_argument(
+        "--published-head",
+        default=os.environ.get("PUBLISHED_HEAD_SHA") or os.environ.get("CPR_HEAD_SHA", ""),
+        required=False,
+    )
+    epn_p.add_argument("--branch", default="chore/python-bump")
+    epn_p.add_argument("--pr-author", default=os.environ.get("PR_AUTHOR", "github-actions[bot]"))
+    epn_p.add_argument("--commit-identity", default="")
+    epn_p.add_argument("--run-actor", default=os.environ.get("GITHUB_ACTOR", "github-actions[bot]"))
+    epn_p.add_argument("--run-id", default=os.environ.get("RUN_ID") or os.environ.get("GITHUB_RUN_ID", ""))
+    epn_p.add_argument("--run-attempt", default=os.environ.get("RUN_ATTEMPT") or os.environ.get("GITHUB_RUN_ATTEMPT", "1"))
+
     args = parser.parse_args(argv)
     cmd = args.cmd or "bump"
+
+    if cmd == "emit-validation-notice":
+        try:
+            rendered = emit_validation_notice(
+                REPO_ROOT,
+                candidate=args.candidate,
+                source_head=args.source_head,
+                run_id=args.run_id,
+                run_attempt=args.run_attempt,
+                interpreter=args.interpreter,
+                policy=load_policy(REPO_ROOT),
+            )
+            print(rendered)
+            return 0
+        except Exception as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+
+    if cmd == "emit-publication-notice":
+        try:
+            rendered = emit_publication_notice(
+                REPO_ROOT,
+                pull_number=args.pull_number,
+                published_head=args.published_head,
+                branch=args.branch,
+                pr_author=args.pr_author,
+                commit_identity=args.commit_identity,
+                run_actor=args.run_actor,
+                run_id=args.run_id,
+                run_attempt=args.run_attempt,
+                policy=load_policy(REPO_ROOT),
+            )
+            print(rendered)
+            return 0
+        except Exception as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
 
     if cmd == "select":
         sel = run_select(REPO_ROOT, override_version=args.override or None)

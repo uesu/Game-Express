@@ -74,6 +74,8 @@ def _full_ci_check_runs(
             "head_sha": head_sha,
             "status": "COMPLETED",
             "conclusion": "SUCCESS",
+            "details_url": f"https://github.com/uesu/Game-Express/actions/runs/{run_id}/job/{run_id * 100 + idx}",
+            "html_url": f"https://github.com/uesu/Game-Express/actions/runs/{run_id}/job/{run_id * 100 + idx}",
             "app": {"slug": app_slug},
             "app_slug": app_slug,
             "workflow_id": 42,
@@ -93,6 +95,141 @@ def _full_ci_check_runs(
             entry.update(overrides[name])
         runs.append(entry)
     return runs
+
+
+def _full_producer_evidence(
+    head_sha: str = "a" * 40,
+    *,
+    run_id: int = 1001,
+    run_attempt: int = 1,
+    workflow_path: str = ".github/workflows/ci.yml",
+) -> dict[str, dict[str, Any]]:
+    names = [
+        "Verify (syntax, workflow contract & offline tests)",
+        "Dependency lockfile consistency",
+        "Ruff lint",
+        "Workflow lint (actionlint)",
+        "Workflow security audit (zizmor)",
+        "Dependency CVE audit (pip-audit, advisory)",
+        "maintenance-ci",
+    ]
+    out: dict[str, dict[str, Any]] = {}
+    for idx, name in enumerate(names, start=1):
+        cid = run_id * 100 + idx
+        out[name] = {
+            "workflow": workflow_path,
+            "job": name,
+            "check_run_id": cid,
+            "run_id": run_id,
+            "run_record_id": run_id,
+            "job_id": cid,
+            "job_record_id": cid,
+            "job_run_id": run_id,
+            "job_check_run_url": f"https://api.github.com/repos/uesu/Game-Express/check-runs/{cid}",
+            "run_attempt": run_attempt,
+            "job_run_attempt": run_attempt,
+            "head_sha": head_sha,
+            "job_head_sha": head_sha,
+            "job_status": "completed",
+            "job_conclusion": "success",
+            "run_status": "completed",
+            "run_conclusion": "success",
+        }
+    return out
+
+
+def _valid_published_commit(
+    head_sha: str = "a" * 40,
+    *,
+    login: str = "github-actions[bot]",
+    committer_login: str | None = None,
+    name: str = "github-actions[bot]",
+    email: str = "41898282+github-actions[bot]@users.noreply.github.com",
+) -> dict[str, Any]:
+    eff_committer = committer_login if committer_login is not None else login
+    return {
+        "sha": head_sha,
+        "author": {"login": login},
+        "committer": {"login": eff_committer},
+        "commit": {
+            "author": {"name": name, "email": email},
+            "committer": {"name": name, "email": email},
+            "message": "chore(python): bump pinned Python from 3.14.8 to 3.14.9",
+        },
+    }
+
+
+def _valid_publication_evidence(
+    head_sha: str = "a" * 40,
+    *,
+    pr_number: int | None = 50,
+    pr_author: str = "uesu",
+    source_sha: str = "b" * 40,
+    candidate_version: str = "3.14.9",
+    run_id: int = 555,
+    run_attempt: int = 1,
+    published_commit: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    digests = {
+        ".python-version": "1" * 64,
+        "ruff.toml": "2" * 64,
+        "requirements.txt": "3" * 64,
+        "requirements-dev.txt": "4" * 64,
+    }
+    commit_obj = (
+        published_commit
+        if published_commit is not None
+        else _valid_published_commit(head_sha)
+    )
+    return {
+        "repository": "uesu/Game-Express",
+        "candidate_version": candidate_version,
+        "expected_commit_identity": "github-actions[bot]",
+        "expected_commit_name": "github-actions[bot]",
+        "expected_commit_email": "41898282+github-actions[bot]@users.noreply.github.com",
+        "proposal_digests": dict(digests),
+        "published_commit": commit_obj,
+        "proposer_run": {
+            "id": run_id,
+            "workflow_id": 77,
+            "path": ".github/workflows/python_version_bump.yml",
+            "status": "completed",
+            "conclusion": "success",
+            "run_attempt": run_attempt,
+            "head_sha": source_sha,
+            "actor": {"login": "github-actions[bot]"},
+            "repository": {"full_name": "uesu/Game-Express"},
+            "head_repository": {"full_name": "uesu/Game-Express"},
+        },
+        "proposer_attempt": {
+            "id": run_id,
+            "run_attempt": run_attempt,
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": source_sha,
+        },
+        "validation_record": {
+            "run_id": run_id,
+            "run_attempt": run_attempt,
+            "source_head": source_sha,
+            "candidate_version": candidate_version,
+            "interpreter": candidate_version,
+            "pip": "26.1.1",
+            "pip_tools": "7.5.3",
+            "digests": dict(digests),
+        },
+        "publication_record": {
+            "run_id": run_id,
+            "run_attempt": run_attempt,
+            "pull_number": pr_number,
+            "published_head": head_sha,
+            "branch": "chore/python-bump",
+            "pr_author": pr_author,
+            "run_actor": "github-actions[bot]",
+            "commit_identity": "github-actions[bot]",
+            "digests": dict(digests),
+        },
+    }
 
 
 def _clean_security_scan(head_sha: str = "a" * 40) -> dict[str, Any]:
@@ -504,6 +641,7 @@ def test_g1_complete_diff_classification_additions_deletions_metadata_and_hashes
                 "requirements-dev.txt": "-aiohttp==3.14.5 \\\n+aiohttp==3.14.6 \\\n --hash=sha256:1234",
             },
             "check_runs": _full_ci_check_runs("a" * 40),
+            "producer_evidence": _full_producer_evidence("a" * 40),
             "security_scan": _clean_security_scan("a" * 40),
             "provenance": _trusted_provenance("dependabot_pip"),
             "vars": {"AUTO_MERGE_DEPENDABOT": "yes", "AUTO_MERGE_PYTHON_BUMP": "no"},
@@ -653,6 +791,7 @@ def test_automerge_lane_eligibility_and_g2_g3_hardening() -> None:
                 "requirements-dev.txt": "-aiohttp==3.14.5 \\\n+aiohttp==3.14.6 \\\n --hash=sha256:1234",
             },
             "check_runs": _full_ci_check_runs("a" * 40),
+            "producer_evidence": _full_producer_evidence("a" * 40),
             "security_scan": _clean_security_scan("a" * 40),
             "provenance": _trusted_provenance("dependabot_pip"),
             "vars": {"AUTO_MERGE_DEPENDABOT": "yes", "AUTO_MERGE_PYTHON_BUMP": "no"},
@@ -887,6 +1026,7 @@ def test_automerge_lane_eligibility_and_g2_g3_hardening() -> None:
             "changed_files": ["requirements.txt"],
             "file_diffs": {"requirements.txt": "-aiohttp==3.14.5\n+aiohttp==3.14.6\n"},
             "check_runs": vuln_checks,
+            "producer_evidence": _full_producer_evidence("a" * 40),
             "security_scan": {
                 "check_name": "Dependency CVE audit (pip-audit, advisory)",
                 "head_sha": "a" * 40,
@@ -930,6 +1070,7 @@ def test_automerge_lane_eligibility_and_g2_g3_hardening() -> None:
             "changed_files": ["requirements.txt"],
             "file_diffs": {"requirements.txt": "-aiohttp==3.14.5\n+aiohttp==3.14.6\n"},
             "check_runs": vuln_text_checks,
+            "producer_evidence": _full_producer_evidence("a" * 40),
             "security_scan": _clean_security_scan("a" * 40),
             "provenance": _trusted_provenance("dependabot_pip"),
         },
@@ -953,6 +1094,7 @@ def test_automerge_lane_eligibility_and_g2_g3_hardening() -> None:
             "changed_files": ["requirements.txt"],
             "file_diffs": {"requirements.txt": "-aiohttp==3.14.5\n+aiohttp==3.14.6\n"},
             "check_runs": _full_ci_check_runs("a" * 40),
+            "producer_evidence": _full_producer_evidence("a" * 40),
             "provenance": _trusted_provenance("dependabot_pip"),
         },
         policy,
@@ -1067,6 +1209,7 @@ def test_automerge_lane_eligibility_and_g2_g3_hardening() -> None:
     # 12. Allowed chore/python-bump patch update vs rejected minor update
     dec_py_patch = maintenance.evaluate_automerge(
         {
+            "pr_number": 50,
             "base_repo": "uesu/Game-Express",
             "head_repo": "uesu/Game-Express",
             "base_ref": "main",
@@ -1083,8 +1226,11 @@ def test_automerge_lane_eligibility_and_g2_g3_hardening() -> None:
             },
             "python_update": {"from": "3.14.8", "to": "3.14.9"},
             "check_runs": _full_ci_check_runs("a" * 40),
+            "producer_evidence": _full_producer_evidence("a" * 40),
+            "published_commit": _valid_published_commit("a" * 40),
+            "publication_evidence": _valid_publication_evidence("a" * 40, pr_number=50, pr_author="uesu"),
             "security_scan": _clean_security_scan("a" * 40),
-            "provenance": _trusted_provenance("python_bump"),
+            "provenance": {**_trusted_provenance("python_bump"), "published_pr_number": 50},
             "vars": {"AUTO_MERGE_PYTHON_BUMP": "yes"},
         },
         policy,
@@ -1309,6 +1455,26 @@ def test_g1_live_maintenance_merge_adapter_proposer_provenance_binding() -> None
             fname: (cand_root / fname).read_text(encoding="utf-8")
             for fname in (".python-version", "ruff.toml", "requirements.txt", "requirements-dev.txt")
         }
+        valid_val_msg = maintenance.emit_validation_notice(
+            cand_root,
+            candidate="3.14.9",
+            source_head="b" * 40,
+            run_id=501,
+            run_attempt=1,
+            interpreter="3.14.9",
+            pip_version="26.1.1",
+            pip_tools_version="7.5.3",
+        )
+        valid_pub_msg = maintenance.emit_publication_notice(
+            cand_root,
+            pull_number=50,
+            published_head="a" * 40,
+            branch="chore/python-bump",
+            pr_author="uesu",
+            run_actor="github-actions[bot]",
+            run_id=501,
+            run_attempt=1,
+        )
 
     def _run_live_adapter(scenario: dict[str, Any]) -> dict[str, Any]:
         with tempfile.TemporaryDirectory() as run_tmp:
@@ -1320,7 +1486,14 @@ const fs = require("fs");
 const path = require("path");
 const scenario = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const repoRoot = scenario.repoRoot;
-const headFiles = scenario.headFiles;
+let pullGetCount = 0;
+
+function activeScenario() {
+  if (pullGetCount >= 2 && scenario.refreshOverride) {
+    return Object.assign({}, scenario, scenario.refreshOverride);
+  }
+  return scenario;
+}
 
 const summaryChunks = [];
 const failedReasons = [];
@@ -1343,10 +1516,11 @@ const context = {
 const github = {
   async paginate(fn, args) {
     const res = await fn(args);
-    if (Array.isArray(res.data)) return res.data;
-    if (res.data && Array.isArray(res.data.check_runs)) return res.data.check_runs;
-    if (res.data && Array.isArray(res.data.workflow_runs)) return res.data.workflow_runs;
-    if (res.data && Array.isArray(res.data.jobs)) return res.data.jobs;
+    if (Array.isArray(res)) return res;
+    if (res && Array.isArray(res.data)) return res.data;
+    if (res && res.data && Array.isArray(res.data.check_runs)) return res.data.check_runs;
+    if (res && res.data && Array.isArray(res.data.workflow_runs)) return res.data.workflow_runs;
+    if (res && res.data && Array.isArray(res.data.jobs)) return res.data.jobs;
     return [];
   },
   rest: {
@@ -1357,21 +1531,47 @@ const github = {
           const raw = fs.readFileSync(full);
           return { data: { content: raw.toString("base64"), encoding: "base64" } };
         }
+        const cur = activeScenario();
+        const headFiles = cur.headFiles;
         if (headFiles && Object.prototype.hasOwnProperty.call(headFiles, relPath)) {
           const raw = Buffer.from(headFiles[relPath], "utf8");
           return { data: { content: raw.toString("base64"), encoding: "base64" } };
         }
-        throw new Error("Missing file: " + relPath + " at " + ref);
+        const err = new Error("Missing file: " + relPath + " at " + ref);
+        err.status = 404;
+        throw err;
+      },
+      async getCommit({ ref }) {
+        const cur = activeScenario();
+        if (cur.getCommitError) {
+          const err = new Error("getCommit failed");
+          err.status = Number(cur.getCommitError);
+          throw err;
+        }
+        if (cur.publishedCommit !== undefined) {
+          return cur.rawEnvelope ? cur.publishedCommit : { data: cur.publishedCommit };
+        }
+        const found = (cur.commits || []).find((c) => c && c.sha === ref) || null;
+        if (!found) {
+          const err = new Error("Commit not found");
+          err.status = 404;
+          throw err;
+        }
+        return cur.rawEnvelope ? found : { data: found };
       },
       async getCombinedStatusForRef() {
         return { data: { total_count: 0, state: "success", statuses: [] } };
       }
     },
     pulls: {
-      async get() { return { data: scenario.pr }; },
-      async listFiles() { return { data: scenario.files }; },
-      async listCommits() { return { data: scenario.commits }; },
-      async listReviews() { return { data: scenario.reviews || [] }; },
+      async get() {
+        pullGetCount += 1;
+        const cur = activeScenario();
+        return cur.rawEnvelope ? cur.pr : { data: cur.pr };
+      },
+      async listFiles() { return { data: activeScenario().files }; },
+      async listCommits() { return { data: activeScenario().commits }; },
+      async listReviews() { return { data: activeScenario().reviews || [] }; },
       async merge(params) {
         mergedCalls.push(params);
         return { data: { merged: true, sha: "f".repeat(40), message: "Pull Request successfully merged" } };
@@ -1379,20 +1579,68 @@ const github = {
     },
     checks: {
       async listForRef() {
-        return { data: { total_count: scenario.checkRuns.length, check_runs: scenario.checkRuns } };
+        const cur = activeScenario();
+        return { data: { total_count: cur.checkRuns.length, check_runs: cur.checkRuns } };
       },
-      async listAnnotations() { return { data: [] }; }
+      async listAnnotations({ check_run_id }) {
+        const cur = activeScenario();
+        const anns = (cur.annotationsByCheckRunId && cur.annotationsByCheckRunId[String(check_run_id)]) || [];
+        return { data: anns };
+      }
     },
     actions: {
       async listWorkflowRunsForRepo() {
-        return { data: { workflow_runs: scenario.ciWorkflowRuns } };
+        return { data: { workflow_runs: activeScenario().ciWorkflowRuns } };
       },
       async listWorkflowRuns() {
-        return { data: { workflow_runs: scenario.proposerRuns } };
+        const cur = activeScenario();
+        return cur.rawEnvelope
+          ? { workflow_runs: cur.proposerRuns }
+          : { data: { workflow_runs: cur.proposerRuns } };
+      },
+      async getWorkflowRunAttempt({ run_id, attempt_number }) {
+        const cur = activeScenario();
+        if (cur.attemptsByRunId && cur.attemptsByRunId[String(run_id)]) {
+          const att = cur.attemptsByRunId[String(run_id)];
+          return cur.rawEnvelope ? att : { data: att };
+        }
+        const run = (cur.proposerRuns || []).find((r) => r && Number(r.id) === Number(run_id));
+        if (!run) {
+          const err = new Error("Run attempt not found");
+          err.status = 404;
+          throw err;
+        }
+        const att = {
+          id: run.id,
+          run_attempt: Number(run.run_attempt || attempt_number || 1),
+          status: run.status || "completed",
+          conclusion: run.conclusion || "success",
+          head_sha: run.head_sha || "",
+        };
+        return cur.rawEnvelope ? att : { data: att };
       },
       async listJobsForWorkflowRun({ run_id }) {
-        const jobs = (scenario.jobsByRunId && scenario.jobsByRunId[String(run_id)]) || [];
+        const cur = activeScenario();
+        const jobs = (cur.jobsByRunId && cur.jobsByRunId[String(run_id)]) || [];
         return { data: { jobs } };
+      },
+      async getJobForWorkflowRun({ job_id }) {
+        const cur = activeScenario();
+        for (const jobs of Object.values(cur.jobsByRunId || {})) {
+          const match = (jobs || []).find((j) => j && Number(j.id) === Number(job_id));
+          if (match) return cur.rawEnvelope ? match : { data: match };
+        }
+        const err = new Error("Job not found: " + job_id);
+        err.status = 404;
+        throw err;
+      },
+      async getWorkflowRun({ run_id }) {
+        const cur = activeScenario();
+        const match = (cur.ciWorkflowRuns || []).find((r) => r && Number(r.id) === Number(run_id));
+        if (match) return cur.rawEnvelope ? match : { data: match };
+        const err = new Error("Workflow run not found: " + run_id);
+        err.status = 404;
+        throw err;
       }
     }
   }
@@ -1418,7 +1666,7 @@ const github = {
             harness_path.write_text(harness_code, encoding="utf-8")
             out_path = Path(run_tmp) / "out.json"
             env = {
-                "PATH": f"{ROOT / '.venv' / 'bin'}:/usr/local/bin:/usr/bin:/bin",
+                "PATH": f"{Path(sys.executable).parent}:{ROOT / '.venv' / 'bin'}:/usr/local/bin:/usr/bin:/bin",
                 "RUNNER_TEMP": run_tmp,
                 "AUTO_MERGE_PYTHON_BUMP": "yes",
                 "AUTO_MERGE_DEPENDABOT": "yes",
@@ -1437,16 +1685,29 @@ const github = {
     head_sha = "a" * 40
     base_sha = "b" * 40
     ci_checks = _full_ci_check_runs(head_sha, run_id=1001, run_attempt=1)
-    ci_jobs = [
-        {
-            "id": c["id"],
-            "name": c["name"],
-            "status": "completed",
-            "conclusion": "success",
-            "steps": c["steps"],
-        }
-        for c in ci_checks
-    ]
+
+    def _make_ci_jobs(
+        sha: str = head_sha,
+        *,
+        run_id: int = 1001,
+        run_attempt: int = 1,
+        check_run_id_override: int | None = None,
+    ) -> list[dict[str, Any]]:
+        checks_for_sha = _full_ci_check_runs(sha, run_id=run_id, run_attempt=run_attempt)
+        return [
+            {
+                "id": c["id"],
+                "run_id": run_id,
+                "run_attempt": run_attempt,
+                "head_sha": sha,
+                "name": c["name"],
+                "status": "completed",
+                "conclusion": "success",
+                "check_run_url": f"https://api.github.com/repos/uesu/Game-Express/check-runs/{check_run_id_override or c['id']}",
+                "steps": c["steps"],
+            }
+            for c in checks_for_sha
+        ]
 
     def _make_proposer_jobs(
         *,
@@ -1494,9 +1755,18 @@ const github = {
         proposer_runs: list[dict[str, Any]] | None = None,
         proposer_jobs: dict[str, list[dict[str, Any]]] | None = None,
         head_files: dict[str, str] | None = None,
+        published_commit: dict[str, Any] | None = None,
+        get_commit_error: int | None = None,
+        check_runs_override: list[dict[str, Any]] | None = None,
+        ci_workflow_runs_override: list[dict[str, Any]] | None = None,
+        ci_jobs_override: list[dict[str, Any]] | None = None,
+        refresh_override: dict[str, Any] | None = None,
+        raw_envelope: bool = False,
     ) -> dict[str, Any]:
-        return {
+        default_commit = _valid_published_commit(pr_head_sha)
+        scen: dict[str, Any] = {
             "repoRoot": str(ROOT),
+            "rawEnvelope": raw_envelope,
             "headFiles": head_files if head_files is not None else cand_contents,
             "pr": {
                 "number": pr_num,
@@ -1517,34 +1787,50 @@ const github = {
                 "labels": [],
             },
             "files": [{"filename": ".python-version", "patch": "-3.14.8\n+3.14.9\n"}],
-            "commits": [{"sha": pr_head_sha, "author": {"login": "github-actions[bot]"}, "commit": {"message": "bump"}}],
-            "checkRuns": ci_checks if pr_head_sha == head_sha else _full_ci_check_runs(pr_head_sha, run_id=1001, run_attempt=1),
-            "ciWorkflowRuns": [
-                {
-                    "id": 1001,
-                    "name": "CI",
-                    "path": ".github/workflows/ci.yml",
-                    "workflow_id": 42,
-                    "run_attempt": 1,
-                    "head_sha": pr_head_sha,
-                }
-            ],
+            "commits": [default_commit],
+            "publishedCommit": published_commit if published_commit is not None else default_commit,
+            "checkRuns": (
+                check_runs_override
+                if check_runs_override is not None
+                else (ci_checks if pr_head_sha == head_sha else _full_ci_check_runs(pr_head_sha, run_id=1001, run_attempt=1))
+            ),
+            "ciWorkflowRuns": (
+                ci_workflow_runs_override
+                if ci_workflow_runs_override is not None
+                else [
+                    {
+                        "id": 1001,
+                        "name": "CI",
+                        "path": ".github/workflows/ci.yml",
+                        "workflow_id": 42,
+                        "run_attempt": 1,
+                        "head_sha": pr_head_sha,
+                        "status": "completed",
+                        "conclusion": "success",
+                    }
+                ]
+            ),
             "proposerRuns": proposer_runs
             if proposer_runs is not None
             else [
                 {
                     "id": 501,
+                    "workflow_id": 77,
                     "name": "Python Version Bump",
                     "path": ".github/workflows/python_version_bump.yml",
                     "head_branch": "main",
                     "head_sha": base_sha,
                     "run_attempt": 1,
                     "event": "schedule",
+                    "status": "completed",
                     "conclusion": "success",
+                    "actor": {"login": "github-actions[bot]"},
+                    "repository": {"full_name": "uesu/Game-Express"},
+                    "head_repository": {"full_name": "uesu/Game-Express"},
                 }
             ],
             "jobsByRunId": {
-                "1001": ci_jobs,
+                "1001": ci_jobs_override if ci_jobs_override is not None else _make_ci_jobs(pr_head_sha),
                 **(
                     proposer_jobs
                     if proposer_jobs is not None
@@ -1552,6 +1838,11 @@ const github = {
                 ),
             },
         }
+        if get_commit_error is not None:
+            scen["getCommitError"] = get_commit_error
+        if refresh_override is not None:
+            scen["refreshOverride"] = refresh_override
+        return scen
 
     # 1. Valid PAT-published patch bump bound to this PR/head/manifest -> merged
     out_ok = _run_live_adapter(_make_scenario())
@@ -1672,7 +1963,9 @@ const github = {
                 "changed_files": [".python-version"],
                 "file_diffs": {".python-version": "-3.14.8\n+3.14.9\n"},
                 "commits": [{"sha": head_sha, "author": "github-actions[bot]"}],
+                "published_commit": _valid_published_commit(head_sha),
                 "check_runs": ci_checks,
+                "producer_evidence": _full_producer_evidence(head_sha),
                 "security_scan": _clean_security_scan(head_sha),
                 "actual_candidate_manifest": real_manifest,
                 "actual_candidate_tree_sha256": real_tree_sha,
@@ -1688,6 +1981,130 @@ const github = {
         assert py_dec.eligible is expected_merge, (scen_name, py_dec)
         if scen_name == "changed_base_sha":
             assert py_dec.classification == "deferred", (scen_name, py_dec)
+
+    # 8. G3 collector-to-decision tests: raw envelope support, missing/null/malformed evidence,
+    # wrong commit author/committer, wrong producer backlink/run/attempt, stale digest/head, and final refresh changes
+    out_raw_env = _run_live_adapter(_make_scenario(raw_envelope=True))
+    assert len(out_raw_env["mergedCalls"]) == 1, out_raw_env
+
+    # 8a. Missing/failed getCommit (404) -> rejected (published-head-not-a-commit)
+    out_no_commit = _run_live_adapter(_make_scenario(get_commit_error=404))
+    assert out_no_commit["mergedCalls"] == [], out_no_commit
+    assert "published-head-not-a-commit" in out_no_commit["summary"]
+
+    # 8b. Wrong commit author login -> rejected (published-commit-author-login-mismatch)
+    out_bad_author = _run_live_adapter(
+        _make_scenario(published_commit=_valid_published_commit(head_sha, login="alice"))
+    )
+    assert out_bad_author["mergedCalls"] == [], out_bad_author
+    assert "published-commit-author-login-mismatch" in out_bad_author["summary"]
+
+    # 8c. Wrong commit committer login -> rejected (published-commit-committer-login-mismatch)
+    out_bad_committer = _run_live_adapter(
+        _make_scenario(published_commit=_valid_published_commit(head_sha, committer_login="mallory"))
+    )
+    assert out_bad_committer["mergedCalls"] == [], out_bad_committer
+    assert "published-commit-committer-login-mismatch" in out_bad_committer["summary"]
+
+    # 8d. Wrong commit git email -> rejected (published-commit-author-email-mismatch)
+    out_bad_email = _run_live_adapter(
+        _make_scenario(published_commit=_valid_published_commit(head_sha, email="wrong@example.com"))
+    )
+    assert out_bad_email["mergedCalls"] == [], out_bad_email
+    assert "published-commit-author-email-mismatch" in out_bad_email["summary"]
+
+    # 8e. Foreign/unresolvable check-run details_url -> rejected (unresolvable-details-url)
+    foreign_checks = _full_ci_check_runs(
+        head_sha,
+        overrides={
+            "Ruff lint": {
+                "details_url": "https://github.com/evil/fork/actions/runs/1001/job/100103",
+                "html_url": "https://github.com/evil/fork/actions/runs/1001/job/100103",
+            }
+        },
+    )
+    out_foreign_url = _run_live_adapter(_make_scenario(check_runs_override=foreign_checks))
+    assert out_foreign_url["mergedCalls"] == [], out_foreign_url
+    assert "unresolvable-details-url" in out_foreign_url["summary"]
+
+    # 8f. Wrong producer backlink (job.check_run_url ID mismatch) -> rejected (producer-check-run-id-mismatch)
+    out_bad_backlink = _run_live_adapter(
+        _make_scenario(ci_jobs_override=_make_ci_jobs(head_sha, check_run_id_override=999999))
+    )
+    assert out_bad_backlink["mergedCalls"] == [], out_bad_backlink
+    assert "producer-check-run-id-mismatch" in out_bad_backlink["summary"]
+
+    # 8g. Wrong producer attempt (wfRun.run_attempt=2, job.run_attempt=1) -> rejected (producer-attempt-mismatch)
+    out_bad_attempt = _run_live_adapter(
+        _make_scenario(
+            ci_workflow_runs_override=[
+                {
+                    "id": 1001,
+                    "name": "CI",
+                    "path": ".github/workflows/ci.yml",
+                    "workflow_id": 42,
+                    "run_attempt": 2,
+                    "head_sha": head_sha,
+                    "status": "completed",
+                    "conclusion": "success",
+                }
+            ],
+            ci_jobs_override=_make_ci_jobs(head_sha, run_attempt=1),
+        )
+    )
+    assert out_bad_attempt["mergedCalls"] == [], out_bad_attempt
+    assert "producer-attempt-mismatch" in out_bad_attempt["summary"]
+
+    # 8h. Stale/tampered published file content -> rejected
+    tampered_files = {**cand_contents, "requirements.txt": "# tampered content\n"}
+    out_tampered_file = _run_live_adapter(_make_scenario(head_files=tampered_files))
+    assert out_tampered_file["mergedCalls"] == [], out_tampered_file
+    assert "does not match validated candidate manifest" in out_tampered_file["summary"]
+
+    # 8i. Phase 2 pre-merge refresh: commit identity or producer backlink changes on refresh -> blocked before merge
+    out_refresh_bad_commit = _run_live_adapter(
+        _make_scenario(
+            refresh_override={
+                "publishedCommit": _valid_published_commit(head_sha, login="intruder")
+            }
+        )
+    )
+    assert out_refresh_bad_commit["mergedCalls"] == [], out_refresh_bad_commit
+    assert "blocked on pre-merge refresh" in out_refresh_bad_commit["summary"]
+    assert "published-commit-author-login-mismatch" in out_refresh_bad_commit["summary"]
+
+    out_refresh_bad_producer = _run_live_adapter(
+        _make_scenario(
+            refresh_override={
+                "jobsByRunId": {
+                    "1001": _make_ci_jobs(head_sha, check_run_id_override=888888),
+                    "501": _make_proposer_jobs(),
+                }
+            }
+        )
+    )
+    assert out_refresh_bad_producer["mergedCalls"] == [], out_refresh_bad_producer
+    assert "blocked on pre-merge refresh" in out_refresh_bad_producer["summary"]
+    assert "producer-check-run-id-mismatch" in out_refresh_bad_producer["summary"]
+
+    # 8j. Notice annotations path (`checks.listAnnotations` with `proposal-validation` and `proposal-publication`):
+    # valid notices merge, tampered compiler pin in `proposal-validation` notice blocks with `validation-pip-mismatch`
+    scen_good_notice = _make_scenario()
+    scen_good_notice["annotationsByCheckRunId"] = {
+        "50102": [{"message": valid_val_msg}],
+        "50103": [{"message": valid_pub_msg}],
+    }
+    out_good_notice = _run_live_adapter(scen_good_notice)
+    assert len(out_good_notice["mergedCalls"]) == 1, out_good_notice
+
+    scen_bad_notice = _make_scenario()
+    scen_bad_notice["annotationsByCheckRunId"] = {
+        "50102": [{"message": valid_val_msg.replace('"26.1.1"', '"25.0.0"')}],
+        "50103": [{"message": valid_pub_msg}],
+    }
+    out_bad_notice = _run_live_adapter(scen_bad_notice)
+    assert out_bad_notice["mergedCalls"] == [], out_bad_notice
+    assert "validation-compiler-mismatch" in out_bad_notice["summary"]
 
 
 def test_g2_live_python_version_bump_workflow_registry_and_cli_subprocesses() -> None:
@@ -1734,7 +2151,8 @@ def test_g2_live_python_version_bump_workflow_registry_and_cli_subprocesses() ->
         and "verify-candidate-manifest" in r
         for r in pub_runs
     )
-    assert any("record-publication-provenance" in r for r in pub_runs)
+    assert any("emit-validation-notice" in r for r in run_scripts), run_scripts
+    assert any("record-publication-provenance" in r and "emit-publication-notice" in r for r in pub_runs), pub_runs
 
     running_py = platform.python_version()
 
@@ -2056,6 +2474,67 @@ def test_g2_live_python_version_bump_workflow_registry_and_cli_subprocesses() ->
         )
         assert res_ext_fail.returncode != 0
         assert "external Action check 'zizmor' did not succeed" in res_ext_fail.stderr
+
+        # (f) CLI subprocesses `emit-validation-notice` and `emit-publication-notice` emit parseable records
+        res_val_notice = subprocess.run(
+            [
+                sys.executable,
+                str(tmp_repo / ".github" / "scripts" / "maintenance.py"),
+                "emit-validation-notice",
+                "--candidate",
+                "3.14.9",
+                "--source-head",
+                "b" * 40,
+                "--run-id",
+                "501",
+                "--run-attempt",
+                "1",
+            ],
+            cwd=str(tmp_repo),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert res_val_notice.returncode == 0, res_val_notice.stderr
+        parsed_val = maintenance.maintenance_common.parse_notice(
+            res_val_notice.stdout.strip(), "proposal-validation"
+        )
+        assert parsed_val is not None
+        assert parsed_val["candidate_version"] == "3.14.9"
+        assert parsed_val["source_head"] == "b" * 40
+
+        res_pub_notice = subprocess.run(
+            [
+                sys.executable,
+                str(tmp_repo / ".github" / "scripts" / "maintenance.py"),
+                "emit-publication-notice",
+                "--pull-number",
+                "50",
+                "--published-head",
+                "a" * 40,
+                "--branch",
+                "chore/python-bump",
+                "--pr-author",
+                "uesu",
+                "--run-actor",
+                "github-actions[bot]",
+                "--run-id",
+                "501",
+                "--run-attempt",
+                "1",
+            ],
+            cwd=str(tmp_repo),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert res_pub_notice.returncode == 0, res_pub_notice.stderr
+        parsed_pub = maintenance.maintenance_common.parse_notice(
+            res_pub_notice.stdout.strip(), "proposal-publication"
+        )
+        assert parsed_pub is not None
+        assert parsed_pub["pull_number"] == 50
+        assert parsed_pub["published_head"] == "a" * 40
 
 
 if __name__ == "__main__":

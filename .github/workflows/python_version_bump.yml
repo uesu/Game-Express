@@ -163,10 +163,16 @@ jobs:
           python .github/scripts/maintenance.py assert-interpreter --expected "${CANDIDATE_VERSION}"
           python .github/scripts/ci.py run-all --phase post-rewrite --expected-python "${CANDIDATE_VERSION}" --require-exact-python --with-security --require-security-tools --require-actionlint --external-security-result "actionlint=${POST_ACTIONLINT_RESULT}" --external-security-result "zizmor=${POST_ZIZMOR_RESULT}" --external-security-result "pip-audit=${POST_PIP_AUDIT_RESULT}"
 
-      - name: Record validated candidate tree manifest
+      - name: Record validated candidate tree manifest & emit validation notice
         id: manifest
+        env:
+          CANDIDATE_VERSION: ${{ needs.select.outputs.new_version }}
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           python .github/scripts/maintenance.py compute-candidate-manifest
+          python .github/scripts/maintenance.py emit-validation-notice --candidate "${CANDIDATE_VERSION}" --source-head "${SOURCE_SHA}" --run-id "${RUN_ID}" --run-attempt "${RUN_ATTEMPT}"
 
   publish:
     name: Publish chore/python-bump Pull Request
@@ -234,7 +240,7 @@ jobs:
           body-path: ${{ steps.apply.outputs.body_path }}
           labels: ${{ needs.select.outputs.review_required == 'true' && 'review-required' || '' }}
 
-      - name: Record immutable publication provenance
+      - name: Record immutable publication provenance & emit publication notice
         id: provenance
         env:
           PR_NUMBER: ${{ steps.cpr.outputs.pull-request-number }}
@@ -251,6 +257,7 @@ jobs:
           CANDIDATE_MANIFEST_JSON: ${{ needs.validate.outputs.candidate_manifest_json }}
         run: |
           python .github/scripts/maintenance.py record-publication-provenance
+          python .github/scripts/maintenance.py emit-publication-notice --pull-number "${PR_NUMBER}" --published-head "${CPR_HEAD_SHA}" --run-id "${RUN_ID}" --run-attempt "${RUN_ATTEMPT}"
 
   report:
     name: Record runtime proposer summary
