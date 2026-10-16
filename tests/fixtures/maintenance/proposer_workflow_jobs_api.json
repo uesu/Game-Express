@@ -1,0 +1,566 @@
+{
+  "scenarios": {
+    "valid_patch_publication": {
+      "workflow_runs": [
+        {
+          "id": 501,
+          "name": "Python Version Bump",
+          "path": ".github/workflows/python_version_bump.yml",
+          "head_branch": "main",
+          "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "run_number": 88,
+          "run_attempt": 1,
+          "event": "schedule",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "jobs_by_run_id": {
+        "501": [
+          {
+            "id": 50101,
+            "run_id": 501,
+            "run_attempt": 1,
+            "name": "Select policy-bounded Python candidate",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": [
+              {
+                "name": "Select candidate Python version",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 1
+              }
+            ]
+          },
+          {
+            "id": 50102,
+            "run_id": 501,
+            "run_attempt": 1,
+            "name": "Validate candidate Python runtime & locks (secret-free)",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": [
+              {
+                "name": "Run pre-rewrite unified CI registry",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 1
+              },
+              {
+                "name": "Run post-rewrite unified CI registry",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 2
+              }
+            ]
+          },
+          {
+            "id": 50103,
+            "run_id": 501,
+            "run_attempt": 1,
+            "name": "Publish chore/python-bump Pull Request",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": [
+              {
+                "name": "Create or update Pull Request",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 1
+              },
+              {
+                "name": "Record immutable publication provenance",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 2
+              }
+            ]
+          },
+          {
+            "id": 50104,
+            "run_id": 501,
+            "run_attempt": 1,
+            "name": "Record runtime proposer summary",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": [
+              {
+                "name": "PROVENANCE pr=50 head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa source=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb old=3.14.8 new=3.14.9 kind=patch review=false eligible=true tree=__CANDIDATE_TREE_SHA256__ dry_run=false",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "dry_run_skipped_publication": {
+      "workflow_runs": [
+        {
+          "id": 502,
+          "name": "Python Version Bump",
+          "path": ".github/workflows/python_version_bump.yml",
+          "head_branch": "main",
+          "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "run_number": 89,
+          "run_attempt": 1,
+          "event": "workflow_dispatch",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "jobs_by_run_id": {
+        "502": [
+          {
+            "id": 50201,
+            "run_id": 502,
+            "run_attempt": 1,
+            "name": "Select policy-bounded Python candidate",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50202,
+            "run_id": 502,
+            "run_attempt": 1,
+            "name": "Validate candidate Python runtime & locks (secret-free)",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50203,
+            "run_id": 502,
+            "run_attempt": 1,
+            "name": "Publish chore/python-bump Pull Request",
+            "status": "completed",
+            "conclusion": "skipped",
+            "steps": []
+          },
+          {
+            "id": 50204,
+            "run_id": 502,
+            "run_attempt": 1,
+            "name": "Record runtime proposer summary",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": [
+              {
+                "name": "PROVENANCE pr=none head=none source=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb old=3.14.8 new=3.14.9 kind=patch review=false eligible=true tree=__CANDIDATE_TREE_SHA256__ dry_run=true",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "stale_run_and_head": {
+      "workflow_runs": [
+        {
+          "id": 503,
+          "name": "Python Version Bump",
+          "path": ".github/workflows/python_version_bump.yml",
+          "head_branch": "main",
+          "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "run_number": 90,
+          "run_attempt": 1,
+          "event": "schedule",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "jobs_by_run_id": {
+        "503": [
+          {
+            "id": 50301,
+            "run_id": 503,
+            "run_attempt": 1,
+            "name": "Select policy-bounded Python candidate",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50302,
+            "run_id": 503,
+            "run_attempt": 1,
+            "name": "Validate candidate Python runtime & locks (secret-free)",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50303,
+            "run_id": 503,
+            "run_attempt": 1,
+            "name": "Publish chore/python-bump Pull Request",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50304,
+            "run_id": 503,
+            "run_attempt": 1,
+            "name": "Record runtime proposer summary",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": [
+              {
+                "name": "PROVENANCE pr=40 head=1111111111111111111111111111111111111111 source=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb old=3.14.7 new=3.14.8 kind=patch review=false eligible=true tree=__CANDIDATE_TREE_SHA256__ dry_run=false",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "changed_base_sha": {
+      "workflow_runs": [
+        {
+          "id": 504,
+          "name": "Python Version Bump",
+          "path": ".github/workflows/python_version_bump.yml",
+          "head_branch": "main",
+          "head_sha": "cccccccccccccccccccccccccccccccccccccccc",
+          "run_number": 91,
+          "run_attempt": 1,
+          "event": "schedule",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "jobs_by_run_id": {
+        "504": [
+          {
+            "id": 50401,
+            "run_id": 504,
+            "run_attempt": 1,
+            "name": "Select policy-bounded Python candidate",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50402,
+            "run_id": 504,
+            "run_attempt": 1,
+            "name": "Validate candidate Python runtime & locks (secret-free)",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50403,
+            "run_id": 504,
+            "run_attempt": 1,
+            "name": "Publish chore/python-bump Pull Request",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50404,
+            "run_id": 504,
+            "run_attempt": 1,
+            "name": "Record runtime proposer summary",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": [
+              {
+                "name": "PROVENANCE pr=50 head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa source=cccccccccccccccccccccccccccccccccccccccc old=3.14.8 new=3.14.9 kind=patch review=false eligible=true tree=__CANDIDATE_TREE_SHA256__ dry_run=false",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "rerun_attempt_stale_attempt1_failed_attempt2": {
+      "workflow_runs": [
+        {
+          "id": 505,
+          "name": "Python Version Bump",
+          "path": ".github/workflows/python_version_bump.yml",
+          "head_branch": "main",
+          "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "run_number": 92,
+          "run_attempt": 2,
+          "event": "schedule",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "jobs_by_run_id": {
+        "505": [
+          {
+            "id": 50501,
+            "run_id": 505,
+            "run_attempt": 1,
+            "name": "Record runtime proposer summary",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": [
+              {
+                "name": "PROVENANCE pr=50 head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa source=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb old=3.14.8 new=3.14.9 kind=patch review=false eligible=true tree=__CANDIDATE_TREE_SHA256__ dry_run=false",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 1
+              }
+            ]
+          },
+          {
+            "id": 50502,
+            "run_id": 505,
+            "run_attempt": 2,
+            "name": "Select policy-bounded Python candidate",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50503,
+            "run_id": 505,
+            "run_attempt": 2,
+            "name": "Validate candidate Python runtime & locks (secret-free)",
+            "status": "completed",
+            "conclusion": "failure",
+            "steps": []
+          },
+          {
+            "id": 50504,
+            "run_id": 505,
+            "run_attempt": 2,
+            "name": "Publish chore/python-bump Pull Request",
+            "status": "completed",
+            "conclusion": "skipped",
+            "steps": []
+          },
+          {
+            "id": 50505,
+            "run_id": 505,
+            "run_attempt": 2,
+            "name": "Record runtime proposer summary",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": [
+              {
+                "name": "PROVENANCE pr=none head=none source=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb old=3.14.8 new=3.14.9 kind=patch review=false eligible=true tree=none dry_run=false",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "rerun_attempt_succeeded_attempt2": {
+      "workflow_runs": [
+        {
+          "id": 506,
+          "name": "Python Version Bump",
+          "path": ".github/workflows/python_version_bump.yml",
+          "head_branch": "main",
+          "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "run_number": 93,
+          "run_attempt": 2,
+          "event": "schedule",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "jobs_by_run_id": {
+        "506": [
+          {
+            "id": 50601,
+            "run_id": 506,
+            "run_attempt": 1,
+            "name": "Validate candidate Python runtime & locks (secret-free)",
+            "status": "completed",
+            "conclusion": "failure",
+            "steps": []
+          },
+          {
+            "id": 50602,
+            "run_id": 506,
+            "run_attempt": 2,
+            "name": "Select policy-bounded Python candidate",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50603,
+            "run_id": 506,
+            "run_attempt": 2,
+            "name": "Validate candidate Python runtime & locks (secret-free)",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50604,
+            "run_id": 506,
+            "run_attempt": 2,
+            "name": "Publish chore/python-bump Pull Request",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50605,
+            "run_id": 506,
+            "run_attempt": 2,
+            "name": "Record runtime proposer summary",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": [
+              {
+                "name": "PROVENANCE pr=50 head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa source=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb old=3.14.8 new=3.14.9 kind=patch review=false eligible=true tree=__CANDIDATE_TREE_SHA256__ dry_run=false",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "missing_provenance_step": {
+      "workflow_runs": [
+        {
+          "id": 507,
+          "name": "Python Version Bump",
+          "path": ".github/workflows/python_version_bump.yml",
+          "head_branch": "main",
+          "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "run_number": 94,
+          "run_attempt": 1,
+          "event": "schedule",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "jobs_by_run_id": {
+        "507": [
+          {
+            "id": 50701,
+            "run_id": 507,
+            "run_attempt": 1,
+            "name": "Select policy-bounded Python candidate",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50702,
+            "run_id": 507,
+            "run_attempt": 1,
+            "name": "Validate candidate Python runtime & locks (secret-free)",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50703,
+            "run_id": 507,
+            "run_attempt": 1,
+            "name": "Publish chore/python-bump Pull Request",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50704,
+            "run_id": 507,
+            "run_attempt": 1,
+            "name": "Record runtime proposer summary",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": [
+              {
+                "name": "Render step summary without PROVENANCE metadata",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "manifest_mismatch": {
+      "workflow_runs": [
+        {
+          "id": 508,
+          "name": "Python Version Bump",
+          "path": ".github/workflows/python_version_bump.yml",
+          "head_branch": "main",
+          "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "run_number": 95,
+          "run_attempt": 1,
+          "event": "schedule",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "jobs_by_run_id": {
+        "508": [
+          {
+            "id": 50801,
+            "run_id": 508,
+            "run_attempt": 1,
+            "name": "Select policy-bounded Python candidate",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50802,
+            "run_id": 508,
+            "run_attempt": 1,
+            "name": "Validate candidate Python runtime & locks (secret-free)",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50803,
+            "run_id": 508,
+            "run_attempt": 1,
+            "name": "Publish chore/python-bump Pull Request",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": []
+          },
+          {
+            "id": 50804,
+            "run_id": 508,
+            "run_attempt": 1,
+            "name": "Record runtime proposer summary",
+            "status": "completed",
+            "conclusion": "success",
+            "steps": [
+              {
+                "name": "PROVENANCE pr=50 head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa source=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb old=3.14.8 new=3.14.9 kind=patch review=false eligible=true tree=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd dry_run=false",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 1
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

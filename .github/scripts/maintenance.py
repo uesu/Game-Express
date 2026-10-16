@@ -1794,6 +1794,239 @@ def _extract_action_updates_from_diffs(
     return updates, errors
 
 
+def parse_proposer_provenance_from_api_jobs(
+    jobs: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Extract proposal provenance from real GitHub Actions API job steps (`PROVENANCE ...`) or job output summary."""
+    for job in jobs or []:
+        if not isinstance(job, dict):
+            continue
+        if job.get("conclusion") and str(job.get("conclusion")).strip().lower() != "success":
+            continue
+        out_obj = job.get("output") if isinstance(job.get("output"), dict) else {}
+        for blob in (str(out_obj.get("summary") or ""), str(out_obj.get("text") or "")):
+            cm = re.search(
+                r"<!--\s*GAMEXPRESS_PROPOSER_PROVENANCE:\s*(\{[\s\S]*?\})\s*-->",
+                blob,
+            )
+            if cm:
+                try:
+                    parsed = json.loads(cm.group(1))
+                    if isinstance(parsed, dict):
+                        return parsed
+                except Exception:
+                    pass
+        for step in job.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            if step.get("status") and str(step.get("status")).strip().lower() != "completed":
+                continue
+            if step.get("conclusion") and str(step.get("conclusion")).strip().lower() != "success":
+                continue
+            sname = str(step.get("name") or "")
+            if not sname.startswith("PROVENANCE "):
+                continue
+            kv: dict[str, str] = {}
+            for m in re.finditer(r"([a-z_]+)=([^\s]+)", sname, flags=re.IGNORECASE):
+                kv[m.group(1).lower()] = m.group(2)
+            pr_raw = kv.get("pr", "")
+            return {
+                "published_pr_number": int(pr_raw) if pr_raw and pr_raw != "none" and pr_raw.isdigit() else None,
+                "published_head_sha": kv.get("head", "") if kv.get("head", "none") != "none" else "",
+                "source_sha": kv.get("source", "") if kv.get("source", "none") != "none" else "",
+                "old_version": kv.get("old", "") if kv.get("old", "none") != "none" else "",
+                "new_version": kv.get("new", "") if kv.get("new", "none") != "none" else "",
+                "update_kind": kv.get("kind", "") if kv.get("kind", "none") != "none" else "",
+                "review_required": kv.get("review", "true").lower() == "true",
+                "auto_merge_eligible": kv.get("eligible", "false").lower() == "true",
+                "candidate_tree_sha256": kv.get("tree", "") if kv.get("tree", "none") != "none" else "",
+                "dry_run": kv.get("dry_run", "false").lower() == "true",
+            }
+    return None
+
+
+def resolve_proposer_provenance_from_api_runs(
+    pr_data: dict[str, Any],
+    proposer_runs: list[dict[str, Any]],
+    jobs_by_run_id: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Resolve `python_bump` provenance from raw GitHub REST API `workflow_runs` and `jobs` payloads."""
+    pr_number = pr_data.get("pr_number")
+    head_sha = str(pr_data.get("head_sha") or "").strip()
+    base_sha = str(pr_data.get("base_sha") or "").strip()
+    head_ref = str(pr_data.get("head_ref") or "chore/python-bump").strip()
+    author = str(pr_data.get("author") or "").strip()
+    author_type = str(pr_data.get("author_type") or "User").strip()
+    actual_manifest = pr_data.get("actual_candidate_manifest")
+    actual_tree_sha = str(
+        pr_data.get("actual_candidate_tree_sha256")
+        or (actual_manifest.get("tree_sha256") if isinstance(actual_manifest, dict) else "")
+        or ""
+    ).strip()
+
+    inspected: list[dict[str, Any]] = []
+    for r in proposer_runs or []:
+        if not isinstance(r, dict) or not r.get("id"):
+            continue
+        run_id = r["id"]
+        expected_attempt = int(r.get("run_attempt") or 1)
+        raw_jobs = jobs_by_run_id.get(str(run_id)) or jobs_by_run_id.get(run_id) or []
+        r_jobs = [
+            j
+            for j in raw_jobs
+            if isinstance(j, dict)
+            and (
+                j.get("run_attempt") is None
+                or int(j.get("run_attempt")) == expected_attempt
+            )
+        ]
+        select_job = next((j for j in r_jobs if re.search(r"select", str(j.get("name") or ""), re.I)), None)
+        validate_job = next((j for j in r_jobs if re.search(r"validate", str(j.get("name") or ""), re.I)), None)
+        publish_job = next((j for j in r_jobs if re.search(r"publish", str(j.get("name") or ""), re.I)), None)
+        pub_meta = parse_proposer_provenance_from_api_jobs(r_jobs) or {}
+
+        select_conc = (
+            str(select_job.get("conclusion") or "").lower()
+            if select_job
+            else str(pub_meta.get("select_conclusion") or "missing").lower()
+        )
+        validate_conc = (
+            str(validate_job.get("conclusion") or "").lower()
+            if validate_job
+            else str(pub_meta.get("validate_conclusion") or "missing").lower()
+        )
+        publish_conc = (
+            str(publish_job.get("conclusion") or "").lower()
+            if publish_job
+            else str(pub_meta.get("publish_conclusion") or "missing").lower()
+        )
+        is_dry_run = bool(
+            pub_meta.get("dry_run") is True
+            or str(pub_meta.get("dry_run") or "").lower() == "true"
+            or (
+                select_conc == "success"
+                and validate_conc == "success"
+                and publish_conc == "skipped"
+            )
+        )
+        pub_pr_num = pub_meta.get("published_pr_number", pub_meta.get("pr_number"))
+        if pub_pr_num is not None:
+            try:
+                pub_pr_num = int(pub_pr_num)
+            except (ValueError, TypeError):
+                pub_pr_num = None
+        pub_head_sha = str(pub_meta.get("published_head_sha") or "").strip()
+        pub_source_sha = str(pub_meta.get("source_sha") or r.get("head_sha") or "").strip()
+        pub_tree_sha = str(pub_meta.get("candidate_tree_sha256") or "").strip()
+
+        inspected.append(
+            {
+                "workflow": str(r.get("path") or ""),
+                "workflow_name": str(r.get("name") or ""),
+                "workflow_run_id": run_id,
+                "workflow_run_attempt": expected_attempt,
+                "workflow_event": str(r.get("event") or ""),
+                "workflow_conclusion": str(r.get("conclusion") or "").lower(),
+                "head_branch": str(r.get("head_branch") or "main"),
+                "source_sha": pub_source_sha,
+                "select_conclusion": select_conc,
+                "validate_conclusion": validate_conc,
+                "publish_conclusion": publish_conc,
+                "dry_run": is_dry_run,
+                "published_pr_number": pub_pr_num,
+                "published_head_sha": pub_head_sha,
+                "old_version": str(pub_meta.get("old_version") or "").strip(),
+                "new_version": str(pub_meta.get("new_version") or "").strip(),
+                "update_kind": str(pub_meta.get("update_kind") or "").strip(),
+                "review_required": bool(pub_meta.get("review_required", True)),
+                "auto_merge_eligible": bool(pub_meta.get("auto_merge_eligible", False)),
+                "candidate_tree_sha256": pub_tree_sha,
+                "candidate_manifest": pub_meta.get("candidate_manifest"),
+            }
+        )
+
+    matched = (
+        next(
+            (
+                rec
+                for rec in inspected
+                if pr_number is not None
+                and rec["published_pr_number"] == int(pr_number)
+                and rec["published_head_sha"]
+                and rec["published_head_sha"] == head_sha
+            ),
+            None,
+        )
+        or next(
+            (
+                rec
+                for rec in inspected
+                if pr_number is not None and rec["published_pr_number"] == int(pr_number)
+            ),
+            None,
+        )
+        or (inspected[0] if inspected else None)
+    )
+
+    manifest_verified = bool(
+        matched
+        and matched["candidate_tree_sha256"]
+        and re.fullmatch(r"[0-9a-f]{64}", matched["candidate_tree_sha256"])
+        and (not actual_tree_sha or actual_tree_sha == matched["candidate_tree_sha256"])
+    )
+    verified_bump = bool(
+        matched
+        and matched["workflow"] == ".github/workflows/python_version_bump.yml"
+        and matched["head_branch"] == "main"
+        and matched["workflow_conclusion"] == "success"
+        and matched["select_conclusion"] == "success"
+        and matched["validate_conclusion"] == "success"
+        and matched["publish_conclusion"] == "success"
+        and not matched["dry_run"]
+        and (pr_number is None or matched["published_pr_number"] == int(pr_number))
+        and matched["published_head_sha"]
+        and (not head_sha or matched["published_head_sha"] == head_sha)
+        and matched["source_sha"]
+        and (not base_sha or matched["source_sha"] == base_sha)
+        and matched["update_kind"] == "patch"
+        and matched["review_required"] is False
+        and matched["auto_merge_eligible"] is True
+        and manifest_verified
+    )
+    return {
+        "verified": verified_bump,
+        "lane": "python_bump",
+        "publisher": author,
+        "publisher_type": author_type,
+        "source": "python-version-bump-workflow",
+        "workflow": matched["workflow"] if matched else "",
+        "workflow_name": matched["workflow_name"] if matched else "",
+        "workflow_run_id": matched["workflow_run_id"] if matched else None,
+        "workflow_run_attempt": matched["workflow_run_attempt"] if matched else None,
+        "workflow_event": matched["workflow_event"] if matched else "",
+        "workflow_conclusion": matched["workflow_conclusion"] if matched else "",
+        "select_conclusion": matched["select_conclusion"] if matched else "missing",
+        "validate_conclusion": matched["validate_conclusion"] if matched else "missing",
+        "publish_conclusion": matched["publish_conclusion"] if matched else "missing",
+        "dry_run": matched["dry_run"] if matched else False,
+        "published_pr_number": matched["published_pr_number"] if matched else None,
+        "published_head_sha": matched["published_head_sha"] if matched else "",
+        "source_sha": matched["source_sha"] if matched else "",
+        "old_version": matched["old_version"] if matched else "",
+        "new_version": matched["new_version"] if matched else "",
+        "update_kind": matched["update_kind"] if matched else "",
+        "review_required": matched["review_required"] if matched else True,
+        "auto_merge_eligible": matched["auto_merge_eligible"] if matched else False,
+        "candidate_tree_sha256": matched["candidate_tree_sha256"] if matched else "",
+        "candidate_manifest": matched["candidate_manifest"] if matched else None,
+        "actual_candidate_tree_sha256": actual_tree_sha,
+        "manifest_verified": manifest_verified,
+        "body_tampered": False,
+        "head_ref": head_ref,
+        "head_sha": matched["published_head_sha"] if matched else "",
+    }
+
+
 def _evaluate_reviews(
     reviews: Any,
     review_decision: str = "",
@@ -2579,6 +2812,23 @@ def evaluate_automerge(
     # 12. Publisher & proposal provenance verification (G1/G2: never optional when required by policy)
     require_provenance = bool(pol.get("require_provenance", True))
     provenance = pr_data.get("provenance")
+    if matched_lane == "python_bump" and (
+        isinstance(pr_data.get("proposer_workflow_runs"), list)
+        or (isinstance(provenance, dict) and isinstance(provenance.get("proposer_workflow_runs"), list))
+    ):
+        api_runs = (
+            pr_data.get("proposer_workflow_runs")
+            if isinstance(pr_data.get("proposer_workflow_runs"), list)
+            else provenance.get("proposer_workflow_runs")
+        )
+        api_jobs = (
+            pr_data.get("proposer_jobs_by_run")
+            or pr_data.get("jobs_by_run_id")
+            or (provenance.get("proposer_jobs_by_run") if isinstance(provenance, dict) else None)
+            or (provenance.get("jobs_by_run_id") if isinstance(provenance, dict) else None)
+            or {}
+        )
+        provenance = resolve_proposer_provenance_from_api_runs(pr_data, api_runs, api_jobs)
     if require_provenance or isinstance(provenance, dict):
         if not isinstance(provenance, dict):
             return AutoMergeDecision(

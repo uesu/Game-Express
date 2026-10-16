@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import importlib.util
+import io
 import json
 import os
 import platform
@@ -14,6 +16,7 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -1618,6 +1621,74 @@ const github = {
     assert out_spoofed_body["mergedCalls"] == [], out_spoofed_body
     assert "review-required" in out_spoofed_body["summary"]
 
+    # 7. Real API-shaped workflow/jobs fixture (`proposer_workflow_jobs_api.json`) proving PROVENANCE step transport
+    # across both the live JS adapter and direct Python `evaluate_auto_merge` (no injected `publication_provenance` dicts)
+    api_fixture_raw = (FIXTURES / "proposer_workflow_jobs_api.json").read_text(encoding="utf-8")
+    api_fixture = json.loads(api_fixture_raw.replace("__CANDIDATE_TREE_SHA256__", real_tree_sha))["scenarios"]
+
+    for scen_name, expected_merge, expected_sub in (
+        ("valid_patch_publication", True, "merged"),
+        ("dry_run_skipped_publication", False, "dry_run"),
+        ("stale_run_and_head", False, "does not match current PR"),
+        ("changed_base_sha", False, "source_sha"),
+        ("rerun_attempt_stale_attempt1_failed_attempt2", False, "validate_conclusion='failure'"),
+        ("rerun_attempt_succeeded_attempt2", True, "merged"),
+        ("missing_provenance_step", False, "does not match current PR"),
+        ("manifest_mismatch", False, "does not match validated candidate manifest"),
+    ):
+        fx = api_fixture[scen_name]
+        out_fx = _run_live_adapter(
+            _make_scenario(
+                pr_num=50,
+                pr_head_sha=head_sha,
+                proposer_runs=fx["workflow_runs"],
+                proposer_jobs=fx["jobs_by_run_id"],
+            )
+        )
+        if expected_merge:
+            assert len(out_fx["mergedCalls"]) == 1, (scen_name, out_fx)
+            assert out_fx["mergedCalls"][0]["sha"] == head_sha
+        else:
+            assert out_fx["mergedCalls"] == [], (scen_name, out_fx)
+        assert expected_sub in out_fx["summary"], (scen_name, expected_sub, out_fx["summary"])
+
+        # Also prove direct Python `evaluate_automerge` resolves the same raw API-shaped `proposer_workflow_runs` + `proposer_jobs_by_run`
+        py_dec = maintenance.evaluate_automerge(
+            {
+                "pr_number": 50,
+                "title": "chore(python): bump pinned Python from 3.14.8 to 3.14.9",
+                "base_repo": "uesu/Game-Express",
+                "head_repo": "uesu/Game-Express",
+                "base_ref": "main",
+                "base_sha": base_sha,
+                "head_ref": "chore/python-bump",
+                "head_sha": head_sha,
+                "author": "uesu",
+                "author_type": "User",
+                "state": "OPEN",
+                "is_draft": False,
+                "mergeable": "MERGEABLE",
+                "mergeable_state": "clean",
+                "changed_files": [".python-version"],
+                "file_diffs": {".python-version": "-3.14.8\n+3.14.9\n"},
+                "commits": [{"sha": head_sha, "author": "github-actions[bot]"}],
+                "check_runs": ci_checks,
+                "security_scan": _clean_security_scan(head_sha),
+                "actual_candidate_manifest": real_manifest,
+                "actual_candidate_tree_sha256": real_tree_sha,
+                "proposer_workflow_runs": fx["workflow_runs"],
+                "proposer_jobs_by_run": fx["jobs_by_run_id"],
+                "provenance": {
+                    "proposer_workflow_runs": fx["workflow_runs"],
+                    "proposer_jobs_by_run": fx["jobs_by_run_id"],
+                },
+                "vars": {"AUTO_MERGE_DEPENDABOT": "yes", "AUTO_MERGE_PYTHON_BUMP": "yes"},
+            }
+        )
+        assert py_dec.eligible is expected_merge, (scen_name, py_dec)
+        if scen_name == "changed_base_sha":
+            assert py_dec.classification == "deferred", (scen_name, py_dec)
+
 
 def test_g2_live_python_version_bump_workflow_registry_and_cli_subprocesses() -> None:
     """Verify `python_version_bump.yml` executes the same complete registry before and after rewrite,
@@ -1630,15 +1701,23 @@ def test_g2_live_python_version_bump_workflow_registry_and_cli_subprocesses() ->
     run_scripts = [s.get("run", "") for s in validate_steps if "run" in s]
     uses_steps = [s.get("uses", "") for s in validate_steps if "uses" in s]
 
-    # Pre-rewrite and post-rewrite must both invoke `ci.py run-all` with explicit `--phase` and `--expected-python`
+    # Pre-rewrite and post-rewrite must both invoke `ci.py run-all` with explicit `--phase`, `--expected-python`,
+    # `--with-security --require-security-tools --require-actionlint`, and external Action step outcome reporting
     assert any(
-        "ci.py run-all --phase pre-rewrite --expected-python" in r and "--with-security" in r
+        "ci.py run-all --phase pre-rewrite --expected-python" in r
+        and "--with-security" in r
+        and "--require-security-tools" in r
+        and "--require-actionlint" in r
+        and "--external-security-result" in r
         for r in run_scripts
     ), run_scripts
     assert any(
         "ci.py run-all --phase post-rewrite --expected-python" in r
         and "--require-exact-python" in r
         and "--with-security" in r
+        and "--require-security-tools" in r
+        and "--require-actionlint" in r
+        and "--external-security-result" in r
         for r in run_scripts
     ), run_scripts
     # Action-based workflow & security audits (actionlint, zizmor, pip-audit) must run in both phases
@@ -1659,13 +1738,24 @@ def test_g2_live_python_version_bump_workflow_registry_and_cli_subprocesses() ->
 
     running_py = platform.python_version()
 
-    # Subprocess test 1: Missing security tools when `--require-security-tools` is set -> fails closed
+    # Direct isolated probe: `ci.run_security_audit(ROOT)` with `shutil.which` returning None MUST fail closed (return != 0)
+    ci_spec = importlib.util.spec_from_file_location("_gamexpress_ci_test", ROOT / ".github" / "scripts" / "ci.py")
+    assert ci_spec and ci_spec.loader
+    ci_mod = importlib.util.module_from_spec(ci_spec)
+    sys.modules[ci_spec.name] = ci_mod
+    ci_spec.loader.exec_module(ci_mod)
+    captured_err = io.StringIO()
+    with mock.patch.object(ci_mod.shutil, "which", return_value=None), contextlib.redirect_stderr(captured_err):
+        assert ci_mod.run_security_audit(ROOT) == 1
+    err_txt = captured_err.getvalue()
+    assert "actionlint" in err_txt and "zizmor" in err_txt and "pip-audit" in err_txt
+
+    # Subprocess test 1: `ci.py security-audit` (default, no extra flags) with empty PATH -> fails closed
     res_no_sec = subprocess.run(
         [
             sys.executable,
             str(ROOT / ".github" / "scripts" / "ci.py"),
             "security-audit",
-            "--require-tools",
         ],
         cwd=str(ROOT),
         env={"PATH": ""},
@@ -1674,7 +1764,9 @@ def test_g2_live_python_version_bump_workflow_registry_and_cli_subprocesses() ->
         check=False,
     )
     assert res_no_sec.returncode != 0
+    assert "required workflow linter 'actionlint' is not installed" in res_no_sec.stderr
     assert "required security tool 'zizmor' is not installed" in res_no_sec.stderr
+    assert "required security tool 'pip-audit' is not installed" in res_no_sec.stderr
 
     # Subprocess test 2: Candidate interpreter mismatch on `ci.py run-all --phase pre-rewrite` -> fails closed before tests
     res_bad_py = subprocess.run(
@@ -1799,6 +1891,171 @@ def test_g2_live_python_version_bump_workflow_registry_and_cli_subprocesses() ->
         )
         assert res_drift.returncode != 0
         assert "mismatch" in res_drift.stderr
+
+        # Restore requirements.txt and set up a minimal test suite in tmp_repo so `ci.py run-all --with-security`
+        # can be exercised as a full CLI subprocess across all missing/failing/passing tool combinations
+        shutil.copy2(ROOT / "requirements.txt", tmp_repo / "requirements.txt")
+        (tmp_repo / "tests").mkdir(exist_ok=True)
+        (tmp_repo / "tests" / "test_unit.py").write_text("print('ok')\n", encoding="utf-8")
+        pol_obj = json.loads((tmp_repo / ".github" / "maintenance.json").read_text(encoding="utf-8"))
+        pol_obj["ci"]["registered_tests"] = ["tests/test_unit.py"]
+        (tmp_repo / ".github" / "maintenance.json").write_text(
+            json.dumps(pol_obj, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        def _make_tool_dir(base: Path, name: str, tools: dict[str, int]) -> Path:
+            d = base / name
+            d.mkdir(parents=True, exist_ok=True)
+            # Always provide a fast ruff stub so `run_ruff` passes and `run-all --with-security` reaches `run_security_audit`
+            ruff_sh = d / "ruff"
+            ruff_sh.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            ruff_sh.chmod(0o755)
+            for t_name, exit_code in tools.items():
+                t_path = d / t_name
+                t_path.write_text(f"#!/bin/sh\nexit {exit_code}\n", encoding="utf-8")
+                t_path.chmod(0o755)
+            return d
+
+        # (a) `run-all --with-security` (no extra flags) with ALL security tools absent -> fails closed (returncode != 0)
+        bin_none = _make_tool_dir(tmp_repo, "bin_none", {})
+        res_all_absent = subprocess.run(
+            [
+                sys.executable,
+                str(tmp_repo / ".github" / "scripts" / "ci.py"),
+                "--profile",
+                "production",
+                "run-all",
+                "--with-security",
+            ],
+            cwd=str(tmp_repo),
+            env={"PATH": str(bin_none)},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert res_all_absent.returncode != 0, res_all_absent.stdout + res_all_absent.stderr
+        assert "required workflow linter 'actionlint' is not installed" in res_all_absent.stderr
+        assert "required security tool 'zizmor' is not installed" in res_all_absent.stderr
+        assert "required security tool 'pip-audit' is not installed" in res_all_absent.stderr
+
+        # (b) `run-all --with-security` (no extra flags) with ONE tool absent (each of actionlint, zizmor, pip-audit) -> fails closed
+        for missing_tool, present_tools in (
+            ("actionlint", {"zizmor": 0, "pip-audit": 0}),
+            ("zizmor", {"actionlint": 0, "pip-audit": 0}),
+            ("pip-audit", {"actionlint": 0, "zizmor": 0}),
+        ):
+            bin_one_missing = _make_tool_dir(tmp_repo, f"bin_missing_{missing_tool}", present_tools)
+            res_one_missing = subprocess.run(
+                [
+                    sys.executable,
+                    str(tmp_repo / ".github" / "scripts" / "ci.py"),
+                    "--profile",
+                    "production",
+                    "run-all",
+                    "--with-security",
+                ],
+                cwd=str(tmp_repo),
+                env={"PATH": str(bin_one_missing)},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert res_one_missing.returncode != 0, (missing_tool, res_one_missing.stderr)
+            assert f"'{missing_tool}' is not installed" in res_one_missing.stderr
+
+        # (c) `run-all --with-security` (no extra flags) with all tools present and ONE failing -> fails closed
+        for failing_tool in ("actionlint", "zizmor", "pip-audit"):
+            tool_map = {"actionlint": 0, "zizmor": 0, "pip-audit": 0}
+            tool_map[failing_tool] = 1
+            bin_one_fail = _make_tool_dir(tmp_repo, f"bin_fail_{failing_tool}", tool_map)
+            res_one_fail = subprocess.run(
+                [
+                    sys.executable,
+                    str(tmp_repo / ".github" / "scripts" / "ci.py"),
+                    "--profile",
+                    "production",
+                    "run-all",
+                    "--with-security",
+                ],
+                cwd=str(tmp_repo),
+                env={"PATH": str(bin_one_fail)},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert res_one_fail.returncode != 0, (failing_tool, res_one_fail.stdout, res_one_fail.stderr)
+
+        # (d) `run-all --with-security` with all 3 tools present and succeeding -> exits 0
+        bin_all_ok = _make_tool_dir(tmp_repo, "bin_all_ok", {"actionlint": 0, "zizmor": 0, "pip-audit": 0})
+        res_all_ok = subprocess.run(
+            [
+                sys.executable,
+                str(tmp_repo / ".github" / "scripts" / "ci.py"),
+                "--profile",
+                "production",
+                "run-all",
+                "--with-security",
+            ],
+            cwd=str(tmp_repo),
+            env={"PATH": str(bin_all_ok)},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert res_all_ok.returncode == 0, res_all_ok.stderr
+
+        # (e) External Action result reporting (`--external-security-result`) when local binaries are absent:
+        #     succeeds and reports external results when all 3 are `success`, fails closed when any is `failure` or `skipped`
+        res_ext_ok = subprocess.run(
+            [
+                sys.executable,
+                str(tmp_repo / ".github" / "scripts" / "ci.py"),
+                "--profile",
+                "production",
+                "run-all",
+                "--with-security",
+                "--external-security-result",
+                "actionlint=success",
+                "--external-security-result",
+                "zizmor=success",
+                "--external-security-result",
+                "pip-audit=success",
+            ],
+            cwd=str(tmp_repo),
+            env={"PATH": str(bin_none)},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert res_ext_ok.returncode == 0, res_ext_ok.stderr
+        assert "EXTERNAL ACTION RESULT: actionlint=success" in res_ext_ok.stdout
+        assert "EXTERNAL ACTION RESULT: zizmor=success" in res_ext_ok.stdout
+        assert "EXTERNAL ACTION RESULT: pip-audit=success" in res_ext_ok.stdout
+
+        res_ext_fail = subprocess.run(
+            [
+                sys.executable,
+                str(tmp_repo / ".github" / "scripts" / "ci.py"),
+                "--profile",
+                "production",
+                "run-all",
+                "--with-security",
+                "--external-security-result",
+                "actionlint=success",
+                "--external-security-result",
+                "zizmor=skipped",
+                "--external-security-result",
+                "pip-audit=success",
+            ],
+            cwd=str(tmp_repo),
+            env={"PATH": str(bin_none)},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert res_ext_fail.returncode != 0
+        assert "external Action check 'zizmor' did not succeed" in res_ext_fail.stderr
 
 
 if __name__ == "__main__":

@@ -159,14 +159,11 @@ jobs:
               return found;
             }
 
-            function parseProvenanceStepOrSummary(jobs, runObj) {
-              if (runObj && runObj.publication_provenance && typeof runObj.publication_provenance === "object") {
-                return runObj.publication_provenance;
-              }
+            function parseProvenanceStepOrSummary(jobs) {
               for (const job of jobs || []) {
                 if (!job) continue;
-                if (job.publication_provenance && typeof job.publication_provenance === "object") {
-                  return job.publication_provenance;
+                if (job.conclusion && String(job.conclusion).toLowerCase() !== "success") {
+                  continue;
                 }
                 const outSummary = (job.output && job.output.summary) || "";
                 const outText = (job.output && job.output.text) || "";
@@ -181,7 +178,10 @@ jobs:
                   }
                 }
                 for (const step of job.steps || []) {
-                  const sname = (step && step.name) || "";
+                  if (!step) continue;
+                  if (step.status && String(step.status).toLowerCase() !== "completed") continue;
+                  if (step.conclusion && String(step.conclusion).toLowerCase() !== "success") continue;
+                  const sname = step.name || "";
                   if (!sname.startsWith("PROVENANCE ")) continue;
                   const kv = {};
                   const tokRe = /([a-z_]+)=([^\s]+)/gi;
@@ -403,27 +403,50 @@ jobs:
                     (bumpRunsResp.data && bumpRunsResp.data.workflow_runs) || [];
                   for (const r of bumpRuns) {
                     if (!r || !r.id) continue;
+                    const expectedAttempt = Number(r.run_attempt || 1);
                     let rJobs = [];
                     try {
-                      rJobs = await github.paginate(
-                        github.rest.actions.listJobsForWorkflowRun,
-                        {
-                          owner,
-                          repo,
-                          run_id: r.id,
-                          per_page: 100,
-                        }
-                      );
+                      if (
+                        typeof github.rest.actions.listJobsForWorkflowRunAttempt === "function"
+                      ) {
+                        rJobs = await github.paginate(
+                          github.rest.actions.listJobsForWorkflowRunAttempt,
+                          {
+                            owner,
+                            repo,
+                            run_id: r.id,
+                            attempt_number: expectedAttempt,
+                            per_page: 100,
+                          }
+                        );
+                      } else {
+                        rJobs = await github.paginate(
+                          github.rest.actions.listJobsForWorkflowRun,
+                          {
+                            owner,
+                            repo,
+                            run_id: r.id,
+                            per_page: 100,
+                          }
+                        );
+                      }
                     } catch (_jErr) {
                       rJobs = [];
                     }
+                    rJobs = (rJobs || []).filter(
+                      (j) =>
+                        j &&
+                        (j.run_attempt === undefined ||
+                          j.run_attempt === null ||
+                          Number(j.run_attempt) === expectedAttempt)
+                    );
                     const selectJob =
                       rJobs.find((j) => j && /select/i.test(j.name || "")) || null;
                     const validateJob =
                       rJobs.find((j) => j && /validate/i.test(j.name || "")) || null;
                     const publishJob =
                       rJobs.find((j) => j && /publish/i.test(j.name || "")) || null;
-                    const pubMeta = parseProvenanceStepOrSummary(rJobs, r) || {};
+                    const pubMeta = parseProvenanceStepOrSummary(rJobs) || {};
 
                     const selectConc = selectJob
                       ? String(selectJob.conclusion || "").toLowerCase()
@@ -437,7 +460,9 @@ jobs:
                     const isDryRun = Boolean(
                       pubMeta.dry_run === true ||
                         String(pubMeta.dry_run || "").toLowerCase() === "true" ||
-                        publishConc === "skipped"
+                        (selectConc === "success" &&
+                          validateConc === "success" &&
+                          publishConc === "skipped")
                     );
                     const pubPrNum =
                       pubMeta.published_pr_number !== undefined &&

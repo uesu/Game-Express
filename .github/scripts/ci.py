@@ -168,49 +168,84 @@ def run_ruff(repo_root: pathlib.Path = REPO_ROOT) -> int:
     return _run_cmd(cmd, cwd=repo_root)
 
 
+def _parse_external_security_results(
+    results_json: str = "",
+    result_items: list[str] | None = None,
+) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    if results_json and results_json.strip():
+        raw_obj = json.loads(results_json)
+        if isinstance(raw_obj, dict):
+            for k, v in raw_obj.items():
+                parsed[str(k).strip().lower()] = str(v).strip().lower()
+    for item in result_items or []:
+        if "=" in item:
+            k, v = item.split("=", 1)
+            parsed[k.strip().lower()] = v.strip().lower()
+    return parsed
+
+
 def run_security_audit(
     repo_root: pathlib.Path = REPO_ROOT,
     *,
-    require_tools: bool = False,
-    require_actionlint: bool = False,
+    require_tools: bool = True,
+    require_actionlint: bool = True,
+    external_results: dict[str, str] | None = None,
 ) -> int:
-    actionlint_bin = shutil.which("actionlint")
-    if actionlint_bin:
-        rc = _run_cmd([actionlint_bin], cwd=repo_root)
-        if rc != 0:
-            return rc
-    elif require_actionlint:
-        print("ERROR: required workflow linter 'actionlint' is not installed.", file=sys.stderr)
-        return 1
+    norm_external: dict[str, str] = {
+        str(k).strip().lower(): str(v).strip().lower()
+        for k, v in (external_results or {}).items()
+    }
+    tool_specs: list[tuple[str, bool, list[str]]] = [
+        ("actionlint", require_actionlint, []),
+        ("zizmor", require_tools, [".github/workflows"]),
+        (
+            "pip-audit",
+            require_tools,
+            ["-r", "requirements.txt", "--require-hashes", "--strict", "--desc"],
+        ),
+    ]
+    missing_or_failed = False
+    for tool_name, is_required, args in tool_specs:
+        has_ext = tool_name in norm_external
+        ext_res = norm_external.get(tool_name, "")
+        if has_ext and ext_res != "success":
+            print(
+                f"ERROR: external Action check '{tool_name}' did not succeed (result={ext_res!r}).",
+                file=sys.stderr,
+            )
+            missing_or_failed = True
+            continue
 
-    zizmor_bin = shutil.which("zizmor")
-    if zizmor_bin:
-        rc = _run_cmd([zizmor_bin, ".github/workflows"], cwd=repo_root)
-        if rc != 0:
-            return rc
-    elif require_tools:
-        print("ERROR: required security tool 'zizmor' is not installed.", file=sys.stderr)
-        return 1
+        tool_bin = shutil.which(tool_name)
+        if tool_bin:
+            rc = _run_cmd([tool_bin, *args], cwd=repo_root)
+            if rc != 0:
+                return rc
+            if has_ext:
+                print(
+                    f"EXTERNAL ACTION RESULT: {tool_name}={ext_res} (and verified by local binary)",
+                    flush=True,
+                )
+        elif has_ext and ext_res == "success":
+            print(
+                f"EXTERNAL ACTION RESULT: {tool_name}=success (verified by workflow Action step)",
+                flush=True,
+            )
+        elif is_required:
+            label = "workflow linter" if tool_name == "actionlint" else "security tool"
+            print(
+                f"ERROR: required {label} '{tool_name}' is not installed.",
+                file=sys.stderr,
+            )
+            missing_or_failed = True
+        else:
+            print(
+                f"SKIPPED (optional local mode): '{tool_name}' is not installed.",
+                flush=True,
+            )
 
-    pip_audit_bin = shutil.which("pip-audit")
-    if pip_audit_bin:
-        rc = _run_cmd(
-            [
-                pip_audit_bin,
-                "-r",
-                "requirements.txt",
-                "--require-hashes",
-                "--strict",
-                "--desc",
-            ],
-            cwd=repo_root,
-        )
-        if rc != 0:
-            return rc
-    elif require_tools:
-        print("ERROR: required security tool 'pip-audit' is not installed.", file=sys.stderr)
-        return 1
-    return 0
+    return 1 if missing_or_failed else 0
 
 
 def run_all_registry(
@@ -221,8 +256,9 @@ def run_all_registry(
     expected_python: str | None = None,
     require_exact_python: bool = False,
     with_security: bool = False,
-    require_security_tools: bool = False,
-    require_actionlint: bool = False,
+    require_security_tools: bool = True,
+    require_actionlint: bool = True,
+    external_security_results: dict[str, str] | None = None,
 ) -> int:
     """Execute the complete unified validation registry across `ci`, `pre-rewrite`, or `post-rewrite` phases."""
     maint = _load_maintenance()
@@ -266,6 +302,7 @@ def run_all_registry(
             repo_root,
             require_tools=require_security_tools,
             require_actionlint=require_actionlint,
+            external_results=external_security_results,
         )
     return 0
 
@@ -354,9 +391,16 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("ruff", help="Run Ruff lint check")
 
-    sec_p = sub.add_parser("security-audit", help="Run actionlint, zizmor, and pip-audit checks")
-    sec_p.add_argument("--require-tools", action="store_true")
-    sec_p.add_argument("--require-actionlint", action="store_true")
+    sec_p = sub.add_parser("security-audit", help="Run actionlint, zizmor, and pip-audit checks (fails closed by default)")
+    sec_p.add_argument("--require-tools", action="store_true", default=False)
+    sec_p.add_argument("--require-actionlint", action="store_true", default=False)
+    sec_p.add_argument(
+        "--allow-missing-security-tools",
+        action="store_true",
+        help="Explicit optional local mode allowing missing security tools to be logged as skipped",
+    )
+    sec_p.add_argument("--external-security-results-json", default="")
+    sec_p.add_argument("--external-security-result", action="append", default=[])
 
     all_p = sub.add_parser("run-all", help="Run verify, lock-check, ruff, and optional security checks from one registry")
     all_p.add_argument(
@@ -373,8 +417,15 @@ def main(argv: list[str] | None = None) -> int:
     all_p.add_argument("--expected-python", default="", help="Expected X.Y.Z candidate interpreter")
     all_p.add_argument("--require-exact-python", action="store_true")
     all_p.add_argument("--with-security", action="store_true")
-    all_p.add_argument("--require-security-tools", action="store_true")
-    all_p.add_argument("--require-actionlint", action="store_true")
+    all_p.add_argument("--require-security-tools", action="store_true", default=False)
+    all_p.add_argument("--require-actionlint", action="store_true", default=False)
+    all_p.add_argument(
+        "--allow-missing-security-tools",
+        action="store_true",
+        help="Explicit optional local mode allowing missing security tools to be logged as skipped",
+    )
+    all_p.add_argument("--external-security-results-json", default="")
+    all_p.add_argument("--external-security-result", action="append", default=[])
 
     gate_p = sub.add_parser("gate", help="Evaluate final `maintenance-ci` aggregate gate")
     gate_p.add_argument(
@@ -416,12 +467,27 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == "ruff":
         return run_ruff(REPO_ROOT)
     if cmd == "security-audit":
+        allow_missing = bool(getattr(args, "allow_missing_security_tools", False))
+        req_tools = (not allow_missing) or bool(getattr(args, "require_tools", False))
+        req_actionlint = (not allow_missing) or bool(getattr(args, "require_actionlint", False))
+        ext_res = _parse_external_security_results(
+            getattr(args, "external_security_results_json", "") or "",
+            list(getattr(args, "external_security_result", []) or []),
+        )
         return run_security_audit(
             REPO_ROOT,
-            require_tools=bool(getattr(args, "require_tools", False)),
-            require_actionlint=bool(getattr(args, "require_actionlint", False)),
+            require_tools=req_tools,
+            require_actionlint=req_actionlint,
+            external_results=ext_res,
         )
     if cmd == "run-all":
+        allow_missing = bool(getattr(args, "allow_missing_security_tools", False))
+        req_sec_tools = (not allow_missing) or bool(getattr(args, "require_security_tools", False))
+        req_actionlint = (not allow_missing) or bool(getattr(args, "require_actionlint", False))
+        ext_res = _parse_external_security_results(
+            getattr(args, "external_security_results_json", "") or "",
+            list(getattr(args, "external_security_result", []) or []),
+        )
         return run_all_registry(
             REPO_ROOT,
             profile=profile,
@@ -429,8 +495,9 @@ def main(argv: list[str] | None = None) -> int:
             expected_python=getattr(args, "expected_python", "") or None,
             require_exact_python=bool(getattr(args, "require_exact_python", False)),
             with_security=bool(getattr(args, "with_security", False)),
-            require_security_tools=bool(getattr(args, "require_security_tools", False)),
-            require_actionlint=bool(getattr(args, "require_actionlint", False)),
+            require_security_tools=req_sec_tools,
+            require_actionlint=req_actionlint,
+            external_security_results=ext_res,
         )
     if cmd == "gate":
         blocking: dict[str, str] = {}
