@@ -3620,6 +3620,7 @@ def test_python_bump_is_safe_in_a_docless_production_repo():
     import importlib.util
     import shutil
     import tempfile
+    from unittest import mock
 
     fake = [{"version": "3.99.0", "stable": True, "files": [{"platform": "linux"}]}]
     script = ROOT / ".github" / "scripts" / "python_version_bump.py"
@@ -3650,8 +3651,18 @@ def test_python_bump_is_safe_in_a_docless_production_repo():
             env = dict(GITHUB_OUTPUT=str(out), PR_BODY_PATH=str(root / "body.md"))
             old = {k: os.environ.get(k) for k in env}
             os.environ.update(env)
+            output = io.StringIO()
             try:
-                assert mod.main() == 0                      # never raises, never non-zero
+                # Python 3.99 is synthetic: never consult the runner's Ruff.
+                with (mock.patch.object(mod, "ruff_understands", return_value=False) as supports,
+                      contextlib.redirect_stdout(output)):
+                    assert mod.main() == 0
+                if shape == "dev":
+                    supports.assert_called_once_with("py399")
+                    assert "ruff does not recognise --target-version py399" in output.getvalue()
+                else:
+                    supports.assert_not_called()
+                    assert "::warning::" not in output.getvalue()
             finally:
                 for k, v in old.items():
                     if v is None:

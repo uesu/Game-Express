@@ -7,6 +7,10 @@
   Do not replay full historical patches or add unrelated cleanup/new files.
 - Reuse relevant prior evidence. Inspect affected code and run targeted checks;
   do not repeat a full audit/benchmark unless drift, failures or risk justify it.
+- For routine PR handoffs, do not require per-file checksums or exact commit-head
+  matching. Use normal diff review, targeted checks and CI results/annotations;
+  investigate material drift or failures as needed. Preserve required security
+  verification; do not weaken existing checks merely to save time.
 - Let normal CI validate the resulting head. Inspect advisory findings too;
   never hide/suppress failures or remove safeguards to save time.
 - Update existing AGENTS/README/docs/changelog/privacy/terms only where affected.
