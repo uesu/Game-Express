@@ -1,5 +1,19 @@
 # Changelog — current entries
 
+## Unreleased — application-only scope (2026-10-17)
+
+- Clarify privacy/terms disclosures for retained operational logs/summaries;
+  document public-repository state visibility and avoid absolute secrecy or
+  no-personal-data promises. Preserve legal credits and warranty provisions.
+
+- Add best-effort completion reporting with secret redaction and explicit
+  unknown delivery/repository-persistence status; preserve original execution.
+- Keep all existing dependency/Python/Dependabot/update automation unchanged.
+- Wire application regressions through existing smoke commands, not a new CI
+  registry. This entry describes proposed code, not a deployed production test.
+- Preserve schedule/code selection and golden cards; do not claim an empty
+  report means healthy sources or no eligible content.
+
 The history that still describes the code on `main`: the Python 3.14 runtime, the automated
 version-bump workflow, the 1.9.0 performance and hardening pass, and everything dated since.
 

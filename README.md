@@ -17,6 +17,21 @@ Components V2 cards — with no server, no bot token and nothing to host.**
 
 ---
 
+## Application-only reporting update
+
+This change adds read-only completion reporting and redacts the existing summary
+output. It does not change code eligibility, schedule timing, cards, source
+priority, HTTP retries, state writes or deployment scheduling. It does not adopt
+the abandoned maintenance PR's dependency, Python-bump, Dependabot, lockfile or
+merge-controller proposals. Existing automation remains unchanged.
+
+Existing per-item/source detail is retained. Missing measurements stay
+unavailable; normal application return and local state save are not proof that a
+repository commit/push succeeded. No new secret or repository Variable is needed:
+`GITHUB_STEP_SUMMARY` is supplied by GitHub Actions. Reporting failures must not
+change the application's return value, exception or cancellation.
+
+
 Game-Express watches the official channels of **Genshin Impact**, **Honkai: Star Rail**,
 **Zenless Zone Zero**, **Wuthering Waves**, **Honkai: Nexus Anima** and **ANANTA**. When a
 Special Program is announced or a new redemption code appears, it posts one card — and then

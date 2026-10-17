@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 import aiohttp
 
 from . import build_id, codeposter, schedule
+from .application_summary import annotation, safe_text, summarize_run
 from .config import Game, Settings, active_games, load_games, load_overrides
 from .discord import WebhookClient
 from .http import BOT_UA, Fetcher, Probe
@@ -256,6 +257,7 @@ async def failover_check(ctx: Ctx) -> None:
                           f"— this standby is now posting")
 
 
+@summarize_run("Game-Express")
 async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
                    overrides: dict | None = None, session: aiohttp.ClientSession | None = None) -> Ctx:
     games_all = games_all if games_all is not None else load_games()
@@ -316,17 +318,17 @@ def write_summary(ctx: Ctx) -> None:
                      "labelled 🧪 TEST, posted from the sources this run actually fetched; live cards "
                      "and their copies are never edited and the state file is not saved. "
                      "Delete the test cards afterwards.")
-    lines += [f"- {r}" for r in ctx.report] or ["- nothing new (no matching announcements / codes)"]
+    lines += [f"- {r}" for r in ctx.report] or ["- No report messages recorded; this alone does not establish source health or absence of eligible items."]
     for w in ctx.warnings:
         lines.append(f"- ⚠️ {w}")
-        print(f"::warning::{w}")
+        print(f"::warning::{annotation(w)}")
     for e in ctx.errors:
         lines.append(f"- ❌ {e}")
-        print(f"::error::{e}")
+        print(f"::error::{annotation(e)}")
     lines.append(f"- sources: {ctx.fetcher.summary()}")
     if ctx.elapsed:
         lines.append(f"- ⏱️ run took {ctx.elapsed:.1f}s")
-    text = "\n".join(lines)
+    text = "\n".join(safe_text(line) for line in lines)
     log.info("\n%s", text)
     path = os.getenv("GITHUB_STEP_SUMMARY")
     if path:

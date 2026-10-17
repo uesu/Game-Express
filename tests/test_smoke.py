@@ -6119,5 +6119,152 @@ def test_build_id_reports_the_commit_in_actions_and_degrades_quietly_outside():
     assert not hasattr(gamexpress, "__version__")
 
 
+def _application_summary_contract(module):
+    import asyncio as _asyncio
+    import os as _os
+    import tempfile as _tempfile
+    from pathlib import Path as _Path
+    from types import SimpleNamespace as _NS
+
+    observed = []
+    original_emit = module._emit
+    module._emit = lambda record: observed.append(dict(record))
+    try:
+        @module.summarize_run("fixture", lambda: 2)
+        async def normal(value):
+            module.observe_feed(3)
+            module.observe_feed(0)
+            return value
+        sentinel = object()
+        assert _asyncio.run(normal(sentinel)) is sentinel
+        assert observed[-1]["configured"] == 2
+        assert observed[-1]["usable_feeds"] == 1
+        assert observed[-1]["entries_observed"] == 3
+        assert module._current.get() is None
+
+        original_error = RuntimeError("secret text must not be copied")
+        @module.summarize_run("fixture")
+        async def fails():
+            raise original_error
+        try:
+            _asyncio.run(fails())
+            raise AssertionError("exception swallowed")
+        except RuntimeError as caught:
+            assert caught is original_error
+        assert observed[-1]["exception_type"] == "RuntimeError"
+        assert "secret text" not in str(observed[-1])
+        assert module._current.get() is None
+
+        @module.summarize_run("fixture")
+        async def cancelled():
+            raise _asyncio.CancelledError()
+        try:
+            _asyncio.run(cancelled())
+            raise AssertionError("cancellation swallowed")
+        except _asyncio.CancelledError:
+            pass
+        assert observed[-1]["outcome"] == "cancelled"
+
+        @module.summarize_run("fixture", lambda: 0)
+        async def no_targets():
+            return None
+        _asyncio.run(no_targets())
+        assert observed[-1]["outcome"].startswith("not configured")
+
+        @module.summarize_run("fixture", lambda: 1)
+        async def no_feeds():
+            module.observe_feed(0)
+        _asyncio.run(no_feeds())
+        assert observed[-1]["outcome"].startswith("no usable feeds")
+
+        @module.summarize_run("fixture")
+        async def concurrent(count):
+            module.observe_feed(count)
+            await _asyncio.sleep(0)
+            return count
+        async def together():
+            return await _asyncio.gather(concurrent(2), concurrent(7))
+        observed.clear()
+        assert _asyncio.run(together()) == [2, 7]
+        assert sorted(r["entries_observed"] for r in observed) == [2, 7]
+
+        @module.summarize_run("fixture")
+        async def game_result(errors, active=True, features=None):
+            return _NS(games=[1], errors=errors, active=active,
+                       settings=_NS(features={"codes"} if features is None else features,
+                                    dry_run=False, test_mode=False))
+        _asyncio.run(game_result(["failure"]))
+        assert "reported application errors" in observed[-1]["outcome"]
+        _asyncio.run(game_result([], active=False))
+        assert "passive standby" in observed[-1]["outcome"]
+        _asyncio.run(game_result([], features=set()))
+        assert "features disabled" in observed[-1]["outcome"]
+    finally:
+        module._emit = original_emit
+
+    previous = {k: _os.environ.get(k) for k in ("GITHUB_STEP_SUMMARY", "APP_TEST_SECRET")}
+    try:
+        _os.environ["APP_TEST_SECRET"] = "very_private_token_123"
+        sample = ("very_private_token_123 https://discord.com/api/webhooks/123/abc "
+                  "https://example.test/rss?token=hiddenfeed&x=1 Bearer hiddenbearer")
+        clean = module.safe_text(sample)
+        assert not any(v in clean for v in ("very_private_token_123", "webhooks/123/abc",
+                                             "hiddenfeed", "hiddenbearer"))
+        assert "\n" not in module.annotation("upstream\n::error::injected")
+        assert "%25" in module.annotation("100%")
+        with _tempfile.TemporaryDirectory() as directory:
+            path = _Path(directory) / "summary.md"
+            path.write_text("existing summary\n", encoding="utf-8")
+            _os.environ["GITHUB_STEP_SUMMARY"] = str(path)
+            _asyncio.run(normal("ok"))
+            text = path.read_text(encoding="utf-8")
+            assert text.startswith("existing summary\n")
+            assert "commit/push status: not observed" in text
+            assert "Posted: 0" not in text
+            _os.environ["GITHUB_STEP_SUMMARY"] = directory  # unwritable as a file
+            assert _asyncio.run(normal("unchanged")) == "unchanged"
+            try:
+                _asyncio.run(fails())
+                raise AssertionError("report failure masked application exception")
+            except RuntimeError as caught:
+                assert caught is original_error
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                _os.environ.pop(key, None)
+            else:
+                _os.environ[key] = value
+
+
+def test_application_completion_summary_and_existing_summary_redaction():
+    from gamexpress import application_summary as module
+    from gamexpress import runner as runner_module
+    _application_summary_contract(module)
+    assert hasattr(runner_module.run_once, "__wrapped__")
+    old_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            ctx = make_ctx(Path(directory) / "state.json", now=1790450000)
+            ctx.fetcher = types.SimpleNamespace(summary=lambda: "no requests")
+            ctx.report = []
+            ctx.warnings = ["upstream\n::error::injected " + HOOK]
+            ctx.errors = []
+            path = Path(directory) / "summary.md"
+            os.environ["GITHUB_STEP_SUMMARY"] = str(path)
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                runner_module.write_summary(ctx)
+            assert "\n::error::injected" not in output.getvalue()
+            text = path.read_text(encoding="utf-8")
+            assert HOOK not in text
+            assert "No report messages recorded" in text
+            assert "nothing new (no matching announcements / codes)" not in text
+    finally:
+        if old_path is None:
+            os.environ.pop("GITHUB_STEP_SUMMARY", None)
+        else:
+            os.environ["GITHUB_STEP_SUMMARY"] = old_path
+
+
 if __name__ == "__main__":
     sys.exit(main())

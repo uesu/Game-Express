@@ -1,5 +1,14 @@
 # Testing Game-Express: is everything working?
 
+## Application-only acceptance — 2026-10-17
+
+`python tests/test_smoke.py` now includes the completion-summary/redaction
+contract. Run the two existing schedule/placeholder runners too; existing CI and
+Python-bump commands already invoke these files and must not be edited. New
+tests cover return/exception/cancellation preservation, concurrent observations,
+failed summary output and annotation/secret sanitization. The golden card files
+must remain unchanged. No live webhook, source reorder or state reset is needed.
+
 Work through the steps in order. Every test runs from GitHub:
 **Actions → Game-Express Monitor → Run workflow → `mode` = test**.
 

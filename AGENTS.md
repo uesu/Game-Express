@@ -7,6 +7,22 @@ material; this file is the maintainer's mental model.
 
 Last updated **2026-10-15**.
 
+
+## Application-only release boundary — 2026-10-17
+
+Do not cherry-pick the abandoned maintenance PR. Keep dependency manifests,
+Python version/bump logic, Dependabot, Actions pins, CI/monitor workflows and
+merge automation byte-identical to the reviewed deployed-main baseline for this
+PR. Register new assertions through existing smoke runners instead of changing
+CI or the Python-bump workflow. Keep working posting/card/source/state behavior;
+News's explicit validated-parent media fix is the only intended delivery change.
+Never reset caches, replay repaired Ananta posts or delete preserved diagnostics.
+Application summaries are best effort, redact secrets and do not claim push
+success or fabricate missing metrics. Historical docs are history, not proof of
+an unmerged deployment. Required application helper files accompany production
+copies; development Markdown and instance state/secrets do not.
+
+
 ---
 
 ## 1. What this repository is
