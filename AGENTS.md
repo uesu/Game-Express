@@ -1,5 +1,15 @@
 # AGENTS.md — orientation for AI agents and future sessions
 
+## Operational summary output
+
+Use the existing `runner.py::write_summary`; do not introduce a second reporting
+module or lifecycle wrapper. Keep source counts/timing, sanitize summary and
+annotation text, and let output-write failure remain best effort. An empty
+report does not prove source health or absence of eligible items. Local state
+save/application completion cannot certify the workflow's later commit/push.
+Keep reporting tests in the existing smoke runner; preserve cards, source order,
+announcement/code eligibility, timing and state behavior.
+
 Read this **before changing anything**. It is the short version of how Game-Express works, which
 behaviours are deliberate (and must not be "fixed"), how to verify a change, and which traps have
 already cost a broken run. `README.md` is the user-facing manual and `docs/` is its reference

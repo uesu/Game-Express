@@ -415,6 +415,13 @@ make an overlapping trigger safe. **[docs/SCHEDULER.md](docs/SCHEDULER.md)**.
 
 ---
 
+The existing `runner.py::write_summary` reports application outcomes, source
+counts and elapsed time. Summary/annotation text is sanitized best effort, but
+operators should still review retained output before sharing it. An empty report
+is not proof of healthy sources or no eligible items. The summary precedes the
+workflow's repository commit/push; check that later step for persistence. Summary
+output failure does not add a report file or change posting/state behavior.
+
 ## 🧪 Testing & CI
 
 **➡️ Full checklist: [docs/TESTING.md](docs/TESTING.md).**

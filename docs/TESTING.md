@@ -1,5 +1,14 @@
 # Testing Game-Express: is everything working?
 
+## Summary-output regression coverage
+
+The existing smoke runner exercises `runner.py::write_summary` directly with
+local fixtures: secret/annotation sanitization, append behavior, missing report
+messages, source counts, elapsed time, dry-run wording and unwritable output.
+Run it with the existing schedule and placeholder runners; no new report/test
+file, live webhook or delivery-state reset is needed. A passing local summary
+test does not establish later workflow commit/push success.
+
 Work through the steps in order. Every test runs from GitHub:
 **Actions → Game-Express Monitor → Run workflow → `mode` = test**.
 

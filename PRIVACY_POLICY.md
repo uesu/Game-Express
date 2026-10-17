@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Effective date:** October 9, 2026
+**Effective date:** October 17, 2026
 **Applies to:** *Game-Express*, the open-source game version-schedule announcer and redemption-code
 poster ("the Service"):
 - **Automation mode**: GitHub Actions + Discord webhooks.
@@ -9,7 +9,10 @@ poster ("the Service"):
 
 ## 1. Short version
 
-**The Service collects, stores, sells and shares no personal data.** It reads **public game
+**The Service does not collect Discord member data or add analytics, profiling or
+sale of personal data.** Public source content can contain names or handles;
+the Service processes that content, retains delivery state and produces workflow
+logs/summaries. It reads **public game
 announcements** (official notices, plus community and wiki pages for banner lineups and estimated dates)
 and **public redemption-code lists**, and posts them to **Discord channels controlled by whoever runs
 the instance**.
@@ -25,16 +28,18 @@ is GitHub Actions.
 
 | Data | Where it lives | Why | Shared? |
 |---|---|---|---|
-| Public announcement data (titles, text, times, image links of official posts) | processed **in memory** during a run | building the cards | only sent to the operator's Discord webhooks |
-| Dedup state: version numbers, code strings, Discord **message IDs** of the Service's own posts, the public post ID a card is locked to, confirmed banner names, timestamps, a short non-reversible webhook fingerprint | `state/state.json` **inside the operator's repository** | never posting twice; editing its own cards | no |
-| Webhook URLs, optional nitter token | operator's **encrypted GitHub secrets** | authentication | no. They are never logged; GitHub masks secrets in logs |
+| Public announcement data (titles, text, times, image links of official posts) | processed **in memory** during a run | building the cards | Discord receives rendered content; source services receive the public requests. Operational logs/summaries can retain source references. |
+| Dedup state: version numbers, code strings, Discord **message IDs** of the Service's own posts, the public post ID a card is locked to, confirmed banner names, timestamps, a short non-reversible webhook fingerprint | `state/state.json` **inside the operator's repository** | deduplication and editing its own cards | GitHub and anyone with repository access; a public repository makes committed state public. An explicitly configured peer instance can read its accessible state file. |
+| Webhook URLs, optional nitter token | operator's **encrypted GitHub secrets** | authentication | GitHub stores secrets; credentials are sent to their intended service when required. Output redaction/masking is a safeguard, not a guarantee; review logs before sharing them. |
 
 No analytics, telemetry, cookies, tracking pixels, advertising, or profiling. The monitor reads only
 public source pages and sends cards to the operator's configured webhooks.
 
 ## 4. Third-party services contacted
 
-The Service sends ordinary HTTPS requests (no personal data) to:
+The Service sends HTTPS requests for public content to the services below.
+Recipients can observe request metadata such as the runner IP and requested
+URL; configured credentials are sent to the intended service when required:
 - HoYoLAB / HoYoverse (news API, livestream code module, HoYoPlay launcher API), and the c3kay.de
   JSON Feed mirror of HoYoLAB news, used only when the HoYoLAB API cannot be reached;
 - Kuro Games (official website JSON, launcher index);
@@ -60,13 +65,21 @@ sites, and their policies apply.
 
 - Dedup state keeps roughly the last 6 versions per game and codes seen within about 120 days.
   After that, entries are pruned automatically.
-- Operators can delete `state/state.json` at any time; the next run silently re-seeds.
-- Nothing else is retained: a run holds the announcement data it fetched in memory and exits.
+- State deletion discards deduplication and message-edit history and can cause
+  repeated posts or loss of continuity. Preserve a backup; disable the workflow
+  instead of resetting state merely to stop the Service.
+- Discord retains rendered cards according to the server/platform settings.
+- GitHub retains workflow logs and step summaries according to its applicable
+  access and retention settings. They can include public source references,
+  operational outcomes, source errors and elapsed time. The existing summary output
+  adds no separate database, JSON report or analytics endpoint. Redaction is
+  best effort; operators should review output before publishing it.
 
 ## 6. Children
 
 The Service is a developer tool and is not directed at children. It does not knowingly process
-data from anyone. Discord's own age requirements apply to its users.
+Discord member data. Public source content can nevertheless contain information
+about people. Discord's own age requirements apply to its users.
 
 ## 7. Your choices
 

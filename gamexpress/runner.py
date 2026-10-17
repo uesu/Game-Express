@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -297,13 +299,30 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
                                  "from this run's live data. No live card was edited, no copy was "
                                  "touched and the state file was NOT saved. Delete the test cards "
                                  "when you are done")
-        log.info("sources: %s", fetcher.summary())
+        log.info("sources: %s", _summary_text(fetcher.summary()))
         ctx.elapsed = time.monotonic() - started
         write_summary(ctx)
         return ctx
     finally:
         if own_session:
             await session.close()
+
+
+def _summary_text(value):
+    text = str(value)
+    for name, secret in os.environ.items():
+        if len(secret) >= 8 and re.search(r"TOKEN|SECRET|PASSWORD|WEBHOOK|API_KEY", name, re.I):
+            text = text.replace(secret, "[REDACTED]")
+    text = re.sub(r"https?://[^\s/]*(?:discord(?:app)?\.com)/api/webhooks/[^\s<>]+",
+                  "[REDACTED_WEBHOOK]", text, flags=re.I)
+    text = re.sub(r"([?&](?:token|feed|key|api_key|access_token)=)[^&\s<>]+",
+                  r"\1[REDACTED]", text, flags=re.I)
+    text = re.sub(r"(Bearer\s+)[^\s<>]+", r"\1[REDACTED]", text, flags=re.I)
+    return html.escape(text.replace("\r", " ").replace("\n", " "), quote=False).replace("`", "'")[:1200]
+
+
+def _annotation_text(value):
+    return _summary_text(value).replace("%", "%25")
 
 
 def write_summary(ctx: Ctx) -> None:
@@ -316,22 +335,23 @@ def write_summary(ctx: Ctx) -> None:
                      "labelled 🧪 TEST, posted from the sources this run actually fetched; live cards "
                      "and their copies are never edited and the state file is not saved. "
                      "Delete the test cards afterwards.")
-    lines += [f"- {r}" for r in ctx.report] or ["- nothing new (no matching announcements / codes)"]
+    lines += [f"- {r}" for r in ctx.report] or ["- No report messages recorded; this alone does not establish source health or absence of eligible items."]
     for w in ctx.warnings:
         lines.append(f"- ⚠️ {w}")
-        print(f"::warning::{w}")
+        print(f"::warning::{_annotation_text(w)}")
     for e in ctx.errors:
         lines.append(f"- ❌ {e}")
-        print(f"::error::{e}")
+        print(f"::error::{_annotation_text(e)}")
+    lines.append("- repository commit/push: not observed here; see the subsequent workflow persistence step.")
     lines.append(f"- sources: {ctx.fetcher.summary()}")
     if ctx.elapsed:
         lines.append(f"- ⏱️ run took {ctx.elapsed:.1f}s")
-    text = "\n".join(lines)
+    text = "\n".join(_summary_text(line) for line in lines)
     log.info("\n%s", text)
     path = os.getenv("GITHUB_STEP_SUMMARY")
     if path:
         try:
             with open(path, "a", encoding="utf-8") as fh:
                 fh.write(text + "\n")
-        except OSError:
-            pass
+        except OSError as exc:
+            log.warning("Could not append workflow summary (%s)", type(exc).__name__)
