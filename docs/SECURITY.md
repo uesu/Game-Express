@@ -91,7 +91,8 @@ run reports it as an error. Test: `test_a_source_dumping_hundreds_of_codes_canno
 **Residual risk, accepted:** `monitor.yml` passes `toJSON(secrets)` as `GE_SECRETS_JSON` so the
 run can discover `DISCORD_WEBHOOK_CODES_<GAME>` without the workflow listing each one. Any step
 in that job can therefore read every secret. It is accepted because the job runs only this
-repository's own code plus pinned first-party actions (checkout, setup-uv) — but it is the one
+repository's own code plus pinned actions (`actions/checkout`, `actions/setup-python`,
+`astral-sh/setup-uv`) — but it is the one
 thing to revisit if a third-party step is ever added to that job. zizmor's
 `overprovisioned-secrets` finding is suppressed on that exact line with this reasoning.
 
@@ -101,7 +102,8 @@ thing to revisit if a third-party step is ever added to that job. zizmor's
   open a PR; `pull-requests: write` only on `python_version_bump.yml` and
   [`.github/workflows/maintenance_merge.yml`](../.github/workflows/maintenance_merge.yml).
 * `maintenance_merge.yml` uses `pull_request_target` **without** checking out or executing
-  untrusted PR code: it loads `.github/maintenance.json` and `.github/scripts/maintenance.py` from
+  untrusted PR code: it loads `.github/maintenance.json`, `.github/scripts/maintenance_common.py`,
+  and `.github/scripts/maintenance.py` from
   the trusted base branch (`pr.base.sha`) via the GitHub API and rejects forks, drafts,
   `.github/workflows/*` modifications, unexpected files, and non-passing `maintenance-ci` checks
   before enabling `SQUASH` auto-merge ([MAINTENANCE.md](MAINTENANCE.md)).

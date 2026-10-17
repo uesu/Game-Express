@@ -1,18 +1,10 @@
-# zizmor (https://docs.zizmor.sh) configuration for .github/workflows/.
 rules:
+  # maintenance_merge.yml reads trusted policy/code from heads/main via the GitHub API
+  # without checking out or executing untrusted PR code, and independently validates
+  # provenance, diffs, and check runs before enabling squash auto-merge.
   bot-conditions:
     ignore:
-      # github.actor checks in maintenance_merge.yml are paired with same-repository,
-      # base-branch (main), branch-prefix, and file-allowlist verification in
-      # .github/scripts/maintenance.py loaded from the trusted base commit.
       - maintenance_merge.yml
-
   dangerous-triggers:
     ignore:
-      # maintenance_merge.yml uses pull_request_target without checking out or executing
-      # untrusted PR code; policy and script are loaded from pr.base.sha via the API.
       - maintenance_merge.yml
-
-  unpinned-uses:
-    ignore:
-      - "*.yml"

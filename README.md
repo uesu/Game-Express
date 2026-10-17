@@ -428,10 +428,10 @@ make an overlapping trigger safe. **[docs/SCHEDULER.md](docs/SCHEDULER.md)**.
 The offline suite pins real official posts captured on 2026-09-25 (which must reproduce the
 reference cards' timestamps), golden JSON for the 4 converted cards, button nesting and Discord's
 component/character limits, every code parser and the code gate, the 4★ TBA rules, silent edits,
-stale-post suppression, fail-over, parallel fetching, maintenance/automerge/lockfile policy
-(`tests/test_maintenance.py`), run-summary/redaction/persistence reporting
-(`tests/test_run_summary.py`), and configuration/documentation contracts
-(`tests/test_configuration_contract.py`).
+stale-post suppression, fail-over, parallel fetching, maintenance/automerge/lockfile policy and
+shared verification primitives (`tests/test_maintenance.py` and `tests/test_maintenance_common.py`),
+run-summary/redaction/persistence reporting (`tests/test_run_summary.py`), and
+configuration/documentation contracts (`tests/test_configuration_contract.py`).
 
 ```bash
 python .github/scripts/ci.py verify              # compile + workflow contract + all offline suites

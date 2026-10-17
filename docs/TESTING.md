@@ -32,7 +32,8 @@ from external advisory checks:
     `.github/scripts`, validates `.python-version` and workflow `setup-python` pins, and runs every
     offline test suite (`tests/test_smoke.py`, `tests/test_schedule_epithet_and_settled.py`,
     `tests/test_gachawiki_placeholder.py`, `tests/test_maintenance.py`,
-    `tests/test_run_summary.py`, and `tests/test_configuration_contract.py`).
+    `tests/test_maintenance_common.py`, `tests/test_run_summary.py`, and
+    `tests/test_configuration_contract.py`).
   - `lock-check` (`python .github/scripts/ci.py lock-check`): verifies that `requirements.txt` and
     `requirements-dev.txt` are hash-locked, constrained, and up to date with `requirements.in` and
     `requirements-dev.in`.
@@ -190,15 +191,21 @@ If the title link or the picture is wrong:
 ## 7. Local testing (optional, for developers)
 
 ```bash
-pip install -r requirements.txt pyyaml pytest
+python -m pip install --require-hashes --only-binary=:all: -r requirements.txt -r requirements-dev.txt
+python .github/scripts/ci.py verify        # compileall, workflow pin contract, and all 7 registered offline suites
+python .github/scripts/ci.py lock-check    # verify requirements.txt & requirements-dev.txt hash/constraint parity
+python .github/scripts/ci.py ruff          # same ruff.toml the blocking ruff CI job uses
 python tests/test_smoke.py                 # the main offline suite (golden cards, parsers, workflows)
 python tests/test_schedule_epithet_and_settled.py   # the 2026-10-08 schedule regressions
 python tests/test_gachawiki_placeholder.py          # the ZZZ 3.3 "Agent" placeholder guard
-python -m pytest -q tests                  # the same three files in one go
+python tests/test_maintenance.py           # maintenance policy, lock-check, G1-G5 & ci.py gates
+python tests/test_maintenance_common.py    # shared pure-stdlib maintenance primitives & adapter contract
+python tests/test_run_summary.py           # run-report telemetry, redaction & persistence footer
+python tests/test_configuration_contract.py         # env-var & documentation contract
+python -m pytest -q tests                  # all 7 registered offline test suites in one go
 python -m gamexpress validate              # routing, pings, card limits
 python -m gamexpress preview               # previews/index.html = every card, Discord-style
-ruff check .                               # same ruff.toml the advisory job uses
-zizmor .github/workflows/                  # same config the advisory job uses (.github/zizmor.yml)
+zizmor .github/workflows/                  # same config the blocking zizmor CI job uses (.github/zizmor.yml)
 DRY_RUN=1 TEST_MODE=1 BOOTSTRAP_POST=1 STATE_PATH=/tmp/s.json python -m gamexpress run
 ```
 
@@ -234,7 +241,7 @@ titles, healed in place by re-reading the same two posts, lock unmoved). If one 
 after a change to `extract_banner()` or `bare_names()`, the reader is what you broke.
 
 Counts: each plain runner ends with its own `N/N passed` line and every one must be `N/N`; `pytest -q tests`
-runs the three files together (the totals are not written down anywhere on purpose — they rot).
+runs all seven registered test files together (the totals are not written down anywhere on purpose — they rot).
 The title-search tests sit in `tests/test_smoke.py` before `main()`: title matching (`test_banner_title_match_is_exact_on_version_phase_and_prefix`),
 the HSR 4.6 Phase I outside-lookback case, fan-repost rejection, the HoYoLAB search versus `getNewsList` fallback,
 the budget and throttle (`test_banner_search_budget_settled_never_frozen_never_and_two_clocks`), the `gather_banner_search` integration, WuWa's Kuro discovery

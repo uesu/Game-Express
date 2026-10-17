@@ -132,6 +132,8 @@ requirements.txt                 hash-pinned runtime dependency lockfile
 
 ```
 .github/maintenance.json
+.github/scripts/ci.py
+.github/scripts/maintenance_common.py
 .github/scripts/maintenance.py
 .github/scripts/python_version_bump.py
 .github/workflows/python_version_bump.yml
@@ -206,8 +208,8 @@ cp -r --parents \
   gamexpress \
   config/games.json config/overrides.json config/program_announcements.json \
   state/.gitkeep state/state.json \
-  requirements.txt .gitignore \
-  .github/workflows/monitor.yml \
+  .python-version requirements.txt .gitignore \
+  .github/scripts/render_run_summary.py .github/workflows/monitor.yml \
   PRIVACY_POLICY.md TERMS_OF_SERVICE.md \
   /tmp/prod/
 
@@ -281,13 +283,13 @@ Webhooks).
 | `DISCORD_WEBHOOK_CODES` | optional | catch-all for games without their own channel |
 | `DISCORD_WEBHOOK_URL` | optional | global catch-all |
 
-**`BUMP_PAT` is per-repository and easy to forget.** The Python bump workflow rewrites
-`python-version:` inside `.github/workflows/`, and the built-in `GITHUB_TOKEN` is never allowed
-to push a file under that directory — so a brand-new repo gets a weekly red run that says
-`refusing to allow a GitHub App to create or update workflow … without workflows permission`,
-even though every test passed. One PAT can cover all your repositories, but **the secret itself
-must be created separately in each one**. Full permission list and reasoning:
-[`PYTHON_VERSION.md`](PYTHON_VERSION.md#one-time-setup-this-needs).
+**`BUMP_PAT` is per-repository and easy to forget.** The Python bump workflow updates
+`.python-version` (and `requirements*.txt` / `ruff.toml` when present) and opens a PR via
+`peter-evans/create-pull-request`, which requires `secrets.BUMP_PAT` explicitly so the opened PR
+triggers normal `pull_request` CI checks (the built-in `GITHUB_TOKEN` suppresses downstream
+workflow triggers and fails closed in `publish`). One PAT can cover all your repositories, but
+**the secret itself must be created separately in each one**. Full permission list and reasoning:
+[`MAINTENANCE.md`](MAINTENANCE.md) and [`PYTHON_VERSION.md`](PYTHON_VERSION.md).
 
 **The six `_MIRROR_` secrets are what makes each game's schedule card also land in that game's
 own news channel**, while `#schedule` keeps receiving everything. Omit them in prod and you get
@@ -467,12 +469,15 @@ cd /path/to/Game-Express && git checkout main && git pull
 
 git clone https://github.com/uesu/<random-name>.git /tmp/prodsync
 cd /tmp/prodsync
-rm -rf gamexpress .github/workflows/monitor.yml
+rm -rf gamexpress .github/scripts/render_run_summary.py .github/workflows/monitor.yml
 cp -r /path/to/Game-Express/gamexpress .
 cp /path/to/Game-Express/config/games.json config/
 cp /path/to/Game-Express/config/overrides.json config/
+cp /path/to/Game-Express/.python-version .
 cp /path/to/Game-Express/requirements.txt .
-mkdir -p .github/workflows && cp /path/to/Game-Express/.github/workflows/monitor.yml .github/workflows/
+mkdir -p .github/scripts .github/workflows
+cp /path/to/Game-Express/.github/scripts/render_run_summary.py .github/scripts/
+cp /path/to/Game-Express/.github/workflows/monitor.yml .github/workflows/
 find . -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
 
 git add -A && git diff --cached --stat        # review before pushing
@@ -484,9 +489,9 @@ belong to prod now.
 
 ### Check the Python pin before you push the sync
 
-That `cp … monitor.yml` overwrites prod's workflow with dev's, **including its
-`python-version:` line**. Once prod becomes the repo that posts, two things make that
-dangerous:
+That `cp … .python-version` overwrites prod's runtime pin with dev's (`monitor.yml` reads
+`python-version-file: .python-version`). Once prod becomes the repo that posts, two things make
+that dangerous:
 
 1. **GitHub disables a scheduled workflow after 60 days of repository inactivity.** A dev repo
    that nobody has pushed to all quarter stops running its weekly bump, so dev's pin freezes
@@ -497,8 +502,7 @@ dangerous:
 One line, before `git add`:
 
 ```bash
-diff <(grep -m1 "python-version:" /path/to/Game-Express/.github/workflows/monitor.yml) \
-     <(git show HEAD:.github/workflows/monitor.yml | grep -m1 "python-version:") \
+diff /path/to/Game-Express/.python-version <(git show HEAD:.python-version) \
   && echo "pin unchanged — safe to sync"
 ```
 

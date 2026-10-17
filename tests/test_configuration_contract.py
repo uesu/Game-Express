@@ -101,6 +101,10 @@ def test_maintenance_docs_and_contracts_are_present_and_linked() -> None:
     assert "BUMP_PAT" in py_doc
     assert "maintenance_merge.yml" in dep_doc
 
+    zizmor_cfg = (ROOT / ".github" / "zizmor.yml").read_text(encoding="utf-8")
+    assert "unpinned-uses" not in zizmor_cfg, ".github/zizmor.yml must not ignore unpinned-uses"
+    assert "bot-conditions:" in zizmor_cfg and "dangerous-triggers:" in zizmor_cfg
+
 
 if __name__ == "__main__":
     tests = [

@@ -44,10 +44,10 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 | `gamexpress/{models,media,textutil,timeparse,samples,preview_html}.py` | the `Item` / `CodeHit` dataclasses, image URL normalisation, HTML→text, date/time parsing, sample cards, local preview |
 | `config/games.json` | per-game config (see §4) · `config/overrides.json` human corrections · `config/program_announcements.json` discovered tweet ids |
 | `tests/test_smoke.py` | the main suite: every test offline — no network, no secrets |
-| `tests/test_schedule_epithet_and_settled.py` · `tests/test_gachawiki_placeholder.py` | the 2026-10-08 schedule regressions (the first also runs in a checkout with no dependencies installed) and the ZZZ 3.3 "Agent" placeholder guard. Every test file has a plain runner and **every one is a CI gate** — `test_ci_and_the_python_bump_gate_run_every_offline_test_file` fails the moment a new file is not wired into `ci.yml` and the python-bump gate |
-| `docs/` | the manual, indexed in `docs/README.md`: `CONFIGURATION`, `ACCURACY`, `SOURCES`, `BANNER_DATABASE`, `SCHEDULER`, `ROLLOUT`, `TESTING`, `TROUBLESHOOTING`, `SECURITY`, `TIMESTAMP-PATTERNS`, `DEPENDABOT`, `PYTHON_VERSION`, `PROD-REPO-SETUP`, `CREDITS` |
+| `tests/test_schedule_epithet_and_settled.py` · `tests/test_gachawiki_placeholder.py` · `tests/test_maintenance.py` · `tests/test_maintenance_common.py` · `tests/test_run_summary.py` · `tests/test_configuration_contract.py` | the 2026-10-08 schedule regressions (the first also runs in a checkout with no dependencies installed), the ZZZ 3.3 "Agent" placeholder guard, maintenance/automerge/lockfile and shared-primitive gates, run-summary/persistence telemetry, and configuration/documentation contracts. Every test file has a plain runner registered in `.github/maintenance.json` and **every one is a CI gate** — `test_ci_and_the_python_bump_gate_run_every_offline_test_file` fails the moment a new file is not wired into `ci.yml` and the python-bump gate |
+| `docs/` | the manual, indexed in `docs/README.md`: `MAINTENANCE`, `CONFIGURATION`, `ACCURACY`, `SOURCES`, `BANNER_DATABASE`, `SCHEDULER`, `ROLLOUT`, `TESTING`, `TROUBLESHOOTING`, `SECURITY`, `TIMESTAMP-PATTERNS`, `DEPENDABOT`, `PYTHON_VERSION`, `PROD-REPO-SETUP`, `CREDITS` |
 | `docs/changelog/` | `CHANGELOG.md` (1.8.0 →) + `CHANGELOG_ARCHIVE.md` (1.0.0 – 1.7.0) + an index; the full history lives here — the README's Changelog section is a pointer to it. |
-| `.github/workflows/` | `monitor.yml` (production), `ci.yml` (tests + advisory job), `python_version_bump.yml` |
+| `.github/workflows/` | `monitor.yml` (production), `ci.yml` (`maintenance-ci` blocking gates + `pip-audit` advisory job), `python_version_bump.yml`, `maintenance_merge.yml` |
 
 ---
 
@@ -111,8 +111,12 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    By-id tweet lookups follow the same order: `XClient.tweet()` asks nitter.cf (then xitter.cf) first
    when the account is known, and FxTwitter only after nitter cannot answer or the post has a `t.co`
    link. A status mirror that fails `STATUS_FAIL_LIMIT` times in one run is skipped for the rest of it.
-11. **The advisory CI job must never gate a merge** (`continue-on-error: true` on every step). Only
-   the `test` job is a required check.
+11. **`maintenance-ci` is the final required CI gate; only the external `pip-audit` job is advisory in `ci.yml`.**
+   Deterministic checks (`test`, `lock-check`, `ruff`, `actionlint`, `zizmor`) are blocking jobs
+   required by `maintenance-ci`. The external OSV scan (`pip-audit`) runs with
+   `continue-on-error: true` in `ci.yml` so transient upstream advisory feed outages do not block
+   deterministic CI (`maintenance_merge.yml` still requires clean inner `pip-audit` evidence before
+   auto-merging).
 12. **No new runtime dependencies** without a very good reason. The whole app runs on `aiohttp`,
    `feedparser`, `python-dotenv`.
 13. **Never commit secrets.** Webhooks and the nitter token are repository secrets; the state file
@@ -223,8 +227,8 @@ and `requirements-dev.in` / `requirements-dev.txt`), the `maintenance-ci` gate,
 | `setup-uv` with no `version:` | fetches the version manifest over the network every run | `version: latest-known` |
 | Hung nitter mirror | `asyncio.gather` waited the full 12 s timeout (run #217: 16.2 s vs 5 s) | fixed in v1.9.0; see invariant #10 |
 | Hardcoded chunk size | `codeposter` chunked by `10` while cards used `CODES_PER_CARD` | always import the constant |
-| Python 3.14 locally | sandboxes usually cannot download it (TLS proxy); CI pins 3.14 | develop on 3.11, let CI prove 3.14 |
-| `actionlint` locally | `actionlint-py` needs a Go toolchain; it will not install | rely on CI's advisory job + `yaml.safe_load` |
+| Python 3.14 locally | sandboxes usually cannot download it (TLS proxy); CI pins `3.14.8` in `.python-version` | develop on 3.11, let CI prove `3.14.8` |
+| `actionlint` locally | `actionlint-py` needs a Go toolchain; it will not install | rely on CI's blocking `actionlint` job + `yaml.safe_load` |
 
 ---
 
@@ -248,9 +252,10 @@ and `requirements-dev.in` / `requirements-dev.txt`), the `maintenance-ci` gate,
 - ~~**Hash-pin all actions**~~ — **done in v1.9.0.** The earlier rejection ("it conflicts with
   Dependabot") was wrong: Dependabot has updated SHA pins *and* their version comments since
   2022, and a floating major tag actually hides patch/minor movement from it. See
-  `docs/SECURITY.md` §5 and CVE-2025-30066. The old reasoning, kept so it is not re-adopted:
-  it was thought to conflict with the Dependabot tag-pin
-  policy documented in `.github/zizmor.yml` and with a workflow assertion test.
+  `docs/SECURITY.md` §5 and CVE-2025-30066. Historical pre-v1.9.0 note, kept so it is not
+  re-adopted: it was once thought to conflict with a former Dependabot tag-pin policy;
+  `.github/zizmor.yml` no longer carries an `unpinned-uses` ignore and all workflows are enforced
+  by both `zizmor` and `test_every_action_is_pinned_to_a_commit_sha_with_a_readable_version_comment`.
 - `MAX_PARALLEL > 12`, shorter retry backoff: rejected, upstream politeness.
 
 ---
@@ -272,5 +277,5 @@ and `requirements-dev.in` / `requirements-dev.txt`), the `maintenance-ci` gate,
   `docs/changelog/`.
 - **Comments explain *why*, including the incident that caused the line.** That style is why this
   repo is debuggable; keep it.
-- **Branch/PR**: work on a branch, open a PR, let `test` go green. Never push to `main` directly;
+- **Branch/PR**: work on a branch, open a PR, let `maintenance-ci` go green. Never push to `main` directly;
   `monitor.yml` runs from `main`, so a bad merge posts to real Discord channels.
