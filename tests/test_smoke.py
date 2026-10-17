@@ -6121,8 +6121,10 @@ def test_build_id_reports_the_commit_in_actions_and_degrades_quietly_outside():
 
 
 def test_existing_summary_sanitization_truthful_empty_report_and_failed_output():
-    from gamexpress import runner as module
     from dataclasses import replace
+
+    from gamexpress import runner as module
+
     old_values = {name: os.environ.get(name) for name in ("GITHUB_STEP_SUMMARY", "SUMMARY_FIXTURE_SECRET")}
     try:
         os.environ["SUMMARY_FIXTURE_SECRET"] = "private_fixture_token"
@@ -6153,14 +6155,18 @@ def test_existing_summary_sanitization_truthful_empty_report_and_failed_output()
             assert "repository commit/push: not observed here" in text
             assert "run took 4.2s" in text and "1 ok / 0 fail" in text
             ctx.settings = replace(ctx.settings, dry_run=True)
-            module.write_summary(ctx)
+            with contextlib.redirect_stdout(io.StringIO()):
+                module.write_summary(ctx)
             assert "DRY RUN" in path.read_text(encoding="utf-8")
             os.environ["GITHUB_STEP_SUMMARY"] = directory  # directory is not a writable file
-            assert module.write_summary(ctx) is None
+            with contextlib.redirect_stdout(io.StringIO()):
+                assert module.write_summary(ctx) is None
     finally:
         for name, value in old_values.items():
-            if value is None: os.environ.pop(name, None)
-            else: os.environ[name] = value
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 if __name__ == "__main__":
