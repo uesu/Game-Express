@@ -1,5 +1,18 @@
 # AGENTS.md — orientation for AI agents and future sessions
 
+## Fast, exact incremental PR updates
+
+- Continue the specified existing PR; implement only the newest requested delta.
+- Use concise unified diffs: `-` removes old code, `+` adds replacement code.
+  Do not replay full historical patches or add unrelated cleanup/new files.
+- Reuse relevant prior evidence. Inspect affected code and run targeted checks;
+  do not repeat a full audit/benchmark unless drift, failures or risk justify it.
+- Let normal CI validate the resulting head. Inspect advisory findings too;
+  never hide/suppress failures or remove safeguards to save time.
+- Update existing AGENTS/README/docs/changelog/privacy/terms only where affected.
+- Write an accurate PR title/body; report head, changes, checks and blockers briefly.
+- No extra audit MD, production posting, state reset or merge without approval.
+
 ## Operational summary output
 
 Use the existing `runner.py::write_summary`; do not introduce a second reporting
