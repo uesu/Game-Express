@@ -1,5 +1,32 @@
 # AGENTS.md — orientation for AI agents and future sessions
 
+## Fast, exact incremental PR updates
+
+- Continue the specified existing PR; implement only the newest requested delta.
+- Use concise unified diffs: `-` removes old code, `+` adds replacement code.
+  Do not replay full historical patches or add unrelated cleanup/new files.
+- Reuse relevant prior evidence. Inspect affected code and run targeted checks;
+  do not repeat a full audit/benchmark unless drift, failures or risk justify it.
+- For routine PR handoffs, do not require per-file checksums or exact commit-head
+  matching. Use normal diff review, targeted checks and CI results/annotations;
+  investigate material drift or failures as needed. Preserve required security
+  verification; do not weaken existing checks merely to save time.
+- Let normal CI validate the resulting head. Inspect advisory findings too;
+  never hide/suppress failures or remove safeguards to save time.
+- Update existing AGENTS/README/docs/changelog/privacy/terms only where affected.
+- Write an accurate PR title/body; report head, changes, checks and blockers briefly.
+- No extra audit MD, production posting, state reset or merge without approval.
+
+## Operational summary output
+
+Use the existing `runner.py::write_summary`; do not introduce a second reporting
+module or lifecycle wrapper. Keep source counts/timing, sanitize summary and
+annotation text, and let output-write failure remain best effort. An empty
+report does not prove source health or absence of eligible items. Local state
+save/application completion cannot certify the workflow's later commit/push.
+Keep reporting tests in the existing smoke runner; preserve cards, source order,
+announcement/code eligibility, timing and state behavior.
+
 Read this **before changing anything**. It is the short version of how Game-Express works, which
 behaviours are deliberate (and must not be "fixed"), how to verify a change, and which traps have
 already cost a broken run. `README.md` is the user-facing manual and `docs/` is its reference

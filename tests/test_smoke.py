@@ -3620,6 +3620,7 @@ def test_python_bump_is_safe_in_a_docless_production_repo():
     import importlib.util
     import shutil
     import tempfile
+    from unittest import mock
 
     fake = [{"version": "3.99.0", "stable": True, "files": [{"platform": "linux"}]}]
     script = ROOT / ".github" / "scripts" / "python_version_bump.py"
@@ -3650,8 +3651,18 @@ def test_python_bump_is_safe_in_a_docless_production_repo():
             env = dict(GITHUB_OUTPUT=str(out), PR_BODY_PATH=str(root / "body.md"))
             old = {k: os.environ.get(k) for k in env}
             os.environ.update(env)
+            output = io.StringIO()
             try:
-                assert mod.main() == 0                      # never raises, never non-zero
+                # Python 3.99 is synthetic: never consult the runner's Ruff.
+                with (mock.patch.object(mod, "ruff_understands", return_value=False) as supports,
+                      contextlib.redirect_stdout(output)):
+                    assert mod.main() == 0
+                if shape == "dev":
+                    supports.assert_called_once_with("py399")
+                    assert "ruff does not recognise --target-version py399" in output.getvalue()
+                else:
+                    supports.assert_not_called()
+                    assert "::warning::" not in output.getvalue()
             finally:
                 for k, v in old.items():
                     if v is None:
@@ -6117,6 +6128,56 @@ def test_build_id_reports_the_commit_in_actions_and_degrades_quietly_outside():
 
     # and nothing anywhere still expects the retired attribute
     assert not hasattr(gamexpress, "__version__")
+
+
+
+def test_existing_summary_sanitization_truthful_empty_report_and_failed_output():
+    from dataclasses import replace
+
+    from gamexpress import runner as module
+
+    old_values = {name: os.environ.get(name) for name in ("GITHUB_STEP_SUMMARY", "SUMMARY_FIXTURE_SECRET")}
+    try:
+        os.environ["SUMMARY_FIXTURE_SECRET"] = "private_fixture_token"
+        clean = module._summary_text("private_fixture_token https://discord.com/api/webhooks/123/abc "
+                                     "https://example.test/rss?token=hiddenfeed Bearer hiddenbearer")
+        assert not any(value in clean for value in ("private_fixture_token", "webhooks/123/abc", "hiddenfeed", "hiddenbearer"))
+        assert "%25" in module._annotation_text("100%")
+        assert "\n" not in module._annotation_text("upstream\n::error::injected")
+        with tempfile.TemporaryDirectory() as directory:
+            ctx = make_ctx(Path(directory) / "state.json", now=1790450000)
+            ctx.fetcher = types.SimpleNamespace(summary=lambda: "fixture: 1 ok / 0 fail; " + HOOK)
+            ctx.report = []
+            ctx.warnings = ["upstream\n::error::injected " + HOOK]
+            ctx.errors = []
+            ctx.elapsed = 4.2
+            path = Path(directory) / "summary.md"
+            path.write_text("existing summary\n", encoding="utf-8")
+            os.environ["GITHUB_STEP_SUMMARY"] = str(path)
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                assert module.write_summary(ctx) is None
+            assert "\n::error::injected" not in output.getvalue()
+            assert HOOK not in output.getvalue()
+            text = path.read_text(encoding="utf-8")
+            assert text.startswith("existing summary\n")
+            assert HOOK not in text
+            assert "No report messages recorded" in text
+            assert "repository commit/push: not observed here" in text
+            assert "run took 4.2s" in text and "1 ok / 0 fail" in text
+            ctx.settings = replace(ctx.settings, dry_run=True)
+            with contextlib.redirect_stdout(io.StringIO()):
+                module.write_summary(ctx)
+            assert "DRY RUN" in path.read_text(encoding="utf-8")
+            os.environ["GITHUB_STEP_SUMMARY"] = directory  # directory is not a writable file
+            with contextlib.redirect_stdout(io.StringIO()):
+                assert module.write_summary(ctx) is None
+    finally:
+        for name, value in old_values.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 if __name__ == "__main__":
