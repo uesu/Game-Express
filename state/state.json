@@ -2272,8 +2272,8 @@
               "Lynae"
             ]
           },
-          "banners_checked_ts": 1792200018,
-          "banners_search_ts": 1792200018,
+          "banners_checked_ts": 1792210818,
+          "banners_search_ts": 1792210818,
           "banners_settled": [
             "phase1"
           ],
@@ -2317,7 +2317,7 @@
           ],
           "b_phase1": [
             100,
-            1792210517
+            1792210818
           ],
           "b_phase1_4": [
             50,
@@ -2381,7 +2381,7 @@
               "version": "3.3"
             }
           ],
-          "ts": 1792200018
+          "ts": 1792210818
         },
         "data": {
           "announcement_locked": true,
@@ -2403,19 +2403,19 @@
               "Norma Hollowell"
             ]
           },
-          "banners_checked_ts": 1792200018,
+          "banners_checked_ts": 1792210818,
           "banners_display": {
             "Norma": "Norma Hollowell",
             "Phoenix": "Phoenix Reffaella",
             "Severian": "Severian Lowell",
             "Velina": "Velina Airgid"
           },
-          "banners_search_ts": 1792200018,
+          "banners_search_ts": 1792210818,
           "banners_settled": [
             "phase1",
             "phase2"
           ],
-          "calendar_ts": 1792200018,
+          "calendar_ts": 1792210818,
           "estimate_sources": [
             "version cadence"
           ],
