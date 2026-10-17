@@ -105,6 +105,12 @@ def test_maintenance_docs_and_contracts_are_present_and_linked() -> None:
     assert "unpinned-uses" not in zizmor_cfg, ".github/zizmor.yml must not ignore unpinned-uses"
     assert "bot-conditions:" in zizmor_cfg and "dangerous-triggers:" in zizmor_cfg
 
+    setup = (ROOT / "docs" / "PROD-REPO-SETUP.md").read_text(encoding="utf-8")
+    new_session = setup.split("### A new session on the prod repo", 1)[1].split("Then come back", 1)[0]
+    assert ".python-version" in new_session
+    assert ".github/scripts/render_run_summary.py" in new_session
+    assert "expect 36" not in setup, "copy acceptance must use required paths, not stale file counts"
+
 
 if __name__ == "__main__":
     tests = [

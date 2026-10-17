@@ -5,7 +5,7 @@ Target shape:
 | Repo | Visibility | Runs the monitor? | Holds |
 |---|---|---|---|
 | `uesu/Game-Express` | **private** | no (kill-switched) | everything: code, tests, docs, CI, Dependabot |
-| `uesu/<random-name>` | **public** | **yes**, every 5 min | 34-file runtime manifest (including state) + 2 policy files |
+| `uesu/<random-name>` | **public** | **yes**, every 5 min | runtime manifest (including state) + 2 policy files |
 
 ---
 
@@ -82,7 +82,8 @@ Create the empty public prod repo on GitHub first, then open a second session po
 > `https://github.com/uesu/Game-Express` into a temp folder, copy in ONLY the runtime manifest
 > from its `docs/PROD-REPO-SETUP.md` §1 (the `gamexpress/` package, `config/games.json`,
 > `config/overrides.json`, `config/program_announcements.json`, `state/.gitkeep`,
-> `state/state.json`, `requirements.txt`, `.gitignore`, `.github/workflows/monitor.yml`,
+> `state/state.json`, `.python-version`, `requirements.txt`, `.gitignore`,
+> `.github/scripts/render_run_summary.py`, `.github/workflows/monitor.yml`,
 > `PRIVACY_POLICY.md`, `TERMS_OF_SERVICE.md`), write the 3-line prod README from §2, then open a
 > pull request. Do not copy `tests/`, `docs/`, `ci.yml`, `ruff.toml`, `AGENTS.md`, `README.md`,
 > or any `APPLY-*` scratch file.
@@ -105,7 +106,7 @@ still manual: an agent cannot set your repository secrets or your cron-job.org s
 > The per-game rhythm remains in `config/games.json`, and the read-only
 > `python -m gamexpress speculate` command works in prod as soon as the files are there.
 
-## 1. The file manifest — exactly 36 files
+## 1. The runtime file manifest
 
 ### Copy to prod (runtime)
 
@@ -214,8 +215,10 @@ cp -r --parents \
   /tmp/prod/
 
 find /tmp/prod -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
-find /tmp/prod -type f | wc -l     # expect 36 (34 runtime + 2 policy files)
-                                  # 38 if you also copied the two python-bump files
+find /tmp/prod -type f | wc -l     # informational only; verify required paths below
+for required in .python-version requirements.txt .github/scripts/render_run_summary.py .github/workflows/monitor.yml; do
+  test -f "/tmp/prod/$required" || { echo "missing required runtime file: $required"; exit 1; }
+done
 ```
 
 **Don't trust that number on its own — verify the package instead.** The count goes stale the
