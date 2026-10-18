@@ -102,8 +102,9 @@ Open an issue in the repository that hosts the instance you are using.
 
 When explicitly enabled, news reads full public official article text, publisher
 names, publication timestamps and image/GIF/video links from the already listed
-HoYoLAB/Kuro services and sends one rendered message per article to dedicated
-Discord channels: full fitting content or a labelled excerpt with a source link.
+HoYoLAB/Kuro services and sends at most two rendered messages per article to
+dedicated Discord channels: full fitting content in one message, longer fitting
+content across at most two pages, or a labelled excerpt with a source link.
 The monitor performs bounded media GET/signature checks using a short in-memory
 response prefix; it does not store article media as a new dataset. Failed checks
 refresh the official article once, then hold delivery for retry. Discord fetches
