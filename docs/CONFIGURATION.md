@@ -122,7 +122,7 @@ being dropped. A codes drop split across several messages mentions the role on *
 
 | Name | Default | Meaning |
 |---|---|---|
-| `ENABLED_FEATURES` | `schedule,codes` | `schedule` · `codes` · `none` (paused / cold standby) |
+| `ENABLED_FEATURES` | `schedule,codes` | `schedule` · `codes` · `news` (also requires `NEWS_ENABLED`) · `none` (paused / cold standby) |
 | `GAMES` | all enabled | allow-list, e.g. `genshin,starrail` |
 | `ENABLE_GAMES` | — | switch prepared games on, e.g. `hna` or `hna,ananta` |
 | `X_ENABLED` / `NITTER_INSTANCES` | on / built-in fleet | X monitoring on/off, or a custom nitter list |
@@ -160,8 +160,8 @@ being dropped. A codes drop split across several messages mentions the role on *
 | Name | Default | Meaning |
 |---|---|---|
 | `INSTANCE_NAME` / `INSTANCE_ROLE` / `PEER_STATE_URL` / `HEARTBEAT_MINUTES` / `FAILOVER_AFTER_MINUTES` | alpha / primary / — / 1440 / 90 | two-instance fail-over, see [README → Reliability](../README.md#-reliability) |
-| `AUTO_MERGE_DEPENDABOT` | — | `yes` = merge green Dependabot PRs automatically (dev repo only; [DEPENDABOT.md](DEPENDABOT.md)) |
-| `AUTO_MERGE_PYTHON_BUMP` | — | `all` = merge a green, automated Python-version-bump PR automatically. `yes` deliberately does **not** merge here, so it is safe to set repo-wide ([PYTHON_VERSION.md](PYTHON_VERSION.md)) |
+| `AUTO_MERGE_DEPENDABOT` | — | `yes` = merge eligible green package-only Dependabot PRs; workflow changes wait for review (dev repo only; [DEPENDABOT.md](DEPENDABOT.md)) |
+| `AUTO_MERGE_PYTHON_BUMP` | — | Legacy/ignored: all Python update PRs require attended review/merge. |
 
 ---
 
@@ -225,3 +225,207 @@ it in — it carries the same names as this page, with the defaults inline. `.en
 cp .env.example .env
 python -m gamexpress validate
 ```
+
+
+## Official news (explicit opt-in; default off)
+
+Set repository **variable** `NEWS_ENABLED=1` only after reviewing the source and
+preview. `NEWS_ENABLED=0` (the default) makes no news requests and adds no news
+state on installations that have never enabled it. Disabling an already enabled
+installation writes one `paused` control marker; subsequent disabled runs do not
+churn news state. A successful source read after re-enabling establishes a new
+silent baseline. A selector such as `ONLY=news` / `--only news` cannot enable it;
+`ENABLED_FEATURES=none`, `off`, `standby`, or `0` wins over the switch.
+A schedule/code-only selector does not count as toggling news off.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `NEWS_ENABLED` | `0` | Explicit news opt-in; independent of the existing schedule/code defaults |
+| `NEWS_GROUP_LONG_STRIPS` | `0` | Opt-in measured grouping; failure keeps article order |
+| `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | Canonical game keys; removing a game pauses its existing news state |
+| `NEWS_MAX_POSTS_PER_RUN` | `5` | 1–20 completed articles across games; at most 10 attempts/game/run |
+
+Use repository **secrets**, never variables, for the five destinations:
+
+| Secret | Channel |
+|---|---|
+| `DISCORD_WEBHOOK_NEWS_GENSHIN` | `gi-news` |
+| `DISCORD_WEBHOOK_NEWS_STARRAIL` | `hsr-news` |
+| `DISCORD_WEBHOOK_NEWS_HNA` | `hna-news` |
+| `DISCORD_WEBHOOK_NEWS_ZZZ` | `zzz-news` |
+| `DISCORD_WEBHOOK_NEWS_WUWA` | `wuwa-news` |
+
+Existing short game aliases also work. No `DISCORD_WEBHOOK_NEWS`, catch-all,
+`FORCE_WEBHOOK`, or mirror fallback is used for news. A missing destination skips
+source requests and baseline creation for that game; a changed destination is
+held for operator review, not silently reposted. The existing workflow already
+imports repository variables/secrets via its JSON blobs: no workflow edit,
+scheduler change, new token, dependency or state file is required.
+
+Version-maintenance/preinstall and special-program announcement titles stay in
+the existing schedule pipeline and are excluded from news. General news is sent
+only to the dedicated channels. Codes and configured schedule/code mirrors keep
+their existing routing and behavior; the news adapter does not extract codes or
+add a second mirror. News cards are silent, with Read Post, Citlali News and Donate.
+ANANTA remains an inactive source slot (no verified adapter); Wangyue is excluded.
+
+News defaults to article-order layout; optional measured grouping is described
+below. Follow the full-content paging/excerpt rules below: limits are shared by
+all containers in each message, and buttons occur only in the final container
+of the final message. Line-leading `●` and `•` become Markdown `- ` bullets.
+Unknown publication times are omitted, not fabricated.
+HoYoLAB attribution uses the actual nickname when present, otherwise the configured
+game name. Descriptive text links are masked once; self-labelled URLs stay bare;
+button/media URL fields stay raw. Quill heading boundaries and compact bullet lists
+are preserved. Unpadded `※`/`✦` get a following space; only consecutive `※` notes
+receive added blank-line separation. A continuous media run is not split simply
+at eight body units. Optional measured grouping is implemented below; slicing,
+cropping, resizing or image removal remain forbidden.
+
+Direct images/GIFs/videos included in the payload get a bounded GET/status/magic-byte
+preflight. A failure refreshes the same official full article once; another failure
+holds delivery for retry with an operational warning. No manual filename patches,
+query stripping or screenshot substitutes. Preflight does not prove full downloads,
+Discord fetching, codecs or playback. Grouping adds only the optional variable
+documented below; no upload/proxy service is added.
+
+
+A first valid discovery silently baselines at the run's time: no historical
+flood. Later discoveries admit publication times after that floor within 48 hours.
+Failed full-body fetches are retried while eligible; successful later articles do
+not advance over those holes. A rotating attempt cursor prevents repeated full-body
+failures from monopolising the per-game request budget; it is not a delivery
+checkpoint or publication floor. Confirmed message sends save progress atomically
+in the existing `state/state.json`; retries resume after confirmed message IDs,
+including legacy partial articles that age outside the discovery window. Legacy
+partial signatures that differ under this layout are held for manual review, not
+replayed or automatically reset.
+A paused/re-enabled feature rebaselines fresh discovery, while retaining partial
+progress to resume on subsequent runs. A source outage cannot establish a baseline.
+
+Completed entries retain up to 30 days and share a 500-entry/game admission bound
+with partial entries. Safe capacity cleanup removes only completed entries older
+than 48 hours; age cleanup removes completed entries older than 30 days. Cleanup
+advances a publication floor, preventing deleted dedup keys from resurrecting.
+Partial entries are not evicted. If safe space cannot be made, admission defers
+with a warning instead of deleting active protection. Retention is not an archive
+or an unlimited outage-recovery promise. Preserve state; do not reset production
+state to test or enable news.
+
+Discord acceptance followed by a crash before saving/pushing state, ambiguous
+network acknowledgements, or independent concurrent instances can still duplicate
+messages. Peer merge imports compatible completed/partial delivery progress; it
+does not provide a distributed transaction. Existing workflow serialization and
+per-instance production states remain essential.
+
+
+### Selecting two games and choosing channel names
+
+Set `NEWS_ENABLED=1` and `NEWS_GAMES=genshin,wuwa` to select only those two
+news adapters; leave the existing schedule/code game filters unchanged unless
+intentionally restricting those features too. Unselected games make no news
+source requests or deliveries. Supply the two corresponding news webhook secrets.
+`gi-news`, `hsr-news`, `hna-news`, `zzz-news` and `wuwa-news` are suggested names,
+not channel-name checks: each webhook can target any operator-chosen Discord
+channel, and several games may share a destination if explicitly configured.
+Dedicated secret names distinguish routing purposes, not mandatory channel names.
+
+HoYoLAB's Official **Info**, **Events**, and **Notices** are all read; this is not
+an Info-only feed. Ordinary service/payment notices, official giveaways, character
+introductions and event details remain news. A mention of a version number alone
+does not make an event a schedule announcement. The schedule exclusion applies
+to identified version-maintenance/preinstall and special-program announcement
+titles, not every article under Notices or every occurrence of "maintenance".
+Event start/end dates and "In Progress"/"Already Ended" badges are not new
+publication times: existing old events are not reposted when enabled.
+
+
+### Full-content paging and overflow
+
+Keep fitting full articles unchanged in one message (possibly multiple containers).
+If that fails, permit at most two actual messages when normalized source text plus
+title/byline once is <=7,000 characters and both payloads validate independently
+against 4,000 text characters / 40 components / 1–10 gallery items. The 7,000
+ceiling is fixed policy, not a Discord limit and not a new environment variable.
+Preserve complete wording and source media order. Prefer source block boundaries;
+use safe paragraph boundaries only for larger text blocks. Never split a link or
+unbalanced bold span. If packing fails, use the existing one-container excerpt
+with at most one lead image; never publish a partial full-article proposal.
+Paged messages: title/byline and lead only once at the start, then Page 1 / Page 2
+labels and dividers; three custom-emoji buttons only at the end of the final
+message. One-message articles also put buttons in the final container. Articles
+above the ceiling or unpageable within two messages keep the approved half-fitting
+word excerpt. Never truncate fitting full articles or modify official API HTML.
+Retain confirmed per-message progress, no-repost handling, media preflight and
+refresh/holds. No new scheduler or delivery-state reset. Historical incomplete
+captures are not full-source length evidence. Pagination is tested across all
+five game keys with synthetic boundary inputs, not five live integrations.
+
+
+### Source-preserving formatting
+
+Keep Part 1/2 and Part 2/2 for containers in one message, and Page 1/Page 2 for
+separate messages. Never repeat title/byline/lead on continuation pages. All three
+custom-emoji controls appear only at the end of the final container of the final
+message, including single-message layouts with multiple containers.
+
+Compact consecutive numeric, circled-number, alphabetic and square (`■`) entries
+without rewriting words/markers or crossing ordinary paragraph/section boundaries.
+HTML list items with nested paragraphs must keep `- ` attached to their first
+visible text. Correct converter boundaries, not source-specific wording. Marker
+spacing only pads existing `※`/`✦`; never insert a missing source marker to match
+a screenshot. Preserve source HTML/API/mirror responses and exact media URLs.
+
+### Optional measured long-strip grouping — implemented
+
+`NEWS_GROUP_LONG_STRIPS=0` (default) keeps article-order galleries exactly as before,
+with no measurement requests. Set repository Variable `NEWS_GROUP_LONG_STRIPS=1`
+to enable the backend grouping pass for all five official-news game keys. This
+setting does not enable news, change destinations, or affect schedule/codes.
+The existing workflow imports repository Variables; no workflow edit is needed.
+
+After normal media availability preflight and any one official refresh, read
+original PNG/GIF/JPEG/WebP header dimensions using allowlisted HTTPS GETs only:
+at most four request hops, 8 seconds total per measurement, 256 KiB per response,
+at most 40 distinct URLs and 20 seconds total per article. Reads stop as soon as
+header dimensions are known; no decoding, transformation, upload or dependency.
+Unsupported/truncated formats (including video/AVIF), failed/unknown dimensions,
+or the article measurement deadline keep the original layout without holding an
+otherwise deliverable article. All included media must have known dimensions.
+Normal availability failure still holds/retries independently of this option.
+
+A qualifying strip has height/width strictly greater than 3.5. Merge only runs of
+at least two consecutive single-item galleries inside the same container, up to
+ten items per grouped gallery. Insert a divider before each group unless one
+already precedes it. A measured long-strip lead may join an adjacent qualifying
+run; normal-aspect leads/final images remain separate. Do not cross text, existing
+separators, containers, messages, or existing multi-item galleries. Mixed GIF/image
+runs retain exact source item fields, bytes (never downloaded in full for editing),
+URLs, duplicates and order. No article-specific exemptions or guessed dimensions.
+
+Validate every proposed message against 4,000 text characters / 40 components /
+1–10 gallery items and verify flattened media URL order/count; otherwise retain
+the original layout. Do not repack pages or modify titles, Part/Page labels,
+final-container buttons, full-content eligibility or the one-lead overflow excerpt.
+The existing partial-delivery signature guard holds changed layouts for manual
+review rather than replaying already confirmed pages. Do not toggle layout modes
+mid-partial delivery without reviewing that hold. No state reset or old-post edits.
+Discord controls thumbnail cropping; neither header measurements, HTML previews
+nor passing offline tests prove live media decoding/readability or delivery.
+
+### Source coverage and safe verification
+
+HoYoLAB discovery/full-body adapters cover GI (gid 2), HSR (6), HNA (9) and
+ZZZ (8), including Official Info, Events and Notices. WuWa discovery is limited
+to the current official English index; it is not historical archive discovery.
+A manually trimmed capture cannot establish a complete article's length or prove
+current direct official-host ingestion. Historical maintenance examples remain
+schedule-routed; presentation changes do not reroute or backfill them.
+
+Before opting in, use [the existing verification commands](TESTING.md#official-news-offline-coverage-and-read-only-checks)
+and review [source limits](SOURCES.md#optional-full-content-news-adapter-2026-10-18).
+Offline previews/tests validate payload construction, not live source availability,
+Discord media access, codecs, delivery or thumbnail readability. Keep news off
+until the operator explicitly approves opt-in. Review partial-delivery holds;
+never reset delivery state merely to test. No new scheduler, tokens or upload
+service are needed. Keep each installation's state and secrets independent.

@@ -13,11 +13,8 @@ name: CI — compile + offline tests
 #                              `test` passed, only when the repository VARIABLE
 #                              AUTO_MERGE_DEPENDABOT=yes exists. See docs/DEPENDABOT.md.
 #
-# There is deliberately NO python-bump auto-merge job here. A PR opened by
-# python_version_bump.yml carries the built-in GITHUB_TOKEN, and GitHub does not trigger
-# workflows for such PRs — this `pull_request` trigger never fires, so a `needs: test` gate
-# would wait for a check that is never posted. That bump therefore validates itself under the
-# NEW interpreter and merges itself. See .github/workflows/python_version_bump.yml.
+# Python update PRs are validated by python_version_bump.yml and CI, but always
+# wait for attended review/merge. Package-only Dependabot PRs remain opt-in automatic.
 
 on:
   pull_request:
@@ -48,10 +45,10 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
         with:
-          python-version: '3.14'
+          python-version: '3.14.8'
 
       - name: Install uv (same packages pip would install, just a much faster resolver)
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.2.0 # astral-sh doesn't publish a floating major tag like v10
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0 # astral-sh doesn't publish a floating major tag like v10
         with:
           version: latest-known            # see monitor.yml for why this is not "latest"
 
@@ -93,7 +90,7 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
         with:
-          python-version: '3.14'
+          python-version: '3.14.8'
 
       - name: Known-vulnerability scan of requirements.txt (pypa/pip-audit)
         continue-on-error: true   # informational: a new advisory must never block a hot-fix
@@ -134,8 +131,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      # Dependabot PR runs get a read-only token by default; GitHub lets the permissions key raise
-      # it for this job only. No checkout: the PR's code never runs with write access.
+      # Requested permissions remain subject to GitHub's Dependabot/token restrictions.
+      # No checkout: the PR's code never runs with write access.
       contents: write
       pull-requests: write
     steps:
@@ -149,6 +146,17 @@ jobs:
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
             if (pr.state !== 'open' || pr.draft) { core.info(`#${number} is not open / is a draft — nothing to do.`); return; }
             if (pr.head.sha !== tested) { core.info('New commits arrived after this test run — the next CI run decides.'); return; }
+            const requiresWorkflowReview = files => files.some(file =>
+              [file.filename, file.previous_filename].some(path =>
+                typeof path === 'string' && path.startsWith('.github/workflows/')));
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: number, per_page: 100,
+            });
+            if (requiresWorkflowReview(files)) {
+              core.info('Workflow files changed: review and merge this update while available, then check the next live run.');
+              return;
+            }
+
             for (const merge_method of ['squash', 'merge', 'rebase']) {
               try {
                 await github.rest.pulls.merge({ owner, repo, pull_number: number, merge_method, sha: tested });

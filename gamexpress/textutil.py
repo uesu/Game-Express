@@ -213,3 +213,176 @@ def truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+# Ordered article blocks are deliberately separate from schedule/code extraction.
+# No image ranking/aspect-ratio dedup here: two different same-shaped pictures are not duplicates.
+def news_link(label: str, url: str) -> str:
+    """One Discord masked link, with its label and destination kept separate."""
+    from urllib.parse import urlsplit
+
+    label = html.unescape(label)
+    url = html.unescape(str(url or "")).strip()
+    try:
+        parts = urlsplit(url)
+        valid = (parts.scheme in ("http", "https") and bool(parts.hostname)
+                 and not parts.username and not parts.password and not re.search(r"[\s<>\[\]]", url))
+    except ValueError:
+        valid = False
+    if not valid:
+        return label
+    self_labelled = label.strip() == url
+    # Parentheses terminate a Markdown destination unless escaped/encoded.
+    url = url.replace("(", "%28").replace(")", "%29")
+    if self_labelled:
+        return url  # preserve bare/self-labelled URLs, matching the existing link policy
+    label = label.replace("[", r"\[").replace("]", r"\]")
+    return f"[{label}]({url})"
+
+
+class _NewsHTML(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.blocks = []
+        self.parts = []
+        self.skip = 0
+        self.anchor = None
+        self.bold_depth = 0
+        self.bold_open = False
+        self.list_prefix_pending = False
+
+    def close_bold(self):
+        if self.bold_open:
+            trailing = ""
+            if self.parts:
+                last = self.parts[-1]
+                trailing = last[len(last.rstrip(" \t")):]
+                self.parts[-1] = last.rstrip(" \t")
+            self.parts.append("**" + trailing)
+            self.bold_open = False
+
+    def flush(self):
+        self.close_bold()
+        value = clean_text("".join(self.parts))
+        # Adjacent HTML spans carrying the same emphasis form one bold run.
+        value = re.sub(r"\*\*([ \t]*)\*\*", r"\1", value)
+        self.parts = []
+        if value:
+            self.blocks.append({"kind": "text", "text": value})
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag in ("script", "style"):
+            self.skip += 1
+        if self.skip:
+            return
+        if tag in _HTMLText.BLOCK and not self.list_prefix_pending:
+            self.parts.append("\n")
+        if tag in ("b", "strong", "h1", "h2", "h3", "h4", "h5", "h6"):
+            self.bold_depth += 1
+        elif tag == "li":
+            self.parts.append("- ")
+            self.list_prefix_pending = True
+        if tag == "a":
+            if self.bold_depth and not self.bold_open:
+                self.parts.append("**")
+                self.bold_open = True
+            self.anchor = (a.get("href"), len(self.parts))
+        if tag in ("img", "video", "source", "iframe"):
+            url = a.get("src") or a.get("data-src")
+            if url:
+                self.flush()
+                self.blocks.append({"kind": "image" if tag == "img" else "link" if tag == "iframe" else "video",
+                                    "url": html.unescape(url)})
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style"):
+            self.skip = max(0, self.skip - 1)
+        elif not self.skip:
+            if tag in ("b", "strong", "h1", "h2", "h3", "h4", "h5", "h6"):
+                self.bold_depth = max(0, self.bold_depth - 1)
+                if not self.bold_depth:
+                    self.close_bold()
+            if tag == "a" and self.anchor:
+                url, start = self.anchor
+                label = "".join(self.parts[start:])
+                self.parts[start:] = [news_link(label, url)]
+                self.anchor = None
+            if tag == "li":
+                self.list_prefix_pending = False
+            if tag in _HTMLText.BLOCK:
+                self.parts.append("\n")
+
+    def handle_data(self, value):
+        if not self.skip:
+            if self.list_prefix_pending:
+                if not value.strip():
+                    return
+                self.list_prefix_pending = False
+            if self.bold_depth and not self.bold_open and value.strip():
+                self.parts.append("**")
+                self.bold_open = True
+            self.parts.append(value)
+
+
+def news_blocks(content: str, structured: str = "", videos: dict[str, str] | None = None) -> list[dict]:
+    """Full HTML/Quill article in source order, including linked external players.
+
+    Prefer Quill when provided: it retains media that HoYoLAB's plain content can omit.
+    Unknown structured embeds are not silently represented as a complete article.
+    """
+    if structured:
+        ops = json.loads(structured)
+        if isinstance(ops, dict):
+            ops = ops.get("ops")
+        if not isinstance(ops, list):
+            raise ValueError("unrecognised article structure")
+        blocks = []
+        for op in ops:
+            if not isinstance(op, dict) or "insert" not in op:
+                continue
+            value = op["insert"]
+            if isinstance(value, str):
+                attributes = op.get("attributes") or {}
+                if value == "\n" and (attributes.get("header") or attributes.get("list")) and blocks and blocks[-1]["kind"] == "text":
+                    previous = blocks[-1]["text"]
+                    prefix, delimiter, line = previous.rpartition("\n")
+                    if attributes.get("header") and line and not line.startswith("**"):
+                        line = "**" + line + "**"
+                    elif attributes.get("list") and line and not line.startswith(("- ", "• ")):
+                        line = "- " + line
+                    blocks[-1]["text"] = prefix + delimiter + line
+                elif attributes.get("bold") and value.strip():
+                    value = "**" + value.strip() + "**" + ("\n" if value.endswith("\n") else "")
+                link = attributes.get("link")
+                if link:
+                    # Never let the following newline/heading become part of the link.
+                    value = "".join(news_link(line.rstrip("\r\n"), link) + line[len(line.rstrip("\r\n")):]
+                                    if line.rstrip("\r\n") else line for line in value.splitlines(keepends=True))
+                blocks.append({"kind": "text", "text": value})
+            elif isinstance(value, dict):
+                if "divider" in value:
+                    blocks.append({"kind": "text", "text": "\n──────────\n"})
+                    continue
+                kind = next((k for k in ("image", "video", "vod") if k in value), None)
+                if not kind:
+                    blocks.append({"kind": "text", "text": "\n[Unsupported embedded content — open the original article.]\n"})
+                    continue
+                url = value[kind]
+                if isinstance(url, dict):
+                    url = (url.get("url") or url.get("src")
+                           or (videos or {}).get(str(url.get("id") or url.get("video_id") or url.get("vod_id") or "")))
+                elif kind == "vod":
+                    url = (videos or {}).get(str(url))
+                if not isinstance(url, str) or not url:
+                    blocks.append({"kind": "text", "text": "\n[Embedded media unavailable — open the original article.]\n"})
+                    continue
+                blocks.append({"kind": "video" if kind == "vod" else kind, "url": html.unescape(url)})
+        return blocks
+    if re.fullmatch(r"[a-z]{2}-[a-z]{2}", (content or "").strip()):
+        raise ValueError("article body unavailable")
+    parser = _NewsHTML()
+    parser.feed(content or "")
+    parser.close()
+    parser.flush()
+    return parser.blocks

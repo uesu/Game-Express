@@ -6,7 +6,7 @@ name: Python version bump (auto)
 #
 # Weekly (same cadence as Dependabot), it compares the pinned python-version against
 # actions/python-versions' OWN release manifest — the exact list actions/setup-python downloads
-# from — and opens a PR only when a newer STABLE series (with a Linux build) already exists
+# from — and opens a PR only when a newer STABLE patch or next minor (with a Linux x64 build) already exists
 # there. Nothing is guessed: whatever it proposes is already installable on the runner.
 #
 # THE RULE: 100% GREEN OR NOTHING. No PR is opened unless, under the NEW interpreter, all of
@@ -24,12 +24,10 @@ name: Python version bump (auto)
 # it now. The inline gate is kept because it runs first and gates the PR's very existence;
 # ci.yml is now a second opinion rather than the only one that was impossible.)
 #
-# Merging is opt-in AND deliberately strict: ONLY the repository VARIABLE
-# AUTO_MERGE_PYTHON_BUMP=all merges a bump from here. The value `yes` — what the News-Express
-# family uses to auto-merge its routine PATCH bumps — does NOT merge here, on purpose: this repo
-# pins a SERIES, so every bump this workflow can propose is a new series, and a brand-new Python
-# *feature* release is the riskiest moment for any third-party dependency. Python 3.15.0 is
-# released 2026-10-09 (PEP 790), and it will land as a PR you read.
+# All verified Python patch/minor update PRs wait for attended review/merge.
+# AUTO_MERGE_PYTHON_BUMP is a legacy variable and is no longer consulted.
+# Detection, wheels-only validation, tests and PR publication remain automatic.
+# A later GitHub security approval can still be required after merging.
 #
 # One-time setup this needs:
 #   1. The repository secret BUMP_PAT — a PAT with Workflows: read and write. Without it this
@@ -62,7 +60,7 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
         with:
-          python-version: '3.14'
+          python-version: '3.14.8'
 
       - name: Install ruff (used only to confirm a target-version bump is safe to propose)
         run: python -m pip install --disable-pip-version-check -q ruff
@@ -150,41 +148,6 @@ jobs:
           # makes it structurally impossible for a bump to stage a README or anything in docs/.
           add-paths: ${{ steps.bump.outputs.changed_files }}
 
-      # The merge lives HERE, not in ci.yml, because this job already knows the bump is green:
-      # the PR above is only created once the wheels gate and every CI gate passed under the new
-      # interpreter. ci.yml's automerge job is Dependabot-only by design and deliberately does
-      # not act on python-bump PRs.
-      #
-      # ONLY `all` merges here. `yes` deliberately does not — see the header. This keeps ONE
-      # rule true across every repo in the family, so the same variable can be set everywhere:
-      #
-      #     yes = auto-merge the ROUTINE bumps   (patch bumps; this repo has none to merge,
-      #           because the series pin lets setup-python pick patches up by itself)
-      #     all = ALSO auto-merge a NEW-SERIES bump (3.14 -> 3.15)
-      #
-      # So AUTO_MERGE_PYTHON_BUMP=yes is safe to set in all repos and can never merge a series
-      # jump anywhere. Note a red bump cannot reach this step at all: the PR above is only
-      # created when the wheels gate and every CI gate passed under the new interpreter, and
-      # this step requires that PR to exist.
-      - name: Merge it (opt-in — repository variable AUTO_MERGE_PYTHON_BUMP=all)
-        if: steps.cpr.outputs.pull-request-number != '' && vars.AUTO_MERGE_PYTHON_BUMP == 'all'
-        env:
-          GH_TOKEN: ${{ secrets.BUMP_PAT }}
-          PR: ${{ steps.cpr.outputs.pull-request-number }}
-          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
-        run: |
-          set -euo pipefail
-          # Whichever merge method the repo actually allows. A disabled squash button must
-          # not turn a proven-green bump into a red run.
-          if gh pr merge "$PR" --squash  --delete-branch \
-          || gh pr merge "$PR" --merge   --delete-branch \
-          || gh pr merge "$PR" --rebase  --delete-branch; then
-            echo "Merged #${PR} — proved green on Python ${NEW_VERSION} before it was opened."
-          else
-            echo "::warning::PR #${PR} is green but no merge method is enabled in" \
-                 "Settings → General → Pull Requests. Merge it by hand."
-          fi
-
       - name: Summary
         if: always()
         env:
@@ -194,7 +157,6 @@ jobs:
           WHEELS: ${{ steps.wheels.outcome }}
           GATES: ${{ steps.gates.outcome }}
           PR_URL: ${{ steps.cpr.outputs.pull-request-url }}
-          AUTO_MERGE: ${{ vars.AUTO_MERGE_PYTHON_BUMP }}
         run: |
           {
             echo "### Python version bump"
@@ -205,5 +167,5 @@ jobs:
             echo "* wheels available: \`${WHEELS:-n/a}\`"
             echo "* CI gates under the new interpreter: \`${GATES:-n/a}\`"
             echo "* pull request: ${PR_URL:-none opened}"
-            echo "* auto-merge: \`${AUTO_MERGE:-unset}\`"
+            echo "* merge policy: attended review required (patch and minor updates)"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -2,11 +2,11 @@
 
 # 🎮 Game-Express
 
-**Version-schedule announcements and redemption codes for six gacha games, posted to Discord as
-Components V2 cards — with no server, no bot token and nothing to host.**
+**Version-schedule announcements and redemption codes for six gacha games, plus optional
+official news for five — posted to Discord as Components V2 cards, with no server or bot token.**
 
 [![CI](https://github.com/uesu/Game-Express/actions/workflows/ci.yml/badge.svg)](https://github.com/uesu/Game-Express/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.14-3776AB?logo=python&logoColor=white&labelColor=2b2d31)](docs/PYTHON_VERSION.md)
+[![Python](https://img.shields.io/badge/python-3.14.8-3776AB?logo=python&logoColor=white&labelColor=2b2d31)](docs/PYTHON_VERSION.md)
 [![Tests](https://img.shields.io/badge/tests-offline%20%C2%B7%20no%20secrets-3FB950?labelColor=2b2d31)](docs/TESTING.md)
 [![Discord](https://img.shields.io/badge/posts%20to-Discord-5865F2?logo=discord&logoColor=white&labelColor=2b2d31)](https://discord.com/developers/docs/components/reference)
 
@@ -20,7 +20,8 @@ Components V2 cards — with no server, no bot token and nothing to host.**
 Game-Express watches the official channels of **Genshin Impact**, **Honkai: Star Rail**,
 **Zenless Zone Zero**, **Wuthering Waves**, **Honkai: Nexus Anima** and **ANANTA**. When a
 Special Program is announced or a new redemption code appears, it posts one card — and then
-keeps that card correct by editing it silently as official information arrives.
+keeps that card correct by editing it silently as official information arrives. An independent,
+off-by-default official-news feature can also post new articles from five supported games.
 
 It runs entirely on **GitHub Actions** (free and unlimited on public repos), triggered every
 5 minutes by **[cron-job.org](https://cron-job.org)**. There is nothing to deploy: merging to
@@ -149,6 +150,34 @@ same run share a card.
 
 > Want to see every card before touching Discord? `python -m gamexpress preview` →
 > open `previews/index.html`.
+
+---
+
+### 3 · Official news (optional; off by default)
+
+Full retrievable official articles for **Genshin Impact, Honkai: Star Rail, Honkai:
+Nexus Anima, Zenless Zone Zero and Wuthering Waves**, sent to explicitly configured
+news webhooks. Existing schedule/code behavior stays independent; ANANTA news is
+inactive and Wangyue is excluded.
+
+- **Source-order content:** one full message when it fits; eligible moderate
+  overflow may use at most two validated pages. Longer/unpageable articles use a
+  labelled excerpt with at most one lead image and Read Post for the full source.
+- **Controls at the end:** all three custom-emoji buttons occur only in the final
+  container of the final message. Part labels identify containers; Page labels
+  identify separate messages.
+- **Optional measured long strips:** default article-order galleries remain
+  unchanged. Opt-in grouping combines only qualifying consecutive strips; failed
+  measurements keep the original layout. No cropping, slicing or media removal.
+- **Explicit opt-in, no backfill:** enabling silently establishes a baseline;
+  it does not repost old articles. Missing media can hold delivery after one
+  official refresh. This is not a live Discord playback guarantee.
+
+Use the **[official-news setup and full instructions](docs/CONFIGURATION.md#official-news-explicit-opt-in-default-off)**
+for all variables, per-game secrets, selecting two games, paging/excerpt rules,
+measured grouping, retries and safe verification. See also the
+**[source limits](docs/SOURCES.md#optional-full-content-news-adapter-2026-10-18)**
+and **[offline/live-check distinction](docs/TESTING.md#official-news-offline-coverage-and-read-only-checks)**.
 
 ---
 
@@ -415,6 +444,19 @@ make an overlapping trigger safe. **[docs/SCHEDULER.md](docs/SCHEDULER.md)**.
 
 ---
 
+The existing `runner.py::write_summary` reports application outcomes, source
+counts and elapsed time. Summary/annotation text is sanitized best effort, but
+operators should still review retained output before sharing it. An empty report
+is not proof of healthy sources or no eligible items. The summary precedes the
+workflow's repository commit/push; check that later step for persistence. Summary
+output failure does not add a report file or change posting/state behavior.
+
+Runtime updates use exact CPython **3.14.8** pins. Python update proposals are
+validated automatically but always merged while an operator is available.
+Package-only Dependabot auto-merge remains opt-in; workflow-file updates wait
+for review. See [Python policy](docs/PYTHON_VERSION.md). A live-workflow update
+can still need GitHub approval; confirm the next real execution after merging.
+
 ## 🧪 Testing & CI
 
 **➡️ Full checklist: [docs/TESTING.md](docs/TESTING.md).**
@@ -443,7 +485,7 @@ python -m gamexpress preview                     # open previews/index.html
 
 | Doc | What's in it |
 |---|---|
-| **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** | every secret, variable, `games.json` field and `overrides.json` key |
+| **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** | every secret/variable and game/override field; full official-news setup, paging, grouping and delivery safeguards |
 | **[docs/ACCURACY.md](docs/ACCURACY.md)** | how a post becomes a card: detection, extraction, provenance, the code gate |
 | **[docs/SOURCES.md](docs/SOURCES.md)** | every verified endpoint, with why it was chosen or rejected |
 | **[docs/BANNER_DATABASE.md](docs/BANNER_DATABASE.md)** | where banner line-ups come from: the wiki readers, the precedence order, how an official notice is read, how a TBA fills itself in, and when a name locks |

@@ -91,7 +91,7 @@ class State:
             hb.update({"last_success": now, "instance": instance, "every_min": every_min})
 
     # ------------------------------------------------------------------ peer merge
-    def merge_peer(self, peer: dict) -> int:
+    def merge_peer(self, peer: dict, *, include_news: bool = False) -> int:
         """Import posted/seeded keys (and message ids) from the other instance.
         Returns how many keys were imported."""
         imported = 0
@@ -114,6 +114,29 @@ class State:
                     imported += 1
         for key, ts in (peer.get("bootstrapped") or {}).items():
             self.data["bootstrapped"].setdefault(key, ts)
+        if include_news:
+            for game, other in (peer.get("news") or {}).items():
+                mine = self.news_record(game)
+                if mine.get("route") and other.get("route") and mine["route"] != other["route"]:
+                    continue
+                if other.get("route"):
+                    mine.setdefault("route", other["route"])
+                if "floor" in other:
+                    mine["floor"] = max(mine.get("floor", 0), other["floor"])
+                records = mine.setdefault("records", {})
+                for key, rec in (other.get("records") or {}).items():
+                    if rec.get("status") not in ("posted", "partial"):
+                        continue
+                    current = records.get(key)
+                    if current and current.get("status") == "posted":
+                        continue
+                    if current and rec.get("status") == "partial" and (
+                            current.get("signature") != rec.get("signature")
+                            or current.get("messages") != rec.get("messages", [])[:len(current.get("messages", []))]):
+                        continue
+                    if key in records or len(records) < 500:
+                        records[key] = copy.deepcopy(rec)
+                        imported += 1
         return imported
 
     def prune(self, now: int, keep_versions: int = 6, code_days: int = 120) -> None:
@@ -126,3 +149,27 @@ class State:
             for code in [c for c, r in codes.items()
                          if now - int(r.get("last_seen") or r.get("first_seen") or now) > code_days * 86400]:
                 codes.pop(code, None)
+
+
+    def news_record(self, game: str) -> dict:
+        return self.data.setdefault("news", {}).setdefault(game, {})
+
+    def prune_news(self, now: int) -> None:
+        """30-day retention / 500 completed entries; never evict inside the 48h eligibility window.
+
+        Admission in the runner enforces a 500-record bound. Safe eviction advances an
+        irreversible publication cutoff so an old feed entry cannot become new again.
+        """
+        for game in (self.data.get("news") or {}).values():
+            records = game.get("records") or {}
+            for key, rec in list(records.items()):
+                if rec.get("status") == "posted" and now - rec.get("ts", now) > 30 * 86400:
+                    game["floor"] = max(game.get("floor", 0), rec["ts"])
+                    records.pop(key)
+            if len(records) >= 500:
+                for key, rec in sorted(list(records.items()), key=lambda pair: pair[1].get("ts", now)):
+                    if len(records) < 500:
+                        break
+                    if rec.get("status") == "posted" and rec.get("ts", now) < now - 48 * 3600:
+                        game["floor"] = max(game.get("floor", 0), rec["ts"])
+                        records.pop(key)

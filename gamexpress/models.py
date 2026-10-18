@@ -18,6 +18,9 @@ class Item:
     images: list[str] = field(default_factory=list)
     links: list[str] = field(default_factory=list)
     official: bool = True
+    # Only the news feature uses ordered content blocks; existing source consumers stay unchanged.
+    article_blocks: list[dict] = field(default_factory=list)
+    author: str = ""
 
     @property
     def full(self) -> str:

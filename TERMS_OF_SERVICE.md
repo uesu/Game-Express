@@ -1,7 +1,7 @@
 # Terms of Service
 
-**Effective date:** October 9, 2026
-**Applies to:** *Game-Express*, the open-source game version-schedule announcer and redemption-code
+**Effective date:** October 18, 2026
+**Applies to:** *Game-Express*, the open-source game version-schedule announcer, optional official-news and redemption-code
 poster ("the Service"), running as a GitHub Actions workflow that posts through Discord webhooks.
 
 ---
@@ -15,6 +15,13 @@ official X accounts, Kuro Games' website, official launcher APIs), **community a
 for banner lineups and estimated dates (official banner notices found by title, a community banner feed, game wikis, countdown sites), and
 **public redemption-code lists**, then post formatted cards to Discord channels that **you** control. There is no hosted
 service operated by the author on your behalf. Each operator runs their own instance.
+
+Operational logs and completion summaries are best-effort diagnostics, not
+proof of healthy sources, successful delivery or committed/pushed state. Follow
+the workflow result and existing per-item logs, review output before sharing it,
+and apply the repository/Discord access and retention settings appropriate to
+your instance. See [Privacy Policy](PRIVACY_POLICY.md). No separate analytics
+service is introduced by completion reporting.
 
 ## 3. No affiliation
 The Service is **not affiliated with, endorsed by, or sponsored by** HoYoverse / miHoYo, Kuro
@@ -73,3 +80,20 @@ noted in the [changelog](docs/changelog/CHANGELOG.md). Continued use after a cha
 
 ## 11. Contact
 Open an issue in the repository that hosts the instance you are using.
+
+
+## Optional official news
+
+News is off by default and requires explicit operator opt-in and dedicated
+webhooks. Operators remain responsible for permission to redistribute full public
+article text/media, attribution and the source/platform terms. Articles retain
+retrievable content when it fits; oversized articles use a labelled one-container
+excerpt with at most one lead image and original-source access. Failed direct-media
+preflight can hold delivery; checks do not guarantee Discord playback. Unsupported media, source/index
+coverage, Discord limits, outages and ambiguous acknowledgements can prevent or
+duplicate delivery. Wuthering Waves discovery uses a bounded current index, not a
+complete archive. The Service does not guarantee delivery of every official
+announcement or playback of every linked video. Silent baselines, bounded catch-up
+and retention deliberately avoid historical floods; partial-delivery state must
+not be reset to force tests. These limitations do not remove the existing warranty,
+operator responsibility or no-affiliation provisions.

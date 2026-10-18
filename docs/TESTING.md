@@ -1,5 +1,14 @@
 # Testing Game-Express: is everything working?
 
+## Summary-output regression coverage
+
+The existing smoke runner exercises `runner.py::write_summary` directly with
+local fixtures: secret/annotation sanitization, append behavior, missing report
+messages, source counts, elapsed time, dry-run wording and unwritable output.
+Run it with the existing schedule and placeholder runners; no new report/test
+file, live webhook or delivery-state reset is needed. A passing local summary
+test does not establish later workflow commit/push success.
+
 Work through the steps in order. Every test runs from GitHub:
 **Actions → Game-Express Monitor → Run workflow → `mode` = test**.
 
@@ -256,3 +265,119 @@ without posting. Locally the two are the equivalent of the workflow's test modes
 | Add a free uptime check (e.g. healthchecks.io) pinged at the end of each run | a second alarm besides cron-job.org emails | small |
 | Re-check the nitter fleet every few months (as in News-Express) | nitter instances come and go; X is the main WW source | small |
 | More games supported by Open Gacha Codes (Arknights: Endfield, Neverness to Everness) | the code API already has them | small (`games.json`) |
+
+
+## Official news: offline coverage and read-only checks
+
+The existing smoke runner now covers news opt-in/no-fallback routing, the five
+games, official list/full-body shapes, ordered HTML/Quill content, GIF/video
+links, full fitting articles / single-container labelled overflow excerpts,
+final-container-only emoji buttons, omitted unknown timestamps, list/heading
+formatting, `●`/`•` bullet conversion, overflow-only half-word excerpts,
+masked links/self-labelled URLs, real-fixture heading boundaries, publisher
+fallback preservation, nested/adjacent bold spans and media boundaries,
+closing-star padding, idempotent marker/list spacing, nine-image single-container
+retention without regrouping, bounded media preflight, XML-error rejection, preserved queries,
+redirect rejection, official-refresh recovery and unresolved-media holds. Silent
+baselines, single-message retries, legacy partial holds, source failure isolation,
+peer progress and safe cleanup remain covered.
+The normal three runners and pytest remain the automatic gates; no new test file
+or workflow is introduced.
+
+`python -m gamexpress preview --kind news --out <scratch-directory>` builds clearly
+labelled **offline samples** for the five games. These are not live articles or
+playback evidence. News samples are deliberately excluded from `test-card all`;
+`test-card --kind news` posts nothing. `TEST_MODE` does not post news.
+
+For an explicitly opted-in installation, `python -m gamexpress run --only news
+--dry-run` uses read-only source requests and in-memory delivery progress; no
+Discord sends or state persistence occur. On an uninitialised state it demonstrates
+only baseline discovery, not a complete article or later delivery. Read the
+source/full-response body and media independently before enabling production;
+never erase an existing baseline or copy development state into a live repository
+to force a test. Official-host read-only verification and Discord playback remain
+separate from offline test success. No production posts were made during implementation.
+
+
+## Current official-news paging policy (supersedes earlier one-message-only wording)
+
+Keep fitting full articles unchanged in one message (possibly multiple containers).
+If that fails, permit at most two actual messages when normalized source text plus
+title/byline once is <=7,000 characters and both payloads validate independently
+against 4,000 text characters / 40 components / 1–10 gallery items. The 7,000
+ceiling is fixed policy, not a Discord limit and not a new environment variable.
+Preserve complete wording and source media order. Prefer source block boundaries;
+use safe paragraph boundaries only for larger text blocks. Never split a link or
+unbalanced bold span. If packing fails, use the existing one-container excerpt
+with at most one lead image; never publish a partial full-article proposal.
+Paged messages: title/byline and lead only once at the start, then Page 1 / Page 2
+labels and dividers; three custom-emoji buttons only at the end of the final
+message. One-message articles also put buttons in the final container. Articles
+above the ceiling or unpageable within two messages keep the approved half-fitting
+word excerpt. Never truncate fitting full articles or modify official API HTML.
+Retain confirmed per-message progress, no-repost handling, media preflight and
+refresh/holds. No new scheduler or delivery-state reset. Historical incomplete
+captures are not full-source length evidence. Pagination is tested across all
+five game keys with synthetic boundary inputs, not five live integrations.
+
+
+### Latest layout corrections: 7,000 eligibility / final-container controls
+
+This is the current rendering rule across all five games. The eligibility ceiling
+is now 7,000 normalized source-text characters including title/byline once, with
+at most two actual Discord messages; every message must independently validate
+against the unchanged 4,000 text-character and 40-component caps. Failure to fit
+safely in two messages still uses the existing one-container/one-lead excerpt.
+All three custom-emoji buttons appear only at the end of the final container of
+the final message, including one-message/multi-container articles. Keep Part 1/2
+and Part 2/2 for containers in one message, Page 1/Page 2 for separate messages.
+Compact consecutive square (■) entries like numbered lists. HTML list items
+containing nested paragraphs must keep '- ' attached to their first visible text;
+fix parser block boundaries, not source-specific wording. Source HTML/API/mirror
+responses and media URLs remain untouched. A historical maintenance notice remains
+schedule-routed: a length allowance does not make it eligible for news/backfill.
+The one integrated HTML contains the main previews and complete browser-only
+long-strip laboratory; optional backend grouping is implemented below.
+
+Backend grouping regressions cover both modes on all five games, image-header
+formats, bounded reads/redirects, failures/deadlines, strict ratios, lead/final
+images, mixed media, all boundaries, ten-item caps, immutable source items/order,
+validated budgets, unchanged excerpts, runner delivery and partial-signature holds.
+
+
+### Optional measured long-strip grouping — implemented
+
+`NEWS_GROUP_LONG_STRIPS=0` (default) keeps article-order galleries exactly as before,
+with no measurement requests. Set repository Variable `NEWS_GROUP_LONG_STRIPS=1`
+to enable the backend grouping pass for all five official-news game keys. This
+setting does not enable news, change destinations, or affect schedule/codes.
+The existing workflow imports repository Variables; no workflow edit is needed.
+
+After normal media availability preflight and any one official refresh, read
+original PNG/GIF/JPEG/WebP header dimensions using allowlisted HTTPS GETs only:
+at most four request hops, 8 seconds total per measurement, 256 KiB per response,
+at most 40 distinct URLs and 20 seconds total per article. Reads stop as soon as
+header dimensions are known; no decoding, transformation, upload or dependency.
+Unsupported/truncated formats (including video/AVIF), failed/unknown dimensions,
+or the article measurement deadline keep the original layout without holding an
+otherwise deliverable article. All included media must have known dimensions.
+Normal availability failure still holds/retries independently of this option.
+
+A qualifying strip has height/width strictly greater than 3.5. Merge only runs of
+at least two consecutive single-item galleries inside the same container, up to
+ten items per grouped gallery. Insert a divider before each group unless one
+already precedes it. A measured long-strip lead may join an adjacent qualifying
+run; normal-aspect leads/final images remain separate. Do not cross text, existing
+separators, containers, messages, or existing multi-item galleries. Mixed GIF/image
+runs retain exact source item fields, bytes (never downloaded in full for editing),
+URLs, duplicates and order. No article-specific exemptions or guessed dimensions.
+
+Validate every proposed message against 4,000 text characters / 40 components /
+1–10 gallery items and verify flattened media URL order/count; otherwise retain
+the original layout. Do not repack pages or modify titles, Part/Page labels,
+final-container buttons, full-content eligibility or the one-lead overflow excerpt.
+The existing partial-delivery signature guard holds changed layouts for manual
+review rather than replaying already confirmed pages. Do not toggle layout modes
+mid-partial delivery without reviewing that hold. No state reset or old-post edits.
+Discord controls thumbnail cropping; neither header measurements, HTML previews
+nor passing offline tests prove live media decoding/readability or delivery.

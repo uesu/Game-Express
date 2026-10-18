@@ -1,5 +1,70 @@
 # Changelog — current entries
 
+## 2026-10-19
+
+- Integrate optional official news as feature 3 under the root README's "What it
+  posts" and mention it in the project introduction. Keep Legal & credits last,
+  with its original attribution and legal links unchanged.
+- Consolidate detailed official-news setup, paging, source-preserving formatting,
+  measured-grouping bounds and safe verification in
+  [CONFIGURATION.md](../CONFIGURATION.md#official-news-explicit-opt-in-default-off).
+  Update [the docs index](../README.md#official-news--third-feature-off-by-default).
+  Remove repeated current-policy appendices from the README and the bottom of
+  this changelog; retain dated historical entries unchanged.
+- Record the documentation placement/link-check rule in AGENTS.md. This follow-up
+  changes documentation only: no runtime, tests, workflow, settings, posting or
+  state changes, and no new live-delivery claim.
+
+## Unreleased — opt-in official news (2026-10-18)
+
+- Add off-default HoYoLAB news for GI/HSR/HNA/ZZZ and Kuro's current English WW
+  index, using dedicated per-game webhook secrets without destination fallback.
+- Render full article-order Components V2 content in one message when it fits,
+  otherwise at most two independently validated pages for <=7,000 normalized
+  characters, or one labelled excerpt container/one lead for longer/unpageable input. Final-container-only custom-emoji buttons; no gallery-only mode.
+  Preserve heading/list readability, convert line-leading `●`/`•` to Markdown
+  bullets and omit unknown publication times. Overflow excerpts keep half the
+  words of the already budget-fitting opening excerpt; fitting articles stay full.
+- Add bounded official-media GET/signature preflight with one official-article
+  refresh on failure; hold unresolved media instead of posting broken galleries.
+  Prefix validation is not complete-download or Discord playback verification.
+- Polish HTML/Quill links and heading boundaries; use game name only when
+  publisher nickname is missing. Keep raw URL fields, compact bullet lists and
+  conditional `※`/`✦` spacing. Keep uninterrupted media runs in one container
+  when within message limits. Add optional measured long-strip grouping via
+  `NEWS_GROUP_LONG_STRIPS` (default off); no cropping/slicing or source changes.
+- Balance adjacent/nested bold spans rather than leaking literal Markdown
+  markers, and pad both sides of decorative star headings when missing.
+- Keep version/program announcements in schedule and codes/mirrors unchanged;
+  ANANTA news remains inactive; Wangyue is excluded.
+- Add silent baselines, confirmed per-part retry progress, compatible peer dedup
+  and bounded cleanup with publication floors in the existing state file.
+- Extend existing offline tests/preview/config/legal docs. No dependencies,
+  workflows, new repository files, production posts or state resets. Current
+  official-source availability/playback still requires read-only/live verification.
+
+## Unreleased — attended workflow updates (2026-10-18)
+
+- Keep eligible package-only Dependabot auto-merge; require attended merges for
+  workflow-path updates, including renamed/deleted files. Fetch all PR file pages.
+- Continue Python detection/validation/publication but remove Python auto-merging;
+  the legacy AUTO_MERGE_PYTHON_BUMP variable is no longer consulted.
+- Pin Game to exact CPython 3.14.8; prefer numeric current-patch updates, then
+  the next minor. Update only existing allowlisted files and retain all gates.
+- GitHub security approval can still be required; check real live execution
+  after an attended update. No posting/state/scheduler or dependency-range change.
+
+## Unreleased — application-only scope (2026-10-17)
+
+- Improve existing runner summary output in place; no new reporting module or
+  runtime file. Explain that repository commit/push happens later in the workflow.
+- Clarify privacy/terms disclosures for retained logs/summaries and repository
+  access; preserve attribution and warranty provisions.
+- Sanitize existing runner summary/annotations and source-summary output;
+  clarify that an empty report does not prove healthy sources or no eligible items.
+- Leave dependency/Python/Dependabot/update automation and posting/state rules
+  unchanged. Proposed code, not a claim of production deployment.
+
 The history that still describes the code on `main`: the Python 3.14 runtime, the automated
 version-bump workflow, the 1.9.0 performance and hardening pass, and everything dated since.
 
@@ -908,4 +973,3 @@ documentation accuracy sweep**
   the docs that still said 55/67 instead of the current 131.
 - No functional changes to the monitor itself: all 131 offline tests, `ruff check .`,
   `python -m gamexpress validate` and `python -m gamexpress preview` are unaffected.
-

@@ -7,11 +7,26 @@ Game-Express is and how to set it up; come here for the detail.
 
 | Doc | What's in it |
 |---|---|
-| **[CONFIGURATION.md](CONFIGURATION.md)** | every secret, variable, `games.json` field and `overrides.json` key |
+| **[CONFIGURATION.md](CONFIGURATION.md)** | every secret/variable and game/override field; full official-news setup and behavior |
 | **[SCHEDULER.md](SCHEDULER.md)** | the cron-job.org job that triggers the monitor, the classic token, poll-rate reasoning, private-repo limits |
 | **[ROLLOUT.md](ROLLOUT.md)** | switching on the per-game schedule copies safely, one game at a time |
 | **[TESTING.md](TESTING.md)** | the manual test bench, what you should see in Discord, the local commands |
 | **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** | symptom → fix |
+
+## Official news — third feature, off by default
+
+The [root README's third feature](../README.md#3--official-news-optional-off-by-default)
+is the short overview. The operational instructions live here:
+
+| Reference | Covers |
+|---|---|
+| [Setup, variables and destination secrets](CONFIGURATION.md#official-news-explicit-opt-in-default-off) | explicit opt-in, all five game keys, default-off grouping, dedicated webhooks and routing |
+| [Select two games / choose channel names](CONFIGURATION.md#selecting-two-games-and-choosing-channel-names) | easy subset setup, arbitrary webhook destinations, independence from schedule/codes |
+| [Full-content paging and overflow](CONFIGURATION.md#full-content-paging-and-overflow) | fixed 7,000 eligibility, maximum two messages, per-message budgets, excerpts, Part versus Page and final controls |
+| [Source-preserving formatting](CONFIGURATION.md#source-preserving-formatting) | compact lists, attached hyphens, marker spacing, unchanged source words/URLs |
+| [Measured long-strip grouping](CONFIGURATION.md#optional-measured-long-strip-grouping--implemented) | switch off/on, ratio and gallery limits, measurement bounds, boundaries and safe fallback |
+| [Coverage and safe verification](CONFIGURATION.md#source-coverage-and-safe-verification) | source/index limits, no backfill/state reset, offline versus live evidence |
+| [Sources](SOURCES.md#optional-full-content-news-adapter-2026-10-18) / [testing](TESTING.md#official-news-offline-coverage-and-read-only-checks) | adapters, bounded media preflight/refresh/holds, offline checks and read-only verification |
 
 ## How it works
 

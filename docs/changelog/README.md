@@ -5,7 +5,7 @@ README; it now lives here so the README can stay a manual instead of a history b
 
 | File | Holds |
 |---|---|
-| **[CHANGELOG.md](CHANGELOG.md)** | current entries — **1.8.0 (October 2026) onward**. These still describe the code on `main`. |
+| **[CHANGELOG.md](CHANGELOG.md)** | current entries — **1.8.0 (October 2026) onward**. Unreleased sections describe proposed changes, not proof of deployment. |
 | **[CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md)** | **1.0.0 → 1.7.0** (September 2026). History only: much of it was replaced by later releases. |
 
 ## Dated, not numbered
@@ -27,6 +27,7 @@ nothing is renumbered after the fact.
 
 | Entry | Date | Headline |
 |---|---|---|
+| [2026-10-19](CHANGELOG.md#2026-10-19) | 2026-10-19 | documentation follow-up: feature 3 in What it posts, detailed news instructions in docs, updated indexes and Legal & credits last; no runtime changes |
 | [2026-10-15](CHANGELOG.md#2026-10-15) | 2026-10-15 | rotation #6: xcopy.uk trial verdict — 403 to the runners, 24/24 across 4 Azure regions (runs #2662–#2665), demoted beside kareem.one; operator-directed runner-proven hot path (nitter.cf, xitter.cf, meowing, miningtcup); freedit.eu (8/8 union handles) and gravitywell.xyz (5/8, complementary gaps) join the fallbacks — fleet 19 → 21, nothing deleted; housekeeping: every `tests/test_*.py` file is now a CI gate (23 regressions ran only under pytest before) with a guard test, two dead code paths removed (`passes_gate`, unused `WikiDialect` fields), and the stale words in AGENTS.md, TESTING.md, SECURITY.md, SOURCES.md, TIMESTAMP-PATTERNS.md, ruff.toml and `.env.example` corrected |
 | [2026-10-14](CHANGELOG.md#2026-10-14) | 2026-10-14 | rotation #5: xcopy.uk — 8/8 monitored handles body-verified with nitter.cf parity, on the shitter fork's working list — trials nitter slot 2; meowing.monster (dark ~8 h, revived 5/6 from the runners, IPv6-slow) takes the head of the fallbacks, demoted not deleted, no ledger move |
 | [2026-10-13](CHANGELOG.md#2026-10-13) | 2026-10-13 | a display-only card edit (`banners_display`) finally names itself in the run summary, and `shitter.thepixora.com` is demoted out of the nitter every-run batch after its runner verdict (HTTP 403 on all six handles), with `tw.eir-nya.gay` promoted into the vacated slot; the README's Changelog section becomes a pointer to the full changelog (the ritual is two parts now: the entry and its index row) and the never-working Configuration Contents anchor is fixed (⚙️ + U+FE0F → 🔧); rotation #4 ends eir-nya's one-run slot-4 trial (HTTP 200 with 0 entries on all six handles, run #2323) — xitter.cf, which answered from the runners before its 2026-10-03 redundancy demotion, warms slot 4 while eir-nya waits in the fallbacks |

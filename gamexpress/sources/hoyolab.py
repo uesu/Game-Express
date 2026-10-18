@@ -12,6 +12,7 @@ News types: 1 Notices · 2 Events · 3 Info.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from collections.abc import Callable
@@ -224,3 +225,115 @@ async def find_program(fetcher: Fetcher, game: Game, version: str | None, pages:
     return {"url": ARTICLE_URL.format(pid), "title": (post.get("subject") or "").strip(),
             "images": images, "text": text, "youtube": youtube,
             "ts": int(post.get("created_at") or 0), "source": "HoYoLAB"}
+
+
+async def discover_news(fetcher: Fetcher, game: Game, since: int) -> list[dict] | None:
+    """Official news lists only, never keyword/community search. Partial failure is not a baseline.
+
+    Three pages per category bound traffic; a saturated last page raises a coverage warning
+    rather than pretending all eligible posts were discovered.
+    """
+    if not game.hoyolab_gid:
+        return None
+    picked = {}
+    for category in NEWS_TYPES:
+        last = ""
+        for page in range(3):
+            params = {"gids": game.hoyolab_gid, "type": category, "page_size": 20}
+            if last:
+                params["last_id"] = last
+            data = await fetcher.get_json(API + "getNewsList", source="news-hoyolab", headers=HEADERS,
+                                          params=params, retries=1)
+            if not isinstance(data, dict) or data.get("retcode") != 0:
+                return None
+            payload = data.get("data")
+            rows = payload.get("list") if isinstance(payload, dict) else None
+            if not isinstance(rows, list):
+                return None
+            for wrapper in rows:
+                post = wrapper.get("post") if isinstance(wrapper, dict) else None
+                if not isinstance(post, dict):
+                    return None
+                pid, created = str(post.get("post_id") or ""), post.get("created_at")
+                gid = post.get("game_id")
+                if gid is not None and str(gid) != str(game.hoyolab_gid):
+                    continue
+                if not pid.isdigit() or not str(created).isdigit():
+                    return None
+                if int(created) >= since:
+                    picked[pid] = {"id": pid, "ts": int(created)}
+            # Lists are newest-first (pinned entries can lead). Use the trailing row,
+            # not the minimum timestamp, to decide the requested window is covered.
+            tail = rows[-1].get("post") if rows and isinstance(rows[-1], dict) else None
+            boundary = tail.get("created_at") if isinstance(tail, dict) else None
+            if not rows or len(rows) < 20 or (str(boundary).isdigit() and int(boundary) < since):
+                break
+            cursor = str((rows[-1].get("post") or {}).get("post_id") or "")
+            if not cursor or cursor == last:
+                return None
+            last = cursor
+            if page == 2:
+                log.warning("[%s] official news discovery reached pagination bound; retry without advancing baseline", game.key)
+                return None
+    return sorted(picked.values(), key=lambda row: (row["ts"], row["id"]))
+
+
+async def news_article(fetcher: Fetcher, game: Game, row: dict) -> Item | None:
+    from ..textutil import news_blocks
+
+    full = await _full_post(fetcher, game.hoyolab_gid, row["id"])
+    if not isinstance(full, dict) or not isinstance(full.get("post"), dict):
+        return None
+    post = full["post"]
+    if (str(post.get("post_id")) != row["id"] or str(post.get("game_id")) != str(game.hoyolab_gid)
+            or not str(post.get("subject") or "").strip()):
+        return None
+    published = post.get("created_at")
+    if not str(published).isdigit() or int(published) != row["ts"]:
+        return None
+    video_urls, videos = [], {}
+    # Native VOD metadata is outside structured_content; resolve its IDs in-place.
+    # Highest supplied resolution is selected, never an arbitrary 720p ceiling.
+    for field in ("vod_list", "video"):
+        vods = full.get(field) or []
+        if isinstance(vods, dict):
+            vods = [vods]
+        for vod in vods:
+            resolutions = vod.get("resolutions") or vod.get("resolution") or []
+            candidates = [r for r in resolutions if isinstance(r, dict) and r.get("url")]
+            if not candidates:
+                video_urls.append(None)
+                continue
+            best = max(candidates, key=lambda r: (int(r.get("height") or 0), int(r.get("bitrate") or 0)))
+            url = best["url"]
+            video_urls.append(url)
+            for key in ("id", "video_id", "vod_id"):
+                if vod.get(key) is not None:
+                    videos[str(vod[key])] = url
+    content = post.get("content") or ""
+    if post.get("view_type") == 5 and content.lstrip().startswith("{"):
+        content = json.loads(content).get("describe") or ""
+    blocks = news_blocks(content, post.get("structured_content") or "", videos)
+    seen_videos = {b.get("url") for b in blocks if b["kind"] == "video"}
+    for url in video_urls:
+        if not url:
+            blocks.append({"kind": "text", "text": "\n[Native video unavailable — open the original article.]\n"})
+            continue
+        if url not in seen_videos:
+            blocks.append({"kind": "video", "url": url})
+            seen_videos.add(url)
+    # Full-response image_list supplements body media; covers are only a last resort.
+    seen = {b.get("url") for b in blocks}
+    for image in full.get("image_list") or []:
+        url = image.get("url") if isinstance(image, dict) else None
+        if url and url not in seen:
+            blocks.append({"kind": "image", "url": url})
+            seen.add(url)
+    if not blocks:
+        return None  # never publish a truncated list preview as a full article
+    user = full.get("user") or {}
+    return Item(source="hoyolab", game=game.key, id=row["id"], url=ARTICLE_URL.format(row["id"]),
+                title=post["subject"], text="", published_ts=row["ts"], article_blocks=blocks,
+                author=str(user.get("nickname") or game.name),
+                images=[entry["url"] for entry in (full.get("cover_list") or [])
+                        if isinstance(entry, dict) and entry.get("url")][:1])

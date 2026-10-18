@@ -1,4 +1,4 @@
-"""Checks for a newer STABLE Python minor series and, if one exists, bumps the two
+"""Checks for a newer STABLE Python patch or next minor series and, if one exists, bumps the existing
 workflow files (+ ruff.toml, when Ruff already understands that target) in place.
 
 Used by .github/workflows/python_version_bump.yml. Dependabot cannot do this job: the
@@ -9,7 +9,7 @@ Source of truth: actions/python-versions' versions-manifest.json — the EXACT l
 actions/setup-python itself downloads from. Anything this script proposes is therefore
 already installable on the runner the moment the PR opens; nothing is guessed.
 
-Deliberately narrow: the ONLY files it may ever write inside the repository are the two
+Deliberately narrow: the ONLY files it may ever write inside the repository are the allowlisted
 workflow YAMLs and ruff.toml (see ALLOWED_WRITES). It never creates, rewrites or even reads
 a README or anything under docs/ — a production repo that carries nothing but monitor.yml
 must be able to run this unchanged, and it does: every target is skipped when absent.
@@ -35,14 +35,15 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 WORKFLOW_FILES = [
     os.path.join(ROOT, ".github", "workflows", "ci.yml"),
     os.path.join(ROOT, ".github", "workflows", "monitor.yml"),
+    os.path.join(ROOT, ".github", "workflows", "python_version_bump.yml"),
 ]
 RUFF_TOML = os.path.join(ROOT, "ruff.toml")
 # The complete set of repository files this script is permitted to modify. Nothing else is
 # opened for writing, so no README and no doc can ever be rewritten by a bump — the failure
 # mode that corrupted dated history entries in a sibling repository.
-ALLOWED_WRITES = frozenset({"ci.yml", "monitor.yml", "ruff.toml"})
+ALLOWED_WRITES = frozenset({"ci.yml", "monitor.yml", "python_version_bump.yml", "ruff.toml"})
 MANIFEST_URL = "https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json"
-PIN_RE = re.compile(r"(python-version:\s*')(\d+\.\d+)(')")
+PIN_RE = re.compile(r"(python-version:\s*')(\d+\.\d+\.\d+)(')")
 RUFF_TARGET_RE = re.compile(r'(target-version\s*=\s*")py(\d+)(")')
 
 
@@ -70,18 +71,13 @@ def _out(key: str, value: str) -> None:
         print(line, end="")
 
 
-def current_pin() -> tuple[int, int] | None:
-    """The pinned series, read from the first workflow present that declares one.
-
-    Dev answers from ci.yml, prod from monitor.yml. Both pin the same series, so the order
-    only decides which file is consulted first, never the answer.
-    """
+def current_pin() -> tuple[int, int, int] | None:
+    """Read an exact patch pin from the first available allowlisted workflow."""
     for path in _present(WORKFLOW_FILES):
         with open(path, encoding="utf-8") as fh:
-            m = PIN_RE.search(fh.read())
-        if m:
-            major, minor = m.group(2).split(".")
-            return int(major), int(minor)
+            match = PIN_RE.search(fh.read())
+        if match:
+            return tuple(int(part) for part in match.group(2).split("."))
     return None
 
 
@@ -95,27 +91,30 @@ def fetch_manifest() -> list[dict] | None:
         return None
 
 
-def highest_stable_minor(manifest: list[dict]) -> tuple[tuple[int, int], str] | None:
-    """-> ((major, minor), full 'X.Y.Z' of the newest patch) for the newest STABLE CPython 3.x
-    series that has a Linux build (what ci.yml / monitor.yml actually run on)."""
-    best: tuple[int, int] | None = None
-    best_full = ""
+def next_stable_version(manifest: list[dict], current: tuple[int, int, int]) -> tuple[int, int, int] | None:
+    """Prefer a current-series patch, then the next minor; never skip series/major."""
+    candidates = []
+    if not isinstance(manifest, list):
+        return None
     for entry in manifest:
-        if not entry.get("stable"):
+        if not isinstance(entry, dict):
             continue
         version = str(entry.get("version") or "")
-        parts = version.split(".")
-        if len(parts) < 3 or not all(p.isdigit() for p in parts[:3]):
+        if not entry.get("stable") or not re.fullmatch(r"3\.\d+\.\d+", version):
             continue
-        major, minor = int(parts[0]), int(parts[1])
-        if major != 3:
+        files = entry.get("files")
+        if not isinstance(files, list) or not any(
+                isinstance(file, dict) and file.get("platform") == "linux" and file.get("arch") == "x64"
+                for file in files):
             continue
-        if not any((f.get("platform") or "").lower() == "linux" for f in entry.get("files") or []):
-            continue
-        key = (major, minor)
-        if best is None or key > best or (key == best and version > best_full):
-            best, best_full = key, version
-    return (best, best_full) if best else None
+        candidate = tuple(int(part) for part in version.split("."))
+        if candidate > current:
+            candidates.append(candidate)
+    for series in (current[:2], (current[0], current[1] + 1)):
+        eligible = [candidate for candidate in candidates if candidate[:2] == series]
+        if eligible:
+            return max(eligible)
+    return None
 
 
 def ruff_understands(target: str) -> bool:
@@ -150,6 +149,10 @@ def bump_ruff_toml(new_major: int, new_minor: int) -> bool:
         print("note: no ruff.toml in this repository — nothing to bump there")
         return False
     target = f"py{new_major}{new_minor}"
+    with open(RUFF_TOML, encoding="utf-8") as fh:
+        current = RUFF_TARGET_RE.search(fh.read())
+    if current and current.group(2) == f"{new_major}{new_minor}":
+        return False
     if not ruff_understands(target):
         print(f"::warning::ruff does not recognise --target-version {target} yet — "
               "leaving ruff.toml unchanged; bump it separately once ruff adds support")
@@ -165,31 +168,20 @@ def bump_ruff_toml(new_major: int, new_minor: int) -> bool:
 
 
 def write_body(old: str, new: str, new_full: str, ruff_bumped: bool) -> None:
-    ruff_line = ("- `ruff.toml` `target-version` bumped to match (`ruff` already understands it)."
-                if ruff_bumped else
-                "- `ruff.toml` **left unchanged** — the installed `ruff` doesn't recognise this "
-                "target yet; bump it in a follow-up once a new `ruff` release adds support.")
-    body = f"""### Automated Python version bump: {old} → {new}
+    ruff_line = ("Updated to the validated major/minor target." if ruff_bumped else
+                 "Unchanged: same target or installed Ruff does not support the new target.")
+    body = f"""### Python update: {old} → {new}
 
-Opened by `.github/workflows/python_version_bump.yml`, which runs weekly and compares the
-pinned `python-version:` against [`actions/python-versions`'s own release manifest]({MANIFEST_URL})
-— the exact list `actions/setup-python` downloads from. **{new_full}** is marked `stable` there
-with a Linux build, so it is already installable on this repo's runners today.
+Candidate {new_full} is a stable Linux x64 build in the actions/python-versions manifest.
+The workflow publishes this PR only after interpreter installation, wheels-only dependency
+installation, compilation, validation, all offline runners and preview generation pass.
 
-- `ci.yml` and `monitor.yml`: `python-version: '{old}'` → `'{new}'`.
-{ruff_line}
-- **Everything was already proved green BEFORE this PR existed**, under the **new** interpreter:
-  every dependency installed from a prebuilt wheel (`--only-binary=:all:`), then `compileall` +
-  `validate` + the offline suite + the preview render. `ci.yml` also runs on this PR normally —
-  it is opened with a personal access token, so workflow triggers fire — but that check arrives
-  after the fact; the gate inside the bump job is what decided this PR was worth opening.
-- **This PR does not merge itself by default.** It merges automatically only if the repository
-  variable `AUTO_MERGE_PYTHON_BUMP` is set to **`all`**. `yes` deliberately does *not* merge a
-  series bump in this repo — so leaving it at `yes`, or unset, means this one waits for you.
-- Patch releases within the `{new}` series (e.g. the next bugfix release) need no further PRs —
-  pinning the minor only (not the full `X.Y.Z`) means the runner always picks the newest patch.
-- The **next** minor bump after this one will need another PR like this one; Python ships a new
-  minor series roughly every October.
+- Existing allowlisted workflow pins change from {old} to {new}; no historical docs are rewritten.
+- Ruff target: {ruff_line}
+- Patch and next-minor proposals always wait for attended review/merge, regardless of
+  the legacy AUTO_MERGE_PYTHON_BUMP variable. Major migrations are manual work.
+- Review affected current-runtime docs before merging. After updating a live workflow,
+  confirm its next run executes; GitHub can still require human security approval.
 """
     path = os.environ.get("PR_BODY_PATH", "/tmp/python_bump_body.md")
     with open(path, "w", encoding="utf-8") as fh:
@@ -202,7 +194,7 @@ def main() -> int:
         print("::warning::could not find a python-version pin in ci.yml — skipping")
         _out("changed", "false")
         return 0
-    old_str = f"{pin[0]}.{pin[1]}"
+    old_str = ".".join(str(part) for part in pin)
     # Known from here on. Emit it now so every run reports the pin — including the
     # "up to date" and manifest-failure paths, where it is the only useful fact.
     _out("old_version", old_str)
@@ -210,17 +202,13 @@ def main() -> int:
     if manifest is None:
         _out("changed", "false")
         return 0
-    hit = highest_stable_minor(manifest)
-    if hit is None:
-        print("::warning::manifest had no stable Linux CPython 3.x build — skipping")
+    candidate = next_stable_version(manifest, pin)
+    if candidate is None:
+        print(f"up to date: no eligible stable patch or next minor after {old_str}")
         _out("changed", "false")
         return 0
-    (new_major, new_minor), new_full = hit
-    new_str = f"{new_major}.{new_minor}"
-    if (new_major, new_minor) <= pin:
-        print(f"up to date: {old_str} is already the newest stable series ({new_str} <= {old_str})")
-        _out("changed", "false")
-        return 0
+    new_major, new_minor, _ = candidate
+    new_str = new_full = ".".join(str(part) for part in candidate)
     print(f"bumping {old_str} -> {new_str} (newest stable patch: {new_full})")
     changed_files = bump_workflow_files(new_str)
     ruff_bumped = bump_ruff_toml(new_major, new_minor)
