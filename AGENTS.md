@@ -304,6 +304,19 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
   maintained everywhere: the test count used to appear in seven files and is now written down in
   none. The README is a **manual**: deep reference belongs in `docs/`, history belongs in
   `docs/changelog/`.
+- **README structure is an invariant.** Keep the root README a concise user manual,
+  not an append-only handoff log. Every shipped feature must appear in its numbered
+  "What it posts" section (schedule, codes, optional official news). Put detailed
+  setup, variables/secrets, rendering policies, media bounds and verification in
+  existing `docs/` references; update `docs/README.md` with working links. Integrate
+  corrections into the canonical section instead of appending "latest" or
+  "supersedes earlier" policy dumps. Keep **Legal & credits as the final root
+  README section**, preserve its existing links/attribution, and never append a
+  feature beneath it. Keep changelog entries newest-first with a matching row in
+  `docs/changelog/README.md`; do not put current-policy appendices after old history.
+  Verify touched paths/anchors, headings, defaults and duplicate/stale statements.
+  Passing CI or an apply check is not proof of a fully audited manual or bug-free
+  runtime. Distinguish exact-file equality, functional checks and live evidence.
 - **Comments explain *why*, including the incident that caused the line.** That style is why this
   repo is debuggable; keep it.
 - **Branch/PR**: work on a branch, open a PR, let `test` go green. Never push to `main` directly;

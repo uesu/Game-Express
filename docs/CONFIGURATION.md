@@ -269,16 +269,10 @@ their existing routing and behavior; the news adapter does not extract codes or
 add a second mirror. News cards are silent, with Read Post, Citlali News and Donate.
 ANANTA remains an inactive source slot (no verified adapter); Wangyue is excluded.
 
-News defaults to article-order layout; `NEWS_GROUP_LONG_STRIPS=1` optionally
-groups measured consecutive long strips. First try one Discord message. If all
-text/components fit the message-wide
-4,000-character / 40-component budget, keep all retrievable content in source
-order across containers. Otherwise try at most two pages when normalized text
-including title/byline once is <=7,000; if unsafe/unpageable, send one labelled excerpt container,
-at most one lead image, and the three custom-emoji buttons. Only the final container
-has the button row. Overflow keeps approximately half the words of the already
-budget-fitting opening excerpt, not half the entire source. Shorter articles keep
-their complete text. Line-leading `●` and `•` become Markdown `- ` bullets.
+News defaults to article-order layout; optional measured grouping is described
+below. Follow the full-content paging/excerpt rules below: limits are shared by
+all containers in each message, and buttons occur only in the final container
+of the final message. Line-leading `●` and `•` become Markdown `- ` bullets.
 Unknown publication times are omitted, not fabricated.
 HoYoLAB attribution uses the actual nickname when present, otherwise the configured
 game name. Descriptive text links are masked once; self-labelled URLs stay bare;
@@ -346,7 +340,7 @@ Event start/end dates and "In Progress"/"Already Ended" badges are not new
 publication times: existing old events are not reposted when enabled.
 
 
-## Current official-news paging policy (supersedes earlier one-message-only wording)
+### Full-content paging and overflow
 
 Keep fitting full articles unchanged in one message (possibly multiple containers).
 If that fails, permit at most two actual messages when normalized source text plus
@@ -368,24 +362,19 @@ captures are not full-source length evidence. Pagination is tested across all
 five game keys with synthetic boundary inputs, not five live integrations.
 
 
-### Latest layout corrections: 7,000 eligibility / final-container controls
+### Source-preserving formatting
 
-This is the current rendering rule across all five games. The eligibility ceiling
-is now 7,000 normalized source-text characters including title/byline once, with
-at most two actual Discord messages; every message must independently validate
-against the unchanged 4,000 text-character and 40-component caps. Failure to fit
-safely in two messages still uses the existing one-container/one-lead excerpt.
-All three custom-emoji buttons appear only at the end of the final container of
-the final message, including one-message/multi-container articles. Keep Part 1/2
-and Part 2/2 for containers in one message, Page 1/Page 2 for separate messages.
-Compact consecutive square (■) entries like numbered lists. HTML list items
-containing nested paragraphs must keep '- ' attached to their first visible text;
-fix parser block boundaries, not source-specific wording. Source HTML/API/mirror
-responses and media URLs remain untouched. A historical maintenance notice remains
-schedule-routed: a length allowance does not make it eligible for news/backfill.
-The one integrated HTML contains the main previews and complete browser-only
-long-strip laboratory; optional backend grouping is implemented below.
+Keep Part 1/2 and Part 2/2 for containers in one message, and Page 1/Page 2 for
+separate messages. Never repeat title/byline/lead on continuation pages. All three
+custom-emoji controls appear only at the end of the final container of the final
+message, including single-message layouts with multiple containers.
 
+Compact consecutive numeric, circled-number, alphabetic and square (`■`) entries
+without rewriting words/markers or crossing ordinary paragraph/section boundaries.
+HTML list items with nested paragraphs must keep `- ` attached to their first
+visible text. Correct converter boundaries, not source-specific wording. Marker
+spacing only pads existing `※`/`✦`; never insert a missing source marker to match
+a screenshot. Preserve source HTML/API/mirror responses and exact media URLs.
 
 ### Optional measured long-strip grouping — implemented
 
@@ -423,3 +412,20 @@ review rather than replaying already confirmed pages. Do not toggle layout modes
 mid-partial delivery without reviewing that hold. No state reset or old-post edits.
 Discord controls thumbnail cropping; neither header measurements, HTML previews
 nor passing offline tests prove live media decoding/readability or delivery.
+
+### Source coverage and safe verification
+
+HoYoLAB discovery/full-body adapters cover GI (gid 2), HSR (6), HNA (9) and
+ZZZ (8), including Official Info, Events and Notices. WuWa discovery is limited
+to the current official English index; it is not historical archive discovery.
+A manually trimmed capture cannot establish a complete article's length or prove
+current direct official-host ingestion. Historical maintenance examples remain
+schedule-routed; presentation changes do not reroute or backfill them.
+
+Before opting in, use [the existing verification commands](TESTING.md#official-news-offline-coverage-and-read-only-checks)
+and review [source limits](SOURCES.md#optional-full-content-news-adapter-2026-10-18).
+Offline previews/tests validate payload construction, not live source availability,
+Discord media access, codecs, delivery or thumbnail readability. Keep news off
+until the operator explicitly approves opt-in. Review partial-delivery holds;
+never reset delivery state merely to test. No new scheduler, tokens or upload
+service are needed. Keep each installation's state and secrets independent.
