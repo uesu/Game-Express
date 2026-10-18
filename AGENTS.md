@@ -1,5 +1,15 @@
 # AGENTS.md — orientation for AI agents and future sessions
 
+## Attended workflow updates
+
+Eligible package-only Dependabot PRs retain opt-in auto-merge. Any PR changing
+`.github/workflows/` (including a rename from that directory) waits for manual
+review/merge. All Python update PRs are also attended; the legacy
+`AUTO_MERGE_PYTHON_BUMP` variable is ignored. Do not auto-approve GitHub security
+holds. After a live-workflow update, confirm a real monitor run starts/completes;
+a successful dispatch or PR CI is not proof of live execution. A hold can still
+occur: this policy reduces unattended exposure, not the security gate itself.
+
 ## Fast, exact incremental PR updates
 
 - Continue the specified existing PR; implement only the newest requested delta.

@@ -1,5 +1,15 @@
 # Dependabot: do we need it?
 
+## Attended workflow updates
+
+Eligible package-only Dependabot PRs retain opt-in auto-merge. Any PR changing
+`.github/workflows/` (including a rename from that directory) waits for manual
+review/merge. All Python update PRs are also attended; the legacy
+`AUTO_MERGE_PYTHON_BUMP` variable is ignored. Do not auto-approve GitHub security
+holds. After a live-workflow update, confirm a real monitor run starts/completes;
+a successful dispatch or PR CI is not proof of live execution. A hold can still
+occur: this policy reduces unattended exposure, not the security gate itself.
+
 **Short answer: it's optional. The monitor runs fine without it.** It is set up the same way as
 News-Express: it stays on in the development repo, and auto-merge is available but off by
 default.
@@ -58,14 +68,15 @@ It used to be a separate `workflow_run` workflow. That trigger never fired in pr
 a Dependabot PR is merged only if all of these hold:
 
 - the PR was opened by `dependabot[bot]`;
+- no changed/renamed/deleted path belongs to `.github/workflows/`;
 - the **test** job of CI passed for exactly this commit (the merge is pinned to the tested
   commit, so a newer push waits for its own CI run);
 - the PR is open, not a draft, and GitHub accepts the merge (squash, or whichever merge style
   your repo allows).
 
-For Dependabot PRs GitHub gives workflows a read-only token. The auto-merge job raises it with
-the `permissions` key for that one job, which GitHub explicitly allows. The job never checks
-out the PR's code.
+The merge job requests write permissions without checking out PR code. Repository/
+organization policy and token restrictions still apply; inspect the real merge
+result rather than assuming the permissions block guarantees authorization.
 
 **To enable it:** *Settings → Secrets and variables → Actions → Variables → New repository
 variable* → `AUTO_MERGE_DEPENDABOT` = `yes`. Delete the variable to turn it off again.
@@ -73,14 +84,8 @@ variable* → `AUTO_MERGE_DEPENDABOT` = `yes`. Delete the variable to turn it of
 **To turn Dependabot off completely:** delete `.github/dependabot.yml`. You can also turn off
 *Settings → Code security → Dependabot version updates*.
 
-**Note:** the Python interpreter version itself (`python-version: '3.14'`) is invisible to
-Dependabot — it's a plain string in workflow YAML, not a tracked ecosystem file.
-`python_version_bump.yml` covers that one gap on its own schedule, and it does **not** use the
-job described above: a PR it opens carries the built-in `GITHUB_TOKEN`, which GitHub refuses to
-let trigger further workflows, so no CI check can ever appear on it. It therefore runs the same
-gate itself, under the new interpreter, before the PR exists, and merges from there behind
-`AUTO_MERGE_PYTHON_BUMP=all` — `yes` deliberately does *not* merge a series bump in this repo.
-See [docs/PYTHON_VERSION.md](PYTHON_VERSION.md).
-
-That restriction does **not** apply to Dependabot, which GitHub does let trigger workflows — so
-the `test` job really does run on a Dependabot PR, and the gate above is real.
+**Python interpreter updates:** exact patch pins are maintained by the existing
+Python-bump workflow, not Dependabot. It publishes with BUMP_PAT after candidate
+validation; ordinary PR CI can then run. Every Python PR waits for attended
+review/merge; AUTO_MERGE_PYTHON_BUMP is legacy/ignored. See
+[PYTHON_VERSION.md](PYTHON_VERSION.md).

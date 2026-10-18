@@ -3609,6 +3609,57 @@ def test_countdown_ignores_a_banner_countdown_and_a_server_rendered_zero():
     assert countdown.parse_page("update", past, now) is None             # already gone by
 
 
+def test_workflow_updates_are_attended_and_package_guard_is_rename_aware():
+    workflow = ROOT / ".github" / "workflows"
+    source = (workflow / "ci.yml").read_text(encoding="utf-8")
+    import json
+    import shutil
+    import subprocess
+
+    if shutil.which("node"):
+        start = source.index("const requiresWorkflowReview =")
+        helper = source[start:source.index(";", start) + 1]
+        fixtures = [
+            ([{"filename": "requirements.txt"}], False),
+            ([{"filename": ".github/workflows/monitor.yml"}], True),
+            ([{"filename": "renamed.txt", "previous_filename": ".github/workflows/old.yml"}], True),
+            ([{"filename": ".github/workflows/deleted.yml", "status": "removed"}], True),
+            ([{"filename": "README.md"}], False),
+            ([{"filename": "requirements.txt"}] * 110 + [{"filename": ".github/workflows/ci.yml"}], True),
+        ]
+        code = helper + "\nconst cases = " + json.dumps(fixtures) + ";\n"
+        code += "for (const [files, want] of cases) { if (requiresWorkflowReview(files) !== want) process.exit(1); }"
+        subprocess.run(["node", "-e", code], check=True, capture_output=True, text=True)
+    assert "github.paginate(github.rest.pulls.listFiles" in source
+    assert "file.previous_filename" in source
+    bump = (workflow / "python_version_bump.yml").read_text(encoding="utf-8")
+    assert "gh pr merge" not in bump
+    assert "vars.AUTO_MERGE_PYTHON_BUMP" not in bump
+
+
+def test_python_patch_selection_is_numeric_stable_and_one_series_at_a_time():
+    import importlib.util
+    from unittest import mock
+
+    path = ROOT / ".github" / "scripts" / "python_version_bump.py"
+    spec = importlib.util.spec_from_file_location("bump_exact_policy", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def entry(version, *, stable=True, arch="x64"):
+        return {"version": version, "stable": stable, "files": [{"platform": "linux", "arch": arch}]}
+
+    current = (3, 14, 8)
+    assert len(module.current_pin()) == 3
+    assert module.next_stable_version([entry("3.14.9"), entry("3.14.10"), entry("3.15.2")], current) == (3, 14, 10)
+    assert module.next_stable_version([entry("3.15.2"), entry("3.15.10"), entry("3.16.0")], current) == (3, 15, 10)
+    assert module.next_stable_version([entry("3.16.0"), entry("4.0.0"), entry("3.15.0rc1"), entry("3.15.0", stable=False)], current) is None
+    assert module.next_stable_version([entry("3.14.8"), entry("3.14.10", arch="arm64")], current) is None
+    target = module.RUFF_TARGET_RE.search(Path(module.RUFF_TOML).read_text(encoding="utf-8")).group(2)
+    with mock.patch.object(module, "ruff_understands", side_effect=AssertionError("unchanged target must not probe")):
+        assert module.bump_ruff_toml(int(target[0]), int(target[1:])) is False
+
+
 def test_python_bump_is_safe_in_a_docless_production_repo():
     """The bump must run in a repo that has monitor.yml and nothing else.
 
@@ -3618,11 +3669,12 @@ def test_python_bump_is_safe_in_a_docless_production_repo():
     open a Markdown file for writing.
     """
     import importlib.util
+    import re
     import shutil
     import tempfile
     from unittest import mock
 
-    fake = [{"version": "3.99.0", "stable": True, "files": [{"platform": "linux"}]}]
+    fake = [{"version": "3.15.99", "stable": True, "files": [{"platform": "linux", "arch": "x64"}]}]
     script = ROOT / ".github" / "scripts" / "python_version_bump.py"
 
     for shape in ("prod", "dev"):
@@ -3641,6 +3693,17 @@ def test_python_bump_is_safe_in_a_docless_production_repo():
                             root / ".github" / "workflows" / "ci.yml")
                 shutil.copy(ROOT / "ruff.toml", root / "ruff.toml")
 
+            # Fixed synthetic pins keep this fixture valid after future real bumps.
+            for workflow in (root / ".github" / "workflows").glob("*.yml"):
+                text = workflow.read_text(encoding="utf-8")
+                workflow.write_text(re.sub(r"(python-version:\s*')\d+\.\d+\.\d+(')",
+                                           r"\g<1>3.14.8\2", text), encoding="utf-8")
+            ruff = root / "ruff.toml"
+            if ruff.exists():
+                text = ruff.read_text(encoding="utf-8")
+                ruff.write_text(re.sub(r'(target-version\s*=\s*")py\d+(")',
+                                       r'\g<1>py314\2', text), encoding="utf-8")
+
             spec = importlib.util.spec_from_file_location(
                 f"bump_{shape}", root / ".github" / "scripts" / "python_version_bump.py")
             mod = importlib.util.module_from_spec(spec)
@@ -3653,13 +3716,13 @@ def test_python_bump_is_safe_in_a_docless_production_repo():
             os.environ.update(env)
             output = io.StringIO()
             try:
-                # Python 3.99 is synthetic: never consult the runner's Ruff.
+                # Python 3.15.99 is synthetic: never consult the runner's Ruff.
                 with (mock.patch.object(mod, "ruff_understands", return_value=False) as supports,
                       contextlib.redirect_stdout(output)):
                     assert mod.main() == 0
                 if shape == "dev":
-                    supports.assert_called_once_with("py399")
-                    assert "ruff does not recognise --target-version py399" in output.getvalue()
+                    supports.assert_called_once_with("py315")
+                    assert "ruff does not recognise --target-version py315" in output.getvalue()
                 else:
                     supports.assert_not_called()
                     assert "::warning::" not in output.getvalue()
@@ -3671,7 +3734,7 @@ def test_python_bump_is_safe_in_a_docless_production_repo():
                         os.environ[k] = v
 
             text = out.read_text(encoding="utf-8")
-            assert "old_version=3.14" in text               # read from whatever exists
+            assert "old_version=3.14.8" in text               # read from whatever exists
             assert "changed=true" in text
             # the Markdown in the repo is byte-identical afterwards
             assert (root / "README.md").read_text(encoding="utf-8") == "pinned to 3.14\n"
@@ -3680,14 +3743,14 @@ def test_python_bump_is_safe_in_a_docless_production_repo():
             staged = [ln for ln in text.splitlines()
                       if ln.endswith((".yml", ".toml")) or ln.startswith("changed_files")]
             assert staged and not any(".md" in ln for ln in staged), staged
-            assert "'3.99'" in (root / ".github" / "workflows" / "monitor.yml").read_text(
+            assert "'3.15.99'" in (root / ".github" / "workflows" / "monitor.yml").read_text(
                 encoding="utf-8")
             if shape == "prod":
                 assert "changed_files=.github/workflows/monitor.yml" in text
                 assert "ruff_bumped=false" in text
 
     src = script.read_text(encoding="utf-8")
-    assert "ALLOWED_WRITES" in src and '"ci.yml", "monitor.yml", "ruff.toml"' in src
+    assert "ALLOWED_WRITES" in src and '"ci.yml", "monitor.yml", "python_version_bump.yml", "ruff.toml"' in src
 
 
 def test_the_documented_nitter_fleet_size_matches_the_code():

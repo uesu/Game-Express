@@ -152,8 +152,9 @@ Two consequences if you do copy it:
 
 - It needs its own **`BUMP_PAT`** secret in the prod repo (§3) — the built-in token may not
   write under `.github/workflows/`.
-- Leave `AUTO_MERGE_PYTHON_BUMP` **unset** in prod. A new Python series reaching the live bot
-  unreviewed is the one thing this whole split exists to prevent. The PR will sit and wait.
+- `AUTO_MERGE_PYTHON_BUMP` is legacy/ignored. All Python patch/minor PRs wait
+  for attended review/merge; no variable value bypasses that policy. After a
+  live-workflow update, confirm a real run executes and review any GitHub hold.
 
 If you skip it, delete nothing else — just don't copy these two files, and rely on §8 syncs to
 carry the pin.
@@ -308,7 +309,7 @@ not something you create.
 | `PING_SCHEDULE` | `<@&…>` | dev currently pings a real role. Copy the same value to keep behaviour identical, or set `none` for a silent prod |
 | `ENABLED_FEATURES` | **do not set** | default is `schedule,codes`. Setting it to `none` is the kill switch — never on prod |
 | `AUTO_MERGE_DEPENDABOT` | **do not copy** | dev-only, there is no Dependabot in prod |
-| `AUTO_MERGE_PYTHON_BUMP` | **do not copy** | dev-only |
+| `AUTO_MERGE_PYTHON_BUMP` | not needed | legacy/ignored in all instances |
 
 ⚠️ `PING_SCHEDULE` is resolved first-set-wins (`PING_<FEATURE>_<GAME>` → `PING_<FEATURE>` →
 `PING_ROLE_ID`), and the literal string `none` **counts as set** — it will beat a correct
