@@ -1,5 +1,16 @@
 # Changelog — current entries
 
+## Unreleased — application-only scope (2026-10-17)
+
+- Improve existing runner summary output in place; no new reporting module or
+  runtime file. Explain that repository commit/push happens later in the workflow.
+- Clarify privacy/terms disclosures for retained logs/summaries and repository
+  access; preserve attribution and warranty provisions.
+- Sanitize existing runner summary/annotations and source-summary output;
+  clarify that an empty report does not prove healthy sources or no eligible items.
+- Leave dependency/Python/Dependabot/update automation and posting/state rules
+  unchanged. Proposed code, not a claim of production deployment.
+
 The history that still describes the code on `main`: the Python 3.14 runtime, the automated
 version-bump workflow, the 1.9.0 performance and hardening pass, and everything dated since.
 

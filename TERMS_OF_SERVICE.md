@@ -1,6 +1,6 @@
 # Terms of Service
 
-**Effective date:** October 9, 2026
+**Effective date:** October 17, 2026
 **Applies to:** *Game-Express*, the open-source game version-schedule announcer and redemption-code
 poster ("the Service"), running as a GitHub Actions workflow that posts through Discord webhooks.
 
@@ -15,6 +15,13 @@ official X accounts, Kuro Games' website, official launcher APIs), **community a
 for banner lineups and estimated dates (official banner notices found by title, a community banner feed, game wikis, countdown sites), and
 **public redemption-code lists**, then post formatted cards to Discord channels that **you** control. There is no hosted
 service operated by the author on your behalf. Each operator runs their own instance.
+
+Operational logs and completion summaries are best-effort diagnostics, not
+proof of healthy sources, successful delivery or committed/pushed state. Follow
+the workflow result and existing per-item logs, review output before sharing it,
+and apply the repository/Discord access and retention settings appropriate to
+your instance. See [Privacy Policy](PRIVACY_POLICY.md). No separate analytics
+service is introduced by completion reporting.
 
 ## 3. No affiliation
 The Service is **not affiliated with, endorsed by, or sponsored by** HoYoverse / miHoYo, Kuro
