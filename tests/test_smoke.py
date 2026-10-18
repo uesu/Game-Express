@@ -6243,5 +6243,1270 @@ def test_existing_summary_sanitization_truthful_empty_report_and_failed_output()
                 os.environ[name] = value
 
 
+# =========================================================================== opt-in official news
+class NewsFetcher:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    async def get_json(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return self.responses.pop(0)
+
+
+def news_item(ident="100", ts=1789300010, body="Article body", title="Character introduction"):
+    return Item("hoyolab", "genshin", ident, f"https://www.hoyolab.com/article/{ident}", title, "", ts,
+                article_blocks=[{"kind": "text", "text": body}], author="Official Author")
+
+
+def news_ctx(path, now=1789300000, **env):
+    return make_ctx(path, now=now, NEWS_ENABLED="1", NEWS_GAMES="genshin",
+                    DISCORD_WEBHOOK_NEWS_GENSHIN=HOOK, **env)
+
+
+def test_news_opt_in_global_disable_and_no_routing_fallback():
+    assert "news" not in settings(ENABLED_FEATURES="news").features
+    assert "news" not in settings(NEWS_ENABLED="0", ONLY="news").features
+    assert settings(NEWS_ENABLED="1", ONLY="news").features == {"news"}
+    for disabled in ("none", "off", "standby", "0"):
+        assert not settings(NEWS_ENABLED="1", ENABLED_FEATURES=disabled).features
+    s = settings(NEWS_ENABLED="1", DISCORD_WEBHOOK_NEWS=HOOK, FORCE_WEBHOOK=HOOK)
+    for game in GAMES:
+        assert s.webhook("news", game) is None
+    s = settings(DISCORD_WEBHOOK_NEWS_HSR=HOOK)
+    assert s.webhook("news", "starrail") == HOOK
+    assert s.webhook("news", "genshin") is None
+    assert settings().webhook("schedule", "genshin") == HOOK
+    assert settings().webhook("codes", "genshin") == HOOK
+    assert settings(NEWS_MAX_POSTS_PER_RUN=100).news_max_posts == 20
+    assert settings(NEWS_MAX_POSTS_PER_RUN=-3).news_max_posts == 1
+
+
+def test_news_disabled_passive_missing_destination_make_no_requests_or_state():
+    from gamexpress.runner import run_news
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = news_ctx(Path(directory) / "state.json")
+        ctx.settings = settings()
+        asyncio.run(run_news(ctx))
+        assert "news" not in ctx.state.data
+        ctx = news_ctx(Path(directory) / "state.json")
+        ctx.active = False
+        asyncio.run(run_news(ctx))
+        assert "news" not in ctx.state.data
+        ctx = news_ctx(Path(directory) / "state.json")
+        ctx.settings = settings(NEWS_ENABLED=1, ONLY="news")
+        asyncio.run(run_news(ctx))  # fetcher=None fails if anything tries to fetch
+        assert "news" not in ctx.state.data and ctx.warnings
+
+
+def test_news_five_destinations_ananta_inactive_wangyue_absent():
+    s = settings(NEWS_ENABLED=1, **{f"DISCORD_WEBHOOK_NEWS_{key.upper()}": HOOK + key
+                                  for key in ("genshin", "starrail", "hna", "zzz", "wuwa")})
+    assert s.news_games == {"genshin", "starrail", "hna", "zzz", "wuwa"}
+    assert "ananta" not in s.news_games and "wangyue" not in GAMES
+    for key in s.news_games:
+        assert s.webhook("news", key) == HOOK + key
+    assert s.webhook("news", "ananta") is None
+
+
+def test_news_hoyolab_discovery_all_tabs_dedup_and_failure():
+    page = {"retcode": 0, "data": {"list": [{"post": {"post_id": "100", "created_at": 120, "game_id": 2}},
+                                                {"post": {"post_id": "101", "created_at": 120, "game_id": 6}},
+                                                {"post": {"post_id": "102", "created_at": 90}}]}}
+    f = NewsFetcher([page, page, page])
+    rows = asyncio.run(hoyolab.discover_news(f, GAMES["genshin"], 100))
+    assert rows == [{"id": "100", "ts": 120}]
+    assert {kw["params"]["type"] for _, kw in f.calls} == {1, 2, 3}
+    assert all(kw["params"]["gids"] == 2 for _, kw in f.calls)
+    for invalid in (None, {}, {"retcode": -1}, {"retcode": 0, "data": {}}, {"retcode": 0, "data": {"list": "bad"}}):
+        assert asyncio.run(hoyolab.discover_news(NewsFetcher([invalid]), GAMES["hna"], 100)) is None
+
+
+def test_news_hoyolab_pagination_and_repeated_cursor_fail_closed():
+    page = {"retcode": 0, "data": {"list": [{"post": {"post_id": str(i), "created_at": 120}}
+                                                for i in range(100, 120)]}}
+    empty = {"retcode": 0, "data": {"list": []}}
+    f = NewsFetcher([page, empty, empty, empty])
+    assert len(asyncio.run(hoyolab.discover_news(f, GAMES["genshin"], 100))) == 20
+    assert f.calls[1][1]["params"]["last_id"] == "119"
+    assert asyncio.run(hoyolab.discover_news(NewsFetcher([page, page]), GAMES["genshin"], 100)) is None
+
+
+def test_news_full_hoyolab_real_fixture_and_no_preview_delivery():
+    full = fx("hoyolab_genshin_46604275_full.json")
+    post = full["data"]["post"]["post"]
+    row = {"id": post["post_id"], "ts": post["created_at"]}
+    item = asyncio.run(hoyolab.news_article(NewsFetcher([full]), GAMES["genshin"], row))
+    assert item.title == post["subject"] and item.published_ts == row["ts"]
+    assert item.article_blocks[0]["kind"] == "image"
+    assert any("Dear Traveler" in block.get("text", "") for block in item.article_blocks)
+    assert asyncio.run(hoyolab.news_article(NewsFetcher([None]), GAMES["genshin"], row)) is None
+    wrong = json.loads(json.dumps(full))
+    wrong["data"]["post"]["post"]["game_id"] = 6
+    assert asyncio.run(hoyolab.news_article(NewsFetcher([wrong]), GAMES["genshin"], row)) is None
+    empty = json.loads(json.dumps(full))
+    empty["data"]["post"]["post"]["content"] = ""
+    assert asyncio.run(hoyolab.news_article(NewsFetcher([empty]), GAMES["genshin"], row)) is None
+
+
+def test_news_kuro_menu_detail_and_no_truncated_preview_fallback():
+    from gamexpress.sources import kuro
+    article = {"articleId": 5000, "articleTitle": "New character", "createTime": "2026-10-18 08:00:00",
+               "articleType": 1, "articleDesc": "TRUNCATED PREVIEW"}
+    f = NewsFetcher([{"article": [article]}])
+    rows = asyncio.run(kuro.discover_news(f, GAMES["wuwa"], 0))
+    assert rows[0]["ts"] == 1792281600
+    assert f.calls[0][0].endswith("/en/MainMenu.json")
+    assert asyncio.run(kuro.discover_news(NewsFetcher([{}]), GAMES["wuwa"], 0)) is None
+    assert asyncio.run(kuro.discover_news(NewsFetcher([{"article": []}]), GAMES["wuwa"], 0)) == []
+    assert asyncio.run(kuro.news_article(NewsFetcher([{}]), GAMES["wuwa"], rows[0])) is None
+    detail = {"articleId": 5000, "articleContent": '<p>Full body</p><img src="https://example.com/a.gif"><p>After</p>'}
+    item = asyncio.run(kuro.news_article(NewsFetcher([detail]), GAMES["wuwa"], rows[0]))
+    assert [b["kind"] for b in item.article_blocks] == ["text", "image", "text"]
+    assert item.author == "Kuro Games" and item.url.endswith("5000")
+    assert "TRUNCATED PREVIEW" not in json.dumps(item.article_blocks)
+
+
+def test_news_ordered_html_quill_gifs_videos_links_and_unknown_embeds():
+    from gamexpress.textutil import news_blocks
+    body = ('<p>Before <a href="https://example.com/source">link</a></p>'
+            '<img src="https://example.com/a.gif"><p>Between</p>'
+            '<video><source src="https://example.com/movie.mp4"></video>'
+            '<iframe src="https://youtube.com/embed/abcdefghijk"></iframe><p>After</p>')
+    blocks = news_blocks(body)
+    assert [b["kind"] for b in blocks] == ["text", "image", "text", "video", "link", "text"]
+    assert "https://example.com/source" in blocks[0]["text"]
+    assert "After" in blocks[-1]["text"]
+    quill = news_blocks("en-us", json.dumps([{"insert": "Before\n"},
+                                            {"insert": {"image": "https://example.com/a.gif"}},
+                                            {"insert": "After\n"}, {"insert": {"mystery": "unknown"}}]))
+    assert [b["kind"] for b in quill] == ["text", "image", "text", "text"]
+    assert "Unsupported" in quill[-1]["text"]
+    assert news_blocks("<script>secret</script><p>visible</p>")[0]["text"] == "visible"
+
+
+def test_news_overflow_one_message_one_container_lead_only_and_emoji_buttons():
+    item = news_item(body="Complete source sentence. " * 500)
+    item.article_blocks += [{"kind": "image", "url": "https://example.com/lead.gif"},
+                            {"kind": "image", "url": "https://example.com/second.png"}]
+    payloads = cards.news_payloads(GAMES["genshin"], item)
+    assert len(payloads) == 1 and len(payloads[0]["components"]) == 1
+    p = payloads[0]
+    assert not cards.validate_payload(p)
+    kids = p["components"][0]["components"]
+    body = "\n".join(c.get("content", "") for c in kids)
+    assert "Excerpt" in body and "remaining media" in body and "Official Author" in body
+    assert f"<t:{item.published_ts}:f>" in body and cards.text_length(p["components"]) <= 4000
+    assert [c["items"][0]["media"]["url"] for c in kids if c["type"] == 12] == ["https://example.com/lead.gif"]
+    assert [b["label"] for b in kids[-1]["components"]] == ["Read Post", "Citlali News", "Donate"]
+    assert all(b.get("emoji", {}).get("id") for b in kids[-1]["components"])
+
+
+def test_news_media_count_and_order_not_aspect_ranked_or_truncated():
+    item = news_item()
+    urls = [f"https://example.com/{i}.gif" for i in range(22)]
+    # Intentional repeat: article order/count must not be deduplicated by the renderer.
+    urls.append(urls[0])
+    item.article_blocks = [{"kind": "image", "url": url} for url in urls]
+    payloads = cards.news_payloads(GAMES["genshin"], item)
+    rendered = [media["media"]["url"] for p in payloads for co in p["components"] for c in co["components"]
+                if c["type"] == 12 for media in c["items"]]
+    assert rendered == urls
+    assert all(not cards.validate_payload(p) for p in payloads)
+
+
+def test_news_unsafe_media_defers_and_long_tokens_use_labelled_excerpt():
+    item = news_item()
+    item.article_blocks = [{"kind": "image", "url": "javascript:alert(1)"}]
+    try:
+        cards.news_payloads(GAMES["genshin"], item)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unsafe media accepted")
+    item.article_blocks = [{"kind": "text", "text": "x" * 5000}]
+    payload = cards.news_payloads(GAMES["genshin"], item)[0]
+    assert len(payload["components"]) == 1 and not cards.validate_payload(payload)
+    assert "Excerpt" in json.dumps(payload)
+
+
+def test_news_failed_discovery_does_not_bootstrap_then_silent_baseline_and_new_only():
+    from unittest.mock import patch
+
+    from gamexpress.runner import run_news
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = news_ctx(Path(directory) / "state.json")
+        with patch.object(hoyolab, "discover_news", return_value=None):
+            asyncio.run(run_news(ctx))
+        assert "news" not in ctx.state.data
+        with patch.object(hoyolab, "discover_news", return_value=[{"id": "old", "ts": ctx.now - 10}]):
+            asyncio.run(run_news(ctx))
+        assert ctx.state.news_record("genshin")["floor"] == ctx.now
+        assert ctx.webhook.sent == []
+        ctx.now += 20
+        rows = [{"id": "old", "ts": ctx.now - 30}, {"id": "100", "ts": ctx.now - 10}]
+        with patch.object(hoyolab, "discover_news", return_value=rows), patch.object(hoyolab, "news_article", return_value=news_item()):
+            asyncio.run(run_news(ctx))
+            asyncio.run(run_news(ctx))
+        assert len(ctx.webhook.sent) == 1
+        assert ctx.state.news_record("genshin")["records"]["100"]["status"] == "posted"
+        assert State.load(ctx.state.path).news_record("genshin")["records"]["100"]["status"] == "posted"
+
+
+def test_news_single_message_failed_send_retries_without_delivery_checkpoint():
+    from unittest.mock import patch
+
+    from gamexpress.runner import run_news
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = news_ctx(Path(directory) / "state.json")
+        with patch.object(hoyolab, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now += 20
+        row = {"id": "100", "ts": ctx.now - 10}
+        item = news_item(body="A full article sentence. " * 300)
+        ctx.webhook = ScriptedWebhook([], [SendResult(False, 503)])
+        with patch.object(hoyolab, "discover_news", return_value=[row]), patch.object(hoyolab, "news_article", return_value=item):
+            asyncio.run(run_news(ctx))
+        assert "100" not in ctx.state.news_record("genshin")["records"]
+        ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, "only-message")])
+        with patch.object(hoyolab, "discover_news", return_value=[row]), patch.object(hoyolab, "news_article", return_value=item):
+            asyncio.run(run_news(ctx))
+        rec = ctx.state.news_record("genshin")["records"]["100"]
+        assert rec["status"] == "posted" and rec["messages"] == ["only-message"]
+        assert len(ctx.webhook.sends) == 1
+
+
+def test_news_full_fetch_failure_does_not_mark_or_block_later_candidate():
+    from unittest.mock import patch
+
+    from gamexpress.runner import run_news
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = news_ctx(Path(directory) / "state.json")
+        with patch.object(hoyolab, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now += 20
+        rows = [{"id": "bad", "ts": ctx.now - 15}, {"id": "100", "ts": ctx.now - 10}]
+        with patch.object(hoyolab, "discover_news", return_value=rows), patch.object(hoyolab, "news_article", side_effect=[None, news_item()]):
+            asyncio.run(run_news(ctx))
+        records = ctx.state.news_record("genshin")["records"]
+        assert "bad" not in records and records["100"]["status"] == "posted"
+        assert len(ctx.webhook.sent) == 1 and any("bad" in line for line in ctx.warnings)
+
+
+def test_news_schedule_announcements_are_excluded_from_news_without_moving_codes():
+    from unittest.mock import patch
+
+    from gamexpress.runner import run_news
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = news_ctx(Path(directory) / "state.json")
+        with patch.object(hoyolab, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now += 20
+        for i, title in enumerate(("Version 7.1 Special Program Preview", "Version 7.1 Update and Maintenance Notice")):
+            row = {"id": str(i), "ts": ctx.now - 10}
+            with patch.object(hoyolab, "discover_news", return_value=[row]), patch.object(hoyolab, "news_article", return_value=news_item(str(i), title=title)):
+                asyncio.run(run_news(ctx))
+        assert not ctx.webhook.sent
+        assert all(rec["excluded"] == "schedule" for rec in ctx.state.news_record("genshin")["records"].values())
+        assert ctx.state.data["schedule"] == {} and ctx.state.data["codes"] == {}
+
+
+def test_news_dry_run_test_mode_and_changed_route_are_safe():
+    from unittest.mock import patch
+
+    from gamexpress.runner import run_news
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "state.json"
+        ctx = news_ctx(path, DRY_RUN="1")
+        with patch.object(hoyolab, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now += 20
+        with patch.object(hoyolab, "discover_news", return_value=[{"id": "100", "ts": ctx.now - 10}]), patch.object(hoyolab, "news_article", return_value=news_item()):
+            asyncio.run(run_news(ctx))
+        assert len(ctx.webhook.sent) == 1 and not path.exists()
+        ctx.settings = replace(ctx.settings, test_mode=True)
+        ctx.fetcher = None
+        asyncio.run(run_news(ctx))
+        assert any("test-mode" in line for line in ctx.warnings)
+        ctx.settings = replace(ctx.settings, test_mode=False)
+        ctx.state.news_record("genshin")["route"] = "different-route"
+        asyncio.run(run_news(ctx))  # no request: no fetcher
+        assert any("destination changed" in line for line in ctx.warnings)
+
+
+def test_news_off_on_rebaseline_and_partials_remain_protected():
+    from unittest.mock import patch
+
+    from gamexpress.runner import run_news
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = news_ctx(Path(directory) / "state.json")
+        with patch.object(hoyolab, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        rec = ctx.state.news_record("genshin")
+        rec["paused"] = True
+        ctx.now += 1000
+        with patch.object(hoyolab, "discover_news", return_value=[{"id": "100", "ts": ctx.now - 10}]):
+            asyncio.run(run_news(ctx))
+        assert rec["floor"] == ctx.now and not rec["paused"] and not ctx.webhook.sent
+
+
+def test_news_cleanup_bounded_safe_floor_and_partial_protection():
+    now = 1800000000
+    state = State(Path("unused"))
+    game = state.news_record("genshin")
+    game.update(floor=1, records={str(i): {"status": "posted", "ts": now - 3 * 86400 + i} for i in range(500)})
+    game["records"]["partial"] = {"status": "partial", "ts": now - 60 * 86400, "messages": ["one"]}
+    state.prune_news(now)
+    assert len(game["records"]) == 499 and "partial" in game["records"]
+    assert game["floor"] >= now - 3 * 86400
+    recent = state.news_record("starrail")
+    recent.update(floor=1, records={str(i): {"status": "posted", "ts": now - 500 + i} for i in range(500)})
+    state.prune_news(now)
+    assert len(recent["records"]) == 500 and recent["floor"] == 1
+    old = state.news_record("wuwa")
+    old.update(floor=1, records={"old": {"status": "posted", "ts": now - 31 * 86400}})
+    state.prune_news(now)
+    assert not old["records"] and old["floor"] == now - 31 * 86400
+
+
+def test_news_peer_merge_deduplicates_completed_and_partial_progress():
+    peer = State(Path("unused-peer"))
+    rec = peer.news_record("genshin")
+    rec.update(floor=100, route="same", records={"p": {"status": "partial", "ts": 110, "signature": "sig", "messages": ["one"]},
+                                               "done": {"status": "posted", "ts": 120, "messages": ["two"]}})
+    own = State(Path("unused"))
+    assert own.merge_peer(peer.data) == 0 and "news" not in own.data
+    assert own.merge_peer(peer.data, include_news=True) == 2
+    assert own.news_record("genshin")["records"]["p"]["messages"] == ["one"]
+    rec["records"]["p"].update(status="posted", messages=["one", "three"])
+    assert own.merge_peer(peer.data, include_news=True) == 1
+    assert own.news_record("genshin")["records"]["p"]["status"] == "posted"
+    assert own.merge_peer(peer.data, include_news=True) == 0
+
+
+def test_news_preview_samples_are_explicit_and_valid_for_five_games():
+    samples = gxmain.sample_payloads("news")
+    assert len(samples) == 5
+    for feature, name, payload in samples:
+        assert feature == "news" and name.startswith("news_")
+        assert "OFFLINE SAMPLE" in json.dumps(payload) and not cards.validate_payload(payload)
+    assert all(feature != "news" for feature, _, _ in gxmain.sample_payloads("all"))
+
+
+
+def test_news_hna_native_vod_highest_resolution_source_order_and_no_fake_stats():
+    full = {"retcode": 0, "data": {"post": {
+        "post": {"game_id": 9, "post_id": "900", "subject": "New Nexus Anima trailer", "created_at": 120,
+                 "content": "en-us", "structured_content": json.dumps([
+                     {"insert": "Before\n"}, {"insert": {"vod": "v1"}}, {"insert": "After\n"}])},
+        "user": {"nickname": "Honkai: Nexus Anima"},
+        "vod_list": [{"id": "v1", "resolutions": [
+            {"height": 720, "bitrate": 1000, "url": "https://example.com/720.mp4"},
+            {"height": 1080, "bitrate": 2000, "url": "https://example.com/1080.mp4"}]}]}}}
+    item = asyncio.run(hoyolab.news_article(NewsFetcher([full]), GAMES["hna"], {"id": "900", "ts": 120}))
+    assert [b["kind"] for b in item.article_blocks] == ["text", "video", "text"]
+    assert item.article_blocks[1]["url"] == "https://example.com/1080.mp4"
+    assert item.author == "Honkai: Nexus Anima" and item.published_ts == 120
+    assert all(not cards.validate_payload(p) for p in cards.news_payloads(GAMES["hna"], item))
+    full["data"]["post"]["post"].update(view_type=5, content='{"describe":"Video description"}', structured_content="")
+    item = asyncio.run(hoyolab.news_article(NewsFetcher([full]), GAMES["hna"], {"id": "900", "ts": 120}))
+    assert item.article_blocks[0]["text"] == "Video description"
+    assert item.article_blocks[1]["url"].endswith("1080.mp4")
+
+
+def test_news_run_once_isolated_fetching_and_disabled_state_stability():
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import runner
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "state.json"
+        on = settings(NEWS_ENABLED=1, ONLY="news", NEWS_GAMES="genshin", DISCORD_WEBHOOK_NEWS_GENSHIN=HOOK)
+        on.state_path = path
+        off = settings(NEWS_ENABLED=0, ENABLED_FEATURES="none")
+        off.state_path = path
+        fetcher = types.SimpleNamespace(summary=lambda: {})
+        with patch.object(runner, "Fetcher", return_value=fetcher), patch.object(runner, "XClient"), \
+                patch.object(runner, "gather_versions", new_callable=AsyncMock) as versions, \
+                patch.object(runner, "gather_items", new_callable=AsyncMock) as items, \
+                patch.object(runner, "write_summary"), \
+                patch.object(hoyolab, "discover_news", return_value=[]) as discovery, \
+                patch.object(runner.time, "time", return_value=1789300000):
+            asyncio.run(runner.run_once(on, {"genshin": GAMES["genshin"]}, {}, session=object()))
+            assert discovery.await_count == 1 and not versions.await_count and not items.await_count
+            asyncio.run(runner.run_once(off, {"genshin": GAMES["genshin"]}, {}, session=object()))
+            disabled = path.read_bytes()
+            asyncio.run(runner.run_once(off, {"genshin": GAMES["genshin"]}, {}, session=object()))
+            assert path.read_bytes() == disabled and discovery.await_count == 1
+            assert State.load(path).news_record("genshin")["paused"]
+            asyncio.run(runner.run_once(on, {"genshin": GAMES["genshin"]}, {}, session=object()))
+            assert not State.load(path).news_record("genshin")["paused"] and discovery.await_count == 2
+
+
+def test_news_capacity_defers_admission_and_keeps_active_dedup_protection():
+    from unittest.mock import patch
+
+    from gamexpress.runner import run_news
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = news_ctx(Path(directory) / "state.json")
+        with patch.object(hoyolab, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now += 1000
+        game = ctx.state.news_record("genshin")
+        game["records"] = {str(i): {"status": "posted", "ts": ctx.now - 10} for i in range(500)}
+        floor = game["floor"]
+        with patch.object(hoyolab, "discover_news", return_value=[{"id": "new", "ts": ctx.now - 5}]), \
+                patch.object(hoyolab, "news_article") as full:
+            asyncio.run(run_news(ctx))
+        assert len(game["records"]) == 500 and game["floor"] == floor and not full.called
+        assert any("capacity" in line for line in ctx.warnings)
+
+
+def test_news_legacy_partial_layout_change_is_held_without_replaying():
+    from unittest.mock import patch
+
+    from gamexpress.runner import run_news
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = news_ctx(Path(directory) / "state.json")
+        with patch.object(hoyolab, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        row = {"id": "100", "ts": ctx.now - 3 * 86400}
+        rec = {"status": "partial", "ts": row["ts"], "row": row,
+               "signature": "legacy-multipart-layout", "messages": ["one"]}
+        ctx.state.news_record("genshin")["records"]["100"] = rec
+        with patch.object(hoyolab, "discover_news", return_value=[]), patch.object(hoyolab, "news_article", return_value=news_item()):
+            asyncio.run(run_news(ctx))
+        assert not ctx.webhook.sent and rec["status"] == "partial" and rec["messages"] == ["one"]
+        assert any("changed" in line for line in ctx.warnings)
+
+
+def test_news_full_discovery_page_stops_after_publication_window_not_historical_archive():
+    page = {"retcode": 0, "data": {"list": [{"post": {"post_id": str(i), "created_at": 120 - i}}
+                                                for i in range(20)]}}
+    f = NewsFetcher([page, page, page])
+    rows = asyncio.run(hoyolab.discover_news(f, GAMES["genshin"], 110))
+    assert len(rows) == 11 and len(f.calls) == 3
+    assert all("last_id" not in kwargs["params"] for _, kwargs in f.calls)
+
+
+def test_news_malformed_discovery_rows_never_establish_baseline():
+    for data in ([1], {"retcode": 0, "data": [1]}, {"retcode": 0, "data": {"list": ["bad"]}},
+                 {"retcode": 0, "data": {"list": [{"post": {"post_id": "100"}}]}}):
+        assert asyncio.run(hoyolab.discover_news(NewsFetcher([data]), GAMES["genshin"], 0)) is None
+
+
+
+def test_news_attempt_rotation_does_not_starve_valid_articles_behind_retry_holes():
+    from unittest.mock import patch
+
+    from gamexpress.runner import run_news
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = news_ctx(Path(directory) / "state.json")
+        with patch.object(hoyolab, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now += 20
+        rows = [{"id": f"bad{i}", "ts": ctx.now - 10} for i in range(10)]
+        rows.append({"id": "zzz", "ts": ctx.now - 10})
+
+        async def article(_fetcher, _game, row):
+            return news_item("zzz", ts=row["ts"]) if row["id"] == "zzz" else None
+
+        with patch.object(hoyolab, "discover_news", return_value=rows), patch.object(hoyolab, "news_article", side_effect=article):
+            asyncio.run(run_news(ctx))
+            assert not ctx.webhook.sent
+            asyncio.run(run_news(ctx))
+        assert len(ctx.webhook.sent) == 1
+        game = ctx.state.news_record("genshin")
+        assert game["records"]["zzz"]["status"] == "posted"
+        assert game["floor"] == ctx.now - 20
+
+
+
+def test_news_selecting_two_games_does_not_fetch_or_bootstrap_the_other_three():
+    from unittest.mock import patch
+
+    from gamexpress.runner import run_news
+    from gamexpress.sources import kuro
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = make_ctx(Path(directory) / "state.json")
+        ctx.settings = settings(NEWS_ENABLED=1, NEWS_GAMES="genshin,wuwa",
+                                DISCORD_WEBHOOK_NEWS_GENSHIN=HOOK, DISCORD_WEBHOOK_NEWS_WUWA=HOOK)
+        with patch.object(hoyolab, "discover_news", return_value=[]) as hoyo, \
+                patch.object(kuro, "discover_news", return_value=[]) as ww:
+            asyncio.run(run_news(ctx))
+        assert hoyo.await_count == 1 and hoyo.await_args.args[1].key == "genshin"
+        assert ww.await_count == 1 and ww.await_args.args[1].key == "wuwa"
+        assert set(ctx.state.data["news"]) == {"genshin", "wuwa"}
+        assert not ctx.webhook.sent
+
+
+def test_news_general_payment_maintenance_and_version_events_are_not_schedule_announcements():
+    from unittest.mock import patch
+
+    from gamexpress.runner import run_news
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = news_ctx(Path(directory) / "state.json")
+        with patch.object(hoyolab, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now += 20
+        titles = ["PlayStation®Store Payment System Maintenance Notice for the United Arab Emirates and Saudi Arabia",
+                  "Version 7.1 Share HoYoverse Top-Up Center Event: Win Primogems, Phase 2",
+                  "V7.1 Known Issues & Update"]
+        for index, title in enumerate(titles):
+            row = {"id": str(index), "ts": ctx.now - 10}
+            item = news_item(str(index), title=title)
+            with patch.object(hoyolab, "discover_news", return_value=[row]), patch.object(hoyolab, "news_article", return_value=item):
+                asyncio.run(run_news(ctx))
+        assert len(ctx.webhook.sent) == len(titles)
+        assert all(not rec.get("excluded") for rec in ctx.state.news_record("genshin")["records"].values())
+
+
+def test_news_user_supplied_5644_media_urls_preserve_three_jpgs_seven_gifs_and_order():
+    # Supplied URL fixture only: article 5644 itself was not fetched in this sandbox.
+    names = ["pschl2zbs6d2meg84m-1792137929039.jpg", "f3ci7wtfxus6zl1lbe-1792137955242.jpg",
+             "0xyrumpv62m78ml2mn-1792138024135.gif", "okv7ggh4djaxdke86w-1792138130984.gif",
+             "qz1a3fkcac9as1oceb-1792138150407.gif", "tk9vkmghyeici95l42-1792138277420.gif",
+             "ch5jwzs4ssa0fojxff-1792138444444.gif", "g30vhq05jjs5plx75l-1792138467380.gif",
+             "5regub0in3y7l2abc5-1792138486258.gif", "0pci0q1quwuo5rsifn-1792138636832.jpg"]
+    urls = ["https://hw-media-cdn-mingchao.kurogame.com/object/1792080000000/" + name for name in names]
+    item = Item("kuro", "wuwa", "5644", "https://wutheringwaves.kurogames.com/en/main/news/detail/5644",
+                "Provided media URL layout — not an article-fetch fixture", "", 0,
+                article_blocks=[{"kind": "image", "url": url} for url in urls], author="Kuro Games")
+    payloads = cards.news_payloads(GAMES["wuwa"], item)
+    rendered = [entry["media"]["url"] for p in payloads for co in p["components"] for c in co["components"]
+                if c["type"] == 12 for entry in c["items"]]
+    assert rendered == urls
+    assert sum(url.endswith(".jpg") for url in rendered) == 3
+    assert sum(url.endswith(".gif") for url in rendered) == 7
+    assert all(not cards.validate_payload(p) for p in payloads)
+
+
+def test_news_short_articles_across_all_games_keep_order_and_one_button_row():
+    for game in GAMES.values():
+        if game.key == "ananta":
+            continue
+        item = news_item(body="Dear players.\n• First\n• Second\n※ One note\n※ Another note")
+        item.published_ts = 0
+        item.images = ["https://example.com/cover.png"]
+        item.article_blocks += [{"kind": "image", "url": f"https://example.com/{i}.gif"} for i in range(10)]
+        item.article_blocks += [{"kind": "text", "text": "Final source paragraph."}]
+        ps = cards.news_payloads(game, item)
+        assert len(ps) == 1 and len(ps[0]["components"]) > 1
+        cs = ps[0]["components"]
+        assert not cards.validate_payload(ps[0])
+        assert sum(c["type"] == 1 for co in cs for c in co["components"]) == 1
+        assert cs[-1]["components"][-1]["type"] == 1
+        rendered = "\n".join(c.get("content", "") for co in cs for c in co["components"])
+        assert "- First" in rendered and "\n\n※ Another" in rendered
+        assert "<t:" not in rendered and "Excerpt" not in rendered and "Final source paragraph." in rendered
+        assert "Media unavailable" not in rendered
+        assert cs[0]["components"][1]["items"][0]["media"]["url"] == item.images[0]
+
+
+def test_news_media_preflight_status_signature_redirect_and_query_preservation():
+    from gamexpress.http import Fetcher
+
+    class Response:
+        def __init__(self, status=200, raw=b"\x89PNG\r\n\x1a\n" + b"a" * 80, headers=None):
+            self.status = status
+            self.raw = raw
+            self.headers = headers or {"Content-Type": "image/png"}
+            self.content = self
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return None
+        async def iter_chunked(self, size):
+            for i in range(0, len(self.raw), size):
+                yield self.raw[i:i + size]
+
+    class Session:
+        def __init__(self, responses):
+            self.responses, self.calls = responses, []
+        def get(self, url, **kwargs):
+            self.calls.append((url, kwargs))
+            return self.responses.pop(0)
+
+    async def run():
+        url = "https://upload-os-bbs.hoyolab.com/asset.jpeg?x-oss-process=quality%2Cq_90"
+        session = Session([Response()])
+        assert await Fetcher(session).verify_media(url)
+        assert session.calls[0][0] == url and not session.calls[0][1]["allow_redirects"]
+        for response in [Response(403), Response(raw=b"<Error><Code>AccessDenied</Code></Error>"),
+                         Response(headers={"Content-Type": "text/html"}), Response(raw=b"")]:
+            assert not await Fetcher(Session([response])).verify_media(url)
+        session = Session([Response(302, headers={"Location": "http://127.0.0.1/private"})])
+        assert not await Fetcher(session).verify_media(url) and len(session.calls) == 1
+        session = Session([])
+        assert not await Fetcher(session).verify_media("https://untrusted.example/image.png")
+        assert not session.calls
+    asyncio.run(run())
+
+
+def test_news_media_failure_refreshes_official_source_once_then_holds_without_posting():
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress.runner import run_news
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = news_ctx(Path(directory) / "state.json")
+        with patch.object(hoyolab, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now += 20
+        row = {"id": "100", "ts": ctx.now - 10}
+        item = news_item()
+        item.article_blocks.append({"kind": "image", "url": "https://upload-os-bbs.hoyolab.com/expired.png"})
+        fresh = __import__("copy").deepcopy(item)
+        fresh.article_blocks[-1]["url"] = "https://upload-os-bbs.hoyolab.com/current.png?source=official"
+        ctx.fetcher = types.SimpleNamespace(verify_media=AsyncMock(side_effect=[False, True]))
+        with patch.object(hoyolab, "discover_news", return_value=[row]), patch.object(hoyolab, "news_article", side_effect=[item, fresh]) as source:
+            asyncio.run(run_news(ctx))
+            assert source.await_count == 2
+        assert len(ctx.webhook.sent) == 1 and "current.png?source=official" in json.dumps(ctx.webhook.sent)
+        ctx.fetcher = types.SimpleNamespace(verify_media=AsyncMock(return_value=False))
+        row["id"] = "bad"
+        item.id = "bad"
+        before = len(ctx.webhook.sent)
+        with patch.object(hoyolab, "discover_news", return_value=[row]), patch.object(hoyolab, "news_article", return_value=item) as source:
+            asyncio.run(run_news(ctx))
+            assert source.await_count == 2
+        assert len(ctx.webhook.sent) == before and "bad" not in ctx.state.news_record("genshin")["records"]
+        assert any("held for retry" in w for w in ctx.warnings)
+
+
+def test_news_text_only_short_and_overflow_component_budget_are_explicit():
+    item = news_item(body="Notice for all players.\n" * 80)
+    ps = cards.news_payloads(GAMES["wuwa"], item)
+    assert len(ps) == 1 and len(ps[0]["components"]) == 1
+    assert "Excerpt" not in json.dumps(ps)
+    item.article_blocks = [{"kind": "image", "url": f"https://example.com/{i}.png"} for i in range(100)]
+    ps = cards.news_payloads(GAMES["wuwa"], item)
+    assert len(ps) == 1 and len(ps[0]["components"]) == 1
+    assert not cards.validate_payload(ps[0]) and "Excerpt" in json.dumps(ps)
+    assert sum(c["type"] == 12 for c in ps[0]["components"][0]["components"]) == 1
+
+
+def test_news_source_heading_and_list_formatting_without_media_reordering():
+    from gamexpress.textutil import news_blocks
+
+    blocks = news_blocks("<h3>Heading</h3><p><strong>Bold</strong> words</p><ul><li>First</li><li>Second</li></ul>")
+    value = "".join(b.get("text", "") for b in blocks)
+    assert "**Heading**" in value and "**Bold**" in value and "- First" in value
+    blocks = news_blocks("en-us", json.dumps([{"insert": "Title"}, {"insert": "\n", "attributes": {"header": 3}},
+                                             {"insert": "Item"}, {"insert": "\n", "attributes": {"list": "bullet"}}]))
+    assert "".join(b.get("text", "") for b in blocks) == "**Title**\n- Item\n"
+
+
+def test_news_fitting_excerpt_word_count_halved_only_for_overflow():
+    import re
+
+    item = news_item(body="word " * 5000)
+    p = cards.news_payloads(GAMES["wuwa"], item)[0]
+    kids = p["components"][0]["components"]
+    body = kids[3]["content"] if kids[3]["type"] == 10 else kids[4]["content"]
+    # Reconstruct the preceding fitting-budget step independently.
+    notice_index = next(i for i, c in enumerate(kids) if "**Excerpt" in c.get("content", ""))
+    remaining = 4000 - cards.text_length(kids[:notice_index + 2]) - 4
+    full = item.article_blocks[0]["text"].strip()
+    cut = max(full.rfind("\n", 0, remaining), full.rfind(" ", 0, remaining))
+    fitting = full[:cut if cut > remaining // 2 else remaining].rstrip()
+    assert len(re.findall(r"\S+", body)) == len(re.findall(r"\S+", fitting)) // 2
+    assert len(p["components"]) == 1 and not cards.validate_payload(p)
+    item.article_blocks = [{"kind": "text", "text": "●No space\n● With space\n**●Bold item**\n• Old bullet"}]
+    p = cards.news_payloads(GAMES["wuwa"], item)[0]
+    value = p["components"][0]["components"][1]["content"]
+    assert value == "- No space\n- With space\n- **Bold item**\n- Old bullet"
+    assert "Excerpt" not in str(p)
+    item.article_blocks = [{"kind": "text", "text": "**bold words " * 700}]
+    p = cards.news_payloads(GAMES["wuwa"], item)[0]
+    value = next(c["content"] for c in p["components"][0]["components"]
+                 if c["type"] == 10 and c["content"].startswith("**bold"))
+    assert value.count("**") % 2 == 0
+
+
+def test_news_masked_links_and_heading_boundary_do_not_capture_next_section():
+    from gamexpress.textutil import news_blocks, news_link
+
+    url = "https://example.com/path(a)?first=1&second=2"
+    assert news_link(">> GO <<", url) == "[>> GO <<](https://example.com/path%28a%29?first=1&second=2)"
+    assert news_link("Bad", "javascript:alert(1)") == "Bad"
+    assert news_link("https://example.com/path", "https://example.com/path") == "https://example.com/path"
+    html_blocks = news_blocks('<p><strong><a href="https://twitch.tv/genshinimpact">Twitch</a></strong>'
+                             ' <a href="https://youtube.com/@GenshinImpact">YouTube</a></p>')
+    value = "".join(b.get("text", "") for b in html_blocks)
+    assert "**[Twitch](https://twitch.tv/genshinimpact)**" in value
+    assert "[YouTube](https://youtube.com/@GenshinImpact)" in value
+    raw = fx("hoyolab_starrail_46814308_full.json")
+    post = raw["data"]["post"]["post"]
+    item = asyncio.run(hoyolab.news_article(NewsFetcher([raw]), GAMES["starrail"],
+                                          {"id": post["post_id"], "ts": post["created_at"]}))
+    p = cards.news_payloads(GAMES["starrail"], item)[0]
+    rendered = "\n".join(c.get("content", "") for co in p["components"] for c in co["components"])
+    target = "https://act.hoyoverse.com/puzzle/hkrpg/e20260913version_fasf13434_77d1c0e99b/index.html?game_biz=hkrpg_global"
+    assert f"[>> GO <<]({target})\n\n**▌Compensation Details**\n" in rendered
+    assert "]([https://" not in rendered and "&gt;" not in rendered
+    assert all(b["url"].startswith("https://") for b in p["components"][0]["components"][-1]["components"])
+
+
+def test_news_publisher_fallback_is_game_name_but_real_nickname_is_preserved():
+    import copy
+
+    raw = fx("hoyolab_zzz_46604530_full.json")
+    post = raw["data"]["post"]["post"]
+    row = {"id": post["post_id"], "ts": post["created_at"]}
+    without = copy.deepcopy(raw)
+    without["data"]["post"].pop("user", None)
+    item = asyncio.run(hoyolab.news_article(NewsFetcher([without]), GAMES["zzz"], row))
+    assert item.author == GAMES["zzz"].name
+    without["data"]["post"]["user"] = {"nickname": "Official publisher nickname"}
+    item = asyncio.run(hoyolab.news_article(NewsFetcher([without]), GAMES["zzz"], row))
+    assert item.author == "Official publisher nickname"
+    item.author = "HoYoLAB official news"
+    p = cards.news_payloads(GAMES["zzz"], item)[0]
+    assert "HoYoLAB official news" not in str(p) and GAMES["zzz"].name in str(p)
+
+
+def test_news_marker_spacing_is_idempotent_and_only_note_runs_gain_blank_lines():
+    item = news_item(body="Paragraph\n※One note\nNormal text\n✦Maintenance Time:\n**✦Already bold**\n"
+                    "※ First in run\n※Second in run\n- One\n\n- Two\n\n- Three")
+    p = cards.news_payloads(GAMES["wuwa"], item)[0]
+    body = p["components"][0]["components"][1]["content"]
+    assert "Paragraph\n※ One note\nNormal text" in body
+    assert "✦ Maintenance Time:" in body and "**✦ Already bold**" in body
+    assert "※ First in run\n\n※ Second in run" in body
+    assert "- One\n- Two\n- Three" in body
+    item.article_blocks[0]["text"] = body
+    again = cards.news_payloads(GAMES["wuwa"], item)[0]
+    assert again["components"][0]["components"][1]["content"] == body
+
+
+def test_news_uninterrupted_nine_media_run_fits_one_container_without_regrouping():
+    item = news_item()
+    urls = [f"https://example.com/{i}.gif" for i in range(9)]
+    item.article_blocks += [{"kind": "image", "url": u} for u in urls]
+    p = cards.news_payloads(GAMES["wuwa"], item)[0]
+    assert len(p["components"]) == 1 and not cards.validate_payload(p)
+    galleries = [c for c in p["components"][0]["components"] if c["type"] == 12]
+    assert len(galleries) == 9 and all(len(c["items"]) == 1 for c in galleries)
+    assert [c["items"][0]["media"]["url"] for c in galleries] == urls
+
+
+def test_news_html_adjacent_nested_bold_and_media_boundaries_have_no_stray_markers():
+    from gamexpress.textutil import news_blocks
+
+    value = "\n".join(b.get("text", "") for b in news_blocks(
+        '<div><strong>✦Maintenance Time: </strong><span><strong>2026-09-30 (UTC+8)</strong></span></div>'
+        '<p><strong>A <strong>B</strong> C</strong></p>'
+        '<p><strong>Before<img src="https://example.com/a.png">After</strong></p>'))
+    assert "**✦Maintenance Time: 2026-09-30 (UTC+8)**" in value
+    assert "**A B C**" in value and "****" not in value
+    assert "**Before**" in value and "**After**" in value
+    assert value.count("**") % 2 == 0
+
+
+def test_news_decorative_star_gets_space_on_both_sides_idempotently():
+    item = news_item(body="**✦Any Text Example✦**\n**✦ Already Spaced ✦**\n※Obtainable")
+    p = cards.news_payloads(GAMES["wuwa"], item)[0]
+    body = p["components"][0]["components"][1]["content"]
+    assert body == "**✦ Any Text Example ✦**\n**✦ Already Spaced ✦**\n※ Obtainable"
+    item.article_blocks[0]["text"] = body
+    assert cards.news_payloads(GAMES["wuwa"], item)[0] == p
+
+
+
+def test_news_enumerated_entries_compact_without_rewriting_or_crossing_paragraphs():
+    value = '1. First\n\n2. Second\n\n3. Third\n\nSection\n\n① Enter\n\n② Redeem\n\nNotes\n\na. One\n\nb. Two'
+    item = news_item(body=value)
+    p = cards.news_payloads(GAMES["wuwa"], item)[0]
+    body = p["components"][0]["components"][1]["content"]
+    assert body == '1. First\n2. Second\n3. Third\n\nSection\n\n① Enter\n② Redeem\n\nNotes\n\na. One\nb. Two'
+    item.article_blocks[0]["text"] = body
+    assert cards.news_payloads(GAMES["wuwa"], item)[0] == p
+
+
+
+def test_news_moderate_overflow_two_pages_all_games_and_long_excerpt():
+    body = ('One source paragraph with an unchanged https://hoyo.link/example URL.\n\n' * 70).rstrip()
+    for key in ("genshin", "starrail", "hna", "zzz", "wuwa"):
+        item = news_item(body=body)
+        pages = cards.news_payloads(GAMES[key], item)
+        assert len(pages) == 2 and all(not cards.validate_payload(p) for p in pages)
+        first, last = [p["components"][0]["components"] for p in pages]
+        assert first[0]["content"].startswith("## ")
+        assert last[0]["content"] == "-# Page 2"
+        assert not any(c["type"] == 1 for c in first)
+        assert last[-1]["type"] == 1 and len(last[-1]["components"]) == 3
+        texts = ''.join(c["content"] for cs in (first, last) for c in cs
+                        if c["type"] == 10 and not c["content"].startswith(("## ", "-# Page")))
+        assert texts == body
+        assert all(p["allowed_mentions"] == {"parse": []} for p in pages)
+        item.article_blocks[0]["text"] = body * 3
+        long = cards.news_payloads(GAMES[key], item)
+        assert len(long) == 1 and len(long[0]["components"]) == 1
+        assert 'Excerpt' in str(long) and not cards.validate_payload(long[0])
+
+
+def test_news_moderate_ceiling_and_unsplittable_fallback():
+    for wanted in (7000, 7001):
+        item = news_item(body="probe")
+        header = cards.news_payloads(GAMES["wuwa"], item)[0]["components"][0]["components"][0]
+        n = wanted - len(header["content"])
+        item.article_blocks[0]["text"] = 'a' * 3400 + '\n\n' + 'b' * (n - 3402)
+        pages = cards.news_payloads(GAMES["wuwa"], item)
+        assert len(pages) == (2 if wanted == 7000 else 1)
+        assert all(not cards.validate_payload(p) for p in pages)
+    item = news_item(body='a' * 4500)  # no safe paragraph boundary
+    pages = cards.news_payloads(GAMES["wuwa"], item)
+    assert len(pages) == 1 and 'Excerpt' in str(pages)
+
+
+
+def test_news_nested_list_paragraph_keeps_marker_attached_and_square_entries_compact():
+    from gamexpress.textutil import news_blocks
+    source = '<h1>Eligibility</h1><ul>\n<li>\n<p>Reach Union Level 5.</p>\n</li>\n<li><p><strong>Or complete</strong> the trial.</p></li></ul><p>■ First</p><p><br></p><p>■ Second</p>'
+    blocks = news_blocks(source)
+    raw = '\n'.join(b.get('text', '') for b in blocks)
+    assert '- Reach Union Level 5.' in raw and '- **Or complete** the trial.' in raw
+    assert not __import__('re').search(r'(?m)^-\s*$', raw)
+    item = news_item(body='unused')
+    item.article_blocks = blocks
+    p = cards.news_payloads(GAMES['wuwa'], item)[0]
+    body = p['components'][0]['components'][1]['content']
+    assert '■ First\n■ Second' in body
+    assert '- Reach Union Level 5.\n- **Or complete** the trial.' in body
+    assert '<li>' in source  # original input string was never edited
+
+
+def test_news_single_message_multicontainer_buttons_only_final_container_all_games():
+    for key in ('genshin', 'starrail', 'hna', 'zzz', 'wuwa'):
+        item = news_item(body='intro')
+        item.article_blocks += [{'kind': 'image', 'url': f'https://example.com/{i}.jpg'} for i in range(7)]
+        item.article_blocks.append({'kind': 'text', 'text': 'last section'})
+        pages = cards.news_payloads(GAMES[key], item)
+        assert len(pages) == 1 and len(pages[0]['components']) == 2
+        first, last = pages[0]['components']
+        assert not any(c['type'] == 1 for c in first['components'])
+        assert last['components'][-1]['type'] == 1
+        assert len(last['components'][-1]['components']) == 3
+        assert not cards.validate_payload(pages[0])
+
+
+
+
+def test_news_group_setting_default_and_explicit_values():
+    assert settings().news_group_long_strips is False
+    for value in ('1', 'true', 'yes', 'on'):
+        assert settings(NEWS_GROUP_LONG_STRIPS=value).news_group_long_strips is True
+    for value in ('0', 'false', 'off', ''):
+        assert settings(NEWS_GROUP_LONG_STRIPS=value).news_group_long_strips is False
+    s = settings(NEWS_GROUP_LONG_STRIPS=1)
+    assert not s.news_enabled and 'news' not in s.features  # grouping never opts in
+
+
+def test_news_group_header_dimensions_supported_and_unknown_formats():
+    import struct
+
+    from gamexpress.media import image_dimensions
+    png = b'\x89PNG\r\n\x1a\n' + struct.pack('>I', 13) + b'IHDR' + struct.pack('>II', 100, 900)
+    gif = b'GIF89a' + struct.pack('<HH', 100, 900)
+    jpeg = b'\xff\xd8\xff\xe0\x00\x04ab\xff\xc2\x00\x0b\x08' + struct.pack('>HH', 900, 100) + b'\x01\x01\x11\x00'
+    webpx = b'RIFF' + b'\0' * 4 + b'WEBPVP8X' + b'\0' * 8 + (99).to_bytes(3, 'little') + (899).to_bytes(3, 'little')
+    webp = b'RIFF' + b'\0' * 4 + b'WEBPVP8 ' + b'\0' * 7 + b'\x9d\x01\x2a' + struct.pack('<HH', 100, 900)
+    bits = 99 | (899 << 14)
+    webpl = b'RIFF' + b'\0' * 4 + b'WEBPVP8L' + b'\0' * 4 + b'\x2f' + bits.to_bytes(4, 'little') + b'\0' * 5
+    for raw in (png, gif, jpeg, webpx, webp, webpl):
+        assert image_dimensions(raw) == (100, 900)
+        assert image_dimensions(raw[:8]) is None
+    for raw in (b'', b'<html>error</html>', b'\0\0\0\x18ftypavif',
+                b'GIF89a\0\0\0\0', b'\xff\xd8\xff\xe0\0\0', b'\xff\xd8\xff\xff'):
+        assert image_dimensions(raw) is None
+    # Corrupt/random data cannot throw or generate URL-based guesses.
+    for n in range(256):
+        assert image_dimensions(bytes([n]) * n) is None
+
+
+def _group_fixture(count=4):
+    item = news_item(body='Original wording. No invented note marker.')
+    item.images = ['https://upload-os-bbs.hoyolab.com/lead.png?original=1']
+    item.article_blocks += [{'kind': 'image', 'url': f'https://upload-os-bbs.hoyolab.com/{i}.gif'}
+                            for i in range(count)]
+    return item
+
+
+def _group_urls(payloads):
+    return [it['media']['url'] for p in payloads for co in p['components']
+            for c in co['components'] if c['type'] == 12 for it in c['items']]
+
+
+def test_news_group_all_games_switch_off_is_identical_no_measurement():
+    from gamexpress.media import group_news_media
+    for key in ('genshin', 'starrail', 'hna', 'zzz', 'wuwa'):
+        original = cards.news_payloads(GAMES[key], _group_fixture())
+        result = asyncio.run(group_news_media(None, original, enabled=False))
+        assert result is original and all(not cards.validate_payload(p) for p in result)
+        assert all(len(c['items']) == 1 for p in result for co in p['components']
+                   for c in co['components'] if c['type'] == 12)
+
+
+def test_news_group_all_games_preserves_lead_text_metadata_controls_and_inputs():
+    from copy import deepcopy
+
+    from gamexpress.media import group_measured_news
+    for key in ('genshin', 'starrail', 'hna', 'zzz', 'wuwa'):
+        original = cards.news_payloads(GAMES[key], _group_fixture())
+        snapshot = deepcopy(original)
+        urls = _group_urls(original)
+        dims = {u: (100, 900) for u in urls}
+        dims[urls[0]] = (1920, 1080)  # normal lead remains separate
+        result = group_measured_news(original, dims)
+        assert result != original and original == snapshot and _group_urls(result) == urls
+        kids = result[0]['components'][0]['components']
+        galleries = [c for c in kids if c['type'] == 12]
+        assert [len(c['items']) for c in galleries] == [1, 4]
+        grouped = next(i for i, c in enumerate(kids) if c['type'] == 12 and len(c['items']) == 4)
+        assert kids[grouped - 1]['type'] == 14
+        assert [c for c in kids if c['type'] in (1, 10)] == [
+            c for c in original[0]['components'][0]['components'] if c['type'] in (1, 10)]
+        assert '※' not in json.dumps(result, ensure_ascii=False)
+        assert not cards.validate_payload(result[0])
+
+
+def test_news_group_long_lead_can_join_run_normal_final_separate():
+    from gamexpress.media import group_measured_news
+    item = _group_fixture()
+    item.article_blocks = item.article_blocks[1:]  # truly consecutive cover/body galleries
+    original = cards.news_payloads(GAMES['wuwa'], item)
+    urls = _group_urls(original)
+    dims = {u: (100, 900) for u in urls}
+    dims[urls[-1]] = (100, 100)
+    result = group_measured_news(original, dims)
+    galleries = [c for c in result[0]['components'][0]['components'] if c['type'] == 12]
+    assert [len(c['items']) for c in galleries] == [4, 1]
+    assert galleries[0]['items'][0]['media']['url'] == urls[0]
+    assert _group_urls(result) == urls
+
+
+def test_news_group_requires_all_dimensions_and_strict_height_ratio():
+    from gamexpress.media import group_measured_news
+    original = cards.news_payloads(GAMES['wuwa'], _group_fixture(2))
+    urls = _group_urls(original)
+    for bad in (None, (0, 100), (100, -1), (float('nan'), 100), (100, float('inf')), '100x900'):
+        dims = {u: (100, 900) for u in urls}
+        dims[urls[0]] = bad
+        assert group_measured_news(original, dims) is original
+    for size in ((100, 350), (900, 100)):
+        assert group_measured_news(original, dict.fromkeys(urls, size)) is original
+    assert group_measured_news(original, dict.fromkeys(urls, (100, 351))) != original
+
+
+def test_news_group_never_crosses_text_separator_container_page_or_existing_gallery():
+    from gamexpress.media import group_measured_news
+    url = lambda n: f'https://upload-os-bbs.hoyolab.com/{n}.png'
+    g = lambda n: cards.gallery([url(n)])
+    barriers = [cards.text('Section'), cards.sep(), cards.gallery([url(8), url(9)])]
+    for barrier in barriers:
+        original = [{'flags': cards.IS_COMPONENTS_V2, 'allowed_mentions': {'parse': []},
+                     'components': [cards.container([g(1), barrier, g(2)], GAMES['wuwa'].color)]}]
+        dims = dict.fromkeys(_group_urls(original), (100, 900))
+        assert group_measured_news(original, dims) is original
+    original = [{'flags': cards.IS_COMPONENTS_V2, 'components': [cards.container([g(n)], 0)]} for n in (1, 2)]
+    assert group_measured_news(original, dict.fromkeys(_group_urls(original), (100, 900))) is original
+    original = [{'flags': cards.IS_COMPONENTS_V2, 'components': [cards.container([g(n)], 0) for n in (1, 2)]}]
+    assert group_measured_news(original, dict.fromkeys(_group_urls(original), (100, 900))) is original
+
+
+def test_news_group_ten_item_limit_retains_item_fields_order_duplicates_and_bytes():
+    from copy import deepcopy
+
+    from gamexpress.media import group_measured_news
+    item = _group_fixture(23)
+    item.images = []
+    item.article_blocks = item.article_blocks[1:]
+    original = cards.news_payloads(GAMES['wuwa'], item)
+    for p in original:
+        for co in p['components']:
+            for c in co['components']:
+                if c['type'] == 12:
+                    c['items'][0]['description'] = 'Original description'
+                    c['items'][0]['spoiler'] = True
+    snapshot = deepcopy(original)
+    result = group_measured_news(original, dict.fromkeys(_group_urls(original), (100, 900)))
+    galleries = [c for p in result for co in p['components'] for c in co['components'] if c['type'] == 12]
+    assert [len(c['items']) for c in galleries] == [10, 10, 3]
+    assert [i for c in galleries for i in c['items']] == [i for p in original for co in p['components']
+                                                       for c in co['components'] if c['type'] == 12 for i in c['items']]
+    assert original == snapshot and all(not cards.validate_payload(p) for p in result)
+    # Repeated source URLs still remain repeated items; only measurement I/O deduplicates.
+    galleries[0]['items'][1]['media']['url'] = galleries[0]['items'][0]['media']['url']
+    assert len(_group_urls(result)) == 23
+    assert group_measured_news(result, dict.fromkeys(_group_urls(result), (100, 900))) is result
+
+
+def test_news_group_budget_rejection_rolls_back_without_mutation():
+    from unittest.mock import patch
+
+    from gamexpress.media import group_measured_news
+    original = cards.news_payloads(GAMES['wuwa'], _group_fixture())
+    dims = dict.fromkeys(_group_urls(original), (100, 900))
+    with patch.object(cards, 'validate_payload', return_value=['budget exceeded']):
+        assert group_measured_news(original, dims) is original
+    # Exact original limits remain independently valid after grouping.
+    for count in (4, 30):
+        original = cards.news_payloads(GAMES['wuwa'], _group_fixture(count))
+        result = group_measured_news(original, dict.fromkeys(_group_urls(original), (100, 900)))
+        assert all(not cards.validate_payload(p) for p in result)
+        assert _group_urls(result) == _group_urls(original)
+
+
+def test_news_group_excerpt_unchanged_no_measurement_and_two_pages_keep_controls():
+    from unittest.mock import AsyncMock
+
+    from gamexpress.media import group_measured_news, group_news_media
+    item = _group_fixture()
+    item.article_blocks[0]['text'] = 'word ' * 5000
+    original = cards.news_payloads(GAMES['wuwa'], item)
+    f = types.SimpleNamespace(media_dimensions=AsyncMock(return_value=(100, 900)))
+    assert 'Excerpt' in str(original)
+    assert asyncio.run(group_news_media(f, original, enabled=True)) is original
+    f.media_dimensions.assert_not_awaited()
+    item.article_blocks[0]['text'] = ('Paragraph ' * 80 + '\n\n') * 6
+    original = cards.news_payloads(GAMES['wuwa'], item)
+    assert len(original) == 2
+    result = group_measured_news(original, dict.fromkeys(_group_urls(original), (100, 900)))
+    assert len(result) == 2 and _group_urls(result) == _group_urls(original)
+    assert all(not cards.validate_payload(p) for p in result)
+    rows = [(pi, ci) for pi, p in enumerate(result) for ci, co in enumerate(p['components'])
+            for c in co['components'] if c['type'] == 1]
+    assert rows == [(1, len(result[-1]['components']) - 1)]
+
+
+def test_news_group_adapter_failures_timeout_and_deduplicated_measurements():
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress.media import group_news_media
+    original = cards.news_payloads(GAMES['wuwa'], _group_fixture())
+    for error in (None, OSError('network'), ValueError('bad header'), asyncio.TimeoutError()):
+        f = types.SimpleNamespace(media_dimensions=AsyncMock(return_value=error, side_effect=error if isinstance(error, Exception) else None))
+        assert asyncio.run(group_news_media(f, original, enabled=True)) is original
+    item = _group_fixture()
+    item.article_blocks.append(item.article_blocks[-1].copy())
+    original = cards.news_payloads(GAMES['wuwa'], item)
+    f = types.SimpleNamespace(media_dimensions=AsyncMock(return_value=(100, 900)))
+    result = asyncio.run(group_news_media(f, original, enabled=True))
+    assert f.media_dimensions.await_count == len(set(_group_urls(original)))
+    assert _group_urls(result) == _group_urls(original)
+
+    async def timeout(awaitable, *, timeout):
+        assert timeout == 20
+        awaitable.close()
+        raise asyncio.TimeoutError
+    with patch('asyncio.wait_for', side_effect=timeout):
+        assert asyncio.run(group_news_media(f, original, enabled=True)) is original
+
+
+def test_news_group_http_dimension_reads_bounded_allowlisted_redirect_safe():
+    import struct
+
+    from gamexpress.http import Fetcher
+    class Response:
+        def __init__(self, raw=b'', status=200, mime='image/png', location=None):
+            self.raw, self.status, self.content, self.read = raw, status, self, 0
+            self.headers = {'Content-Type': mime}
+            if location is not None:
+                self.headers['Location'] = location
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            pass
+        async def iter_chunked(self, size):
+            for i in range(0, len(self.raw), size):
+                self.read += len(self.raw[i:i + size])
+                yield self.raw[i:i + size]
+    class Session:
+        def __init__(self, *responses):
+            self.responses, self.calls = list(responses), []
+        def get(self, url, **kwargs):
+            self.calls.append((url, kwargs))
+            return self.responses.pop(0)
+    url = 'https://hw-media-cdn-mingchao.kurogame.com/a.png?original=1'
+    raw = b'\x89PNG\r\n\x1a\n' + struct.pack('>I', 13) + b'IHDR' + struct.pack('>II', 100, 900)
+    async def check():
+        response = Response(raw + b'\0' * 1_000_000)
+        session = Session(response)
+        assert await Fetcher(session).media_dimensions(url) == (100, 900)
+        assert response.read == 2048 and session.calls[0][0] == url
+        assert session.calls[0][1]['allow_redirects'] is False
+        assert session.calls[0][1]['timeout'].total == 8
+        response = Response(b'x' * 1_000_000)
+        assert await Fetcher(Session(response)).media_dimensions(url) is None
+        assert response.read == 256 * 1024
+        for bad in ('https://evil.example/a.png', 'http://127.0.0.1/a',
+                    'https://kurogame.com:444/a', 'https://u:p@kurogame.com/a'):
+            s = Session()
+            assert await Fetcher(s).media_dimensions(bad) is None and not s.calls
+            s = Session(Response(status=302, location=bad))
+            assert await Fetcher(s).media_dimensions(url) is None and len(s.calls) == 1
+        s = Session(*[Response(status=302, location=url) for _ in range(4)])
+        assert await Fetcher(s).media_dimensions(url) is None and len(s.calls) == 4
+        for response in (Response(raw, mime='text/html'), Response(raw, status=403),
+                         Response(raw[:12]), Response(status=302)):
+            assert await Fetcher(Session(response)).media_dimensions(url) is None
+    asyncio.run(check())
+
+
+def test_news_group_runner_switch_actual_delivery_all_five_games():
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress.runner import run_news
+    from gamexpress.sources import kuro
+    for key in ('genshin', 'starrail', 'hna', 'zzz', 'wuwa'):
+        for enabled in (False, True):
+            with tempfile.TemporaryDirectory() as directory:
+                ctx = make_ctx(Path(directory) / 'state.json')
+                ctx.settings = settings(NEWS_ENABLED=1, NEWS_GAMES=key, NEWS_GROUP_LONG_STRIPS=int(enabled),
+                                        **{f'DISCORD_WEBHOOK_NEWS_{key.upper()}': HOOK})
+                source = kuro if key == 'wuwa' else hoyolab
+                with patch.object(source, 'discover_news', return_value=[]):
+                    asyncio.run(run_news(ctx))
+                ctx.now += 20
+                row = {'id': '100', 'ts': ctx.now - 10}
+                ctx.fetcher = types.SimpleNamespace(verify_media=AsyncMock(return_value=True),
+                                                    media_dimensions=AsyncMock(return_value=(100, 900)))
+                item = _group_fixture()
+                item.game, item.source = key, 'kuro' if key == 'wuwa' else 'hoyolab'
+                with patch.object(source, 'discover_news', return_value=[row]), patch.object(source, 'news_article', return_value=item):
+                    asyncio.run(run_news(ctx))
+                assert len(ctx.webhook.sent) == 1, ctx.warnings
+                payload = ctx.webhook.sent[0]["payload"]
+                assert _group_urls([payload]) == _group_urls(cards.news_payloads(GAMES[key], item))
+                assert any(len(c['items']) > 1 for co in payload['components']
+                           for c in co['components'] if c['type'] == 12) is enabled
+                assert bool(ctx.fetcher.media_dimensions.await_count) is enabled
+                assert ctx.state.news_record(key)['records']['100']['status'] == 'posted'
+
+
+def test_news_group_runner_measurement_failure_delivers_default_availability_failure_holds():
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress.runner import run_news
+    for available in (True, False):
+        with tempfile.TemporaryDirectory() as directory:
+            ctx = news_ctx(Path(directory) / 'state.json', NEWS_GROUP_LONG_STRIPS=1)
+            with patch.object(hoyolab, 'discover_news', return_value=[]):
+                asyncio.run(run_news(ctx))
+            ctx.now += 20
+            ctx.fetcher = types.SimpleNamespace(verify_media=AsyncMock(return_value=available),
+                                                media_dimensions=AsyncMock(return_value=None))
+            item = _group_fixture()
+            row = {'id': '100', 'ts': ctx.now - 10}
+            with patch.object(hoyolab, 'discover_news', return_value=[row]), patch.object(hoyolab, 'news_article', return_value=item) as full:
+                asyncio.run(run_news(ctx))
+            assert len(ctx.webhook.sent) == int(available)
+            if available:
+                assert ctx.webhook.sent[0]["payload"] == cards.news_payloads(GAMES['genshin'], item)[0]
+                assert full.await_count == 1
+            else:
+                ctx.fetcher.media_dimensions.assert_not_awaited()
+                assert full.await_count == 2
+
+
+def test_news_group_partial_signature_change_holds_no_repost():
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress.runner import run_news
+    from gamexpress.state import stable_hash
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = news_ctx(Path(directory) / 'state.json', NEWS_GROUP_LONG_STRIPS=1)
+        with patch.object(hoyolab, 'discover_news', return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now += 20
+        item = _group_fixture()
+        row = {'id': '100', 'ts': ctx.now - 10}
+        rec = {'status': 'partial', 'ts': row['ts'], 'row': row,
+               'signature': stable_hash(cards.news_payloads(GAMES['genshin'], item)), 'messages': ['old']}
+        ctx.state.news_record('genshin')['records']['100'] = rec
+        ctx.fetcher = types.SimpleNamespace(verify_media=AsyncMock(return_value=True),
+                                            media_dimensions=AsyncMock(return_value=(100, 900)))
+        with patch.object(hoyolab, 'discover_news', return_value=[]), patch.object(hoyolab, 'news_article', return_value=item):
+            asyncio.run(run_news(ctx))
+        assert not ctx.webhook.sent and rec['messages'] == ['old'] and rec['status'] == 'partial'
+        assert any('changed' in w for w in ctx.warnings)
+
+
+
+
+def test_news_group_workflow_variable_blob_and_no_optin_side_effect():
+    s = settings(GE_VARS_JSON=json.dumps({'NEWS_GROUP_LONG_STRIPS': '1'}))
+    assert s.news_group_long_strips and not s.news_enabled
+    assert not s.features.intersection({'news'})
+
+
+def test_news_group_exact_message_budgets_remain_valid():
+    from gamexpress.media import group_measured_news
+    item = _group_fixture()
+    header = cards.news_payloads(GAMES['wuwa'], item)[0]['components'][0]['components'][0]
+    item.article_blocks[0]['text'] = 'a' * (4000 - len(header['content']))
+    original = cards.news_payloads(GAMES['wuwa'], item)
+    assert cards.text_length(original[0]['components']) == 4000
+    result = group_measured_news(original, dict.fromkeys(_group_urls(original), (100, 900)))
+    assert result != original and not cards.validate_payload(result[0])
+    item = _group_fixture(32)
+    item.images = []
+    original = cards.news_payloads(GAMES['wuwa'], item)
+    assert len(original) == 1 and cards.count_components(original[0]['components']) == 40
+    result = group_measured_news(original, dict.fromkeys(_group_urls(original), (100, 900)))
+    assert result != original and not cards.validate_payload(result[0])
+
+
+def test_news_group_runner_measures_only_refreshed_source_urls():
+    from copy import deepcopy
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress.runner import run_news
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = news_ctx(Path(directory) / 'state.json', NEWS_GROUP_LONG_STRIPS=1)
+        with patch.object(hoyolab, 'discover_news', return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now += 20
+        old = _group_fixture()
+        fresh = deepcopy(old)
+        fresh.images = ['https://upload-os-bbs.hoyolab.com/renewed.png?source=official']
+        row = {'id': '100', 'ts': ctx.now - 10}
+        ctx.fetcher = types.SimpleNamespace(verify_media=AsyncMock(side_effect=[False] + [True] * 5),
+                                            media_dimensions=AsyncMock(return_value=(100, 900)))
+        with patch.object(hoyolab, 'discover_news', return_value=[row]), patch.object(hoyolab, 'news_article', side_effect=[old, fresh]):
+            asyncio.run(run_news(ctx))
+        assert len(ctx.webhook.sent) == 1
+        measured = [a.args[0] for a in ctx.fetcher.media_dimensions.await_args_list]
+        assert fresh.images[0] in measured and old.images[0] not in measured
+        assert _group_urls([ctx.webhook.sent[0]['payload']]) == _group_urls(cards.news_payloads(GAMES['genshin'], fresh))
+
+
+def test_news_group_stable_partial_delivery_resumes_second_page_only():
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress.media import group_measured_news
+    from gamexpress.runner import run_news
+    from gamexpress.state import stable_hash
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = news_ctx(Path(directory) / 'state.json', NEWS_GROUP_LONG_STRIPS=1)
+        with patch.object(hoyolab, 'discover_news', return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now += 20
+        item = _group_fixture()
+        item.article_blocks[0]['text'] = ('Paragraph ' * 80 + '\n\n') * 6
+        original = cards.news_payloads(GAMES['genshin'], item)
+        assert len(original) == 2
+        grouped = group_measured_news(original, dict.fromkeys(_group_urls(original), (100, 900)))
+        row = {'id': '100', 'ts': ctx.now - 10}
+        rec = {'status': 'partial', 'ts': row['ts'], 'row': row,
+               'signature': stable_hash(grouped), 'messages': ['confirmed-first-page']}
+        ctx.state.news_record('genshin')['records']['100'] = rec
+        ctx.fetcher = types.SimpleNamespace(verify_media=AsyncMock(return_value=True),
+                                            media_dimensions=AsyncMock(return_value=(100, 900)))
+        with patch.object(hoyolab, 'discover_news', return_value=[]), patch.object(hoyolab, 'news_article', return_value=item):
+            asyncio.run(run_news(ctx))
+        assert len(ctx.webhook.sent) == 1 and ctx.webhook.sent[0]['payload'] == grouped[1]
+        assert rec['messages'][0] == 'confirmed-first-page' and rec['status'] == 'posted'
+
+
 if __name__ == "__main__":
     sys.exit(main())

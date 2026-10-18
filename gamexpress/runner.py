@@ -14,14 +14,14 @@ import aiohttp
 
 from . import build_id, codeposter, schedule
 from .config import Game, Settings, active_games, load_games, load_overrides
-from .discord import WebhookClient
+from .discord import WebhookClient, webhook_fingerprint
 from .http import BOT_UA, Fetcher, Probe
 from .models import Item
 from .sources import bannerfeed, countdown, hoyolab, kuro, launcher, newspage
 from .sources.codes import CodeSources
 from .sources.twitter import XClient
 from .state import State
-from .textutil import version_key
+from .textutil import find_version, version_key
 
 log = logging.getLogger("gamexpress")
 
@@ -236,7 +236,7 @@ async def failover_check(ctx: Ctx) -> None:
     peer = await ctx.fetcher.get_json(s.peer_state_url, source="peer-state",
                                       headers={"Cache-Control": "no-cache"}, retries=1)
     if isinstance(peer, dict):
-        n = ctx.state.merge_peer(peer)
+        n = ctx.state.merge_peer(peer, include_news="news" in s.features)
         if n:
             ctx.report.append(f"🔄 imported {n} posted key(s) from the peer instance")
     if s.instance_role != "standby":
@@ -273,7 +273,7 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
                   code_sources=CodeSources(fetcher), overrides=overrides, now=int(time.time()))
         await failover_check(ctx)
         features = settings.features if ctx.active else set()
-        if features and ctx.games:
+        if features & {"schedule", "codes"} and ctx.games:
             await gather_versions(ctx)
             await gather_items(ctx)
             await asyncio.gather(gather_program_media(ctx), gather_estimates(ctx), gather_banners(ctx))
@@ -285,6 +285,12 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
                 await schedule.run(ctx)
             if "codes" in features:
                 await codeposter.run(ctx)
+        if "news" in features:
+            await run_news(ctx)
+        elif ctx.active and not settings.news_enabled:
+            # One control-marker write on disabling, no discovery or per-tick news churn.
+            for record in (state.data.get("news") or {}).values():
+                record["paused"] = True
         if not features:
             ctx.report.append("⏸️ no active features this run (ENABLED_FEATURES=none or passive standby)")
         ephemeral = settings.dry_run or settings.test_mode
@@ -355,3 +361,145 @@ def write_summary(ctx: Ctx) -> None:
                 fh.write(text + "\n")
         except OSError as exc:
             log.warning("Could not append workflow summary (%s)", type(exc).__name__)
+
+
+async def run_news(ctx: Ctx) -> None:
+    """Independent opt-in official news. No schedule/code mirror or catch-all routing.
+
+    Persist progress per part using the existing atomic state writer. Cross-process failures
+    after Discord accepts but before state is saved remain an inherently ambiguous outcome.
+    """
+    from .cards import news_payloads
+    from .state import stable_hash
+
+    if "news" not in ctx.settings.features or not ctx.active:
+        return
+    if ctx.settings.test_mode:
+        ctx.warnings.append("News test-mode posting is disabled; use preview --kind news or run --only news --dry-run")
+        return
+    ctx.state.prune_news(ctx.now)
+    for key, record in (ctx.state.data.get("news") or {}).items():
+        if key not in ctx.settings.news_games:
+            record["paused"] = True
+    remaining = ctx.settings.news_max_posts
+    ephemeral = ctx.settings.dry_run or ctx.settings.test_mode
+    for game in ctx.games:
+        if game.key not in ctx.settings.news_games:
+            continue
+        source = hoyolab if game.hoyolab_gid else kuro if game.kuro_news else None
+        if source is None:
+            ctx.report.append(f"ℹ️ {game.short} news: no verified source (inactive)")
+            continue
+        hook = ctx.settings.webhook("news", game.key)
+        if not hook:
+            ctx.warnings.append(f"{game.short} news: missing dedicated webhook; no request or bootstrap")
+            continue
+        record = ctx.state.data.get("news", {}).get(game.key, {})
+        fp = webhook_fingerprint(hook)
+        # Include thread routing in the non-secret fingerprint (same webhook can target threads).
+        fp = stable_hash([fp, hook.partition("?")[2]])
+        if record.get("route") and record["route"] != fp:
+            ctx.warnings.append(f"{game.short} news: destination changed; review news state before resuming")
+            continue
+        since = max(ctx.now - 48 * 3600, record.get("floor", 0) + 1)
+        try:
+            rows = await source.discover_news(ctx.fetcher, game, since)
+        except (TypeError, ValueError, KeyError, AttributeError) as exc:
+            ctx.warnings.append(f"{game.short} news: invalid discovery ({type(exc).__name__}); retry")
+            continue
+        if rows is None:
+            ctx.warnings.append(f"{game.short} news: discovery unavailable; no baseline advanced")
+            continue
+        record = ctx.state.news_record(game.key)
+        if "floor" not in record or record.get("paused"):
+            record.update(floor=ctx.now, route=fp, paused=False)
+            record.setdefault("records", {})
+            ctx.report.append(f"🌱 {game.short} news: silent baseline; historical articles not posted")
+            continue
+        record.setdefault("route", fp)
+        records = record.setdefault("records", {})
+        eligible = [row for row in rows if record["floor"] < row["ts"] <= ctx.now
+                    and row["ts"] >= ctx.now - 48 * 3600]
+        # Finish known partial deliveries even if the discovery page/window has moved on.
+        for key, rec in records.items():
+            if rec.get("status") == "partial" and not any(row["id"] == key for row in eligible):
+                eligible.append(rec["row"])
+        failures = attempted = delivered = 0
+        eligible.sort(key=lambda value: (value["ts"], value["id"]))
+        cursor = record.get("cursor")
+        if isinstance(cursor, list) and len(cursor) == 2:
+            # Rotate the attempt budget over retry holes; this is NOT a publication floor
+            # or delivery checkpoint, so failures remain eligible on subsequent passes.
+            eligible = ([row for row in eligible if [row["ts"], row["id"]] > cursor]
+                        + [row for row in eligible if [row["ts"], row["id"]] <= cursor])
+        for row in eligible:
+            rec = records.get(row["id"])
+            if rec and rec.get("status") == "posted":
+                continue
+            if remaining <= 0 or attempted >= 10:
+                break
+            attempted += 1
+            if rec is None and len(records) >= 500:
+                ctx.warnings.append(f"{game.short} news: state capacity reached; safe cleanup deferred admission")
+                break
+            record["cursor"] = [row["ts"], row["id"]]
+            try:
+                item = await source.news_article(ctx.fetcher, game, row)
+                if item is None:
+                    raise ValueError("full article unavailable/mismatched")
+                # Existing version/program notices remain schedule-only; do not duplicate them
+                # into news. Codes and schedule mirrors still use their original pipelines.
+                is_program = (any(re.search(pattern, item.title, re.I) for pattern in game.program_patterns)
+                              and not schedule.PROGRAM_EXCLUDE.search(item.title)
+                              and not schedule.NOT_PROGRAM_TITLE.search(item.title))
+                # A third-party payment/service maintenance notice is ordinary news,
+                # not game-version maintenance. Do not exclude every "Maintenance Notice".
+                is_version_notice = (schedule.MAINT_RE.search(item.title)
+                                     and (find_version(item.title) or schedule.PRE_WORDS.search(item.title)))
+                if is_version_notice or is_program:
+                    records[row["id"]] = {"status": "posted", "ts": row["ts"], "messages": [],
+                                          "excluded": "schedule"}
+                    ctx.report.append(f"ℹ️ {game.short} news {item.id}: schedule-only announcement")
+                    continue
+                payloads = news_payloads(game, item)
+                from .media import group_news_media, news_media_available
+
+                if not await news_media_available(ctx.fetcher, payloads):
+                    # One fresh official full response can supply a corrected/renewed URL.
+                    fresh = await source.news_article(ctx.fetcher, game, row)
+                    if fresh is None or fresh.title != item.title:
+                        raise ValueError("media unavailable; fresh official article mismatched")
+                    item = fresh
+                    payloads = news_payloads(game, item)
+                    if not await news_media_available(ctx.fetcher, payloads):
+                        raise ValueError("media unavailable after official refresh; held for retry, not posted")
+                payloads = await group_news_media(
+                    ctx.fetcher, payloads, enabled=ctx.settings.news_group_long_strips)
+                signature = stable_hash(payloads)
+                if rec and rec.get("signature") != signature:
+                    raise ValueError("partially delivered article changed; manual review required")
+                if rec is None:
+                    rec = {"status": "partial", "ts": row["ts"], "row": row,
+                           "signature": signature, "messages": []}
+                for payload in payloads[len(rec["messages"]):]:
+                    result = await ctx.webhook.send(hook, payload)
+                    if not result.ok or not result.message_id:
+                        raise ValueError(f"Discord delivery failed ({result.status}); retry required")
+                    rec["messages"].append(result.message_id)
+                    records[row["id"]] = rec
+                    if not ephemeral:
+                        ctx.state.save()
+                rec["status"] = "posted"
+                rec.pop("row", None)
+                rec.pop("signature", None)
+                if not ephemeral:
+                    ctx.state.save()
+                remaining -= 1
+                delivered += 1
+                ctx.report.append(f"📰 {game.short} news: delivered {item.id} ({len(payloads)} message(s), "
+                                  f"{sum(len(p['components']) for p in payloads)} container(s))")
+            except (TypeError, ValueError, KeyError, AttributeError) as exc:
+                failures += 1
+                ctx.warnings.append(f"{game.short} news {row['id']}: {type(exc).__name__}: {exc}")
+        ctx.report.append(f"📰 {game.short} news: discovered={len(rows)}, attempted={attempted}, "
+                          f"delivered={delivered}, deferred/error={failures}")

@@ -485,3 +485,184 @@ def mark_test(payload: dict, note: str = TEST_NOTE) -> dict:
                 kids.insert(0, text(f"-# {note}"))
             break
     return p
+
+
+# Full-content news: each part independently satisfies existing Components V2 limits.
+NEWS_DONATE = "https://ko-fi.com/jieunlatte"
+NEWS_COMMUNITY = "https://discord.gg/HyrVP9wRXu"
+
+
+def news_payloads(game: Game, item) -> list[dict]:
+    """Full article in one message, or at most two pages up to 7,000 text chars.
+
+    Character/component limits apply per message across ALL its containers.
+    Longer/unpageable content uses one excerpt; paged buttons occur only at the end.
+    """
+    title = strip_invisible(item.title).replace("[", "(").replace("]", ")")
+    if len(title) > 500 or not safe_url(item.url):
+        raise ValueError("article title/URL cannot be rendered safely")
+    author = strip_invisible(item.author)
+    if item.source == "hoyolab" and author in ("", "HoYoLAB official news"):
+        author = game.name
+    if len(author) > 200:
+        raise ValueError("article attribution exceeds safe header size")
+    byline = f"-# {item.source_label}" + (f" · {author}" if author else "")
+    if item.published_ts and item.published_ts > 0:
+        byline += f" · <t:{item.published_ts}:f>"
+    header = text(f"## [{title}]({item.url})\n{byline}")
+    buttons = action_row(buttons_of(
+        link_button("Read Post", item.url, {"id": "1472388018689282261", "name": "starwardhmm", "animated": True}),
+        link_button("Citlali News", NEWS_COMMUNITY, {"id": "1439878792653832253", "name": "starward11", "animated": True}),
+        link_button("Donate", NEWS_DONATE, {"id": "1509026327548657914", "name": "starwardfans", "animated": True})))
+
+    def polish(value):
+        value = strip_invisible(value).strip()
+        value = re.sub(r"(?m)^([ \t]*)(\*\*)?[•●][ \t]*",
+                       lambda m: m[1] + "- " + (m[2] or ""), value)
+        # Marker padding, not blanket paragraph insertion before every footnote.
+        value = re.sub(r"([※✦])(?=[\w[(])", r"\1 ", value)
+        value = re.sub(r"(?<=[\w)\]])✦", " ✦", value)
+        value = re.sub(r"(?m)^(※[^\n]+)\n(?=※)", r"\1\n\n", value)
+        value = re.sub(r"(?m)^([ \t]*- [^\n]+)\n(?:[ \t]*\n)+(?=[ \t]*- )", r"\1\n", value)
+        # Adjacent enumerated entries stay compact; do not rewrite their wording.
+        for marker in (r"\d+[.)]", r"[①-⑳㉑-㉟㊱-㊿]", r"[a-z][.)]", r"■"):
+            value = re.sub(rf"(?m)^([ \t]*(?:{marker})[ \t]+[^\n]+)\n(?:[ \t]*\n)+"
+                           rf"(?=[ \t]*(?:{marker})[ \t]+)", r"\1\n", value)
+        value = re.sub(r"(?<!\n)\n(?=\*\*▌)", "\n\n", value)
+        value = re.sub(r'(?m)^("[^\n]+" Signal Search Details|The Final Callback - Audition Stage Details)$',
+                       r"**\1**", value)
+        return value
+
+    units, article_text = [], []
+    pending = ""
+
+    def flush():
+        nonlocal pending
+        value = polish(pending)
+        pending = ""
+        if value:
+            article_text.append(value)
+            units.append(text(value))
+
+    for block in item.article_blocks:
+        if block["kind"] == "text":
+            pending += block.get("text", "")
+            continue
+        flush()
+        url = safe_url(block.get("url"))
+        if not url:
+            raise ValueError("unsupported article media URL")
+        if block["kind"] == "link" or (block["kind"] == "video" and not re.search(r"\.(?:mp4|webm)(?:[?#]|$)", url, re.I)):
+            units.append(text(f"[Open original media]({url})"))
+        else:
+            # A separate inline gallery preserves each text/image relationship.
+            units.append(gallery([url]))
+    flush()
+    if not units:
+        raise ValueError("empty full article")
+    cover = safe_url(item.images[0]) if item.images else None
+    if item.images and not cover:
+        raise ValueError("unsupported article cover URL")
+    chunks, current = [], []
+    for unit in units:
+        # Do not split one uninterrupted media run merely at the eight-unit
+        # readability threshold. Galleries remain separate; no long-strip policy.
+        media_run = current and current[-1]["type"] == 12 and unit["type"] == 12
+        if len(current) >= 8 and not media_run:
+            chunks.append(current)
+            current = []
+        current.append(unit)
+    if current:
+        chunks.append(current)
+    containers = []
+    for index, chunk in enumerate(chunks):
+        kids = ([header] + ([gallery([cover])] if cover else [])) if index == 0 else []
+        if len(chunks) > 1:
+            kids += [text(f"-# Part {index + 1}/{len(chunks)}"), sep()]
+        kids += chunk
+        if index == len(chunks) - 1:
+            kids += [sep(), buttons]
+        containers.append(container(kids, game.color))
+    payload = {"flags": IS_COMPONENTS_V2, "allowed_mentions": {"parse": []}, "components": containers}
+    if not validate_payload(payload):
+        return [payload]
+
+    # Moderate overflow may retain the full source in at most two messages.
+    # The 7,000 ceiling measures normalized text + title/byline ONCE; page labels
+    # are additional overhead checked independently against each 4,000 cap.
+    if text_length([header] + units) <= 7000:
+        page_units = []
+        for unit in units:
+            if unit["type"] != 10 or len(unit.get("content", "")) <= MAX_TEXT_TOTAL - text_length([header]) - 64:
+                page_units.append(unit)
+                continue
+            # Split only between existing paragraphs, never inside links/bold.
+            # Preserve the exact separators in content when flattened again.
+            pieces = re.findall(r".+?(?:\n\n|$)", unit["content"], re.S)
+            if any(piece.count("**") % 2 or piece.count("[") != piece.count("]") for piece in pieces):
+                page_units.append(unit)
+            else:
+                page_units.extend(text(piece) for piece in pieces)
+
+        def page_prefix(number):
+            return (([header] + ([gallery([cover])] if cover else [])) if number == 1 else []) + [
+                text(f"-# Page {number}"), sep()]
+
+        def page_payload(kids, final=False):
+            return {"flags": IS_COMPONENTS_V2, "allowed_mentions": {"parse": []},
+                    "components": [container(kids + ([sep(), buttons] if final else []), game.color)]}
+
+        pages, current = [], page_prefix(1)
+        have_body = False
+        for unit in page_units:
+            # Coalesce text fragments to avoid artificial paragraph components.
+            trial = list(current)
+            if unit["type"] == 10 and have_body and trial[-1]["type"] == 10:
+                trial[-1] = text(trial[-1]["content"] + unit["content"])
+            else:
+                trial.append(unit)
+            # Reserve the final controls even while packing the first page.
+            if not validate_payload(page_payload(trial, final=True)):
+                current, have_body = trial, True
+                continue
+            if pages or not have_body:
+                break
+            pages.append(page_payload(current))
+            current, have_body = page_prefix(2) + [unit], True
+            if validate_payload(page_payload(current, final=True)):
+                break
+        else:
+            if pages and have_body:
+                pages.append(page_payload(current, final=True))
+                if len(pages) == 2 and all(not validate_payload(page) for page in pages):
+                    return pages
+        # Never publish a partial full article: fall through to the excerpt.
+
+    # Oversized article: retain the opening text, ONE lead image, and source access.
+    # This deliberately replaces the previous multi-message full-body policy.
+    lead = cover or next((safe_url(b.get("url")) for b in item.article_blocks if b["kind"] == "image"), None)
+    notice = text("**Excerpt — this article exceeds Discord's single-message limits.** "
+                  "Read Post opens the complete article and remaining media.")
+    kids = [header] + ([gallery([lead])] if lead else []) + [notice, sep()]
+    body = "\n\n".join(article_text) or "Open the original article for its remaining media."
+    remaining = MAX_TEXT_TOTAL - text_length(kids) - 4
+    if remaining <= 0:
+        raise ValueError("article metadata leaves no excerpt budget")
+    if len(body) > remaining:
+        cut = max(body.rfind("\n", 0, remaining), body.rfind(" ", 0, remaining))
+        body = body[:cut if cut > remaining // 2 else remaining].rstrip()
+    # Compact overflow only: halve the WORDS of the already budget-fitting excerpt,
+    # not the full source (half a long article could still exceed Discord's limit).
+    words = list(re.finditer(r"\S+", body))
+    if len(words) > 1:
+        body = body[:words[max(1, len(words) // 2) - 1].end()].rstrip()
+    else:
+        body = body[:max(1, len(body) // 2)]
+    if body.count("**") % 2:
+        body += "**"
+    body += "…"
+    kids += [text(body), sep(), buttons]
+    payload["components"] = [container(kids, game.color)]
+    if validate_payload(payload):
+        raise ValueError("article excerpt exceeds Discord limits")
+    return [payload]

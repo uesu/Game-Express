@@ -1,5 +1,33 @@
 # Changelog — current entries
 
+## Unreleased — opt-in official news (2026-10-18)
+
+- Add off-default HoYoLAB news for GI/HSR/HNA/ZZZ and Kuro's current English WW
+  index, using dedicated per-game webhook secrets without destination fallback.
+- Render full article-order Components V2 content in one message when it fits,
+  otherwise at most two independently validated pages for <=7,000 normalized
+  characters, or one labelled excerpt container/one lead for longer/unpageable input. Final-container-only custom-emoji buttons; no gallery-only mode.
+  Preserve heading/list readability, convert line-leading `●`/`•` to Markdown
+  bullets and omit unknown publication times. Overflow excerpts keep half the
+  words of the already budget-fitting opening excerpt; fitting articles stay full.
+- Add bounded official-media GET/signature preflight with one official-article
+  refresh on failure; hold unresolved media instead of posting broken galleries.
+  Prefix validation is not complete-download or Discord playback verification.
+- Polish HTML/Quill links and heading boundaries; use game name only when
+  publisher nickname is missing. Keep raw URL fields, compact bullet lists and
+  conditional `※`/`✦` spacing. Keep uninterrupted media runs in one container
+  when within message limits. Add optional measured long-strip grouping via
+  `NEWS_GROUP_LONG_STRIPS` (default off); no cropping/slicing or source changes.
+- Balance adjacent/nested bold spans rather than leaking literal Markdown
+  markers, and pad both sides of decorative star headings when missing.
+- Keep version/program announcements in schedule and codes/mirrors unchanged;
+  ANANTA news remains inactive; Wangyue is excluded.
+- Add silent baselines, confirmed per-part retry progress, compatible peer dedup
+  and bounded cleanup with publication floors in the existing state file.
+- Extend existing offline tests/preview/config/legal docs. No dependencies,
+  workflows, new repository files, production posts or state resets. Current
+  official-source availability/playback still requires read-only/live verification.
+
 ## Unreleased — attended workflow updates (2026-10-18)
 
 - Keep eligible package-only Dependabot auto-merge; require attended merges for
@@ -931,3 +959,82 @@ documentation accuracy sweep**
 - No functional changes to the monitor itself: all 131 offline tests, `ruff check .`,
   `python -m gamexpress validate` and `python -m gamexpress preview` are unaffected.
 
+
+
+## Current official-news paging policy (supersedes earlier one-message-only wording)
+
+Keep fitting full articles unchanged in one message (possibly multiple containers).
+If that fails, permit at most two actual messages when normalized source text plus
+title/byline once is <=7,000 characters and both payloads validate independently
+against 4,000 text characters / 40 components / 1–10 gallery items. The 7,000
+ceiling is fixed policy, not a Discord limit and not a new environment variable.
+Preserve complete wording and source media order. Prefer source block boundaries;
+use safe paragraph boundaries only for larger text blocks. Never split a link or
+unbalanced bold span. If packing fails, use the existing one-container excerpt
+with at most one lead image; never publish a partial full-article proposal.
+Paged messages: title/byline and lead only once at the start, then Page 1 / Page 2
+labels and dividers; three custom-emoji buttons only at the end of the final
+message. One-message articles also put buttons in the final container. Articles
+above the ceiling or unpageable within two messages keep the approved half-fitting
+word excerpt. Never truncate fitting full articles or modify official API HTML.
+Retain confirmed per-message progress, no-repost handling, media preflight and
+refresh/holds. No new scheduler or delivery-state reset. Historical incomplete
+captures are not full-source length evidence. Pagination is tested across all
+five game keys with synthetic boundary inputs, not five live integrations.
+
+
+### Latest layout corrections: 7,000 eligibility / final-container controls
+
+This is the current rendering rule across all five games. The eligibility ceiling
+is now 7,000 normalized source-text characters including title/byline once, with
+at most two actual Discord messages; every message must independently validate
+against the unchanged 4,000 text-character and 40-component caps. Failure to fit
+safely in two messages still uses the existing one-container/one-lead excerpt.
+All three custom-emoji buttons appear only at the end of the final container of
+the final message, including one-message/multi-container articles. Keep Part 1/2
+and Part 2/2 for containers in one message, Page 1/Page 2 for separate messages.
+Compact consecutive square (■) entries like numbered lists. HTML list items
+containing nested paragraphs must keep '- ' attached to their first visible text;
+fix parser block boundaries, not source-specific wording. Source HTML/API/mirror
+responses and media URLs remain untouched. A historical maintenance notice remains
+schedule-routed: a length allowance does not make it eligible for news/backfill.
+The one integrated HTML contains the main previews and complete browser-only
+long-strip laboratory; optional backend grouping is implemented below.
+
+
+### Optional measured long-strip grouping — implemented
+
+`NEWS_GROUP_LONG_STRIPS=0` (default) keeps article-order galleries exactly as before,
+with no measurement requests. Set repository Variable `NEWS_GROUP_LONG_STRIPS=1`
+to enable the backend grouping pass for all five official-news game keys. This
+setting does not enable news, change destinations, or affect schedule/codes.
+The existing workflow imports repository Variables; no workflow edit is needed.
+
+After normal media availability preflight and any one official refresh, read
+original PNG/GIF/JPEG/WebP header dimensions using allowlisted HTTPS GETs only:
+at most four request hops, 8 seconds total per measurement, 256 KiB per response,
+at most 40 distinct URLs and 20 seconds total per article. Reads stop as soon as
+header dimensions are known; no decoding, transformation, upload or dependency.
+Unsupported/truncated formats (including video/AVIF), failed/unknown dimensions,
+or the article measurement deadline keep the original layout without holding an
+otherwise deliverable article. All included media must have known dimensions.
+Normal availability failure still holds/retries independently of this option.
+
+A qualifying strip has height/width strictly greater than 3.5. Merge only runs of
+at least two consecutive single-item galleries inside the same container, up to
+ten items per grouped gallery. Insert a divider before each group unless one
+already precedes it. A measured long-strip lead may join an adjacent qualifying
+run; normal-aspect leads/final images remain separate. Do not cross text, existing
+separators, containers, messages, or existing multi-item galleries. Mixed GIF/image
+runs retain exact source item fields, bytes (never downloaded in full for editing),
+URLs, duplicates and order. No article-specific exemptions or guessed dimensions.
+
+Validate every proposed message against 4,000 text characters / 40 components /
+1–10 gallery items and verify flattened media URL order/count; otherwise retain
+the original layout. Do not repack pages or modify titles, Part/Page labels,
+final-container buttons, full-content eligibility or the one-lead overflow excerpt.
+The existing partial-delivery signature guard holds changed layouts for manual
+review rather than replaying already confirmed pages. Do not toggle layout modes
+mid-partial delivery without reviewing that hold. No state reset or old-post edits.
+Discord controls thumbnail cropping; neither header measurements, HTML previews
+nor passing offline tests prove live media decoding/readability or delivery.

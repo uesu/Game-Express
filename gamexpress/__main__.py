@@ -70,6 +70,21 @@ def sample_payloads(kind: str = "all", game: str = "", *, mark: bool = False,
             for i, p in enumerate(codes_payloads(games[key], codes, settings,
                                                  _ping("codes", key), int(time.time()))):
                 out.append(("codes", f"codes_{key}{'_' + str(i + 1) if i else ''}", p))
+    if kind == "news":
+        from .cards import news_payloads
+        from .models import Item
+
+        for key in ("genshin", "starrail", "zzz", "wuwa", "hna"):
+            if game and key != game:
+                continue
+            item = Item("kuro" if key == "wuwa" else "hoyolab", key, "sample", "https://example.com/news",
+                        "OFFLINE SAMPLE — official news layout", "", 1792281600,
+                        article_blocks=[{"kind": "text", "text": "Sample full article text. This is not a real announcement."},
+                                        {"kind": "image", "url": "https://example.com/sample.gif"},
+                                        {"kind": "text", "text": "More article text after the sample media."}],
+                        author="Official source (sample)")
+            for i, payload in enumerate(news_payloads(games[key], item)):
+                out.append(("news", f"news_{key}_{i + 1}", payload))
     if mark:
         out = [(f, n, mark_test(p)) for f, n, p in out]
     return out
@@ -80,6 +95,9 @@ async def cmd_test_card(args) -> int:
 
     from .discord import WebhookClient
     settings = load_settings()
+    if args.kind == "news":
+        print("News samples are preview-only; use preview --kind news. No messages sent.")
+        return 0
     rc = 0
     async with aiohttp.ClientSession() as session:
         client = WebhookClient(session, dry_run=settings.dry_run or args.dry_run)
@@ -160,7 +178,7 @@ def cmd_preview(args) -> int:
         problems = validate_payload(payload)
         (out / f"{name}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"{name}.json  {'OK' if not problems else 'PROBLEMS: ' + '; '.join(problems)}")
-        group = "Schedule cards" if feature == "schedule" else "Code cards"
+        group = {"schedule": "Schedule cards", "codes": "Code cards", "news": "Official news samples"}[feature]
         cards.append((group, name, payload))
     if args.kind in ("all", "codes") and (not args.game or args.game == "starrail"):
         # how a posted card looks after the automatic silent edit once a code has expired
@@ -244,20 +262,23 @@ def cmd_validate(_args) -> int:
           f"instance={settings.instance_name} ({settings.instance_role}) | dry_run={settings.dry_run}")
     print(f"peer_state_url={'set' if settings.peer_state_url else '—'} | X={'on' if settings.x_enabled else 'off'} "
           f"| nitter instances={len(settings.nitter_instances)} | token={'set' if settings.nitter_token else '—'}")
+    print(f"news={'on' if 'news' in settings.features else 'off'} | news games={','.join(sorted(settings.news_games))} "
+          f"| max articles/run={settings.news_max_posts} "
+          f"| group long strips={'on' if settings.news_group_long_strips else 'off'} | dedicated destinations only")
     print("emoji: " + ", ".join(f"{k}={'✓' if v else '—'}" for k, v in settings.emoji.items()))
     ok = True
     from .discord import WEBHOOK_RE, webhook_fingerprint
     for g in games.values():
         on = game_is_on(g, settings)
         cols = []
-        for feature in ("schedule", "codes"):
+        for feature in ("schedule", "codes", "news"):
             secret, url = settings.webhook_source(feature, g.key)
             hook = f"✓ {secret}" if url else "— none"
             if url and not WEBHOOK_RE.match(url):
                 hook = f"✗ {secret} is not a webhook URL"
                 ok = False
             mirror = ""
-            msecret, murl = settings.mirror_webhook_source(feature, g.key)
+            msecret, murl = settings.mirror_webhook_source(feature, g.key) if feature != "news" else ("", None)
             if murl and not WEBHOOK_RE.match(murl):
                 mirror = f" | ✗ {msecret} is not a webhook URL"
                 ok = False
@@ -265,10 +286,11 @@ def cmd_validate(_args) -> int:
                 mirror = f" | ⚠ {msecret} is the same channel as {secret} — no copy sent"
             elif murl:
                 mirror = f" | 🪞 also {msecret}"
-            cols.append(f"{feature}[{hook} | {settings.ping(feature, g.key).text or 'no ping'}{mirror}]")
+            ping_text = settings.ping(feature, g.key).text if feature != "news" else ""
+            cols.append(f"{feature}[{hook} | {ping_text or 'no ping'}{mirror}]")
         flag = "✓" if on else "·"
         note = "" if on else (f" (off; auto-on {g.auto_enable_on})" if g.auto_enable_on else " (off)")
-        print(f"  {flag} {g.key:9} {g.name:22}{note}\n      {cols[0]}\n      {cols[1]}\n"
+        print(f"  {flag} {g.key:9} {g.name:22}{note}\n      {cols[0]}\n      {cols[1]}\n      {cols[2]}\n"
               f"      X={','.join(g.x_accounts) or '—'} code_sources={','.join(g.codes.get('sources', [])) or '—'} "
               f"4★/phase={g.four_star_count or 'count not set (set four_star_count at launch)'}")
     for name in ("PING_ROLE_ID", "PING_SCHEDULE", "PING_CODES"):
@@ -297,10 +319,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("command", nargs="?", default="run",
                    choices=["run", "test-card", "check-webhooks", "preview", "speculate", "validate"])
     p.add_argument("--dry-run", action="store_true", help="build + log cards, never post")
-    p.add_argument("--only", choices=["schedule", "codes"], help="run one feature")
+    p.add_argument("--only", choices=["schedule", "codes", "news"], help="run one feature")
     p.add_argument("--game", default="", help="restrict to one game key (e.g. starrail)")
     p.add_argument("--repost", default="", help="force a NEW post for game:version (e.g. genshin:7.2)")
-    p.add_argument("--kind", default="all", choices=["all", "schedule", "codes"],
+    p.add_argument("--kind", default="all", choices=["all", "schedule", "codes", "news"],
                    help="test-card / check-webhooks / preview")
     p.add_argument("--ping", action="store_true", help="test-card: include your role ping (default: no ping)")
     p.add_argument("--unlaunched", action="store_true",

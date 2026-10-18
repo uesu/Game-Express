@@ -1,7 +1,7 @@
 # Privacy Policy
 
-**Effective date:** October 17, 2026
-**Applies to:** *Game-Express*, the open-source game version-schedule announcer and redemption-code
+**Effective date:** October 18, 2026
+**Applies to:** *Game-Express*, the open-source game version-schedule announcer, optional official-news and redemption-code
 poster ("the Service"):
 - **Automation mode**: GitHub Actions + Discord webhooks.
 
@@ -96,3 +96,28 @@ Updates are published in this file with a new effective date and noted in the
 ## 9. Contact
 
 Open an issue in the repository that hosts the instance you are using.
+
+
+## Optional official-news processing and retention
+
+When explicitly enabled, news reads full public official article text, publisher
+names, publication timestamps and image/GIF/video links from the already listed
+HoYoLAB/Kuro services and sends one rendered message per article to dedicated
+Discord channels: full fitting content or a labelled excerpt with a source link.
+The monitor performs bounded media GET/signature checks using a short in-memory
+response prefix; it does not store article media as a new dataset. Failed checks
+refresh the official article once, then hold delivery for retry. Discord fetches
+linked media according to its own behavior. Unsupported media remains
+an original-source link or notice. No Discord member data or new analytics is added.
+
+The existing repository state also retains public news IDs, publication times,
+publication floors, route/content fingerprints, delivery status and the monitor's
+own per-part message IDs; partial entries include minimal discovery metadata for
+retry. Completed news entries retain up to 30 days, with a 500-entry/game admission
+bound shared with partial progress. Safe capacity cleanup can remove completed
+entries older than 48 hours sooner, advancing a floor to prevent reposts. Partial
+progress remains until completion/review rather than being silently evicted; full
+capacity defers new admission. See configuration for catch-up/source limits.
+Disabling writes a pause marker once, without new source requests. Repository/Git
+history and Discord/log retention are independent of pruning this current JSON.
+Operators control visibility and must preserve attribution, state and credentials.

@@ -125,6 +125,75 @@ class Fetcher:
             log.info("[%s] invalid JSON from %s", source, url.split("?")[0])
             return None
 
+    async def _news_media_prefix(self, url: str, *, dimensions: bool = False):
+        """Allowlisted HTTPS GET, <=4 hops, <=256 KiB, bounded by the caller.
+
+        Stop as soon as dimensions are known; do not decode or transform images.
+        Unknown/unsupported formats are not evidence for grouping.
+        """
+        from urllib.parse import urljoin, urlsplit
+
+        from .media import image_dimensions
+
+        hosts = ("hoyolab.com", "hoyoverse.com", "hoyocdn.com", "mihoyo.com",
+                 "mihoyocdn.com", "kurogame.com", "kurogames.com", "ytimg.com")
+        try:
+            for _ in range(4):
+                parts = urlsplit(url)
+                host = (parts.hostname or "").lower()
+                if (parts.scheme != "https" or parts.username or parts.password
+                        or parts.port not in (None, 443)
+                        or not any(host == h or host.endswith("." + h) for h in hosts)):
+                    return None
+                async with self._gate(), self.session.get(
+                        url, headers={"User-Agent": BROWSER_UA}, allow_redirects=False,
+                        timeout=aiohttp.ClientTimeout(total=8)) as response:
+                    if response.status in (301, 302, 303, 307, 308):
+                        location = response.headers.get("Location")
+                        if not location:
+                            return None
+                        url = urljoin(url, location)
+                        continue
+                    if response.status != 200:
+                        return None
+                    cap = 256 * 1024 if dimensions else 64
+                    prefix = bytearray()
+                    async for chunk in response.content.iter_chunked(2048 if dimensions else 64):
+                        prefix += chunk[:cap - len(prefix)]
+                        if len(prefix) >= cap or (dimensions and image_dimensions(prefix)):
+                            break
+                    mime = response.headers.get("Content-Type", "").split(";")[0].lower()
+                    return bytes(prefix), mime
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+            pass
+        return None
+
+    async def verify_media(self, url: str) -> bool:
+        """Bounded GET/status/signature preflight; never a Discord decode guarantee."""
+        result = await self._news_media_prefix(url)
+        if result:
+            raw, mime = result
+            image = (raw.startswith((b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n", b"GIF87a", b"GIF89a"))
+                     or (raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"))
+            video = raw[4:8] == b"ftyp" or raw.startswith(b"\x1aE\xdf\xa3")
+            if (image and mime.startswith("image/")) or (video and mime.startswith(("video/", "image/avif"))):
+                self._mark("news-media", True)
+                return True
+        self._mark("news-media", False, "media GET/status/signature validation failed")
+        return False
+
+    async def media_dimensions(self, url: str) -> tuple[int, int] | None:
+        """Optional measurement: <=8s total including redirects; failures are unknown."""
+        from .media import image_dimensions
+
+        try:
+            result = await asyncio.wait_for(self._news_media_prefix(url, dimensions=True), timeout=8)
+            if result and result[1].startswith("image/"):
+                return image_dimensions(result[0])
+        except asyncio.TimeoutError:
+            pass
+        return None
+
     def summary(self) -> str:
         parts = []
         for name, h in sorted(self.health.items()):

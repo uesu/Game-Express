@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = ROOT / "config"
 DEFAULT_STATE_PATH = ROOT / "state" / "state.json"
 
-FEATURES = ("schedule", "codes")
+FEATURES = ("schedule", "codes", "news")
 DEFAULT_COLOR = 14922399  # the gold accent used by every reference card
 MAINTENANCE_NOTE = ("※ In the event that the maintenance is extended, the dev team will issue a "
                     "follow-up notice and adjust the compensation accordingly.")
@@ -401,6 +401,11 @@ class Settings:
     banner_calendar: bool = True       # BANNER_CALENDAR=0 -> never read the official calendar (api.ennead.cc) for banner names
     gacha_wiki: bool = True            # GACHA_WIKI=0 -> never fill banner lineups from the game wikis
 
+    news_enabled: bool = False
+    news_games: set[str] = field(default_factory=set)
+    news_group_long_strips: bool = False
+    news_max_posts: int = 5
+
     # -- routing ---------------------------------------------------------------
     def _game_slugs(self, game_key: str) -> list[str]:
         out = [slug(game_key)]
@@ -413,11 +418,13 @@ class Settings:
         """(secret name, url). Order: FORCE_WEBHOOK (test channel) > DISCORD_WEBHOOK_<FEATURE>_<GAME>
         (the game key, or its short name: CODES_GENSHIN / CODES_GI, CODES_STARRAIL / CODES_HSR …)
         > DISCORD_WEBHOOK_<FEATURE> > DISCORD_WEBHOOK_URL."""
-        if self.force_webhook:
+        if self.force_webhook and feature != "news":
             return "FORCE_WEBHOOK", self.force_webhook
         f = slug(feature)
         names = [f"DISCORD_WEBHOOK_{f}_{g}" for g in self._game_slugs(game_key)]
-        names += [f"DISCORD_WEBHOOK_{f}", "DISCORD_WEBHOOK_URL"]
+        # News must never inherit the schedule/code catch-all or a shared news channel.
+        if feature != "news":
+            names += [f"DISCORD_WEBHOOK_{f}", "DISCORD_WEBHOOK_URL"]
         for name in names:
             v = _env(self.env, name)
             if v:
@@ -513,6 +520,11 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         features: set[str] = set()
     else:
         features = {f.strip() for f in feats_raw.split(",") if f.strip() in FEATURES}
+    # Explicit opt-in even if a pre-existing installation asks for all features.
+    features.discard("news")
+    if feats_raw not in ("none", "off", "standby", "0") and _bool(env, "NEWS_ENABLED"):
+        features.add("news")
+    news_enabled = "news" in features
     if only in FEATURES:
         features &= {only}
     games_filter = {g.strip().lower() for g in (_env(env, "GAMES") + "," + _env(env, "GAME")).split(",")
@@ -561,6 +573,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         enable_games={g.strip().lower() for g in _env(env, "ENABLE_GAMES").split(",") if g.strip()},
         aliases=_game_aliases(),
         codes_mark_expired=_bool(env, "CODES_MARK_EXPIRED", True),
+        news_enabled=news_enabled,
+        news_games={g.strip().lower() for g in _env(env, "NEWS_GAMES", "genshin,starrail,zzz,wuwa,hna").split(",") if g.strip()},
+        news_group_long_strips=_bool(env, "NEWS_GROUP_LONG_STRIPS", False),
+        news_max_posts=min(20, max(1, _int(env, "NEWS_MAX_POSTS_PER_RUN", 5))),
     )
 
 

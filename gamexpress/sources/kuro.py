@@ -79,3 +79,43 @@ def parse_launcher_index(data: dict) -> dict:
 async def launcher_versions(fetcher: Fetcher) -> dict:
     data = await fetcher.get_json(LAUNCHER_INDEX, source="kuro-launcher", retries=1)
     return parse_launcher_index(data) if data else {}
+
+
+async def discover_news(fetcher: Fetcher, game: Game, since: int) -> list[dict] | None:
+    """Kuro menu discovery; valid empty menus differ from unavailable/malformed responses."""
+    if not game.kuro_news:
+        return None
+    picked = {}
+    # English MainMenu.article is the current official index (also used by RSSHub).
+    # ArticleMenu is not guaranteed to exist in English; do not require it for a valid baseline.
+    for menu in ("MainMenu.json",):
+        data = await fetcher.get_json(BASE + menu, source="news-kuro", retries=1)
+        rows = data.get("article") if isinstance(data, dict) else data
+        if not isinstance(rows, list):
+            return None
+        for article in rows:
+            if not isinstance(article, dict):
+                continue
+            if article.get("articleType") == 0:
+                continue
+            aid = str(article.get("articleId") or "")
+            ts = parse_kuro_time(article.get("createTime") or "") or 0
+            if aid.isdigit() and ts >= since:
+                picked[aid] = {"id": aid, "ts": ts, "title": str(article.get("articleTitle") or "")}
+    return sorted(picked.values(), key=lambda row: (row["ts"], row["id"]))
+
+
+async def news_article(fetcher: Fetcher, game: Game, row: dict) -> Item | None:
+    from ..textutil import news_blocks
+
+    detail = await fetcher.get_json(DETAIL.format(row["id"]), source="news-kuro", retries=1)
+    if not isinstance(detail, dict) or not detail.get("articleContent"):
+        return None
+    if detail.get("articleId") is not None and str(detail["articleId"]) != row["id"]:
+        return None
+    blocks = news_blocks(detail["articleContent"])
+    title = detail.get("articleTitle") or row.get("title")
+    if not blocks or not title:
+        return None
+    return Item(source="kuro", game=game.key, id=row["id"], url=LINK.format(row["id"]),
+                title=title, text="", published_ts=row["ts"], article_blocks=blocks, author="Kuro Games")

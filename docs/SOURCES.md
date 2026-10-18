@@ -405,3 +405,170 @@ page fetcher, and so were the ennead calendars. The production reachability of t
   - **Switching it on:** it turns on by itself on that date (`auto_enable_on`), or earlier with
     `ENABLE_GAMES=ananta`.
   - **Banners:** it has no gacha character unlocking, so the card hides banners.
+
+
+## Optional full-content news adapter (2026-10-18)
+
+News reuses the configured HoYoLAB gids 2 / 6 / 8 / 9 and the **official**
+`getNewsList` tabs 1/3/2, then `getPostFull`. It never takes a community search
+result or truncated list preview as an article. All three tab reads must be
+valid before establishing a baseline. Discovery is bounded to three pages of
+20/tab with `last_id`, stopping when the trailing row passes the publication
+window; an ignored/repeated cursor or still-in-window saturated final page fails
+closed and warns rather than asserting complete coverage. Unknown/malformed
+responses retry without advancing a checkpoint.
+
+Wuthering Waves reads the English official `MainMenu.json` `article` index and
+full `article/{id}.json`. This matches RSSHub's current English adapter. The
+index is a **current homepage subset**, not a guaranteed complete historical
+archive; unlisted official articles cannot be discovered by this adapter. The
+optional schedule/banner mirrors are not silently promoted to news authority.
+Publication time uses the official index's UTC+8 `createTime`.
+
+Full HTML/Quill blocks retain text/media order and heading/list readability.
+First try one full message. Multiple containers share the message-wide 4,000
+text-character / 40-component limits. On overflow, <=7,000 normalized characters
+may use at most two independently validated pages; otherwise send one labelled
+excerpt container, at most one lead image, and Read Post for the full original.
+Overflow keeps half the words of the already budget-fitting opening excerpt;
+fitting articles are not shortened. Normalize line-leading `●`/`•` (including
+bold-wrapped markers) to Markdown `- ` bullets; do not replace symbols mid-prose.
+Retain descriptive HTML/Quill links as one masked link, and bare/self-labelled
+URLs as bare URLs; URL fields are never Markdown-wrapped. Quill heading conversion
+must retain its preceding newline so the prior link cannot absorb the heading.
+Fallback publisher label is the configured game name only when nickname is absent.
+Balance adjacent/nested HTML bold spans, including across media boundaries, so
+Markdown markers do not leak into the message. Pad a closing `✦` when it touches
+the preceding word, without changing already-spaced markers.
+Add a space after unpadded `※`/`✦`, but add blank lines only between consecutive
+`※` note paragraphs. Consecutive `-` bullets stay compact. Uninterrupted media
+runs do not split at the eight-unit readability threshold. By default individual
+galleries remain unchanged. Optional backend measured grouping is described below;
+source order remains unchanged. No cropping/slicing or repeated per-image warnings. Three custom-emoji
+buttons appear only in the final container; unknown publication times are omitted.
+GIFs stay GIFs; direct MP4/WebM use galleries; external players/HLS remain source
+links. Explicit HoYoLAB cover metadata supplies a separate opening banner when
+available; a trimmed fixture with no cover metadata is not complete-cover evidence.
+
+Included direct media receives a bounded HTTPS GET/status/MIME/magic-byte check
+using official host families, with redirect validation. URLs/queries are preserved.
+HTTP 403, 200 XML/HTML error bodies and unrecognised media signatures fail closed.
+A failure triggers one fresh official full-article fetch and rerender, then a
+second preflight. If unresolved, hold for retry with an operational warning; do
+not post a broken gallery or mark it delivered. No guessed filename, arbitrary
+proxy, screenshot substitute, manual article-specific correction or new dataset.
+This checks a short response prefix, not the complete media file or Discord's
+ability to fetch/play it. Native VOD still chooses the highest supplied resolution.
+Unsupported host/signature/codec cases can defer and need runner evidence before
+expanding the allowlist. Empty/mismatched full articles and unsafe metadata defer.
+Legacy multipart signatures changed by this layout are held, not replayed.
+
+Verification here: existing captured GI full-post fixture plus synthetic HNA,
+Quill/video and Kuro-shape fixtures; read-only RSSHub source and Wuthering Waves
+mirror HTML inspection. Official HoYoLAB/Kuro hosts are not reachable from this
+sandbox, so current HNA feed behavior, official full-media availability and actual
+Discord playback **are not live-verified**. Do not interpret earlier source-table
+checkmarks as verification of this new feature. Before enabling a production
+copy, obtain read-only source evidence from that runner; posting/state resets or
+deployment still require separate approval. HuTao and Tausendsassa were references,
+not replacements for Game-Express; no pre-delivery seen marking or description
+truncation was copied from them.
+
+
+### User-supplied web and media evidence (2026-10-18)
+
+Thirteen supplied browser screenshots show the Official Info/Events/Notices
+pages for GI (2/27), HSR (6/39), ZZZ (8/47), and HNA (9/90002), plus Kuro's
+English news page. This establishes visible HNA official-page content and the
+intended web scope; it does not independently verify getNewsList/getPostFull
+responses, event metadata shapes, pagination, or full-body retrieval.
+The API mapping remains Info/news=3, Events=2, Notices=1 in this implementation.
+
+The user also confirmed Discord display of ten supplied Kuro media URLs
+(three JPGs and seven GIFs) associated with article 5644. A regression test
+validates preserving those exact URLs/order in Components V2 payloads without
+converting GIFs to stills. That is payload validation plus user-reported media
+playback, not an automated Discord-posting or official article-fetch test.
+Article 5644 was not available in the inspected GitHub mirror tree, and the
+sandbox cannot contact the official Kuro/CDN hosts. Therefore direct retrieval
+and full article-to-delivery behavior for 5644 remain untested here; do not
+confuse the earlier mirrored-article 5625 parser test with this article.
+
+
+## Current official-news paging policy (supersedes earlier one-message-only wording)
+
+Keep fitting full articles unchanged in one message (possibly multiple containers).
+If that fails, permit at most two actual messages when normalized source text plus
+title/byline once is <=7,000 characters and both payloads validate independently
+against 4,000 text characters / 40 components / 1–10 gallery items. The 7,000
+ceiling is fixed policy, not a Discord limit and not a new environment variable.
+Preserve complete wording and source media order. Prefer source block boundaries;
+use safe paragraph boundaries only for larger text blocks. Never split a link or
+unbalanced bold span. If packing fails, use the existing one-container excerpt
+with at most one lead image; never publish a partial full-article proposal.
+Paged messages: title/byline and lead only once at the start, then Page 1 / Page 2
+labels and dividers; three custom-emoji buttons only at the end of the final
+message. One-message articles also put buttons in the final container. Articles
+above the ceiling or unpageable within two messages keep the approved half-fitting
+word excerpt. Never truncate fitting full articles or modify official API HTML.
+Retain confirmed per-message progress, no-repost handling, media preflight and
+refresh/holds. No new scheduler or delivery-state reset. Historical incomplete
+captures are not full-source length evidence. Pagination is tested across all
+five game keys with synthetic boundary inputs, not five live integrations.
+
+
+### Latest layout corrections: 7,000 eligibility / final-container controls
+
+This is the current rendering rule across all five games. The eligibility ceiling
+is now 7,000 normalized source-text characters including title/byline once, with
+at most two actual Discord messages; every message must independently validate
+against the unchanged 4,000 text-character and 40-component caps. Failure to fit
+safely in two messages still uses the existing one-container/one-lead excerpt.
+All three custom-emoji buttons appear only at the end of the final container of
+the final message, including one-message/multi-container articles. Keep Part 1/2
+and Part 2/2 for containers in one message, Page 1/Page 2 for separate messages.
+Compact consecutive square (■) entries like numbered lists. HTML list items
+containing nested paragraphs must keep '- ' attached to their first visible text;
+fix parser block boundaries, not source-specific wording. Source HTML/API/mirror
+responses and media URLs remain untouched. A historical maintenance notice remains
+schedule-routed: a length allowance does not make it eligible for news/backfill.
+The one integrated HTML contains the main previews and complete browser-only
+long-strip laboratory; optional backend grouping is implemented below.
+
+
+### Optional measured long-strip grouping — implemented
+
+`NEWS_GROUP_LONG_STRIPS=0` (default) keeps article-order galleries exactly as before,
+with no measurement requests. Set repository Variable `NEWS_GROUP_LONG_STRIPS=1`
+to enable the backend grouping pass for all five official-news game keys. This
+setting does not enable news, change destinations, or affect schedule/codes.
+The existing workflow imports repository Variables; no workflow edit is needed.
+
+After normal media availability preflight and any one official refresh, read
+original PNG/GIF/JPEG/WebP header dimensions using allowlisted HTTPS GETs only:
+at most four request hops, 8 seconds total per measurement, 256 KiB per response,
+at most 40 distinct URLs and 20 seconds total per article. Reads stop as soon as
+header dimensions are known; no decoding, transformation, upload or dependency.
+Unsupported/truncated formats (including video/AVIF), failed/unknown dimensions,
+or the article measurement deadline keep the original layout without holding an
+otherwise deliverable article. All included media must have known dimensions.
+Normal availability failure still holds/retries independently of this option.
+
+A qualifying strip has height/width strictly greater than 3.5. Merge only runs of
+at least two consecutive single-item galleries inside the same container, up to
+ten items per grouped gallery. Insert a divider before each group unless one
+already precedes it. A measured long-strip lead may join an adjacent qualifying
+run; normal-aspect leads/final images remain separate. Do not cross text, existing
+separators, containers, messages, or existing multi-item galleries. Mixed GIF/image
+runs retain exact source item fields, bytes (never downloaded in full for editing),
+URLs, duplicates and order. No article-specific exemptions or guessed dimensions.
+
+Validate every proposed message against 4,000 text characters / 40 components /
+1–10 gallery items and verify flattened media URL order/count; otherwise retain
+the original layout. Do not repack pages or modify titles, Part/Page labels,
+final-container buttons, full-content eligibility or the one-lead overflow excerpt.
+The existing partial-delivery signature guard holds changed layouts for manual
+review rather than replaying already confirmed pages. Do not toggle layout modes
+mid-partial delivery without reviewing that hold. No state reset or old-post edits.
+Discord controls thumbnail cropping; neither header measurements, HTML previews
+nor passing offline tests prove live media decoding/readability or delivery.

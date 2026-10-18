@@ -134,3 +134,165 @@ def rank(images: list[str] | None, limit: int = 4) -> list[str]:
     out = [best[k] for k in order]
     out.sort(key=lambda u: -_score(u))
     return out[:limit]
+
+
+async def news_media_available(fetcher, payloads: list[dict]) -> bool:
+    """Check only media actually included (not omitted overflow media); preserve URLs.
+
+    Sequential and capped by the message component bound. No URL guessing, fixture
+    replacements, screenshot bytes, arbitrary proxies or changes to schedule/codes.
+    """
+    urls = list(dict.fromkeys(entry["media"]["url"]
+                             for payload in payloads for card in payload["components"]
+                             for component in card["components"] if component["type"] == 12
+                             for entry in component["items"]))
+    if len(urls) > 40:
+        return False
+    for url in urls:
+        if not await fetcher.verify_media(url):
+            return False
+    return True
+
+
+def image_dimensions(raw: bytes) -> tuple[int, int] | None:
+    """Original PNG/GIF/JPEG/WebP header dimensions; no decode/dependency/URL hints.
+
+    Truncated, unsupported (including videos/AVIF), or malformed headers are unknown.
+    JPEG markers are scanned only inside the caller's bounded prefix.
+    """
+    import struct
+
+    size = None
+    if raw[:8] == b"\x89PNG\r\n\x1a\n" and len(raw) >= 24 and raw[12:16] == b"IHDR":
+        size = struct.unpack(">II", raw[16:24])
+    elif raw[:6] in (b"GIF87a", b"GIF89a") and len(raw) >= 10:
+        size = struct.unpack("<HH", raw[6:10])
+    elif raw[:2] == b"\xff\xd8":
+        i = 2
+        while i + 1 < len(raw):
+            if raw[i] != 255:
+                return None
+            while i < len(raw) and raw[i] == 255:
+                i += 1
+            if i >= len(raw):
+                return None
+            marker, i = raw[i], i + 1
+            if marker in (0xD9, 0xDA):
+                break
+            if marker == 0x01 or 0xD0 <= marker <= 0xD8:
+                continue
+            if i + 2 > len(raw):
+                break
+            length = int.from_bytes(raw[i:i + 2], "big")
+            if length < 2 or i + length > len(raw):
+                break
+            if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                          0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF) and length >= 8:
+                height, width = struct.unpack(">HH", raw[i + 3:i + 7])
+                size = width, height
+                break
+            i += length
+    elif len(raw) >= 30 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        kind = raw[12:16]
+        if kind == b"VP8X":
+            size = (1 + int.from_bytes(raw[24:27], "little"),
+                    1 + int.from_bytes(raw[27:30], "little"))
+        elif kind == b"VP8 " and raw[23:26] == b"\x9d\x01\x2a":
+            size = tuple(n & 0x3FFF for n in struct.unpack("<HH", raw[26:30]))
+        elif kind == b"VP8L" and raw[20] == 0x2F:
+            bits = int.from_bytes(raw[21:25], "little")
+            size = (1 + (bits & 0x3FFF), 1 + ((bits >> 14) & 0x3FFF))
+    return size if size and all(n > 0 for n in size) else None
+
+
+def _news_urls(payloads: list[dict]) -> list[str]:
+    return [entry["media"]["url"] for payload in payloads for co in payload["components"]
+            for c in co["components"] if c["type"] == 12 for entry in c["items"]]
+
+
+def group_measured_news(payloads: list[dict], dimensions: dict) -> list[dict]:
+    """Pure optional proposal; all media known, original order and boundaries intact.
+
+    Keep original messages/containers/labels/controls. Revert the whole proposal on
+    unknown dimensions, overflow, or validation/order failure; never modify inputs.
+    """
+    import math
+    from copy import deepcopy
+
+    from .cards import sep, validate_payload
+
+    urls = _news_urls(payloads)
+    if not urls or any("**Excerpt —" in c.get("content", "") for p in payloads
+                       for co in p["components"] for c in co["components"]):
+        return payloads
+    for url in urls:
+        d = dimensions.get(url)
+        if (not isinstance(d, (tuple, list)) or len(d) != 2
+                or any(not isinstance(n, (int, float)) or not math.isfinite(n) or n <= 0 for n in d)):
+            return payloads
+
+    def long(c):
+        if c["type"] != 12 or len(c["items"]) != 1:
+            return False
+        w, h = dimensions[c["items"][0]["media"]["url"]]
+        return h / w > 3.5
+
+    proposal = deepcopy(payloads)
+    changed = False
+    for payload in proposal:
+        for co in payload["components"]:
+            kids, out, i = co["components"], [], 0
+            while i < len(kids):
+                c = kids[i]
+                i += 1
+                if not long(c):
+                    out.append(c)
+                    continue
+                run = [c]
+                while len(run) < 10 and i < len(kids) and long(kids[i]):
+                    run.append(kids[i])
+                    i += 1
+                if len(run) == 1:
+                    out.append(c)
+                    continue
+                if not out or out[-1]["type"] != 14:
+                    out.append(sep())
+                out.append({"type": 12, "items": [g["items"][0] for g in run]})
+                changed = True
+            co["components"] = out
+    if (not changed or any(validate_payload(p) for p in proposal)
+            or _news_urls(proposal) != urls):
+        return payloads
+    return proposal
+
+
+async def group_news_media(fetcher, payloads: list[dict], *, enabled: bool = False) -> list[dict]:
+    """Runner adapter: optional <=40 distinct reads, <=20s/article; off = no I/O.
+
+    Availability preflight/refresh runs FIRST; optional measurement never holds a
+    deliverable article. Group only after all dimensions are known. No cross-tick
+    cache or persistent state. Existing partial-delivery signature guards apply.
+    """
+    import asyncio
+
+    if not enabled or any("**Excerpt —" in c.get("content", "") for p in payloads
+                          for co in p["components"] for c in co["components"]):
+        return payloads
+    urls = list(dict.fromkeys(_news_urls(payloads)))
+    if not urls or len(urls) > 40:
+        return payloads
+
+    async def measure():
+        dimensions = {}
+        for url in urls:
+            d = await fetcher.media_dimensions(url)
+            if d is None:
+                return None
+            dimensions[url] = d
+        return dimensions
+
+    try:
+        dimensions = await asyncio.wait_for(measure(), timeout=20)
+    except (asyncio.TimeoutError, OSError, ValueError, TypeError, AttributeError):
+        return payloads
+    return group_measured_news(payloads, dimensions) if dimensions else payloads
