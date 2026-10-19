@@ -1,5 +1,10 @@
 # AGENTS.md — orientation for AI agents and future sessions
 
+Documentation housekeeping: verify Setup, .env.example and ignore rules against current
+config/workflow behavior. Keep root features under What it posts, detailed instructions in
+docs, update docs/README.md, and keep root Legal & credits LAST. Never publish live secrets,
+reset state, change schedules, or promise a no-op/repair merely because docs changed.
+
 ## Attended workflow updates
 
 Eligible package-only Dependabot PRs retain opt-in auto-merge. Any PR changing

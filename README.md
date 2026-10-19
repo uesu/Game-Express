@@ -209,20 +209,26 @@ run seeds silently**, so nothing old is posted.
 
 ## 🚀 Setup
 
-Six steps, about fifteen minutes. One repo can be both the code home and production — CI tests
-every PR, and merging deploys it.
+Game-Express is the development home: code, docs, tests and CI stay here. A separate
+production repository runs the monitor. Merging here does **not** deploy there; upload the
+reviewed runtime files separately. Full manifest and cutover:
+[production setup](docs/PROD-REPO-SETUP.md).
 
 ### 1 · Get the repo
 
-Fork or clone it. **Public repos get unlimited free Actions minutes** — a private repo works
-too, but it should run every 30 minutes instead of every 5
-([why](docs/SCHEDULER.md#minutes-and-private-repositories)). A second instance repo for
-fail-over is optional ([Reliability](#-reliability)).
+Create an empty production repository; no fork or shared Git history is required. Copy the
+whole `gamexpress/` package, three config JSON files, current state, requirements, monitor
+workflow, `.gitignore` and policy files using the [manifest](docs/PROD-REPO-SETUP.md#1-the-file-manifest).
+Public standard hosted runners avoid private-repository minute allowances; private production
+needs a cadence/budget review ([scheduler guide](docs/SCHEDULER.md#minutes-and-private-repositories)).
+A second *live instance* is optional; the development repository is not a standby by default.
 
 ### 2 · Create the Discord webhooks
 
 *Channel → Edit Channel → Integrations → Webhooks → New Webhook → Copy Webhook URL.*
-One for the schedule channel, and one per game codes channel.
+One for the schedule channel and one per enabled game codes channel. Optional schedule mirrors
+copy schedule cards to game channels; optional official news uses separate dedicated per-game
+webhooks. They are independent features, even if you choose the same destination channel.
 
 ### 3 · Add the secrets
 
@@ -238,7 +244,7 @@ One for the schedule channel, and one per game codes channel.
 | `DISCORD_WEBHOOK_CODES_WUWA` | Wuthering Waves codes |
 | `DISCORD_WEBHOOK_CODES_ANANTA` | ANANTA codes |
 | `NITTER_RSS_TOKEN` | *optional* — the same one as News-Express |
-| `BUMP_PAT` | *required only for the weekly Python bump* — a PAT with **Workflows: read and write**. See [docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md#one-time-setup-this-needs) |
+| `BUMP_PAT` | *required only where the Python bump workflow is installed* — a repository-scoped PAT with **Contents, Pull requests and Workflows: read and write**, subject to token type and repository policy. See [docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md#one-time-setup-this-needs) |
 
 The same URL may be used for several secrets, for example one codes channel for every game.
 

@@ -20,6 +20,18 @@ GitHub's own `schedule:` trigger is **disabled** (commented out) in
 
 ## Step 1: make a GitHub classic personal access token (PAT)
 
+For least-privilege dispatch, a fine-grained token restricted to the production
+repository with **Actions: read and write** is also an option. The classic-token
+walkthrough below remains supported. Use an Authorization header appropriate to
+your token (for example `Bearer <token>` for fine-grained dispatch); never put a
+real token in tracked files or chat. The scheduler token is separate from
+`BUMP_PAT`, which publishes Python workflow-update PRs.
+
+On migration, pause this job, wait for the old monitor/state push to finish,
+copy the latest state and announcement cache, then change only the dispatch URL's
+repository name and token permissions as needed. Resume one target only. Repository
+names do not confer access; a fine-grained token must explicitly include the new repo.
+
 The token lets cron-job.org press "Run workflow" for you. One classic token works for all of your
 repos. If your News-Express token has the `repo` scope, you can reuse it and skip this step.
 

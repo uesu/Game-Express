@@ -1,11 +1,11 @@
-# Splitting Game-Express into a private dev repo + an obscure public prod repo
+# Splitting Game-Express into development and a separate production repository
 
 Target shape:
 
 | Repo | Visibility | Runs the monitor? | Holds |
 |---|---|---|---|
-| `uesu/Game-Express` | **private** | no (kill-switched) | everything: code, tests, docs, CI, Dependabot |
-| `uesu/<random-name>` | **public** | **yes**, every 5 min | 34-file runtime manifest (including state) + 2 policy files |
+| `uesu/Game-Express` | maintainer choice | no live scheduler | everything: code, tests, docs, CI, Dependabot |
+| `uesu/<random-name>` | **public** | **yes**, every 5 min | whole runtime package + config/state/workflow + 2 policy files |
 
 ---
 
@@ -20,7 +20,7 @@ What that means in practice:
 
 | | development repo | production repo |
 |---|---|---|
-| name | `Game-Express` — public today, **private** after the split | random, unguessable, **public** |
+| name | `Game-Express` — development; visibility is your choice | separate opaque name, public standard hosted runners |
 | posts to Discord | never (`ENABLED_FEATURES=none` + no webhooks) | yes, every 5 minutes |
 | holds | code, tests, `docs/`, `README.md`, CI, Dependabot, this guide | the package, three config files, state, one workflow |
 | Markdown in it | the whole manual | **none required** — see §1 |
@@ -105,12 +105,12 @@ still manual: an agent cannot set your repository secrets or your cron-job.org s
 > The per-game rhythm remains in `config/games.json`, and the read-only
 > `python -m gamexpress speculate` command works in prod as soon as the files are there.
 
-## 1. The file manifest — exactly 36 files
+## 1. The file manifest
 
 ### Copy to prod (runtime)
 
 ```
-gamexpress/                      28 .py files — the whole package
+gamexpress/                      the whole package, including sources/ (no fixed file count)
   __init__.py  __main__.py  cards.py  codeposter.py  config.py  discord.py
   http.py  media.py  models.py  preview_html.py  runner.py  samples.py
   schedule.py  state.py  textutil.py  timeparse.py
@@ -364,7 +364,7 @@ moved on.
 
 ---
 
-## 5. Kill the dev repo's ability to post
+## 5. Keep development from posting live
 
 In the **dev** repo: Settings → Secrets and variables → Actions → Variables →
 

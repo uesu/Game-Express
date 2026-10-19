@@ -3,6 +3,10 @@
 Everything that does not belong in the [project README](../README.md). Start there for what
 Game-Express is and how to set it up; come here for the detail.
 
+For a development/production split, start with [production setup](PROD-REPO-SETUP.md).
+Use [.env.example](../.env.example) as a local template only; `.env` and `.env.*`
+are ignored except the tracked template. Never copy live state back over production on a code sync.
+
 ## Setting it up and running it
 
 | Doc | What's in it |
@@ -44,7 +48,7 @@ is the short overview. The operational instructions live here:
 |---|---|
 | **[DEPENDABOT.md](DEPENDABOT.md)** | what Dependabot watches, and the opt-in auto-merge |
 | **[PYTHON_VERSION.md](PYTHON_VERSION.md)** | the automated Python-version bump workflow |
-| **[PROD-REPO-SETUP.md](PROD-REPO-SETUP.md)** | splitting into a private dev repo + a public production repo |
+| **[PROD-REPO-SETUP.md](PROD-REPO-SETUP.md)** | fresh-repository runtime manifest, state-preserving cutover, news settings, safe later syncs |
 | **[changelog/](changelog/)** | every change, newest first — [current line](changelog/CHANGELOG.md) · [archive](changelog/CHANGELOG_ARCHIVE.md) |
 
 ## Credits and legal
