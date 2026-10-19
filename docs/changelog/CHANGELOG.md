@@ -2,6 +2,13 @@
 
 ## 2026-10-19
 
+- Support documentation-free production in the fleet documentation smoke guard:
+  always assert the configured fleet, check documentation when present, and reject
+  partial/stale documentation. Report absent-documentation coverage explicitly.
+  Add offline guards for absent, complete, partial and stale documentation.
+  CI/Python bump workflows and application behavior are unchanged. Deploy the
+  updated existing test file to production; no Markdown upload or state reset needed.
+
 - Refresh Setup for a separate production repository, current news secrets/switches,
   JSON env wiring, safe tests, and state-preserving scheduler migration. Fix stale Python
   auto-merge comments in `.env.example`; keep attended workflow/Python review policy.
