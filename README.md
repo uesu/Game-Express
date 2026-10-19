@@ -246,20 +246,42 @@ webhooks. They are independent features, even if you choose the same destination
 | `NITTER_RSS_TOKEN` | *optional* — the same one as News-Express |
 | `BUMP_PAT` | *required only where the Python bump workflow is installed* — a repository-scoped PAT with **Contents, Pull requests and Workflows: read and write**, subject to token type and repository policy. See [docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md#one-time-setup-this-needs) |
 
+Create only destinations you intend to use; ANANTA is not a verified official-news adapter.
+Optional schedule mirror secrets are `DISCORD_WEBHOOK_SCHEDULE_MIRROR_<GAME>`.
+For news, use dedicated secrets `DISCORD_WEBHOOK_NEWS_GENSHIN`,
+`DISCORD_WEBHOOK_NEWS_STARRAIL`, `DISCORD_WEBHOOK_NEWS_HNA`,
+`DISCORD_WEBHOOK_NEWS_ZZZ`, and `DISCORD_WEBHOOK_NEWS_WUWA`.
+News never uses the generic webhook, FORCE_WEBHOOK or mirror fallback.
+See [the full secret reference](docs/CONFIGURATION.md).
+
 The same URL may be used for several secrets, for example one codes channel for every game.
 
 ### 4 · Add the variables
 
 *… → Variables.* `PING_ROLE_ID` = your role ID — **leave it unset for no ping**, or set
 `NO_PING=1`. The Youtube and Twitch emojis already default to the animated ones.
-Everything else:
-**[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
+Leave `ENABLED_FEATURES` unset for the usual `schedule,codes` production defaults.
+Official news remains off unless `NEWS_ENABLED=1`; `NEWS_GAMES` selects games,
+`NEWS_GROUP_LONG_STRIPS=0` keeps article-order galleries, and `NEWS_MAX_POSTS_PER_RUN=5`
+caps completed articles per run. For only GI and WuWa news, use `NEWS_GAMES=genshin,wuwa`
+and their two dedicated secrets; this does not restrict schedule/codes.
+Canonical news keys: `genshin`, `starrail`, `hna`, `zzz`, `wuwa`.
+See [full setup and switches](docs/CONFIGURATION.md#official-news-explicit-opt-in-default-off).
+
+Development safeguard: optional `ENABLED_FEATURES=none` skips live workflow runs; test mode
+still posts to configured webhooks. Omit production webhooks from a strict development-only copy.
+`AUTO_MERGE_PYTHON_BUMP` is legacy/ignored; remove it if present. Keep `BUMP_PAT` if using
+the Python update workflow. Eligible package-only Dependabot auto-merge remains separately
+opt-in with `AUTO_MERGE_DEPENDABOT=yes`; workflow-path updates require attended review.
+Everything else: **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
 
 ### 5 · Test it
 
 *Actions → **Game-Express Monitor** → Run workflow → `mode` = **test***, then `webhooks` →
 `codes` → `schedule`. Each one posts **real** data labelled 🧪 TEST as new messages — it never
-edits a live card, never writes the state, and pings nobody by default. Walkthrough:
+edits a live card, never writes the state, and pings nobody by default. These checks do not
+post official-news samples or independently verify schedule mirrors/news destinations.
+Use the offline news checks in the testing guide; do not reset state to force a test. Walkthrough:
 **[docs/TESTING.md](docs/TESTING.md)**.
 
 ### 6 · Go live with cron-job.org
@@ -267,14 +289,22 @@ edits a live card, never writes the state, and pings nobody by default. Walkthro
 Create one cron-job.org job per instance repo that calls the `workflow_dispatch` API every
 5 minutes, using a GitHub **classic token** with the `repo` scope. Step by step:
 **[docs/SCHEDULER.md](docs/SCHEDULER.md)**. GitHub's own `schedule:` is disabled in
-`monitor.yml`, so two schedulers can never race.
+`monitor.yml`; do not enable both schedulers. For a move: pause the old cron job, let its
+in-flight run finish and push state, copy the freshest `state/state.json` and
+`config/program_announcements.json`, then replace the dispatch URL's repository name.
+Ensure the dispatch token has access to the new repository and resume only the new target.
+See [cutover order](docs/PROD-REPO-SETUP.md#6-cutover-order-no-double-post-no-missed-announcement).
 
 ### Then what?
 
-**First real run = silent seed.** Current announcements and every existing code are recorded
+**New empty state: first real run = silent seed.** A migrated installation must retain its
+fresh production state and announcement cache; it continues those records instead of starting
+from scratch. Copying state reduces duplicate risk but cannot coordinate two running repos.
+With empty state, current announcements and every existing code are recorded
 without posting, so deploying never spams old items. The summary lists what was seeded
 (`🌱 HSR 4.6: seeded silently`, `🌱 GI: seeded 34 existing codes`). To post what's current on the
-very first run instead, set `BOOTSTRAP_POST=1` before that run.
+very first run instead, set `BOOTSTRAP_POST=1` before that run (schedule/codes only). Official news always establishes
+its own silent discovery baseline; bootstrap does not backfill news.
 
 **Already seeded and want a current card now?** Run the Monitor with `repost = starrail:4.6` (any
 version shown in a summary). The card is posted as a new message and then kept up to date like
@@ -297,7 +327,11 @@ editing YAML. The ones worth knowing:
 | Variable | Default | What it does |
 |---|---|---|
 | `PING_ROLE_ID` | *(unset)* | role(s) to ping. Unset = no ping |
-| `ENABLED_FEATURES` | `schedule,codes` | `schedule` · `codes` · `none` (paused / cold standby) |
+| `ENABLED_FEATURES` | `schedule,codes` | schedule/code selection; `none` disables all live features, including news |
+| `NEWS_ENABLED` | `0` | explicit opt-in; adds news unless globally disabled |
+| `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | news subset, independent of schedule/codes |
+| `NEWS_GROUP_LONG_STRIPS` | `0` | optional measured grouping; off retains article order |
+| `NEWS_MAX_POSTS_PER_RUN` | `5` | completed news articles, clamped 1–20; at most two messages/article |
 | `GAMES` / `ENABLE_GAMES` | all enabled / — | run a subset · switch prepared games on |
 | `LOOKBACK_HOURS` | 72 | how far back official posts are considered |
 | `CODES_MIN_SOURCES` | 2 | independent sources needed for an unverified code |
@@ -306,7 +340,9 @@ editing YAML. The ones worth knowing:
 
 Webhook routing, most specific first:
 `DISCORD_WEBHOOK_<FEATURE>_<GAME>` → `DISCORD_WEBHOOK_<FEATURE>` → `DISCORD_WEBHOOK_URL`.
-`python -m gamexpress validate` prints which secret feeds which channel.
+This fallback chain is for schedule/codes only; news requires its own dedicated per-game
+secret. `python -m gamexpress validate` prints resolved routing. Repository variables and secrets
+are merged from workflow JSON blobs; no per-variable YAML wiring is needed.
 
 ---
 

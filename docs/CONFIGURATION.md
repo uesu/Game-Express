@@ -227,7 +227,29 @@ python -m gamexpress validate
 ```
 
 
+### Setup classification and manual-only selectors
+
+`BUMP_PAT` is an Actions **Secret**, never a Variable. Create it separately in each
+repository that installs `python_version_bump.yml`, with repository access and Contents,
+Pull requests and Workflows write permissions appropriate to the token type. It publishes
+validated PRs, not unattended merges. A runtime-only production repository without that
+workflow does not need it. The cron-job.org dispatch token is a different credential.
+GitHub supplies `GITHUB_TOKEN`, `GITHUB_SHA` and `GITHUB_STEP_SUMMARY` automatically;
+do not create them as application settings.
+
+`REPOST` is the environment equivalent of the manual workflow `repost` input. It requests
+a deliberate new schedule card (for example `starrail:4.6`); leave it unset in routine
+scheduled runs. It is not a news replay/backfill switch. Test/force/bootstrap selectors
+are not routine setup requirements; leave their defaults unless deliberately testing.
+
 ## Official news (explicit opt-in; default off)
+
+**GitHub setup:** use Secrets for webhooks/tokens and Variables for switches. The workflow
+merges `GE_SECRETS_JSON` and `GE_VARS_JSON`; no YAML edit is required per setting. Use
+`mode=live`, `only=all` for ordinary production with news opted in; the UI offers no
+news-only selection. CLI `--only news --dry-run` is a selector, not an opt-in.
+For migration, preserve the current state and intended feature switches; do not reset a
+baseline or add a second scheduler. See [production setup](PROD-REPO-SETUP.md).
 
 Set repository **variable** `NEWS_ENABLED=1` only after reviewing the source and
 preview. `NEWS_ENABLED=0` (the default) makes no news requests and adds no news
