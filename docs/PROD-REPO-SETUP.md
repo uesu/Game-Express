@@ -44,8 +44,7 @@ actual run), so every dispatch still costs **1 billed minute**. At a 5-minute
 cadence that is 288 runs/day ≈ **8,640 minutes/month**, against 2,000 free on the Free plan
 (3,000 on Pro). A private prod repo stops running about six days into every month.
 
-So: random unguessable name + public = free unlimited Actions, and the obscurity is the
-privacy. The *dev* repo going private is free — CI only runs on pull requests, a few minutes
+So: random unguessable name + public = free unlimited Actions. ***An opaque repository name is only a naming convention, not a security boundary.*** The *dev* repo going private is free — CI only runs on pull requests, a few minutes
 a week.
 
 Nothing sensitive ends up in the public repo. Webhook URLs live in repository **secrets**
@@ -108,6 +107,8 @@ still manual: an agent cannot set your repository secrets or your cron-job.org s
 ## 1. The file manifest
 
 ### Copy to prod (runtime)
+
+Create a fresh repository and upload these paths; a fork/clone relationship is not required. The package filenames below are illustrative: copy the entire current `gamexpress/` tree, including all source adapters, not a frozen count. Do not upload `.env`, `.git`, virtualenvs, bytecode, previews or local logs. Secrets/Variables are repository settings, not copied files.
 
 ```
 gamexpress/                      the whole package, including sources/ (no fixed file count)
