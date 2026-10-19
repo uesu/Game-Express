@@ -2,6 +2,16 @@
 
 ## 2026-10-19
 
+- Refresh Setup for a separate production repository, current news secrets/switches,
+  JSON env wiring, safe tests, and state-preserving scheduler migration. Fix stale Python
+  auto-merge comments in `.env.example`; keep attended workflow/Python review policy.
+- Broaden local-secret/log/editor ignore patterns without ignoring the production state
+  or announcement cache. No tracked file is untracked by ignore rules.
+- Remove frozen runtime file counts and unconditional historical repair/no-op promises
+  from the cutover guide; retain existing locks and original incident context.
+- Documentation/template/ignore housekeeping only: no app, workflow, dependency, setting,
+  scheduler, state or live-post changes. Nothing here confirms live delivery.
+
 - Integrate optional official news as feature 3 under the root README's "What it
   posts" and mention it in the project introduction. Keep Legal & credits last,
   with its original attribution and legal links unchanged.

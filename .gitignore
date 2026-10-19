@@ -1,5 +1,7 @@
 # local secrets
 .env
+.env.*
+!.env.example
 # python
 __pycache__/
 *.py[cod]
@@ -7,6 +9,13 @@ __pycache__/
 venv/
 .pytest_cache/
 .ruff_cache/
+# local logs / editor / OS artifacts
+*.log
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+# Keep state/state.json and config/program_announcements.json tracked: live continuity.
 # previews / scratch
 previews/
 state/*.tmp

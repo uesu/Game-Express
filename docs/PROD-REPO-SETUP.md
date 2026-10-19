@@ -1,11 +1,11 @@
-# Splitting Game-Express into a private dev repo + an obscure public prod repo
+# Splitting Game-Express into development and a separate production repository
 
 Target shape:
 
 | Repo | Visibility | Runs the monitor? | Holds |
 |---|---|---|---|
-| `uesu/Game-Express` | **private** | no (kill-switched) | everything: code, tests, docs, CI, Dependabot |
-| `uesu/<random-name>` | **public** | **yes**, every 5 min | 34-file runtime manifest (including state) + 2 policy files |
+| `uesu/Game-Express` | maintainer choice | no live scheduler | everything: code, tests, docs, CI, Dependabot |
+| `uesu/<random-name>` | **public** | **yes**, every 5 min | whole runtime package + config/state/workflow + 2 policy files |
 
 ---
 
@@ -20,7 +20,7 @@ What that means in practice:
 
 | | development repo | production repo |
 |---|---|---|
-| name | `Game-Express` — public today, **private** after the split | random, unguessable, **public** |
+| name | `Game-Express` — development; visibility is your choice | separate opaque name, public standard hosted runners |
 | posts to Discord | never (`ENABLED_FEATURES=none` + no webhooks) | yes, every 5 minutes |
 | holds | code, tests, `docs/`, `README.md`, CI, Dependabot, this guide | the package, three config files, state, one workflow |
 | Markdown in it | the whole manual | **none required** — see §1 |
@@ -44,8 +44,7 @@ actual run), so every dispatch still costs **1 billed minute**. At a 5-minute
 cadence that is 288 runs/day ≈ **8,640 minutes/month**, against 2,000 free on the Free plan
 (3,000 on Pro). A private prod repo stops running about six days into every month.
 
-So: random unguessable name + public = free unlimited Actions, and the obscurity is the
-privacy. The *dev* repo going private is free — CI only runs on pull requests, a few minutes
+So: random unguessable name + public = free unlimited Actions. ***An opaque repository name is only a naming convention, not a security boundary.*** The *dev* repo going private is free — CI only runs on pull requests, a few minutes
 a week.
 
 Nothing sensitive ends up in the public repo. Webhook URLs live in repository **secrets**
@@ -105,12 +104,14 @@ still manual: an agent cannot set your repository secrets or your cron-job.org s
 > The per-game rhythm remains in `config/games.json`, and the read-only
 > `python -m gamexpress speculate` command works in prod as soon as the files are there.
 
-## 1. The file manifest — exactly 36 files
+## 1. The file manifest
 
 ### Copy to prod (runtime)
 
+Create a fresh repository and upload these paths; a fork/clone relationship is not required. The package filenames below are illustrative: copy the entire current `gamexpress/` tree, including all source adapters, not a frozen count. Do not upload `.env`, `.git`, virtualenvs, bytecode, previews or local logs. Secrets/Variables are repository settings, not copied files.
+
 ```
-gamexpress/                      28 .py files — the whole package
+gamexpress/                      the whole package, including sources/ (no fixed file count)
   __init__.py  __main__.py  cards.py  codeposter.py  config.py  discord.py
   http.py  media.py  models.py  preview_html.py  runner.py  samples.py
   schedule.py  state.py  textutil.py  timeparse.py
@@ -133,7 +134,7 @@ requirements.txt
 .github/scripts/python_version_bump.py
 ```
 
-**Why you may want this in prod.** Prod's `monitor.yml` pins `python-version: '3.14'`. Nothing
+**Why you may want this in prod.** Prod's `monitor.yml` pins an exact Python patch (currently `python-version: '3.14.8'`). Nothing
 else updates it. If you sync from dev regularly the pin rides along with `monitor.yml` and you
 can skip this — but if dev goes quiet for a few months, prod keeps running an ageing
 interpreter with no one telling it.
@@ -302,12 +303,23 @@ game into one channel.
 `github_token` appears in the logs' `GE_SECRETS_JSON` blob — that is GitHub's automatic token,
 not something you create.
 
+### Optional official news destinations
+
+Copy the intended `DISCORD_WEBHOOK_NEWS_{GENSHIN,STARRAIL,HNA,ZZZ,WUWA}` secrets individually.
+These are separate from schedule mirrors, and do not use generic or FORCE_WEBHOOK fallback.
+You may choose any channel names. For only GI/WuWa, use their two dedicated secrets and
+`NEWS_GAMES=genshin,wuwa`. Do not add ANANTA/Wangyue news destinations as supported adapters.
+
 ### Variables (same page → Variables)
 
 | Variable | Prod value | Notes |
 |---|---|---|
 | `PING_SCHEDULE` | `<@&…>` | dev currently pings a real role. Copy the same value to keep behaviour identical, or set `none` for a silent prod |
-| `ENABLED_FEATURES` | **do not set** | default is `schedule,codes`. Setting it to `none` is the kill switch — never on prod |
+| `ENABLED_FEATURES` | preserve intended selection, or unset | default `schedule,codes`; never `none` on the live instance |
+| `NEWS_ENABLED` | preserve intended opt-in; default `0` | `1` explicitly enables news unless globally off |
+| `NEWS_GAMES` | default `genshin,starrail,zzz,wuwa,hna` | independent news subset |
+| `NEWS_GROUP_LONG_STRIPS` | default `0` | preserve your chosen setting; no rollout implied |
+| `NEWS_MAX_POSTS_PER_RUN` | default `5` | 1–20 articles; max two messages per article |
 | `AUTO_MERGE_DEPENDABOT` | **do not copy** | dev-only, there is no Dependabot in prod |
 | `AUTO_MERGE_PYTHON_BUMP` | not needed | legacy/ignored in all instances |
 
@@ -343,16 +355,10 @@ already uses, with no key and no secret. Set `BANNER_CALENDAR=0` only to switch 
   those locks, so a card stays on the announcement that opened it, and its locked banners do not move, after
   cutover. The wiki read stamp (`banners_checked_ts`) comes with the state too, so cutover does not re-read every
   open banner at once. An official name already on a card is locked by the first merge after cutover.
-- **The first run repairs ZZZ 3.3 once.** The 3.3 Special Program card (and its `#zzz-news` mirror) that the
-  2026-10-09 giveaway post took over is restored to the 3.3 announcement by the first monitor run after this code
-  reaches the live branch: one edit to the card and one to the mirror, then nothing. Until that run, the live card
-  still shows the wrong key art.
-- **The same run repairs its banners.** The 11:50 UTC run on 2026-10-09 had written the quoted *channel titles*
-  (`Into the Flames of Life`, …) onto the card as the 5★ agents, because ZZZ's X posts quote the channel and name
-  the agent bare. The fixed reader re-reads the same two tweets inside the 72-hour lookback and rewrites both
-  phases in place; the settled lock never moved. The state file already carries the healed names with
-  `payload_hash` left stale on purpose, so the edit still fires even if X is unreadable that run. Do not "help" by
-  updating `payload_hash` by hand — the card edit is what fixes the live message.
+- **Historical ZZZ 3.3 repair:** the 2026-10-09 incorrect-art/banner incident explains
+  why stored hashes and locks must not be hand-edited. Whether any repair still applies
+  depends on the actual current state and live messages; a future cutover does not promise
+  a new repair edit. Do not reset hashes to force one.
 - The title-search clock (`banners_search_ts`, see [BANNER_DATABASE.md](BANNER_DATABASE.md#finding-the-notice-by-title)) comes
   with the state too. Copying the state therefore keeps the search from re-asking every banner at once after cutover.
 - Copy it **after** pausing the scheduler (§6), so it cannot go stale between copy and cutover.
@@ -364,7 +370,7 @@ moved on.
 
 ---
 
-## 5. Kill the dev repo's ability to post
+## 5. Keep development from posting live
 
 In the **dev** repo: Settings → Secrets and variables → Actions → Variables →
 
@@ -379,18 +385,23 @@ runs still work, which is exactly what you want in dev.
 Do this **before** the first prod live run. Two repos posting from the same webhooks would
 double-post; they do not share state.
 
-You can also delete the webhook secrets from dev, but then `mode=test` stops working there.
-The variable is the better switch.
+The switch is optional defense in depth after the scheduler move, not cross-repository locking.
+A `mode=test` run bypasses this live gate and can still post real test messages. For a strict
+non-posting development repository, omit production webhook secrets too and use offline tests.
+Never configure the development copy as a live standby accidentally.
 
 ---
 
 ## 6. Cutover order (no double post, no missed announcement)
 
 1. **Pause the cron-job.org job** that points at `Game-Express`. The monitor is now stopped.
-2. **Copy the freshest state**: `git pull` dev `main`, then run the §1 copy command.
+2. **Wait for the old monitor to finish**, including its state commit/push. Then copy the
+   freshest `state/state.json` and `config/program_announcements.json` from that live tip,
+   along with the reviewed runtime manifest. No two instances may post during the move.
 3. **Create the prod repo** (§2), push, set Actions permissions.
 4. **Add secrets + variables** (§3).
-5. **Dev repo**: set `ENABLED_FEATURES=none` (§5), then flip it to **private**.
+5. **Dev repo**: optionally set `ENABLED_FEATURES=none` (§5) as a live-run safeguard.
+   Visibility is your choice; privacy is not required for the split.
 6. **Prod smoke tests** — Actions → Game-Express Monitor → Run workflow:
    - `mode=test`, `test=webhooks` → one "✅ connected" card per channel. Any missing or
      misnamed **primary** secret shows up here. Never writes state.
@@ -402,8 +413,11 @@ The variable is the better switch.
      `⚠ … is the same channel as DISCORD_WEBHOOK_SCHEDULE — no copy sent`.
    - `mode=test`, `test=schedule` → the real current card with real art and timestamps.
    - Delete the 🧪 TEST cards afterwards.
-7. **First live run**: `mode=live`, `only=all`. Expect "nothing new" plus either a state commit
-   or `state unchanged — nothing to commit`. Both are correct.
+7. **First live run**: `mode=live`, `only=all`. It may deliver a genuinely new eligible item,
+   silently edit a changed tracked card, or report nothing new; do not promise a no-op.
+   With news enabled, existing copied news state continues normally. A newly enabled game
+   establishes a silent baseline after successful discovery, never historical backfill.
+   No news-only UI choice exists; test modes do not post news samples.
 8. **cron-job.org**: create the new job (or edit the old one):
    - URL `https://api.github.com/repos/uesu/<random-name>/actions/workflows/monitor.yml/dispatches`
    - headers and body exactly as in `docs/SCHEDULER.md`
