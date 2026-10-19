@@ -1,5 +1,10 @@
 # Changelog — current entries
 
+## 2026-10-19 — WuWa news publication time
+
+- Dedicated Kuro news discovery uses official startTime rather than draft createTime, falling back only when startTime is absent/empty. Existing freshness/future/baseline/dedup controls remain.
+- Regression replays exact captured Lucilla 5626 metadata/detail and original five images; offline runner covers delivery, duplicate suppression, silent baseline and future hold. No production state reset is required for the inspected WuWa floor.
+
 ## 2026-10-19 — News video cover layout
 
 - Full/paged news with a playable native MP4/WebM no longer prepends a separate listing cover; explicit body images and media order remain intact. Exact cover/body-image duplicates are shown once. Shared renderer policy is game/source-independent; it does not enable new source adapters.
