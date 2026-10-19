@@ -1,5 +1,11 @@
 # Changelog — current entries
 
+## 2026-10-19 — News video cover layout
+
+- Full/paged news with a playable native MP4/WebM no longer prepends a separate listing cover; explicit body images and media order remain intact. Exact cover/body-image duplicates are shown once. Shared renderer policy is game/source-independent; it does not enable new source adapters.
+- Link-only media retains its cover, and oversized excerpts retain their existing single-lead policy.
+- Regression covers the real ZZZ 47133580 capture plus synthetic cross-game/format, pagination and excerpt cases.
+
 ## 2026-10-19 — News CDN preflight compatibility and diagnostics
 
 - Accept valid offset-zero HTTP 206 media prefixes and application/octet-stream only with recognized media signatures. Preserve host/redirect/status/signature protections and official refresh/hold behavior.
