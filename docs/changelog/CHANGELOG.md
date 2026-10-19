@@ -1,5 +1,11 @@
 # Changelog — current entries
 
+## 2026-10-19 — News CDN preflight compatibility and diagnostics
+
+- Accept valid offset-zero HTTP 206 media prefixes and application/octet-stream only with recognized media signatures. Preserve host/redirect/status/signature protections and official refresh/hold behavior.
+- Log rejection status or MIME/prefix without signed URL queries.
+- Regression uses user-captured ZZZ 47133580 JSON; CDN responses are simulated. Actual live rejection cause and Discord delivery remain unverified.
+
 ## 2026-10-19
 
 - Support documentation-free production in the fleet documentation smoke guard:
