@@ -1,5 +1,16 @@
 # Changelog — current entries
 
+## 2026-10-20 — News article-count cap removal (unreleased)
+
+- Remove the global completed-article cap and ten-attempt per-game cap. Each run attempts all discovered eligible unposted articles in publication order; legacy attempt cursor no longer rotates that order. Existing dedup, partial recovery, future/freshness/baseline, media holds, pagination/state-capacity bounds and message limits remain.
+- Retire and ignore NEWS_MAX_POSTS_PER_RUN; remove active settings/examples/CLI references. Preserve its burst-control rationale in the follow-up handoff for a possible future reviewed reintroduction, not an active switch.
+- Update current setup/testing docs and Discord rate-limit guidance. No webhook/bot migration, pacing algorithm change, state reset, scheduling change or production deployment.
+
+## 2026-10-20 — News GIF MIME compatibility (unreleased)
+
+- Normalize the observed bare `gif` Content-Type only alongside GIF87a/GIF89a signature bytes in the shared bounded news-media reader. Availability and optional dimensions agree; original GIF URLs/animation sources are unchanged across games.
+- Pin HSR 47141115 user URL and the exact prefix logged in production #204/#205; simulated transport regressions retain MIME/signature/status/redirect/host/byte guards. Complete user article/list JSON is replayed through discovery, HTML/Quill comparison, exact eight-media rendering and simulated runner delivery/dedup. Complete GIF decode and live Discord delivery remain unverified. No new adapter, source activation, state reset or schedule change.
+
 ## 2026-10-19 — WuWa news publication time
 
 - Dedicated Kuro news discovery uses official startTime rather than draft createTime, falling back only when startTime is absent/empty. Existing freshness/future/baseline/dedup controls remain.

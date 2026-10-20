@@ -265,7 +265,17 @@ A schedule/code-only selector does not count as toggling news off.
 | `NEWS_ENABLED` | `0` | Explicit news opt-in; independent of the existing schedule/code defaults |
 | `NEWS_GROUP_LONG_STRIPS` | `0` | Opt-in measured grouping; failure keeps article order |
 | `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | Canonical game keys; removing a game pauses its existing news state |
-| `NEWS_MAX_POSTS_PER_RUN` | `5` | 1–20 completed articles across games; at most 10 attempts/game/run |
+
+Each run attempts all discovered eligible unposted articles in publication order,
+without a fixed article-count cap or ten-attempt game cap. A failed article remains
+retryable and does not prevent other eligible articles from being attempted. This
+is not unlimited crawling or guaranteed same-run delivery: source pagination,
+48-hour freshness/future holds, silent baselines, state capacity, media validation,
+partial-delivery safeguards, Discord retries and job timeouts remain. Maximum
+two messages per article is unchanged.
+
+Migration: `NEWS_MAX_POSTS_PER_RUN` is retired and ignored. Remove a leftover
+repository variable or local environment entry; it cannot enable a cap.
 
 Use repository **secrets**, never variables, for the five destinations:
 
@@ -451,3 +461,28 @@ Discord media access, codecs, delivery or thumbnail readability. Keep news off
 until the operator explicitly approves opt-in. Review partial-delivery holds;
 never reset delivery state merely to test. No new scheduler, tokens or upload
 service are needed. Keep each installation's state and secrets independent.
+
+## Discord webhook versus bot delivery
+
+Incoming webhooks remain the appropriate simple outbound transport here; they do
+not make delivery unlimited or inherently faster than a bot REST request. Discord
+uses per-route/resource buckets (including webhook ID/token) and global limits;
+different webhooks can have independent buckets, not guaranteed total isolation.
+Official docs specify a default bot global limit of 50 requests/second; requests
+without an Authorization header have their global limit applied by IP. Neither
+that ceiling nor frequently quoted per-webhook numbers promise message throughput.
+Use actual response headers and Retry-After/retry_after, not a hard-coded quota.
+[1](https://docs.discord.com/developers/topics/rate-limits)
+
+The current client deliberately spaces outgoing requests globally by 1.2 seconds,
+even across separate game webhooks, and has bounded 429 retries. The cap removal
+does not change that transport behavior. Existing long retry_after values are
+clamped to 30 seconds per sleep; full header-aware/bucket-aware pacing and long-wait
+handling are separate follow-up work, not claimed as implemented by this change.
+For normal official-news volume, poll interval/source availability, media checks
+and runner startup can matter more than choosing webhook versus bot. No measured
+webhook-versus-bot latency benchmark was performed.
+
+References: [1](https://docs.discord.com/developers/topics/rate-limits),
+[5](https://github.com/discord/discord-api-docs/blob/main/developers/topics/rate-limits.mdx),
+[10](https://discord.com/developers/docs/resources/webhook).

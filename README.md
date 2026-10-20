@@ -262,8 +262,8 @@ The same URL may be used for several secrets, for example one codes channel for 
 `NO_PING=1`. The Youtube and Twitch emojis already default to the animated ones.
 Leave `ENABLED_FEATURES` unset for the usual `schedule,codes` production defaults.
 Official news remains off unless `NEWS_ENABLED=1`; `NEWS_GAMES` selects games,
-`NEWS_GROUP_LONG_STRIPS=0` keeps article-order galleries, and `NEWS_MAX_POSTS_PER_RUN=5`
-caps completed articles per run. For only GI and WuWa news, use `NEWS_GAMES=genshin,wuwa`
+`NEWS_GROUP_LONG_STRIPS=0` keeps article-order galleries. Each run attempts all discovered,
+eligible unposted articles in publication order, with no fixed article-count cap. For only GI and WuWa news, use `NEWS_GAMES=genshin,wuwa`
 and their two dedicated secrets; this does not restrict schedule/codes.
 Canonical news keys: `genshin`, `starrail`, `hna`, `zzz`, `wuwa`.
 See [full setup and switches](docs/CONFIGURATION.md#official-news-explicit-opt-in-default-off).
@@ -331,7 +331,6 @@ editing YAML. The ones worth knowing:
 | `NEWS_ENABLED` | `0` | explicit opt-in; adds news unless globally disabled |
 | `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | news subset, independent of schedule/codes |
 | `NEWS_GROUP_LONG_STRIPS` | `0` | optional measured grouping; off retains article order |
-| `NEWS_MAX_POSTS_PER_RUN` | `5` | completed news articles, clamped 1–20; at most two messages/article |
 | `GAMES` / `ENABLE_GAMES` | all enabled / — | run a subset · switch prepared games on |
 | `LOOKBACK_HOURS` | 72 | how far back official posts are considered |
 | `CODES_MIN_SOURCES` | 2 | independent sources needed for an unverified code |

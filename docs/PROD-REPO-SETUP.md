@@ -319,7 +319,6 @@ You may choose any channel names. For only GI/WuWa, use their two dedicated secr
 | `NEWS_ENABLED` | preserve intended opt-in; default `0` | `1` explicitly enables news unless globally off |
 | `NEWS_GAMES` | default `genshin,starrail,zzz,wuwa,hna` | independent news subset |
 | `NEWS_GROUP_LONG_STRIPS` | default `0` | preserve your chosen setting; no rollout implied |
-| `NEWS_MAX_POSTS_PER_RUN` | default `5` | 1–20 articles; max two messages per article |
 | `AUTO_MERGE_DEPENDABOT` | **do not copy** | dev-only, there is no Dependabot in prod |
 | `AUTO_MERGE_PYTHON_BUMP` | not needed | legacy/ignored in all instances |
 
@@ -533,3 +532,12 @@ Everything is reversible in two moves: pause the prod cron job, remove
 `ENABLED_FEATURES=none` from dev, repoint the cron URL at `Game-Express`. Copy
 `state/state.json` back from prod first, or dev will re-seed and you'll lose edit-ability on
 the cards prod posted.
+
+### News article-count policy
+
+Each run attempts all discovered eligible unposted articles; there is no fixed per-run
+article count or ten-attempt game cap. Source pagination, freshness/future checks,
+state capacity, dedup/partial progress, media holds and job timeouts remain. No state
+reset or route change is needed. The maximum two messages per article is unchanged.
+The retired `NEWS_MAX_POSTS_PER_RUN` variable is ignored; remove it from repository
+variables/local environment if present. It is not an active throttle switch.

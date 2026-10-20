@@ -24,7 +24,7 @@ is the short overview. The operational instructions live here:
 
 | Reference | Covers |
 |---|---|
-| [Setup, variables and destination secrets](CONFIGURATION.md#official-news-explicit-opt-in-default-off) | explicit opt-in, all five game keys, default-off grouping, dedicated webhooks and routing |
+| [Setup, variables and destination secrets](CONFIGURATION.md#official-news-explicit-opt-in-default-off) | explicit opt-in, all five game keys, all eligible discovered articles per run, retired cap migration, default-off grouping, dedicated webhooks and routing |
 | [Select two games / choose channel names](CONFIGURATION.md#selecting-two-games-and-choosing-channel-names) | easy subset setup, arbitrary webhook destinations, independence from schedule/codes |
 | [Full-content paging and overflow](CONFIGURATION.md#full-content-paging-and-overflow) | fixed 7,000 eligibility, maximum two messages, per-message budgets, excerpts, Part versus Page and final controls |
 | [Source-preserving formatting](CONFIGURATION.md#source-preserving-formatting) | compact lists, attached hyphens, marker spacing, unchanged source words/URLs |

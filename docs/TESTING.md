@@ -269,6 +269,14 @@ without posting. Locally the two are the equivalent of the workflow's test modes
 
 ## Official news: offline coverage and read-only checks
 
+Current throughput regressions cover more than 20 completed articles across games,
+more than ten attempts with early failures, publication ordering despite an old
+attempt cursor, continuation to later games, failed-article retry without reset,
+future/stale holds, repeat-run dedup and ignored legacy cap settings. These are
+constructed runner cases, not source captures or live deliveries. Existing
+500-record admission safety and source-pagination bounds remain covered.
+
+
 The existing smoke runner now covers news opt-in/no-fallback routing, the five
 games, official list/full-body shapes, ordered HTML/Quill content, GIF/video
 links, full fitting articles / single-container labelled overflow excerpts,

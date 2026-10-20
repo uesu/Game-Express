@@ -27,6 +27,8 @@ nothing is renumbered after the fact.
 
 | Entry | Date | Headline |
 |---|---|---|
+| [2026-10-20](CHANGELOG.md#2026-10-20--news-article-count-cap-removal-unreleased) | 2026-10-20 | unreleased: attempt all discovered eligible news in publication order; retire count/attempt caps and stale settings, preserve safety guards |
+| [2026-10-20](CHANGELOG.md#2026-10-20--news-gif-mime-compatibility-unreleased) | 2026-10-20 | unreleased: signature-gated bare GIF MIME compatibility in shared news preflight/dimensions; original animated media preserved, safeguards unchanged |
 | [2026-10-19](CHANGELOG.md#2026-10-19--wuwa-news-publication-time) | 2026-10-19 | dedicated WuWa news uses official publication start instead of draft creation; real Lucilla regression and protected baseline/future/dedup behavior |
 | [2026-10-19](CHANGELOG.md#2026-10-19--news-video-cover-layout) | 2026-10-19 | omit redundant lead covers for full native-video news; retain explicit body media, link-only covers and excerpt leads |
 | [2026-10-19](CHANGELOG.md#2026-10-19--news-cdn-preflight-compatibility-and-diagnostics) | 2026-10-19 | news media preflight accepts a well-formed offset-zero HTTP 206 prefix and `application/octet-stream` only alongside recognized media signatures, logs host/status/MIME/first-12-bytes rejections without signed queries, and pins the user-captured ZZZ 47133580 video/cover in a regression; host/redirect/status/signature protection and official refresh/hold behavior are unchanged, and the actual live CDN rejection cause plus Discord delivery remain unverified |
