@@ -472,10 +472,11 @@ repository Variables:
   / `PING_MAINTENANCE`), seeding settled milestones silently on first activation, enforcing
   `official > override > persisted first-observed launcher signal (labelled observed) > cadence`
   precedence (no invented HNA cadence or unknown end time), separating version/launch identity
-  lock from selected media tier across 4 priority tiers against Phase II swaps, supporting
-  corroborated same-asset signed URL renewal (`auth_key=` query intact, redacted in
-  `_summary_text`) or matching-artwork / gallery-omission fallback inside `LATE_MEDIA_EDIT_WINDOW_S`
-  (`MAX_LATE_MEDIA_ATTEMPTS = 3`), and keeping prior state intact if a `PATCH` edit fails.
+  lock from selected media tier across 4 priority tiers against Phase II swaps, and bounding
+  post-delivery media checks/edits strictly to `0 <= now - posted_at <= LATE_MEDIA_EDIT_WINDOW_S`
+  (`6 h` / `21,600 s`, once per scheduled poll with per-run URL deduplication), `MAX_LATE_MEDIA_ATTEMPTS = 3`
+  consecutive failed `PATCH` calls (`edit_attempts`, reset to `0` on `res.ok`), and `MAX_LATE_EDITS = 6`
+  total succeeded `PATCH` edits (`edit_count`, monotonic).
 - **`NEWS_EXPAND_FULL=0` (default):** preserves the exact 1-message / `<= 7,000`-char max-2-page /
   labelled excerpt policy. When `1`, expands full articles across multiple independently
   validated pages up to `NEWS_EXPAND_MAX_PAGES = 20` (`NEWS_EXPAND_MAX_MEDIA = 120`), with

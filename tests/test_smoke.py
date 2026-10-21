@@ -9248,6 +9248,576 @@ def test_correction_5_bare_utc_gmt_explicit_offsets_and_invalid_ranges():
         assert convert_news_timestamps(bad_range, published_ts=pub, enabled=True) == bad_range, bad_range
 
 
+def test_followup_1_deterministic_media_refresh_request_and_edit_bounds():
+    from unittest.mock import patch
+
+    from gamexpress import maintenance
+    from gamexpress.sources import kuro as kuro_mod
+    from gamexpress.sources import launcher as launcher_mod
+
+    assert maintenance.LATE_MEDIA_EDIT_WINDOW_S == 6 * 3600
+    assert maintenance.MAX_LATE_MEDIA_ATTEMPTS == 3
+    assert maintenance.MAX_LATE_EDITS == 6
+
+    vid_33 = "https://fastcdn.hoyoverse.com/static-resource-v2/2026/10/19/det_vid_33.webm"
+    art_33 = "https://fastcdn.hoyoverse.com/static-resource-v2/2026/10/19/det_art_33.webp"
+    prog_33 = "https://pbs.twimg.com/media/HTxU4O3W4AAGolV.jpg?name=orig"
+
+    # --- Cases 1, 2, 4, 5, 6, 7 across deterministic mocked HoYoPlay 5-minute polls ---
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "state.json"
+        ctx = make_ctx(
+            path,
+            now=1792380000,
+            MAINTENANCE_ENABLED="1",
+            ONLY="maintenance",
+            MAINTENANCE_GAMES="zzz",
+            DISCORD_WEBHOOK_MAINTENANCE_ZZZ=HOOK,
+        )
+        ctx.state.schedule_records("zzz")["3.3"] = {
+            "status": "posted",
+            "data": {
+                "version": "3.3",
+                "preinstall_ts": 1792382400,
+                "maint_start_ts": 1792533600,
+                "images": [prog_33],
+            },
+            "prov": {"preinstall_ts": [50, 1], "maint_start_ts": [50, 1]},
+        }
+        ctx.versions["zzz"] = {"live": "3.2", "pre": "3.3"}
+        ctx.items["zzz"] = []
+
+        verify_log: list[str] = []
+        basic_calls = 0
+        valid_urls = {vid_33, art_33, prog_33}
+        current_binfo: dict = {}
+
+        async def _counted_verify(u: str) -> bool:
+            verify_log.append(u)
+            return u in valid_urls
+
+        async def _counted_binfo(_fetcher) -> dict:
+            nonlocal basic_calls
+            basic_calls += 1
+            return current_binfo
+
+        ctx.fetcher = types.SimpleNamespace(verify_media=_counted_verify)
+
+        with patch.object(launcher_mod, "hoyoplay_basic_info", new=_counted_binfo):
+            # Seed baseline silently.
+            asyncio.run(maintenance.run(ctx))
+            assert ctx.webhook.sent == []
+
+            # Initial post with Tier-2 artwork (`art_33`) awaiting launch video:
+            current_binfo = {
+                "U5hbdsT9W7": [{"id": "bg-33", "video": "", "background": art_33, "links": ["https://hoyo.link/v3.3"]}]
+            }
+            ctx.now = 1792382460
+            ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, "msg-det-1")])
+            verify_log.clear()
+            basic_calls = 0
+            asyncio.run(maintenance.run(ctx))
+            assert len(ctx.webhook.sends) == 1 and len(ctx.webhook.edits) == 0
+            assert basic_calls == 1 and verify_log == [art_33]
+
+            # Case 2 (Polls 1..2): Artwork awaiting matching launch video -> 1 binfo + 1 verify per poll, 0 edits!
+            verify_log.clear()
+            basic_calls = 0
+            ctx.webhook = ScriptedWebhook([], [])
+            for poll in (1, 2):
+                ctx.now = 1792382460 + poll * 300
+                asyncio.run(maintenance.run(ctx))
+            assert basic_calls == 2
+            assert verify_log == [art_33, art_33]
+            assert len(ctx.webhook.edits) == 0 and len(ctx.webhook.sends) == 0
+
+            # Case 2 (Poll 3): Matching launch video appears -> 1 binfo + 2 verifies (`art_33`, `vid_33`), 1 PATCH!
+            current_binfo = {
+                "U5hbdsT9W7": [
+                    {"id": "bg-33", "video": vid_33, "background": art_33, "links": ["https://hoyo.link/v3.3"]}
+                ]
+            }
+            verify_log.clear()
+            basic_calls = 0
+            ctx.now = 1792382460 + 3 * 300
+            ctx.webhook = ScriptedWebhook([SendResult(True, 200)], [])
+            asyncio.run(maintenance.run(ctx))
+            entry = ctx.state.maintenance_record("zzz")["versions"]["3.3"]["preload"]
+            assert basic_calls == 1 and verify_log == [art_33, vid_33]
+            assert len(ctx.webhook.edits) == 1 and len(ctx.webhook.sends) == 0
+            assert entry["media_tier"] == 1 and entry["edit_count"] == 1 and entry["edit_attempts"] == 0
+
+            # Case 1: Healthy existing Tier-1 video across 5 repeated polls -> 5 verifies, 0 binfo, 0 edits, 0 sends!
+            verify_log.clear()
+            basic_calls = 0
+            ctx.webhook = ScriptedWebhook([], [])
+            for poll in range(4, 9):
+                ctx.now = 1792382460 + poll * 300
+                asyncio.run(maintenance.run(ctx))
+            assert verify_log == [vid_33] * 5
+            assert basic_calls == 0
+            assert len(ctx.webhook.edits) == 0 and len(ctx.webhook.sends) == 0
+            assert entry["edit_count"] == 1 and entry["edit_attempts"] == 0
+
+            # Case 6: Tier 1 unreachable -> falls back cleanly to Tier 2 (`art_33`), then Tier 3 (`prog_33`), then Tier 4 (`None`)!
+            valid_urls.discard(vid_33)
+            ctx.now = 1792382460 + 9 * 300
+            ctx.webhook = ScriptedWebhook([SendResult(True, 200)], [])
+            asyncio.run(maintenance.run(ctx))
+            assert len(ctx.webhook.edits) == 1 and entry["media_tier"] == 2 and entry["media_url"] == art_33
+
+            valid_urls.discard(art_33)
+            ctx.now = 1792382460 + 10 * 300
+            ctx.webhook = ScriptedWebhook([SendResult(True, 200)], [])
+            asyncio.run(maintenance.run(ctx))
+            assert len(ctx.webhook.edits) == 1 and entry["media_tier"] == 3 and entry["media_url"] == prog_33
+
+            # Case 5: Unusable media with NO verified replacement -> 1 PATCH omits gallery (`tier 4`), then 0 further edits across 3 polls!
+            valid_urls.discard(prog_33)
+            ctx.now = 1792382460 + 11 * 300
+            ctx.webhook = ScriptedWebhook([SendResult(True, 200)], [])
+            asyncio.run(maintenance.run(ctx))
+            assert len(ctx.webhook.edits) == 1 and entry["media_tier"] == 4 and entry["media_url"] == ""
+            edits_after_omit = entry["edit_count"]
+
+            ctx.webhook = ScriptedWebhook([], [])
+            for poll in (12, 13, 14):
+                ctx.now = 1792382460 + poll * 300
+                asyncio.run(maintenance.run(ctx))
+            assert len(ctx.webhook.edits) == 0 and len(ctx.webhook.sends) == 0
+            assert entry["edit_count"] == edits_after_omit
+
+            # Case 7: Polls strictly AFTER `LATE_MEDIA_EDIT_WINDOW_S` -> 0 verifies, 0 binfo, 0 edits, 0 sends!
+            valid_urls.update({vid_33, art_33, prog_33})
+            verify_log.clear()
+            basic_calls = 0
+            ctx.webhook = ScriptedWebhook([], [])
+            for after_offset in (60, 3600, 10800):
+                ctx.now = 1792382460 + maintenance.LATE_MEDIA_EDIT_WINDOW_S + after_offset
+                asyncio.run(maintenance.run(ctx))
+            assert verify_log == [] and basic_calls == 0
+            assert len(ctx.webhook.edits) == 0 and len(ctx.webhook.sends) == 0
+
+    # --- Case 3 + Case 4 + separate `MAX_LATE_EDITS = 6` ceiling on signed WuWa URLs ---
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "state.json"
+        ctx = make_ctx(
+            path,
+            now=1790560000,
+            MAINTENANCE_ENABLED="1",
+            ONLY="maintenance",
+            MAINTENANCE_GAMES="wuwa",
+            DISCORD_WEBHOOK_MAINTENANCE_WUWA=HOOK,
+        )
+        ctx.state.schedule_records("wuwa")["3.7"] = {
+            "status": "posted",
+            "data": {"version": "3.7", "preinstall_ts": 1790560800, "maint_start_ts": 1790712000},
+            "prov": {"preinstall_ts": [50, 1], "maint_start_ts": [50, 1]},
+        }
+        ctx.items["wuwa"] = []
+        ww_verifies: list[str] = []
+        ctx.fetcher = types.SimpleNamespace(verify_media=lambda u: (ww_verifies.append(u), asyncio.sleep(0, result=True))[1])
+
+        def _signed(exp_ts: int, tok: str) -> str:
+            return f"https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/video/bg.mp4?auth_key={exp_ts}-0-0-{tok}"
+
+        ctx.versions["wuwa"] = kuro_mod.parse_launcher_index({"default": {"version": "3.6.0"}})
+        asyncio.run(maintenance.run(ctx))
+
+        t_post = 1790560860
+        ctx.now = t_post
+        ctx.versions["wuwa"] = kuro_mod.parse_launcher_index(
+            {"default": {"version": "3.6.0"}, "predownload": {"version": "3.7.0", "bgVideo": _signed(t_post + 600, "t0"), "bgVideoMd5": "h37"}}
+        )
+        ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, "ww-det-1")])
+        asyncio.run(maintenance.run(ctx))
+        ww_entry = ctx.state.maintenance_record("wuwa")["versions"]["3.7"]["preload"]
+
+        # 2 transient failures increment `edit_attempts` to 2, then 1 succeeded renewal resets `edit_attempts == 0`!
+        ctx.now = t_post + 700
+        ctx.versions["wuwa"] = kuro_mod.parse_launcher_index(
+            {"default": {"version": "3.6.0"}, "predownload": {"version": "3.7.0", "bgVideo": _signed(t_post + 1800, "t1"), "bgVideoMd5": "h37"}}
+        )
+        ww_verifies.clear()
+        ctx.webhook = ScriptedWebhook(
+            [SendResult(False, 502, error="gw"), SendResult(False, 502, error="gw"), SendResult(True, 200)],
+            [],
+        )
+        asyncio.run(maintenance.run(ctx))
+        assert ww_entry["edit_attempts"] == 1 and ww_entry["edit_count"] == 0
+        asyncio.run(maintenance.run(ctx))
+        assert ww_entry["edit_attempts"] == 2 and ww_entry["edit_count"] == 0
+        ww_verifies.clear()
+        asyncio.run(maintenance.run(ctx))
+        # Expired `t0` rejected in 0 HTTP calls; only `t1` probed once!
+        assert ww_verifies == [_signed(t_post + 1800, "t1")]
+        assert ww_entry["edit_attempts"] == 0 and ww_entry["edit_count"] == 1
+
+        # Perform remaining 5 corroborated renewals up to `MAX_LATE_EDITS == 6`:
+        for idx in range(2, maintenance.MAX_LATE_EDITS + 1):
+            exp_prev = t_post + idx * 1800
+            ctx.now = exp_prev + 100
+            ctx.versions["wuwa"] = kuro_mod.parse_launcher_index(
+                {"default": {"version": "3.6.0"}, "predownload": {"version": "3.7.0", "bgVideo": _signed(exp_prev + 1800, f"t{idx}"), "bgVideoMd5": "h37"}}
+            )
+            ctx.webhook = ScriptedWebhook([SendResult(True, 200)], [])
+            asyncio.run(maintenance.run(ctx))
+        assert ww_entry["edit_count"] == maintenance.MAX_LATE_EDITS
+
+        # Once `edit_count == MAX_LATE_EDITS` (still inside 6h window!), 3 further polls perform 0 verifies and 0 edits!
+        ww_verifies.clear()
+        ctx.webhook = ScriptedWebhook([], [])
+        for extra in range(3):
+            ctx.now = t_post + 12000 + extra * 300
+            assert ctx.now - t_post < maintenance.LATE_MEDIA_EDIT_WINDOW_S
+            asyncio.run(maintenance.run(ctx))
+        assert ww_verifies == [] and len(ctx.webhook.edits) == 0 and len(ctx.webhook.sends) == 0
+
+
+def test_followup_3_complete_expanded_news_disabled_parity_strips_and_failure_matrix():
+    import re
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import config, news_timestamps, runner
+    from gamexpress import media as media_mod
+    from gamexpress.sources import hoyolab as hoyolab_mod
+
+    # 1) Absent / explicit false / explicit true / invalid switch parsing + complete independence:
+    with patch.dict(os.environ, {}, clear=True):
+        s_absent = config.load_settings()
+        assert (
+            s_absent.news_timestamps is False
+            and s_absent.news_expand_full is False
+            and s_absent.news_group_long_strips is False
+            and "maintenance" not in s_absent.features
+            and s_absent.maintenance_games == set()
+        )
+    for bad_bool in ("0", "false", "FALSE", "no", "off", "banana", "2", "-1", "enable_maybe"):
+        with patch.dict(
+            os.environ,
+            {
+                "NEWS_TIMESTAMPS": bad_bool,
+                "NEWS_EXPAND_FULL": bad_bool,
+                "NEWS_GROUP_LONG_STRIPS": bad_bool,
+                "MAINTENANCE_ENABLED": bad_bool,
+                "MAINTENANCE_GAMES": "genshin,unknown_game,zzz",
+            },
+            clear=True,
+        ):
+            st = config.load_settings()
+            assert st.news_timestamps is False and st.news_expand_full is False
+            assert st.news_group_long_strips is False and "maintenance" not in st.features
+            assert st.maintenance_games - set(GAMES) == {"unknown_game"}
+            assert st.maintenance_games & set(GAMES) == {"genshin", "zzz"}
+    for disabled_games in ("none", "off", "0", "-"):
+        with patch.dict(os.environ, {"MAINTENANCE_GAMES": disabled_games}, clear=True):
+            assert config.load_settings().maintenance_games == set()
+    with patch.dict(os.environ, {"MAINTENANCE_GAMES": "gi,hsr,zzz"}, clear=True):
+        assert config.load_settings().maintenance_games == {"genshin", "starrail", "zzz"}
+    for truthy in ("1", "true", "TRUE", "yes", "on"):
+        with patch.dict(os.environ, {"NEWS_TIMESTAMPS": truthy, "NEWS_EXPAND_FULL": "0"}, clear=True):
+            st_ts = config.load_settings()
+            assert st_ts.news_timestamps is True and st_ts.news_expand_full is False
+        with patch.dict(os.environ, {"NEWS_TIMESTAMPS": "0", "NEWS_EXPAND_FULL": truthy}, clear=True):
+            st_ex = config.load_settings()
+            assert st_ex.news_timestamps is False and st_ex.news_expand_full is True
+
+    def _art(*, game: str, id: str = "100", published_ts: int = 1792400100, images: list[str] | None = None, article_blocks: list[dict] | None = None) -> Item:
+        src = "kuro" if game == "wuwa" else "hoyolab"
+        base_url = (
+            f"https://wutheringwaves.kurogames.com/en/main/news/detail/{id}"
+            if game == "wuwa"
+            else f"https://www.hoyolab.com/article/{id}"
+        )
+        return Item(
+            source=src,
+            game=game,
+            id=id,
+            url=base_url,
+            title="Official Event & Update Details",
+            text="",
+            published_ts=published_ts,
+            images=list(images or []),
+            article_blocks=list(article_blocks or [{"kind": "text", "text": "Article body"}]),
+            author="Official Publisher",
+        )
+
+    # 2) Disabled-output byte equality + guaranteed timestamp-parser bypass across all 5 news games:
+    for gk in ("genshin", "starrail", "hna", "zzz", "wuwa"):
+        short_it = _art(
+            game=gk,
+            id=f"{gk}-short",
+            article_blocks=[
+                {"kind": "text", "text": "Event window: 2026/09/28 06:00 (UTC+8) – 11:00 (UTC+8).\n\n"},
+                {"kind": "image", "url": "https://upload-os-bbs.hoyolab.com/upload/2026/10/18/1.jpg"},
+            ],
+        )
+        long_blocks = []
+        for idx in range(1, 13):
+            long_blocks.append(
+                {
+                    "kind": "text",
+                    "text": f"Section {idx} opens 2026/10/{10 + idx:02d} 10:00 (UTC+8): " + ("details " * 130) + "\n\n",
+                }
+            )
+            long_blocks.append({"kind": "image", "url": f"https://upload-os-bbs.hoyolab.com/upload/2026/10/18/{idx}.jpg"})
+        long_it = _art(game=gk, id=f"{gk}-long", article_blocks=long_blocks)
+
+        with patch.object(news_timestamps, "convert_news_timestamps", wraps=news_timestamps.convert_news_timestamps) as spy:
+            assert cards.news_payloads(GAMES[gk], short_it, timestamps=False, expand_full=False) == cards.news_payloads(
+                GAMES[gk], short_it
+            )
+            assert cards.news_payloads(GAMES[gk], long_it, timestamps=False, expand_full=False) == cards.news_payloads(
+                GAMES[gk], long_it
+            )
+            spy.assert_not_called()
+
+        # 3, 4, 6, 7) >2-page expanded articles across all 5 games: Discord limits, order, labels, non-repeated header, final buttons only:
+        pages = cards.news_payloads(GAMES[gk], long_it, timestamps=False, expand_full=True)
+        assert 3 <= len(pages) <= cards.NEWS_EXPAND_MAX_PAGES
+        seen_media_seq: list[str] = []
+        seen_sections: list[int] = []
+        for p_idx, page in enumerate(pages, start=1):
+            assert cards.validate_payload(page) == []
+            flat_texts = [
+                c["content"] for co in page["components"] for c in co["components"] if c["type"] == 10
+            ]
+            assert any(t == f"-# Page {p_idx}" for t in flat_texts)
+            if p_idx > 1:
+                assert not any(t.startswith("## [") for t in flat_texts)
+            for co_idx, co in enumerate(page["components"]):
+                btn_rows = [c for c in co["components"] if c["type"] == 1]
+                if p_idx == len(pages) and co_idx == len(page["components"]) - 1:
+                    assert len(btn_rows) == 1 and len(btn_rows[0]["components"]) == 3
+                else:
+                    assert btn_rows == []
+                for c in co["components"]:
+                    if c["type"] == 12:
+                        assert len(c["items"]) == 1
+                        seen_media_seq.append(c["items"][0]["media"]["url"])
+                    elif c["type"] == 10:
+                        seen_sections.extend(int(m) for m in re.findall(r"Section (\d+) opens", c["content"]))
+        assert seen_media_seq == [f"https://upload-os-bbs.hoyolab.com/upload/2026/10/18/{i}.jpg" for i in range(1, 13)]
+        assert seen_sections == list(range(1, 13))
+
+    # 5) Cover deduplication + native video vs link-video under `expand_full=True`:
+    cover_url = "https://upload-os-bbs.hoyolab.com/upload/2026/10/18/cover.jpg"
+    native_mp4 = "https://vod-static.hoyolab.com/upload/2026/10/18/trailer.mp4"
+    yt_link = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    filler = ("Expanded paragraph prose keeping multi-page layout active across sections. " * 90) + "\n\n"
+
+    dup_cover_pages = cards.news_payloads(
+        GAMES["zzz"],
+        _art(
+            game="zzz",
+            images=[cover_url],
+            article_blocks=[{"kind": "text", "text": filler}, {"kind": "image", "url": cover_url}, {"kind": "text", "text": filler}],
+        ),
+        expand_full=True,
+    )
+    assert [
+        it["media"]["url"] for p in dup_cover_pages for co in p["components"] for c in co["components"] if c["type"] == 12 for it in c["items"]
+    ] == [cover_url]
+
+    native_vid_pages = cards.news_payloads(
+        GAMES["zzz"],
+        _art(
+            game="zzz",
+            images=[cover_url],
+            article_blocks=[{"kind": "text", "text": filler}, {"kind": "video", "url": native_mp4}, {"kind": "text", "text": filler}],
+        ),
+        expand_full=True,
+    )
+    assert [
+        it["media"]["url"] for p in native_vid_pages for co in p["components"] for c in co["components"] if c["type"] == 12 for it in c["items"]
+    ] == [native_mp4]
+
+    link_vid_pages = cards.news_payloads(
+        GAMES["zzz"],
+        _art(
+            game="zzz",
+            images=[cover_url],
+            article_blocks=[{"kind": "text", "text": filler}, {"kind": "video", "url": yt_link}, {"kind": "text", "text": filler}],
+        ),
+        expand_full=True,
+    )
+    assert [
+        it["media"]["url"] for p in link_vid_pages for co in p["components"] for c in co["components"] if c["type"] == 12 for it in c["items"]
+    ] == [cover_url]
+    assert f"[Open original media]({yt_link})" in json.dumps(link_vid_pages)
+
+    # 8) Explicit 20-page / 120-media / single-unit safety bounds & honest labelled excerpt fallback:
+    over_pages = cards.news_payloads(
+        GAMES["zzz"],
+        _art(game="zzz", article_blocks=[{"kind": "text", "text": ("Page block " + ("word " * 680) + "\n\n") * 24}]),
+        expand_full=True,
+    )
+    assert len(over_pages) == 1 and "**Excerpt — this article exceeds the expanded delivery safety limit.**" in json.dumps(
+        over_pages, ensure_ascii=False
+    )
+
+    over_media = cards.news_payloads(
+        GAMES["zzz"],
+        _art(
+            game="zzz",
+            article_blocks=[
+                {"kind": "image", "url": f"https://upload-os-bbs.hoyolab.com/upload/2026/10/18/m{i}.jpg"} for i in range(121)
+            ],
+        ),
+        expand_full=True,
+    )
+    assert len(over_media) == 1 and "**Excerpt — this article exceeds the expanded delivery safety limit.**" in json.dumps(
+        over_media, ensure_ascii=False
+    )
+
+    indivisible = cards.news_payloads(
+        GAMES["zzz"],
+        _art(game="zzz", article_blocks=[{"kind": "text", "text": "X" * 4500}]),
+        expand_full=True,
+    )
+    assert len(indivisible) == 1 and "**Excerpt — this article contains content that exceeds single-message limits.**" in json.dumps(
+        indivisible, ensure_ascii=False
+    )
+
+    # 9) Independent `NEWS_GROUP_LONG_STRIPS` behavior on multi-page expanded payloads:
+    s1 = "https://upload-os-bbs.hoyolab.com/upload/2026/10/18/strip1.jpg"
+    s2 = "https://upload-os-bbs.hoyolab.com/upload/2026/10/18/strip2.jpg"
+    wide = "https://upload-os-bbs.hoyolab.com/upload/2026/10/18/wide.jpg"
+    strip_item = _art(
+        game="zzz",
+        images=[],
+        article_blocks=[
+            {"kind": "text", "text": filler},
+            {"kind": "image", "url": s1},
+            {"kind": "image", "url": s2},
+            {"kind": "image", "url": wide},
+            {"kind": "text", "text": filler},
+        ],
+    )
+    ungrouped = cards.news_payloads(GAMES["zzz"], strip_item, expand_full=True)
+    dim_map = {s1: (800, 3200), s2: (800, 3200), wide: (1600, 900)}
+    dim_fetcher = types.SimpleNamespace(media_dimensions=AsyncMock(side_effect=lambda u: dim_map.get(u)))
+    assert asyncio.run(media_mod.group_news_media(dim_fetcher, ungrouped, enabled=False, max_urls=120)) == ungrouped
+    dim_fetcher.media_dimensions.assert_not_called()
+
+    grouped = asyncio.run(media_mod.group_news_media(dim_fetcher, ungrouped, enabled=True, max_urls=120))
+    grouped_galleries = [
+        [it["media"]["url"] for it in c["items"]]
+        for p in grouped
+        for co in p["components"]
+        for c in co["components"]
+        if c["type"] == 12
+    ]
+    assert [s1, s2] in grouped_galleries and [wide] in grouped_galleries
+    broken_dim_fetcher = types.SimpleNamespace(media_dimensions=AsyncMock(return_value=None))
+    assert asyncio.run(media_mod.group_news_media(broken_dim_fetcher, ungrouped, enabled=True, max_urls=120)) == ungrouped
+
+    # 10 & 11) Before-send failure, mid-send restart resume, incomplete partial state isolation, & ambiguous outcome holds:
+    row_bad = {"id": "77000", "ts": 1792400600}
+    row_ok = {"id": "77001", "ts": 1792400700}
+    art_3page = _art(
+        game="zzz",
+        id="77001",
+        published_ts=1792400700,
+        article_blocks=[
+            {"kind": "text", "text": ("Page one content " * 190) + "\n\n"},
+            {"kind": "image", "url": s1},
+            {"kind": "text", "text": ("Page two content " * 190) + "\n\n"},
+            {"kind": "image", "url": s2},
+            {"kind": "text", "text": ("Page three content " * 190) + "\n\n"},
+        ],
+    )
+    assert len(cards.news_payloads(GAMES["zzz"], art_3page, expand_full=True)) == 3
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "state.json"
+        ctx = make_ctx(
+            path,
+            now=1792400500,
+            NEWS_ENABLED="1",
+            NEWS_GAMES="zzz",
+            NEWS_EXPAND_FULL="1",
+            DISCORD_WEBHOOK_NEWS_ZZZ=HOOK,
+        )
+        ctx.fetcher = types.SimpleNamespace(verify_media=lambda u: asyncio.sleep(0, result=True))
+
+        with (
+            patch.object(hoyolab_mod, "discover_news", new=AsyncMock(return_value=[row_ok])),
+            patch.object(hoyolab_mod, "news_article", new=AsyncMock(return_value=art_3page)),
+            patch.object(media_mod, "news_media_available", new=AsyncMock(return_value=True)),
+        ):
+            # Seed baseline first run:
+            asyncio.run(runner.run_news(ctx))
+            assert ctx.webhook.sent == []
+
+            # (10a) Before-send media unavailability + (10b) Page-1 500 failure leave NO partial hold:
+            ctx.now = 1792400750
+            with patch.object(media_mod, "news_media_available", new=AsyncMock(return_value=False)):
+                asyncio.run(runner.run_news(ctx))
+            assert "77001" not in ctx.state.news_record("zzz")["records"]
+
+            ctx.webhook = ScriptedWebhook([], [SendResult(False, 500, error="p1 fail")])
+            asyncio.run(runner.run_news(ctx))
+            assert "77001" not in ctx.state.news_record("zzz")["records"]
+
+            # (11a) Mid-send failure after Page 1 (`p1-id`), Page 2 returns 500 -> reload from disk & resume ONLY Pages 2..3!
+            ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, "p1-id"), SendResult(False, 500, error="p2 fail")])
+            asyncio.run(runner.run_news(ctx))
+            assert ctx.state.news_record("zzz")["records"]["77001"]["messages"] == ["p1-id"]
+
+            restarted_ctx = make_ctx(
+                path,
+                now=1792400900,
+                NEWS_ENABLED="1",
+                NEWS_GAMES="zzz",
+                NEWS_EXPAND_FULL="1",
+                DISCORD_WEBHOOK_NEWS_ZZZ=HOOK,
+            )
+            restarted_ctx.state = State.load(path)
+            # Inject an incomplete partial state record (`"76999"` missing `"row"` AND `"77000"` missing `"messages"`)
+            # alongside healthy resuming `"77001"` to prove clean isolation without aborting `"77001"`!
+            restarted_ctx.state.news_record("zzz")["records"]["76999"] = {"status": "partial"}
+            restarted_ctx.state.news_record("zzz")["records"]["77000"] = {"status": "partial", "ts": 1792400600, "row": row_bad}
+            restarted_ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, "p2-id"), SendResult(True, 200, "p3-id")])
+            with patch.object(
+                hoyolab_mod,
+                "news_article",
+                new=AsyncMock(side_effect=lambda _f, _g, r: art_3page if r["id"] == "77001" else _art(game="zzz", id=r["id"])),
+            ):
+                asyncio.run(runner.run_news(restarted_ctx))
+            assert len(restarted_ctx.webhook.sends) == 2
+            assert restarted_ctx.state.news_record("zzz")["records"]["77001"] == {
+                "status": "posted",
+                "ts": 1792400700,
+                "messages": ["p1-id", "p2-id", "p3-id"],
+            }
+            assert any("76999: incomplete partial delivery state" in w for w in restarted_ctx.warnings)
+            assert any("77000: ValueError: incomplete partial delivery state" in w for w in restarted_ctx.warnings)
+
+            # (11b) Ambiguous HTTP 204 / missing-ID outcome holds cleanly without duplicate replay:
+            row_amb = {"id": "77002", "ts": 1792400800}
+            art_amb = _art(
+                game="zzz",
+                id="77002",
+                published_ts=1792400800,
+                article_blocks=art_3page.article_blocks,
+            )
+            restarted_ctx.webhook = ScriptedWebhook(
+                [],
+                [SendResult(True, 200, "amb-p1"), SendResult(True, 204, None, ambiguous=True)],
+            )
+            with (
+                patch.object(hoyolab_mod, "discover_news", new=AsyncMock(return_value=[row_amb])),
+                patch.object(hoyolab_mod, "news_article", new=AsyncMock(return_value=art_amb)),
+            ):
+                asyncio.run(runner.run_news(restarted_ctx))
+                assert restarted_ctx.state.news_record("zzz")["records"]["77002"]["ambiguous"] is True
+                restarted_ctx.webhook = ScriptedWebhook([], [])
+                asyncio.run(runner.run_news(restarted_ctx))
+                assert restarted_ctx.webhook.sends == []
+
+
+
 
 if __name__ == "__main__":
     sys.exit(main())

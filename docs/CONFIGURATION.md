@@ -531,13 +531,14 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
   (2) matching-version launcher artwork/WebP, (3) matching-version Special Program art,
   (4) omitted cleanly), and the Citlali News section footer. Launch version identity is
   separated from selected tier so prompt initial artwork posts can silently `PATCH` to
-  matching-version launch video inside `LATE_MEDIA_EDIT_WINDOW_S` (`12 h`) while rejecting
-  Phase II swaps. Signed Kuro `?auth_key=…` URLs keep query parameters intact and expire:
-  within `LATE_MEDIA_EDIT_WINDOW_S` (`MAX_LATE_MEDIA_ATTEMPTS = 3`), expired media renews
-  only when corroborating source metadata (`hash`/`md5`/`size`+`full_version`/`asset_id`)
-  proves identical asset identity (never host/path equality alone), otherwise falling back
-  to matching-version artwork or cleanly omitting the gallery without durable mirroring.
-  Failed `PATCH` edits keep prior card state intact.
+  matching-version launch video inside `LATE_MEDIA_EDIT_WINDOW_S` (`6 h` / `21,600 s`) while
+  rejecting Phase II swaps. Signed Kuro `?auth_key=…` URLs keep query parameters intact and expire.
+- **Exact post-delivery refresh & retry bounds (`gamexpress/maintenance.py`):**
+  - *Time window:* strictly `0 <= now - posted_at <= LATE_MEDIA_EDIT_WINDOW_S` (`6 * 3600 = 21,600 s` / `6 h` from `posted_at`); polls after `6 h` perform `0` health checks, `0` candidate lookups, and `0` `PATCH` edits.
+  - *Failed-edit limit (`MAX_LATE_MEDIA_ATTEMPTS = 3`):* counts only failed `ctx.webhook.edit(...)` calls (`not res.ok`), tracked in `entry["edit_attempts"]`; read-only checks do not increment it, and reaching `3` stops further checks/edits for that milestone.
+  - *Counter reset:* only a succeeding `ctx.webhook.edit(...)` (`res.ok is True`) resets `entry["edit_attempts"] = 0` and commits the staged state.
+  - *Check cadence:* evaluated at most once per scheduled `maintenance.run(ctx)` execution (existing 5-minute poll schedule — no in-run loops), memoized per run (`verified_cache`) so each distinct URL is checked at most once per poll (`0` HTTP checks on already-expired `auth_key=` timestamps), and skipping `hoyoplay_basic_info` completely when `cur_tier == 1` is healthy and no authoritative timestamp upgrade applies.
+  - *Separate succeeded-edit cap (`MAX_LATE_EDITS = 6`):* tracked monotonically in `entry["edit_count"]` (never reset), capping total succeeded silent `PATCH` edits per posted milestone across upgrades, renewals, and fallbacks.
 
 ## Discord webhook versus bot delivery
 

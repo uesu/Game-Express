@@ -428,11 +428,20 @@ async def run_news(ctx: Ctx) -> None:
         records = record.setdefault("records", {})
         eligible = [row for row in rows if record["floor"] < row["ts"] <= ctx.now
                     and row["ts"] >= ctx.now - 48 * 3600]
+        failures = attempted = delivered = 0
         # Finish known partial deliveries even if the discovery page/window has moved on.
         for key, rec in records.items():
-            if rec.get("status") == "partial" and not any(row["id"] == key for row in eligible):
-                eligible.append(rec["row"])
-        failures = attempted = delivered = 0
+            if not isinstance(rec, dict) or rec.get("status") != "partial":
+                continue
+            saved_row = rec.get("row")
+            if not isinstance(saved_row, dict) or "id" not in saved_row or "ts" not in saved_row:
+                failures += 1
+                ctx.warnings.append(
+                    f"{game.short} news {key}: incomplete partial delivery state; manual review required"
+                )
+                continue
+            if not any(row["id"] == key for row in eligible):
+                eligible.append(saved_row)
         eligible.sort(key=lambda value: (value["ts"], value["id"]))
         # Process every discovered eligible row in publication order. The stored
         # cursor remains diagnostic only, never a floor or delivery checkpoint.
@@ -492,11 +501,23 @@ async def run_news(ctx: Ctx) -> None:
                     enabled=ctx.settings.news_group_long_strips,
                     max_urls=media_cap,
                 )
-                if rec and rec.get("ambiguous"):
-                    raise ValueError("partially delivered article had an ambiguous webhook outcome; manual review required")
                 signature = stable_hash(payloads)
-                if rec and rec.get("signature") != signature:
-                    raise ValueError("partially delivered article changed; manual review required")
+                if rec is not None:
+                    if rec.get("ambiguous"):
+                        raise ValueError(
+                            "partially delivered article had an ambiguous webhook outcome; manual review required"
+                        )
+                    msgs = rec.get("messages")
+                    if (
+                        not isinstance(msgs, list)
+                        or not msgs
+                        or any(not isinstance(m, str) or not m for m in msgs)
+                        or not rec.get("signature")
+                        or len(msgs) > len(payloads)
+                    ):
+                        raise ValueError("incomplete partial delivery state; manual review required")
+                    if rec.get("signature") != signature:
+                        raise ValueError("partially delivered article changed; manual review required")
                 if rec is None:
                     rec = {"status": "partial", "ts": row["ts"], "row": row,
                            "signature": signature, "messages": []}

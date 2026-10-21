@@ -18,10 +18,12 @@ Design guarantees:
       4. Omit gallery cleanly
   * Launch/version identity is separated from selected media tier:
       - Matching-version launch video upgrades an initial artwork/fallback post silently via
-        webhook `PATCH` inside `LATE_MEDIA_EDIT_WINDOW_S` without reposting or re-pinging.
-      - Expiring/unusable Tier 1 video URLs support corroborated same-asset signed URL renewal
+        webhook `PATCH` inside `LATE_MEDIA_EDIT_WINDOW_S` (`6 h`) without reposting or re-pinging.
+      - Expiring/unusable Tier 1..3 URLs support corroborated same-asset signed URL renewal
         (never bare host/path equality alone) or safe fallback to matching-version artwork /
-        omitted media within bounded attempts (`MAX_LATE_MEDIA_ATTEMPTS`).
+        omitted media within `LATE_MEDIA_EDIT_WINDOW_S` (`6 h`), capped at `MAX_LATE_MEDIA_ATTEMPTS = 3`
+        consecutive failed `PATCH` attempts (reset on `res.ok`) and `MAX_LATE_EDITS = 6` total
+        succeeded `PATCH` updates per posted milestone.
       - Failed edits never persist false replacement state or emit duplicate announcements.
 """
 
@@ -48,8 +50,9 @@ from .textutil import find_version, version_key
 log = logging.getLogger("gamexpress.maintenance")
 
 ACTIVE_WINDOW_S = 12 * 3600           # deliver announcements within 12h of milestone start
-LATE_MEDIA_EDIT_WINDOW_S = 6 * 3600   # bounded silent late-media upgrade / renewal window
-MAX_LATE_MEDIA_ATTEMPTS = 3           # max failed PATCH attempts per posted card
+LATE_MEDIA_EDIT_WINDOW_S = 6 * 3600   # post-delivery check/edit window: 6h (21,600s) from posted_at
+MAX_LATE_MEDIA_ATTEMPTS = 3           # max consecutive failed PATCH attempts (`edit_attempts`, reset on res.ok)
+MAX_LATE_EDITS = 6                    # hard cap on total succeeded silent PATCH updates (`edit_count`)
 LAUNCH_MEDIA_MAX_AFTER_S = 7 * 86400  # >7d after maintenance start belongs to mid-patch / Phase II
 LAUNCH_MEDIA_MAX_BEFORE_S = 14 * 86400
 
@@ -210,17 +213,28 @@ def _is_launch_window_compatible(
     return True
 
 
-async def _verify_url(fetcher, url: str, now: int) -> bool:
-    """Validate URL safety, signed-query non-expiry, and bounded CDN preflight."""
+async def _verify_url(
+    fetcher,
+    url: str,
+    now: int,
+    *,
+    cache: dict[str, bool] | None = None,
+) -> bool:
+    """Validate URL safety, signed-query non-expiry, and per-run memoized CDN preflight."""
     if not url or not url.startswith(("https://", "http://")):
         return False
     exp = _auth_key_expiry(url)
     if exp is not None and exp <= now:
+        if cache is not None:
+            cache[url] = False
         return False
+    if cache is not None and url in cache:
+        return cache[url]
     verify = getattr(fetcher, "verify_media", None)
-    if callable(verify):
-        return bool(await verify(url))
-    return True
+    ok = bool(await verify(url)) if callable(verify) else True
+    if cache is not None:
+        cache[url] = ok
+    return ok
 
 
 def _repost_matches(repost: str, game_key: str, version: str, kind: str) -> bool:
@@ -457,6 +471,7 @@ async def resolve_launch_media(
     *,
     basic_info: dict[str, list[dict]],
     program_pins: dict,
+    verified_cache: dict[str, bool] | None = None,
 ) -> tuple[int, str | None]:
     """Select and verify media strictly following priority, identity-lock, and renewal rules:
 
@@ -573,13 +588,13 @@ async def resolve_launch_media(
     locked_video = str(lock.get("video") or "").strip()
     locked_vmeta = lock.get("video_meta") if isinstance(lock.get("video_meta"), dict) else {}
     if locked_video:
-        if await _verify_url(ctx.fetcher, locked_video, now):
+        if await _verify_url(ctx.fetcher, locked_video, now, cache=verified_cache):
             return 1, locked_video
         # Locked video expired / unreachable: approve ONLY a corroborated renewal for the exact
         # same launch asset (never bare host/path equality alone).
         for cand_url, cand_meta in fresh_videos:
             if _corroborated_same_asset(cand_url, cand_meta, locked_video, locked_vmeta, version) and await _verify_url(
-                ctx.fetcher, cand_url, now
+                ctx.fetcher, cand_url, now, cache=verified_cache
             ):
                 lock["video"] = cand_url
                 lock["video_meta"] = cand_meta
@@ -597,13 +612,13 @@ async def resolve_launch_media(
             # carries an explicit version link for `version`.
             if locked_aid and cand_aid and cand_aid != locked_aid and not cand_meta.get("explicit_link"):
                 continue
-            if await _verify_url(ctx.fetcher, cand_url, now):
+            if await _verify_url(ctx.fetcher, cand_url, now, cache=verified_cache):
                 lock["version"] = version
                 lock["video"] = cand_url
                 lock["video_meta"] = cand_meta
                 if not lock.get("artwork"):
                     for art_url, art_meta in fresh_artworks:
-                        if await _verify_url(ctx.fetcher, art_url, now):
+                        if await _verify_url(ctx.fetcher, art_url, now, cache=verified_cache):
                             lock["artwork"] = art_url
                             lock["artwork_meta"] = art_meta
                             break
@@ -615,11 +630,11 @@ async def resolve_launch_media(
     locked_art = str(lock.get("artwork") or "").strip()
     locked_ameta = lock.get("artwork_meta") if isinstance(lock.get("artwork_meta"), dict) else {}
     if locked_art:
-        if await _verify_url(ctx.fetcher, locked_art, now):
+        if await _verify_url(ctx.fetcher, locked_art, now, cache=verified_cache):
             return 2, locked_art
         for cand_url, cand_meta in fresh_artworks:
             if _corroborated_same_asset(cand_url, cand_meta, locked_art, locked_ameta, version) and await _verify_url(
-                ctx.fetcher, cand_url, now
+                ctx.fetcher, cand_url, now, cache=verified_cache
             ):
                 lock["artwork"] = cand_url
                 lock["artwork_meta"] = cand_meta
@@ -627,7 +642,7 @@ async def resolve_launch_media(
                 return 2, cand_url
     else:
         for cand_url, cand_meta in fresh_artworks:
-            if await _verify_url(ctx.fetcher, cand_url, now):
+            if await _verify_url(ctx.fetcher, cand_url, now, cache=verified_cache):
                 lock["version"] = version
                 lock["artwork"] = cand_url
                 lock["artwork_meta"] = cand_meta
@@ -657,7 +672,7 @@ async def resolve_launch_media(
         if not prog_url or prog_url in seen_prog:
             continue
         seen_prog.add(prog_url)
-        if await _verify_url(ctx.fetcher, prog_url, now):
+        if await _verify_url(ctx.fetcher, prog_url, now, cache=verified_cache):
             return 3, prog_url
 
     # --- Priority 4: Omit gallery ---
@@ -749,6 +764,7 @@ async def run(ctx) -> None:
     ephemeral = ctx.settings.dry_run or ctx.settings.test_mode
     program_pins = _program_pins()
     basic_info: dict[str, list[dict]] | None = None
+    verified_cache: dict[str, bool] = {}
 
     async def get_basic_info() -> dict[str, list[dict]]:
         nonlocal basic_info
@@ -854,15 +870,19 @@ async def run(ctx) -> None:
                         cur_url = str(entry.get("media_url") or "")
                         msg_id = entry.get("message_id")
                         attempts = int(entry.get("edit_attempts") or 0)
+                        edit_count = int(entry.get("edit_count") or 0)
                         if (
                             status == "posted"
                             and msg_id
                             and attempts < MAX_LATE_MEDIA_ATTEMPTS
+                            and edit_count < MAX_LATE_EDITS
                             and 0 <= ctx.now - posted_at <= LATE_MEDIA_EDIT_WINDOW_S
                         ):
                             cur_url_unusable = False
                             if cur_tier in (1, 2, 3) and cur_url:
-                                cur_url_unusable = not await _verify_url(ctx.fetcher, cur_url, ctx.now)
+                                cur_url_unusable = not await _verify_url(
+                                    ctx.fetcher, cur_url, ctx.now, cache=verified_cache
+                                )
                             auth_ts_upgrade = (
                                 kind == "preload"
                                 and entry.get("provenance") == "observed"
@@ -873,7 +893,14 @@ async def run(ctx) -> None:
                                 binfo = await get_basic_info() if game.launcher.get("type") == "hoyoplay" else {}
                                 staged_vstate = copy.deepcopy(vstate)
                                 new_tier, new_url = await resolve_launch_media(
-                                    ctx, game, ver, plan, staged_vstate, basic_info=binfo, program_pins=program_pins
+                                    ctx,
+                                    game,
+                                    ver,
+                                    plan,
+                                    staged_vstate,
+                                    basic_info=binfo,
+                                    program_pins=program_pins,
+                                    verified_cache=verified_cache,
                                 )
                                 should_edit = (
                                     (bool(new_url) and new_tier < cur_tier)
@@ -933,7 +960,14 @@ async def run(ctx) -> None:
                 binfo = await get_basic_info() if game.launcher.get("type") == "hoyoplay" else {}
                 staged_vstate = copy.deepcopy(vstate)
                 media_tier, media_url = await resolve_launch_media(
-                    ctx, game, ver, plan, staged_vstate, basic_info=binfo, program_pins=program_pins
+                    ctx,
+                    game,
+                    ver,
+                    plan,
+                    staged_vstate,
+                    basic_info=binfo,
+                    program_pins=program_pins,
+                    verified_cache=verified_cache,
                 )
                 payload = maintenance_payload(
                     game,
@@ -978,6 +1012,8 @@ async def run(ctx) -> None:
                     "message_id": result.message_id,
                     "media_tier": media_tier,
                     "media_url": media_url or "",
+                    "edit_attempts": 0,
+                    "edit_count": 0,
                 }
                 if not ephemeral:
                     ctx.state.save()
