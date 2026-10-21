@@ -36,8 +36,10 @@ def _emoji(e: dict | None) -> str:
 
 
 # ------------------------------------------------------------------ inline markdown
-def inline(text: str) -> str:
+def inline(text: str, *, _in_link: bool = False) -> str:
     """Discord inline markdown -> HTML (escaped). Placeholders keep code/links intact."""
+    from .textutil import MARKDOWN_LINK_RE
+
     keep: list[str] = []
 
     def stash(fragment: str) -> str:
@@ -45,9 +47,10 @@ def inline(text: str) -> str:
         return f"\x00{len(keep) - 1}\x00"
 
     text = re.sub(r"`([^`\n]+)`", lambda m: stash(f"<code>{html.escape(m.group(1))}</code>"), text)
-    text = re.sub(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)",
-                  lambda m: stash(f'<a href="{html.escape(m.group(2))}" target="_blank" rel="noopener">'
-                                  f'{inline(m.group(1))}</a>'), text)
+    if not _in_link:
+        text = MARKDOWN_LINK_RE.sub(
+            lambda m: stash(f'<a href="{html.escape(m.group(2))}" target="_blank" rel="noopener">'
+                            f'{inline(m.group(1), _in_link=True)}</a>'), text)
     text = re.sub(r"<t:(-?\d+)(?::([tTdDfFR]))?>",
                   lambda m: stash(f'<span class="ts" data-ts="{m.group(1)}" data-f="{m.group(2) or "f"}">'
                                   f'&lt;t:{m.group(1)}&gt;</span>'), text)
@@ -56,9 +59,11 @@ def inline(text: str) -> str:
     text = re.sub(r"@(everyone|here)\b", lambda m: stash(f'<span class="mention">@{m.group(1)}</span>'), text)
     text = re.sub(r"<(a?):(\w{2,32}):(\d{15,25})>",
                   lambda m: stash(_emoji_img(m.group(3), m.group(2), m.group(1) == "a")), text)
-    text = re.sub(r"(?<![\"'=])(https?://[^\s<>()]+)",
-                  lambda m: stash(f'<a href="{html.escape(m.group(1))}" target="_blank" rel="noopener">'
-                                  f'{html.escape(m.group(1))}</a>'), text)
+    if not _in_link:
+        text = re.sub(r"(?<![\"'=])(https?://[^\s<>()]+)",
+                      lambda m: stash(f'<a href="{html.escape(m.group(1))}" target="_blank" rel="noopener">'
+                                      f'{html.escape(m.group(1))}</a>'), text)
+        text = text.replace(r"\[", "[").replace(r"\]", "]")
     text = html.escape(text, quote=False)
     text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
     text = re.sub(r"__(.+?)__", r"<u>\1</u>", text)

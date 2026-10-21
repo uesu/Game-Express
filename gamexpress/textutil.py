@@ -217,8 +217,18 @@ def truncate(text: str, limit: int) -> str:
 
 # Ordered article blocks are deliberately separate from schedule/code extraction.
 # No image ranking/aspect-ratio dedup here: two different same-shaped pictures are not duplicates.
+MARKDOWN_LINK_INSIDE = r"(?:\[[^\[\]\n]*\]|[^\[\]\n])+"
+MARKDOWN_LINK_RE = re.compile(rf"\[({MARKDOWN_LINK_INSIDE})\]\((https?://[^)\s]+)\)")
+
+
 def news_link(label: str, url: str) -> str:
-    """One Discord masked link, with its label and destination kept separate."""
+    """One Discord masked link, with its label and destination kept separate.
+
+    Discord masked links do not unescape ``\\[`` / ``\\]`` inside ``[label](url)`` display
+    titles (backslashes render literally), while balanced unescaped depth-1 ``[...]`` spans
+    inside ``[label](url)`` render literal brackets cleanly across Discord and CommonMark.
+    Excess/nested/unmatched brackets are emitted outside link spans as ``\\[`` / ``\\]``.
+    """
     from urllib.parse import urlsplit
 
     label = html.unescape(label)
@@ -236,8 +246,75 @@ def news_link(label: str, url: str) -> str:
     url = url.replace("(", "%28").replace(")", "%29")
     if self_labelled:
         return url  # preserve bare/self-labelled URLs, matching the existing link policy
-    label = label.replace("[", r"\[").replace("]", r"\]")
-    return f"[{label}]({url})"
+    if "\n" not in label:
+        stripped = MARKDOWN_LINK_RE.sub("", label)
+        if stripped != label and re.fullmatch(r"(?:\\\[|\\\]|\s)*", stripped):
+            urls_present = [m.group(2) for m in MARKDOWN_LINK_RE.finditer(label)]
+            if urls_present and all(u == url for u in urls_present):
+                return label
+        if re.fullmatch(rf"(?:\\\[|\\\])+ {re.escape(url)}", label):
+            return label
+    clean = label.replace(r"\[", "[").replace(r"\]", "]")
+    if "[" not in clean and "]" not in clean:
+        return f"[{clean}]({url})"
+
+    keep_in_link = [True] * len(clean)
+    inner_open = [False] * len(clean)
+    inner_close = [False] * len(clean)
+    stack: list[tuple[int, bool]] = []
+    for idx, ch in enumerate(clean):
+        if ch == "\n":
+            for open_idx, _ in stack:
+                keep_in_link[open_idx] = False
+            stack.clear()
+        elif ch == "[":
+            stack.append((idx, False))
+        elif ch == "]":
+            if not stack:
+                keep_in_link[idx] = False
+            else:
+                open_idx, has_child = stack.pop()
+                if has_child:
+                    keep_in_link[open_idx] = False
+                    keep_in_link[idx] = False
+                else:
+                    inner_open[open_idx] = True
+                    inner_close[idx] = True
+                if stack:
+                    parent_idx, _ = stack[-1]
+                    stack[-1] = (parent_idx, True)
+    for open_idx, _ in stack:
+        keep_in_link[open_idx] = False
+
+    out: list[str] = []
+    seg: list[str] = []
+    has_link = False
+    saw_pair_without_nonspace = False
+    for idx, ch in enumerate(clean):
+        if not keep_in_link[idx]:
+            if seg:
+                out.append(f"[{''.join(seg)}]({url})")
+                seg.clear()
+                has_link = True
+            out.append(r"\[" if ch == "[" else r"\]")
+            saw_pair_without_nonspace = False
+            continue
+        if inner_open[idx] and saw_pair_without_nonspace and seg:
+            out.append(f"[{''.join(seg)}]({url})")
+            seg.clear()
+            has_link = True
+            saw_pair_without_nonspace = False
+        seg.append(ch)
+        if inner_close[idx]:
+            saw_pair_without_nonspace = True
+        elif not ch.isspace() and not inner_open[idx]:
+            saw_pair_without_nonspace = False
+    if seg:
+        out.append(f"[{''.join(seg)}]({url})")
+        has_link = True
+    if not has_link:
+        return f"{''.join(out)} {url}" if out else url
+    return "".join(out)
 
 
 class _NewsHTML(HTMLParser):

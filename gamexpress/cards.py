@@ -577,11 +577,23 @@ def maintenance_payload(
     }
 
 
+_UNESCAPED_OPEN_BRACKET_RE = re.compile(r"(?<!\\)\[")
+_UNESCAPED_CLOSE_BRACKET_RE = re.compile(r"(?<!\\)\]")
+
+
+def _brackets_balanced(piece: str) -> bool:
+    if "\\" not in piece:
+        return piece.count("[") == piece.count("]")
+    return len(_UNESCAPED_OPEN_BRACKET_RE.findall(piece)) == len(
+        _UNESCAPED_CLOSE_BRACKET_RE.findall(piece)
+    )
+
+
 def _balanced_markdown_piece(piece: str) -> bool:
     return (
         piece.count("**") % 2 == 0
         and piece.count("`") % 2 == 0
-        and piece.count("[") == piece.count("]")
+        and _brackets_balanced(piece)
     )
 
 
@@ -836,7 +848,7 @@ def news_payloads(
             # Split only between existing paragraphs, never inside links/bold.
             # Preserve the exact separators in content when flattened again.
             pieces = re.findall(r".+?(?:\n\n|$)", unit["content"], re.S)
-            if any(piece.count("**") % 2 or piece.count("[") != piece.count("]") for piece in pieces):
+            if any(piece.count("**") % 2 or not _brackets_balanced(piece) for piece in pieces):
                 page_units.append(unit)
             else:
                 page_units.extend(text(piece) for piece in pieces)

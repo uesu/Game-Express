@@ -11828,5 +11828,377 @@ asyncio.run(run())
 
 
 
+def test_zzz_47154012_bracketed_link_label_repro_and_fix():
+    """Exact regression test for HoYoLAB ZZZ article 47154012 (Monitor #528).
+
+    Provenance note: the structured Quill ops and HTML source strings below are
+    reconstructed directly from the live Monitor #528 Discord Components V2 payload
+    for HoYoLAB post 47154012 (not a captured raw upstream HTTP body).
+    """
+    from gamexpress import preview_html
+    from gamexpress.textutil import news_link
+
+    reconstructed_ops = [
+        {"insert": (
+            "Dear Proxy,\n"
+            "Zenless Zone Zero Version 3.3 now supports Discord account linking, along with the all-new "
+            "Rich Presence functions for displaying your game status!\n"
+            "After linking your account, not only will you be able to show off your game status on Discord, "
+            "but you can also claim 30 Polychromes as a linking reward. Proxies who already linked their "
+            "accounts via the old account linking function can claim this linking reward once more.\n\n"
+        )},
+        {"insert": "[Function Details]", "attributes": {"bold": True}},
+        {"insert": (
+            "\n1. Account Linking and Unlinking\n"
+            "The new function to link your HoYoverse account with your Discord account has been added. "
+            "Proxies can set this up in-game via Options > Account > User Center > Link Account. Once linked, "
+            "related in-game activity will be displayed on the corresponding Discord profile. You can also "
+            "unlink the accounts at any time if needed.\n"
+            "2. Discord Rich Presence\n"
+            "Once you've linked your account and entered the game, Discord will display your Zenless Zone Zero "
+            "game status, character info, level, days active, and more.\n"
+            "3. More Game Stats Displayed\n"
+            "When viewing your game status on Discord on your desktop, you can also hover over the icon to see "
+            "your number of achievements, Bangboo, and Agents owned.\n\n"
+        )},
+        {"insert": "[Account Link Reward]", "attributes": {"bold": True}},
+        {"insert": (
+            "\nLink your Zenless Zone Zero account to your Discord account to claim 30 Polychromes.\n"
+            "Once linked, click the link below to head to the account linking reward page and claim your Polychromes:\n"
+        )},
+        {
+            "insert": "[Go to the Account Linking Rewards page to claim Polychromes]",
+            "attributes": {"link": "https://hoyo.link/XY3DL2Pp8"},
+        },
+        {"insert": (
+            "\n\nProxies who have already linked their accounts via the old account linking function can also "
+            "head to the rewards page to claim this reward after completing the new linking process.\n\n"
+        )},
+        {"insert": "[More Functions Coming Soon]", "attributes": {"bold": True}},
+        {"insert": (
+            "\nThis release is just the beginning of the ZZZ × Discord crossover experience. More functions, "
+            "such as Linked Roles and the Game Stats Widget, are in the works. Stay tuned for future announcements.\n"
+            "Link your account now to claim 30 Polychromes and stay tuned for more updates from the ZZZ × Discord community!\n"
+        )},
+        {"insert": "https://discord.gg/zenlesszonezero", "attributes": {"link": "https://discord.gg/zenlesszonezero"}},
+        {"insert": "\n"},
+        {"insert": {"image": "https://upload-os-bbs.hoyolab.com/upload/2026/10/20/0/1cefc206074aa8c54e8c9cf21e3a462a_6450583642920372150.jpeg"}},
+        {"insert": "\n"},
+    ]
+
+    reconstructed_html = (
+        "<p>Dear Proxy,<br>"
+        "Zenless Zone Zero Version 3.3 now supports Discord account linking, along with the all-new Rich Presence functions for displaying your game status!<br>"
+        "After linking your account, not only will you be able to show off your game status on Discord, but you can also claim 30 Polychromes as a linking reward. Proxies who already linked their accounts via the old account linking function can claim this linking reward once more.</p>"
+        "<p><strong>[Function Details]</strong><br>"
+        "1. Account Linking and Unlinking<br>"
+        "The new function to link your HoYoverse account with your Discord account has been added. Proxies can set this up in-game via Options &gt; Account &gt; User Center &gt; Link Account. Once linked, related in-game activity will be displayed on the corresponding Discord profile. You can also unlink the accounts at any time if needed.<br>"
+        "2. Discord Rich Presence<br>"
+        "Once you've linked your account and entered the game, Discord will display your Zenless Zone Zero game status, character info, level, days active, and more.<br>"
+        "3. More Game Stats Displayed<br>"
+        "When viewing your game status on Discord on your desktop, you can also hover over the icon to see your number of achievements, Bangboo, and Agents owned.</p>"
+        "<p><strong>[Account Link Reward]</strong><br>"
+        "Link your Zenless Zone Zero account to your Discord account to claim 30 Polychromes.<br>"
+        "Once linked, click the link below to head to the account linking reward page and claim your Polychromes:<br>"
+        '<a href="https://hoyo.link/XY3DL2Pp8">[Go to the Account Linking Rewards page to claim Polychromes]</a></p>'
+        "<p>Proxies who have already linked their accounts via the old account linking function can also head to the rewards page to claim this reward after completing the new linking process.</p>"
+        "<p><strong>[More Functions Coming Soon]</strong><br>"
+        "This release is just the beginning of the ZZZ × Discord crossover experience. More functions, such as Linked Roles and the Game Stats Widget, are in the works. Stay tuned for future announcements.<br>"
+        "Link your account now to claim 30 Polychromes and stay tuned for more updates from the ZZZ × Discord community!<br>"
+        '<a href="https://discord.gg/zenlesszonezero">https://discord.gg/zenlesszonezero</a></p>'
+        '<p><img src="https://upload-os-bbs.hoyolab.com/upload/2026/10/20/0/1cefc206074aa8c54e8c9cf21e3a462a_6450583642920372150.jpeg"></p>'
+    )
+
+    expected_link = "[[Go to the Account Linking Rewards page to claim Polychromes]](https://hoyo.link/XY3DL2Pp8)"
+    assert news_link("[Go to the Account Linking Rewards page to claim Polychromes]", "https://hoyo.link/XY3DL2Pp8") == expected_link
+    assert json.dumps(expected_link, ensure_ascii=False) == '"[[Go to the Account Linking Rewards page to claim Polychromes]](https://hoyo.link/XY3DL2Pp8)"'
+
+    cover_url = "https://upload-os-bbs.hoyolab.com/upload/2026/10/20/4438b17679eecd82fc2eb29df1f7dfdb_2500454347764058281.jpg"
+    promo_url = "https://upload-os-bbs.hoyolab.com/upload/2026/10/20/0/1cefc206074aa8c54e8c9cf21e3a462a_6450583642920372150.jpeg"
+
+    for content_arg, structured_arg in [
+        ("", json.dumps(reconstructed_ops)),
+        (reconstructed_html, ""),
+    ]:
+        api_doc = {
+            "retcode": 0,
+            "data": {
+                "post": {
+                    "post": {
+                        "post_id": "47154012",
+                        "game_id": GAMES["zzz"].hoyolab_gid,
+                        "subject": "[ZZZ × Discord] New Account Linking and Rich Presence Functions Now Available ",
+                        "created_at": 1792576806,
+                        "content": content_arg,
+                        "structured_content": structured_arg,
+                        "images": [cover_url],
+                    },
+                    "user": {"nickname": "Zenless Zone Zero"},
+                    "cover_list": [{"url": cover_url}],
+                    "image_list": [],
+                    "vod_list": [],
+                }
+            }
+        }
+        item = asyncio.run(
+            hoyolab.news_article(
+                NewsFetcher([api_doc]),
+                GAMES["zzz"],
+                {"id": "47154012", "ts": 1792576806},
+            )
+        )
+        payloads = cards.news_payloads(GAMES["zzz"], item)
+        assert len(payloads) == 1
+        payload = payloads[0]
+        assert cards.validate_payload(payload) == []
+        kids = payload["components"][0]["components"]
+        assert kids[0]["content"] == (
+            "## [(ZZZ × Discord) New Account Linking and Rich Presence Functions Now Available ]"
+            "(https://www.hoyolab.com/article/47154012)\n"
+            "-# HoYoLAB · Zenless Zone Zero · <t:1792576806:f>"
+        )
+        assert kids[1]["type"] == 12 and [e["media"]["url"] for e in kids[1]["items"]] == [cover_url]
+        body = kids[2]["content"]
+        assert expected_link in body
+        assert r"\[" not in body and r"\]" not in body
+        assert body.count("Go to the Account Linking Rewards page to claim Polychromes") == 1
+        assert body.count("https://hoyo.link/XY3DL2Pp8") == 1
+        assert "**[Function Details]**" in body
+        assert "**[Account Link Reward]**" in body
+        assert "**[More Functions Coming Soon]**" in body
+        assert body.endswith("\nhttps://discord.gg/zenlesszonezero")
+        raw_json = json.dumps(payload, ensure_ascii=False)
+        assert '"[[Go to the Account Linking Rewards page to claim Polychromes]](https://hoyo.link/XY3DL2Pp8)"'[1:-1] in raw_json
+        assert r"\\[" not in raw_json and r"\\]" not in raw_json
+        assert kids[3]["type"] == 12 and [e["media"]["url"] for e in kids[3]["items"]] == [promo_url]
+        assert kids[4]["type"] == 14
+        assert [b["label"] for b in kids[5]["components"]] == ["Read Post", "Citlali News", "Donate"]
+
+        page_html = preview_html.render_page([("Zenless Zone Zero", "Article 47154012", payload)], title="ZZZ 47154012")
+        assert (
+            '<a href="https://hoyo.link/XY3DL2Pp8" target="_blank" rel="noopener">'
+            "[Go to the Account Linking Rewards page to claim Polychromes]</a>"
+        ) in page_html
+        assert r"\[" not in page_html.split("<details>")[0]
+        assert "<strong>[Function Details]</strong>" in page_html
+        assert "<strong>[Account Link Reward]</strong>" in page_html
+        assert "<strong>[More Functions Coming Soon]</strong>" in page_html
+
+
+def test_news_link_bracket_matrix_sources_and_markdown_safety():
+    import html
+    import itertools
+    import re
+
+    from gamexpress import preview_html
+    from gamexpress.sources import kuro
+    from gamexpress.textutil import MARKDOWN_LINK_RE, news_blocks, news_link
+
+    url = "https://hoyo.link/XY3DL2Pp8"
+    complex_url = "https://example.com/events(2026)/claim?uid=42&step=1#reward"
+    encoded_complex = "https://example.com/events%282026%29/claim?uid=42&step=1#reward"
+
+    # Ordinary, bracketed, mid-label, multi-span, nested, adjacent, unbalanced, pre-escaped, self-labelled
+    assert news_link("Click Here", url) == f"[Click Here]({url})"
+    assert news_link("[Claim Reward]", url) == f"[[Claim Reward]]({url})"
+    assert news_link("[Event] Claim Reward", url) == f"[[Event] Claim Reward]({url})"
+    assert news_link("Claim [Bonus] Reward", url) == f"[Claim [Bonus] Reward]({url})"
+    assert news_link("Claim Reward [Bonus]", url) == f"[Claim Reward [Bonus]]({url})"
+    assert news_link("[Part 1] and [Part 2]", url) == f"[[Part 1] and [Part 2]]({url})"
+    assert news_link("[[Deep Tag]]", url) == rf"\[[[Deep Tag]]({url})\]"
+    assert news_link("[Tag1][Tag2]", url) == f"[[Tag1]]({url})[[Tag2]]({url})"
+    assert news_link("[Unclosed label", url) == rf"\[[Unclosed label]({url})"
+    assert news_link("Unopened label]", url) == rf"[Unopened label]({url})\]"
+    assert news_link(r"\[Already Escaped\]", url) == f"[[Already Escaped]]({url})"
+    assert news_link("Claim [Bonus] ([other])", complex_url) == f"[Claim [Bonus] ([other])]({encoded_complex})"
+    assert news_link("[Claim [Bonus]]([other])", complex_url) == (
+        rf"\[[Claim [Bonus]]({encoded_complex})\][([other])]({encoded_complex})"
+    )
+    assert news_link("https://discord.gg/zenlesszonezero", "https://discord.gg/zenlesszonezero") == "https://discord.gg/zenlesszonezero"
+    assert news_link("[Unsafe]", "javascript:void(0)") == "[Unsafe]"
+
+    # Multiple bracketed & ordinary links on the same line do not bridge in regex or preview HTML
+    multi_html = (
+        '<p><a href="https://a.example/one">[First Page]</a> and '
+        '<a href="https://b.example/two">Second</a> plus '
+        '<a href="https://c.example/three">[Third Page]</a></p>'
+    )
+    multi_md = "".join(b.get("text", "") for b in news_blocks(multi_html)).strip()
+    assert multi_md == (
+        "[[First Page]](https://a.example/one) and "
+        "[Second](https://b.example/two) plus "
+        "[[Third Page]](https://c.example/three)"
+    )
+    matches = [(m.group(1), m.group(2)) for m in MARKDOWN_LINK_RE.finditer(multi_md)]
+    assert matches == [
+        ("[First Page]", "https://a.example/one"),
+        ("Second", "https://b.example/two"),
+        ("[Third Page]", "https://c.example/three"),
+    ]
+    rendered_multi = preview_html.inline(multi_md)
+    assert rendered_multi == (
+        '<a href="https://a.example/one" target="_blank" rel="noopener">[First Page]</a> and '
+        '<a href="https://b.example/two" target="_blank" rel="noopener">Second</a> plus '
+        '<a href="https://c.example/three" target="_blank" rel="noopener">[Third Page]</a>'
+    )
+
+    # Inline and fenced code, literal bracketed headings/text, and bare URLs remain intact
+    code_prose = (
+        "**[Notice]** Keep `[raw](https://example.com)` and `[[code]](https://example.com)` "
+        "plus https://discord.gg/zenlesszonezero\n```\n[fenced](https://example.com)\n```"
+    )
+    item = news_item(body=code_prose)
+    body_out = cards.news_payloads(GAMES["zzz"], item)[0]["components"][0]["components"][1]["content"]
+    assert body_out == code_prose
+
+    # Exhaustive combinatorial property check across all 1,092 strings of length 1..6 over {'[', ']', 'x'}
+    for length in range(1, 7):
+        for tup in itertools.product(["[", "]", "x"], repeat=length):
+            orig = "".join(tup)
+            ser = news_link(orig, url)
+            assert news_link(ser, url) == ser  # strict idempotence: no double-escaping or double-wrapping
+            assert cards._brackets_balanced(ser)
+            html_out = preview_html.inline(ser)
+            assert f'href="{url}"' in html_out
+            vis_text = html.unescape(re.sub(r"<[^>]+>", "", html_out))
+            expected_vis = orig if ("x" in orig or "[]" in orig) else f"{orig} {url}"
+            assert vis_text == expected_vis
+
+    # Kuro HTML article adapter path with bracketed anchor label
+    kuro_detail = {
+        "articleId": 9901,
+        "articleTitle": "[WuWa] Account Center Rewards",
+        "startTime": "2026-10-20 12:00:00",
+        "articleContent": '<p><a href="https://wutheringwaves.kurogames.com/en/reward">[Claim Astrite Reward]</a></p>',
+    }
+    kuro_item = asyncio.run(
+        kuro.news_article(NewsFetcher([kuro_detail]), GAMES["wuwa"], {"id": "9901", "ts": 1792497600})
+    )
+    assert kuro_item is not None
+    kuro_payload = cards.news_payloads(GAMES["wuwa"], kuro_item)[0]
+    assert "[[Claim Astrite Reward]](https://wutheringwaves.kurogames.com/en/reward)" in (
+        kuro_payload["components"][0]["components"][1]["content"]
+    )
+
+
+def test_bracketed_links_feature_switches_pagination_boundary_and_holds():
+    import tempfile
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import runner
+    from gamexpress.discord import SendResult
+    from gamexpress.news_timestamps import convert_news_timestamps
+    from gamexpress.textutil import news_blocks
+
+    # 1. NEWS_TIMESTAMPS=0 bypasses conversion; NEWS_TIMESTAMPS=1 converts prose while protecting bracketed link labels
+    html_with_ts = (
+        "<p>Event Window: October 21, 2026 10:00 (UTC+8)</p>"
+        '<p><a href="https://hoyo.link/XY3DL2Pp8">[Open October 21, 2026 10:00 (UTC+8) Page]</a></p>'
+    )
+    ts_item = Item(
+        "hoyolab", "zzz", "ts-bracket-1",
+        "https://www.hoyolab.com/article/47154012",
+        "Event Window Notice", "", 1792576806,
+        article_blocks=news_blocks(html_with_ts),
+        author="Zenless Zone Zero",
+    )
+    off_body = cards.news_payloads(GAMES["zzz"], ts_item, timestamps=False)[0]["components"][0]["components"][1]["content"]
+    on_body = cards.news_payloads(GAMES["zzz"], ts_item, timestamps=True)[0]["components"][0]["components"][1]["content"]
+    assert "October 21, 2026 10:00 (UTC+8)" in off_body
+    assert "[[Open October 21, 2026 10:00 (UTC+8) Page]](https://hoyo.link/XY3DL2Pp8)" in off_body
+    assert "<t:1792548000:f>" in on_body
+    assert "[[Open October 21, 2026 10:00 (UTC+8) Page]](https://hoyo.link/XY3DL2Pp8)" in on_body
+    assert convert_news_timestamps(off_body, published_ts=1792576806, enabled=False) is off_body
+
+    # 2. Exact single-message pagination boundary where removing 2 backslashes keeps a 3,999-char article on 1 page
+    base_item = Item(
+        "hoyolab", "zzz", "boundary-4000",
+        "https://www.hoyolab.com/article/47154012",
+        "Boundary Check", "", 1792576806,
+        article_blocks=news_blocks('<p><a href="https://hoyo.link/XY3DL2Pp8">[Claim Polychromes]</a></p>'),
+        author="Zenless Zone Zero",
+    )
+    probe = cards.news_payloads(GAMES["zzz"], base_item)[0]
+    current_len = cards.text_length(probe["components"])
+    pad_len = cards.MAX_TEXT_TOTAL - current_len - 1  # 3,999 total text chars (would have been 4,001 with \[\])
+    padded_html = f'<p>{"a" * (pad_len - 2)}</p><p><a href="https://hoyo.link/XY3DL2Pp8">[Claim Polychromes]</a></p>'
+    boundary_item = Item(
+        "hoyolab", "zzz", "boundary-4000",
+        "https://www.hoyolab.com/article/47154012",
+        "Boundary Check", "", 1792576806,
+        article_blocks=news_blocks(padded_html),
+        author="Zenless Zone Zero",
+    )
+    single_pages = cards.news_payloads(GAMES["zzz"], boundary_item, expand_full=False)
+    assert len(single_pages) == 1
+    assert cards.text_length(single_pages[0]["components"]) == cards.MAX_TEXT_TOTAL - 1
+    assert cards.validate_payload(single_pages[0]) == []
+
+    # 3. NEWS_EXPAND_FULL=1 multi-page article with bracketed links + ambiguous/partial hold safety
+    para = (
+        "Proxy reward update details for account linking and event milestones. "
+        "[[Go to the Account Linking Rewards page to claim Polychromes]](https://hoyo.link/XY3DL2Pp8)"
+    )
+    long_item = Item(
+        "hoyolab", "zzz", "expand-bracket-1",
+        "https://www.hoyolab.com/article/47154012",
+        "[ZZZ × Discord] Expanded Reward Details", "", 1792576806,
+        article_blocks=[
+            {"kind": "text", "text": "\n\n".join([para] * 35)},
+            {"kind": "image", "url": "https://upload-os-bbs.hoyolab.com/inline-1.jpg"},
+            {"kind": "text", "text": "\n\n".join([para] * 35)},
+        ],
+        author="Zenless Zone Zero",
+    )
+    expanded = cards.news_payloads(GAMES["zzz"], long_item, expand_full=True)
+    assert len(expanded) >= 3
+    assert all(cards.validate_payload(p) == [] for p in expanded)
+    assert all(p["components"][0]["components"][-1]["type"] != 1 for p in expanded[:-1])
+    assert expanded[-1]["components"][0]["components"][-1]["type"] == 1
+    full_joined = "\n".join(
+        c.get("content", "") for p in expanded for co in p["components"] for c in co["components"]
+    )
+    assert full_joined.count("[[Go to the Account Linking Rewards page to claim Polychromes]](https://hoyo.link/XY3DL2Pp8)") == 70
+    assert r"\[" not in full_joined and r"\]" not in full_joined
+
+    sent_calls = []
+
+    class AmbiguousPage2Webhook:
+        async def send(self, url, payload, *, stop_on_ambiguous=False):
+            sent_calls.append((url, stop_on_ambiguous, payload))
+            if len(sent_calls) == 1:
+                return SendResult(True, 200, message_id="msg-page-1")
+            return SendResult(False, 0, error="timeout after POST", ambiguous=True)
+
+    hook = "https://discord.com/api/webhooks/123456789/token"
+    with tempfile.TemporaryDirectory() as td:
+        st_path = Path(td) / "bracket_hold.json"
+        ctx = make_ctx(
+            st_path,
+            now=1792580000,
+            NEWS_ENABLED="1",
+            NEWS_GAMES="zzz",
+            NEWS_EXPAND_FULL="1",
+            DISCORD_WEBHOOK_NEWS_ZZZ=hook,
+        )
+        ctx.state.news_record("zzz")["floor"] = 1792500000
+        ctx.webhook = AmbiguousPage2Webhook()
+        with (
+            patch("gamexpress.media.news_media_available", new=AsyncMock(return_value=True)),
+            patch.object(hoyolab, "discover_news", new=AsyncMock(return_value=[{"id": "expand-bracket-1", "ts": 1792576806}])),
+            patch.object(hoyolab, "news_article", new=AsyncMock(return_value=long_item)),
+        ):
+            asyncio.run(runner.run_news(ctx))
+            assert len(sent_calls) == 2
+            assert all(call[1] is True for call in sent_calls)
+            rec = ctx.state.news_record("zzz")["records"]["expand-bracket-1"]
+            assert rec["status"] == "partial"
+            assert rec["ambiguous"] is True
+            assert rec["messages"] == ["msg-page-1"]
+            # Subsequent poll holds cleanly with 0 duplicate page-1 re-sends:
+            asyncio.run(runner.run_news(ctx))
+            assert len(sent_calls) == 2
+
+
 if __name__ == "__main__":
     sys.exit(main())

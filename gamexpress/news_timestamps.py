@@ -21,6 +21,8 @@ import calendar
 import re
 from datetime import datetime, timedelta, timezone
 
+from .textutil import MARKDOWN_LINK_INSIDE
+
 SERVER_TZ = timezone(timedelta(hours=8))
 YEARLESS_MAX_DELTA_DAYS = 180
 YEARLESS_MAX_DELTA_S = YEARLESS_MAX_DELTA_DAYS * 86400
@@ -68,7 +70,7 @@ _PROTECTED_RE = re.compile(
     r"|<t:-?\d+(?::[tTdDfFR])?>"                            # existing Discord timestamp
     r"|<a?:\w{2,32}:\d{15,25}>"                             # custom emoji
     r"|<@!?\d+>|<@&\d+>|<#\d+>"                             # user/role/channel mention
-    r"|\[[^\]\n]+\]\(https?://[^)\s]+\)"                    # markdown link [label](url)
+    rf"|\[{MARKDOWN_LINK_INSIDE}\]\(https?://[^)\s]+\)"     # markdown link [label](url)
     r"|<https?://[^>\s]+>"                                  # autolink <https://...>
     r"|https?://[^\s<>()]+"                                 # bare URL
 )

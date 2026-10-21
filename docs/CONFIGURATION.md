@@ -495,7 +495,10 @@ nor passing offline tests prove live media decoding/readability or delivery.
 ### Source coverage and safe verification
 
 HoYoLAB discovery/full-body adapters cover GI (gid 2), HSR (6), HNA (9) and
-ZZZ (8), including Official Info, Events and Notices. WuWa discovery is limited
+ZZZ (8), including Official Info, Events and Notices. Descriptive HTML/Quill news
+anchor labels with square brackets serialize cleanly via `news_link()` without
+visible escape backslashes while keeping bare/self-labelled URLs and non-link
+bracketed headings unchanged. WuWa discovery is limited
 to the current official English index; it is not historical archive discovery.
 A manually trimmed capture cannot establish a complete article's length or prove
 current direct official-host ingestion. Historical maintenance examples remain
