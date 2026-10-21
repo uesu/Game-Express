@@ -131,6 +131,8 @@ class State:
                     current = records.get(key)
                     if current and current.get("status") == "posted":
                         continue
+                    if current and current.get("ambiguous") and not rec.get("ambiguous"):
+                        continue
                     if current and rec.get("status") == "partial" and (
                             current.get("signature") != rec.get("signature")
                             or current.get("messages") != rec.get("messages", [])[:len(current.get("messages", []))]):

@@ -51,6 +51,27 @@ def _split(url: str) -> tuple[str, dict]:
     return base, keep
 
 
+def _is_non_retryable_pre_send_error(exc: BaseException) -> bool:
+    """True when URL validation fails locally before opening any network connection."""
+    return isinstance(exc, (aiohttp.InvalidURL, aiohttp.NonHttpUrlClientError)) and not isinstance(
+        exc, aiohttp.RedirectClientError
+    )
+
+
+def _is_definite_pre_send_error(exc: BaseException) -> bool:
+    """True only when failure occurred strictly during connection/TLS/tunnel setup before
+    any HTTP request bytes could reach the target origin."""
+    return isinstance(
+        exc,
+        (
+            aiohttp.ClientConnectorError,
+            aiohttp.ConnectionTimeoutError,
+            aiohttp.ServerFingerprintMismatch,
+            aiohttp.ClientHttpProxyError,
+        ),
+    )
+
+
 class WebhookClient:
     def __init__(self, session: aiohttp.ClientSession, dry_run: bool = False) -> None:
         self.session = session
@@ -75,7 +96,14 @@ class WebhookClient:
             await asyncio.sleep(self._next_slot - now)
         self._next_slot = time.monotonic() + WEBHOOK_SPACING
 
-    async def _request(self, method: str, url: str, payload: dict) -> SendResult:
+    async def _request(
+        self,
+        method: str,
+        url: str,
+        payload: dict,
+        *,
+        stop_on_ambiguous: bool = True,
+    ) -> SendResult:
         problems = validate_payload(payload)
         if problems:
             return SendResult(False, 0, error="invalid payload: " + "; ".join(problems))
@@ -88,13 +116,36 @@ class WebhookClient:
             return SendResult(True, 200, message_id="dry-run")
         await self._pace()
         delay = 1.0
-        saw_post_timeout = False
+        saw_indeterminate_post = False
         for attempt in range(5):
             try:
                 async with self.session.request(method, url, json=payload,
                                                 timeout=aiohttp.ClientTimeout(total=30)) as r:
-                    body = await r.text()
-                    if r.status in (200, 204):
+                    status = int(getattr(r, "status", 0) or 0)
+                    try:
+                        body = await r.text()
+                    except (aiohttp.ClientError, asyncio.TimeoutError, UnicodeDecodeError) as e:
+                        if method == "POST" and (status == 0 or 200 <= status < 400):
+                            saw_indeterminate_post = True
+                            if stop_on_ambiguous:
+                                log.warning(
+                                    "Discord POST response body read failed after HTTP %s (%s)"
+                                    " — holding as ambiguous without retry",
+                                    status,
+                                    e,
+                                )
+                                return SendResult(
+                                    False,
+                                    status,
+                                    error=f"response body read failed after HTTP {status}: {e}",
+                                    ambiguous=True,
+                                )
+                            log.warning("Discord request error %s — retry %d", e, attempt + 1)
+                            await asyncio.sleep(delay)
+                            delay *= 2
+                            continue
+                        body = ""
+                    if status in (200, 204):
                         mid = None
                         if body:
                             try:
@@ -103,40 +154,63 @@ class WebhookClient:
                                 mid = None
                         return SendResult(
                             True,
-                            r.status,
+                            status,
                             message_id=mid,
-                            ambiguous=(method == "POST" and mid is None),
+                            ambiguous=(method == "POST" and (mid is None or saw_indeterminate_post)),
                         )
-                    if r.status == 429:
+                    if status == 429:
                         try:
                             retry = float(json.loads(body).get("retry_after", 1.0))
                         except (json.JSONDecodeError, TypeError, ValueError):
-                            retry = float(r.headers.get("Retry-After", 1.0))
+                            try:
+                                retry = float(r.headers.get("Retry-After", 1.0))
+                            except (TypeError, ValueError):
+                                retry = 1.0
                         log.warning("Discord 429 — retrying in %.2fs", retry)
                         await asyncio.sleep(min(retry, 30) + 0.25)
                         continue
-                    if r.status >= 500:
-                        log.warning("Discord %s — retry %d", r.status, attempt + 1)
+                    if status >= 500:
+                        log.warning("Discord %s — retry %d", status, attempt + 1)
                         await asyncio.sleep(delay)
                         delay *= 2
                         continue
-                    return SendResult(False, r.status, error=body[:500])
-            except asyncio.TimeoutError as e:
-                if method == "POST":
-                    saw_post_timeout = True
+                    return SendResult(False, status, error=body[:500], ambiguous=saw_indeterminate_post)
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if _is_non_retryable_pre_send_error(e):
+                    return SendResult(False, 0, error=str(e), ambiguous=saw_indeterminate_post)
+                if method == "POST" and not _is_definite_pre_send_error(e):
+                    saw_indeterminate_post = True
+                    if stop_on_ambiguous:
+                        log.warning(
+                            "Discord POST outcome indeterminate (%s) — holding as ambiguous without retry",
+                            e,
+                        )
+                        return SendResult(
+                            False,
+                            0,
+                            error=f"indeterminate POST outcome: {e}",
+                            ambiguous=True,
+                        )
                 log.warning("Discord request error %s — retry %d", e, attempt + 1)
                 await asyncio.sleep(delay)
                 delay *= 2
-            except aiohttp.ClientError as e:
-                log.warning("Discord request error %s — retry %d", e, attempt + 1)
-                await asyncio.sleep(delay)
-                delay *= 2
-        return SendResult(False, 0, error="gave up after retries", ambiguous=saw_post_timeout)
+        return SendResult(False, 0, error="gave up after retries", ambiguous=saw_indeterminate_post)
 
-    async def send(self, webhook_url: str, payload: dict) -> SendResult:
+    async def send(
+        self,
+        webhook_url: str,
+        payload: dict,
+        *,
+        stop_on_ambiguous: bool = True,
+    ) -> SendResult:
         base, keep = _split(webhook_url)
         q = urlencode({"wait": "true", "with_components": "true", **keep})
-        return await self._request("POST", f"{base}?{q}", payload)
+        return await self._request(
+            "POST",
+            f"{base}?{q}",
+            payload,
+            stop_on_ambiguous=stop_on_ambiguous,
+        )
 
     async def edit(self, webhook_url: str, message_id: str, payload: dict) -> SendResult:
         base, keep = _split(webhook_url)

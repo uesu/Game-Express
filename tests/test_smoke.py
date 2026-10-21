@@ -8844,9 +8844,17 @@ def test_webhook_ambiguous_response_auth_key_redaction_and_video_preview_html():
             res_patch = await client.edit(HOOK, "999111", sample_payload)
             assert res_patch.ok is True and res_patch.ambiguous is False
 
-            to_session = types.SimpleNamespace(request=lambda *a, **kw: _TimeoutCtx())
+            to_calls = 0
+
+            def _make_to_ctx(*a, **kw):
+                nonlocal to_calls
+                to_calls += 1
+                return _TimeoutCtx()
+
+            to_session = types.SimpleNamespace(request=_make_to_ctx)
             client_to = discord_mod.WebhookClient(to_session, dry_run=False)
             res_to = await client_to.send(HOOK, sample_payload)
+            assert to_calls == 1
             assert res_to.ok is False and res_to.ambiguous is True
 
     asyncio.run(_exercise())
@@ -10590,6 +10598,326 @@ def test_followup_7_yearless_publication_window_rollover_and_explicit_years():
         convert_news_timestamps("2026/09/28 06:00 – 2027/09/28 06:00 (UTC+8)", published_ts=oct_pub, enabled=True)
         == "<t:1790546400:f> – <t:1822082400:f>"
     )
+
+
+def test_correction_6_ambiguous_post_no_replay_and_state_durability():
+    """Verify safe ambiguous POST handling end-to-end across WebhookClient, runner.run_news,
+    and State.merge_peer:
+      1. Simulated accepted-but-response-timeout outcome causes exactly ONE POST attempt (no retry).
+      2. The multi-page article remains incomplete (`status == "partial"`) and is marked `ambiguous: True`.
+      3. Process restart and repeated reruns send NO duplicate page (`0` POST attempts).
+      4. Earlier confirmed pages and message IDs remain durably recorded and intact in `state.json`.
+      5. A timeout followed by a queued would-be `200 {"id": ...}` response cannot erase the original
+         uncertainty (neither by automatic replay nor even if white-box retry is invoked directly).
+      6. Post-dispatch connection loss and response-body read failures (`ServerDisconnectedError`,
+         `ClientConnectionResetError`, `ClientPayloadError`, `UnicodeDecodeError`) stop after 1 POST
+         and mark `ambiguous=True`, whereas definite pre-send connection setup errors
+         (`ClientConnectorError`, `ConnectionTimeoutError`), HTTP `429` rate limits, explicit `4xx`
+         rejections, and idempotent `PATCH` edits retain safe retry / non-ambiguous semantics.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    import aiohttp
+
+    from gamexpress import discord as discord_mod
+    from gamexpress import runner
+    from gamexpress.sources import hoyolab as hoyolab_mod
+    from gamexpress.state import State
+
+    class _MockResp:
+        def __init__(self, status: int, body: str = "", headers: dict[str, str] | None = None, body_exc: Exception | None = None):
+            self.status = status
+            self._body = body
+            self.headers = headers or {}
+            self._body_exc = body_exc
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def text(self) -> str:
+            if self._body_exc is not None:
+                raise self._body_exc
+            return self._body
+
+    class _RaiseOnEnter:
+        def __init__(self, exc: BaseException):
+            self._exc = exc
+
+        async def __aenter__(self):
+            raise self._exc
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class _QueuedSession:
+        def __init__(self, steps: list):
+            self.steps = list(steps)
+            self.calls: list[tuple[str, str, dict]] = []
+
+        def request(self, method: str, url: str, **kw):
+            self.calls.append((method, url, kw.get("json")))
+            if not self.steps:
+                raise AssertionError(f"unexpected extra HTTP request #{len(self.calls)}: {method} {url}")
+            nxt = self.steps.pop(0)
+            if isinstance(nxt, BaseException):
+                return _RaiseOnEnter(nxt)
+            return nxt
+
+    # Build a deterministic 4-page expanded article so Pages 1 & 2 confirm cleanly,
+    # Page 3 encounters simulated accepted-but-response-timeout, and Page 4 + queued retry
+    # responses sit immediately behind it in the transport queue.
+    four_page_item = news_item(
+        "960001",
+        body="\n\n".join(
+            f"Section {idx}: " + ("Verified official event details and schedule notes. " * 55)
+            for idx in range(1, 5)
+        ),
+    )
+    rendered_pages = cards.news_payloads(GAMES["genshin"], four_page_item, expand_full=True)
+    assert len(rendered_pages) == 4
+
+    with tempfile.TemporaryDirectory() as tmp:
+        state_path = Path(tmp) / "state.json"
+        ctx = news_ctx(state_path, NEWS_EXPAND_FULL="1")
+        ctx.state.schedule_records("genshin")["5.1"] = {"status": "posted", "message_id": "sched-51"}
+        ctx.state.code_records("genshin")["GENSHINGIFT"] = {"status": "posted", "first_seen": ctx.now - 100}
+        with patch.object(hoyolab_mod, "discover_news", new=AsyncMock(return_value=[])):
+            asyncio.run(runner.run_news(ctx))
+        ctx.now += 60
+        ctx.state.save()
+
+        # Pre-ambiguous snapshot simulating an earlier peer before Page 3 uncertainty occurred.
+        peer_pre_ambiguous = None
+
+        row = {"id": "960001", "ts": ctx.now - 30}
+        # Queue:
+        #   - POST #1 (Page 1): confirmed 200 {"id": "msg-c6-p1"}
+        #   - POST #2 (Page 2): confirmed 200 {"id": "msg-c6-p2"}
+        #   - POST #3 (Page 3): simulated accepted-by-Discord then response timeout (`ServerTimeoutError`)
+        #   - Slot #4 (queued right behind it!): `200 {"id": "msg-c6-p3-dup"}` — MUST NEVER BE CALLED
+        #     AND MUST NEVER ERASE THE AMBIGUOUS STATE!
+        #   - Slot #5: `200 {"id": "msg-c6-p4"}` — MUST NEVER BE CALLED!
+        queued_session = _QueuedSession(
+            [
+                _MockResp(200, '{"id":"msg-c6-p1"}'),
+                _MockResp(200, '{"id":"msg-c6-p2"}'),
+                aiohttp.ServerTimeoutError("Timeout on reading data from socket after POST dispatch"),
+                _MockResp(200, '{"id":"msg-c6-p3-dup"}'),
+                _MockResp(200, '{"id":"msg-c6-p4"}'),
+            ]
+        )
+
+        async def _run_all_checks():
+            nonlocal peer_pre_ambiguous
+            with (
+                patch.object(asyncio, "sleep", new=AsyncMock()),
+                patch.object(hoyolab_mod, "discover_news", new=AsyncMock(return_value=[row])),
+                patch.object(hoyolab_mod, "news_article", new=AsyncMock(return_value=four_page_item)),
+            ):
+                ctx.webhook = discord_mod.WebhookClient(queued_session, dry_run=False)
+                await runner.run_news(ctx)
+
+                # Property 1: Page 1 (1 POST) + Page 2 (1 POST) + Page 3 (EXACTLY 1 POST, NOT retried!) = 3 total POSTs.
+                assert len(queued_session.calls) == 3
+                assert all(call[0] == "POST" for call in queued_session.calls)
+                assert queued_session.calls[0][2] == rendered_pages[0]
+                assert queued_session.calls[1][2] == rendered_pages[1]
+                assert queued_session.calls[2][2] == rendered_pages[2]
+                # Both queued would-be `200` responses remain completely untouched in the transport queue.
+                assert len(queued_session.steps) == 2
+
+                # Property 2 & Property 4: Reload from disk (`state.json`) to prove durability:
+                # article remains incomplete (`status == "partial"`), marked `ambiguous is True`,
+                # and earlier confirmed pages + IDs (`["msg-c6-p1", "msg-c6-p2"]`) are completely intact!
+                persisted = State.load(state_path)
+                rec = persisted.news_record("genshin")["records"]["960001"]
+                assert rec["status"] == "partial"
+                assert rec["ambiguous"] is True
+                assert rec["messages"] == ["msg-c6-p1", "msg-c6-p2"]
+                assert "msg-c6-p3-dup" not in rec["messages"]
+                assert rec.get("signature")
+
+                # Verify peer-merge safety: an un-ambiguous partial peer snapshot cannot clear `ambiguous: True`.
+                peer_pre_ambiguous = {
+                    "news": {
+                        "genshin": {
+                            "route": persisted.news_record("genshin")["route"],
+                            "floor": persisted.news_record("genshin")["floor"],
+                            "records": {
+                                "960001": {
+                                    "status": "partial",
+                                    "ts": row["ts"],
+                                    "row": row,
+                                    "signature": rec["signature"],
+                                    "messages": ["msg-c6-p1", "msg-c6-p2"],
+                                }
+                            },
+                        }
+                    }
+                }
+                persisted.merge_peer(peer_pre_ambiguous, include_news=True)
+                assert persisted.news_record("genshin")["records"]["960001"]["ambiguous"] is True
+                assert persisted.news_record("genshin")["records"]["960001"]["messages"] == ["msg-c6-p1", "msg-c6-p2"]
+
+                # Property 3: Simulate fresh process restarts / subsequent polls against persisted `state.json` —
+                # sends ZERO duplicate pages (`0` POST attempts) across repeated runs while keeping IDs intact.
+                restart_session = _QueuedSession([])
+                restarted_ctx = news_ctx(state_path, NEWS_EXPAND_FULL="1")
+                restarted_ctx.now = ctx.now + 300
+                restarted_ctx.state = State.load(state_path)
+                restarted_ctx.webhook = discord_mod.WebhookClient(restart_session, dry_run=False)
+                await runner.run_news(restarted_ctx)
+                await runner.run_news(restarted_ctx)
+                assert restart_session.calls == []
+                assert any("ambiguous webhook outcome; manual review required" in w for w in restarted_ctx.warnings)
+                reloaded_after_reruns = State.load(state_path)
+                after_rec = reloaded_after_reruns.news_record("genshin")["records"]["960001"]
+                assert after_rec["status"] == "partial" and after_rec["ambiguous"] is True
+                assert after_rec["messages"] == ["msg-c6-p1", "msg-c6-p2"]
+                assert reloaded_after_reruns.schedule_records("genshin")["5.1"]["message_id"] == "sched-51"
+                assert reloaded_after_reruns.code_records("genshin")["GENSHINGIFT"]["status"] == "posted"
+
+            # Property 5 (white-box defense-in-depth): even when `stop_on_ambiguous=False` forces
+            # retry past an initial timeout onto a `200 {"id": "later-ok-id"}` response, sticky
+            # `saw_indeterminate_post` STILL preserves `ambiguous=True` so uncertainty can never be erased!
+            with patch.object(asyncio, "sleep", new=AsyncMock()):
+                sticky_session = _QueuedSession(
+                    [
+                        asyncio.TimeoutError("simulated post-write timeout"),
+                        _MockResp(200, '{"id":"later-ok-id"}'),
+                    ]
+                )
+                sticky_client = discord_mod.WebhookClient(sticky_session, dry_run=False)
+                sticky_res = await sticky_client.send(HOOK, rendered_pages[0], stop_on_ambiguous=False)
+                assert len(sticky_session.calls) == 2
+                assert sticky_res.ok is True
+                assert sticky_res.message_id == "later-ok-id"
+                assert sticky_res.ambiguous is True
+
+                # Property 6a: Post-dispatch disconnect & HTTP 200 body-read failures stop at 1 POST with `ambiguous=True`.
+                for post_dispatch_step in (
+                    aiohttp.ServerDisconnectedError("server closed connection after POST write"),
+                    aiohttp.ClientConnectionResetError("connection reset after dispatch"),
+                    _MockResp(200, body_exc=aiohttp.ClientPayloadError("truncated chunked response body")),
+                    _MockResp(200, body_exc=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid byte")),
+                ):
+                    ind_session = _QueuedSession([post_dispatch_step, _MockResp(200, '{"id":"never-sent"}')])
+                    ind_client = discord_mod.WebhookClient(ind_session, dry_run=False)
+                    ind_res = await ind_client.send(HOOK, rendered_pages[0])
+                    assert len(ind_session.calls) == 1
+                    assert len(ind_session.steps) == 1
+                    assert ind_res.ok is False and ind_res.ambiguous is True
+
+                # Property 6b: Definite pre-send connection setup errors (`ClientConnectorError`,
+                # `ConnectionTimeoutError`) safely retry and succeed with `ambiguous=False`, and when
+                # permanently unreachable exhaust retries with `ambiguous=False` (not false-locked).
+                conn_key = types.SimpleNamespace(host="discord.com", port=443, ssl=True)
+                presend_ok_session = _QueuedSession(
+                    [
+                        aiohttp.ClientConnectorError(conn_key, OSError("DNS lookup transient failure")),
+                        aiohttp.ConnectionTimeoutError("TCP SYN connect timeout before write"),
+                        _MockResp(200, '{"id":"msg-after-presend-retry"}'),
+                    ]
+                )
+                presend_client = discord_mod.WebhookClient(presend_ok_session, dry_run=False)
+                presend_res = await presend_client.send(HOOK, rendered_pages[0])
+                assert len(presend_ok_session.calls) == 3
+                assert presend_res.ok is True
+                assert presend_res.message_id == "msg-after-presend-retry"
+                assert presend_res.ambiguous is False
+
+                presend_down_session = _QueuedSession(
+                    [aiohttp.ConnectionTimeoutError("pool/connect timeout") for _ in range(5)]
+                )
+                presend_down_client = discord_mod.WebhookClient(presend_down_session, dry_run=False)
+                presend_down_res = await presend_down_client.send(HOOK, rendered_pages[0])
+                assert len(presend_down_session.calls) == 5
+                assert presend_down_res.ok is False and presend_down_res.ambiguous is False
+
+                # Property 6c: Explicit 4xx rejection (`ambiguous=False`, 1 call), 429 rate-limit backoff + retry,
+                # and idempotent PATCH retry (`ambiguous=False`).
+                explicit_400_session = _QueuedSession([_MockResp(400, '{"message":"Invalid Form Body"}')])
+                res_400 = await discord_mod.WebhookClient(explicit_400_session, dry_run=False).send(HOOK, rendered_pages[0])
+                assert len(explicit_400_session.calls) == 1
+                assert res_400.ok is False and res_400.status == 400 and res_400.ambiguous is False
+
+                rate_429_session = _QueuedSession(
+                    [
+                        _MockResp(429, "", headers={"Retry-After": "0.5"}),
+                        _MockResp(200, '{"id":"msg-after-429"}'),
+                    ]
+                )
+                res_429 = await discord_mod.WebhookClient(rate_429_session, dry_run=False).send(HOOK, rendered_pages[0])
+                assert len(rate_429_session.calls) == 2
+                assert res_429.ok is True and res_429.message_id == "msg-after-429" and res_429.ambiguous is False
+
+                patch_session = _QueuedSession(
+                    [
+                        asyncio.TimeoutError("transient PATCH timeout"),
+                        _MockResp(200, '{"id":"msg-c6-p1"}'),
+                    ]
+                )
+                res_patch = await discord_mod.WebhookClient(patch_session, dry_run=False).edit(
+                    HOOK, "msg-c6-p1", rendered_pages[0]
+                )
+                assert len(patch_session.calls) == 2
+                assert res_patch.ok is True and res_patch.ambiguous is False
+
+        asyncio.run(_run_all_checks())
+
+        # Item 2: Verify exact dedicated maintenance routing & activation contract:
+        #   - Dedicated `DISCORD_WEBHOOK_MAINTENANCE_<GAME>` only (generic `DISCORD_WEBHOOK_MAINTENANCE` NEVER applies).
+        #   - `MAINTENANCE_ENABLED=1` adds `"maintenance"` automatically without needing it in `ENABLED_FEATURES`,
+        #     unless globally disabled (`none`/`off`/`standby`/`0`) or excluded by `ONLY`.
+        st_generic_only = settings(
+            MAINTENANCE_ENABLED="1",
+            MAINTENANCE_GAMES="genshin",
+            DISCORD_WEBHOOK_MAINTENANCE=HOOK,
+        )
+        assert "maintenance" in st_generic_only.features
+        assert st_generic_only.webhook_source("maintenance", "genshin") == ("", None)
+        assert st_generic_only.webhook("maintenance", "genshin") is None
+
+        st_per_game = settings(
+            ENABLED_FEATURES="schedule,codes",
+            MAINTENANCE_ENABLED="1",
+            MAINTENANCE_GAMES="genshin",
+            DISCORD_WEBHOOK_MAINTENANCE_GENSHIN=HOOK,
+        )
+        assert st_per_game.features == {"schedule", "codes", "maintenance"}
+        assert st_per_game.webhook_source("maintenance", "genshin") == (
+            "DISCORD_WEBHOOK_MAINTENANCE_GENSHIN",
+            HOOK,
+        )
+        assert st_per_game.webhook("maintenance", "genshin") == HOOK
+        assert st_per_game.webhook_source("maintenance", "starrail") == ("", None)
+        assert st_per_game.webhook("maintenance", "starrail") is None
+
+        for disabled_token in ("none", "off", "standby", "0"):
+            st_off = settings(
+                ENABLED_FEATURES=disabled_token,
+                MAINTENANCE_ENABLED="1",
+                MAINTENANCE_GAMES="genshin",
+                DISCORD_WEBHOOK_MAINTENANCE_GENSHIN=HOOK,
+            )
+            assert st_off.features == set()
+
+        st_only_sched = settings(
+            MAINTENANCE_ENABLED="1",
+            MAINTENANCE_GAMES="genshin",
+            ONLY="schedule",
+        )
+        assert st_only_sched.features == {"schedule"}
+
+        st_only_maint = settings(
+            MAINTENANCE_ENABLED="1",
+            MAINTENANCE_GAMES="genshin",
+            ONLY="maintenance",
+        )
+        assert st_only_maint.features == {"maintenance"}
 
 
 

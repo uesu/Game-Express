@@ -387,6 +387,13 @@ the original layout. Do not repack pages or modify titles, Part/Page labels,
 final-container buttons, full-content eligibility or the one-lead overflow excerpt.
 The existing partial-delivery signature guard holds changed layouts for manual
 review rather than replaying already confirmed pages. Do not toggle layout modes
-mid-partial delivery without reviewing that hold. No state reset or old-post edits.
+mid-partial delivery without reviewing that hold. Indeterminate webhook `POST`
+outcomes (response timeouts after dispatch, post-connect socket resets, `2xx`
+response-body read errors, or `2xx` responses lacking `"id"`) return `ambiguous=True`
+immediately without blind retry (`test_correction_6_ambiguous_post_no_replay_and_state_durability`),
+preserving confirmed `messages` IDs in `state.json` and holding across restarts and
+peer merges while keeping definite pre-send connection errors, `429` rate-limit
+backoff, explicit `4xx` rejections, and idempotent `PATCH` edits intact. No state
+reset or old-post edits.
 Discord controls thumbnail cropping; neither header measurements, HTML previews
 nor passing offline tests prove live media decoding/readability or delivery.
