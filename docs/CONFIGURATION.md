@@ -385,8 +385,8 @@ publication times: existing old events are not reposted when enabled.
 
 ### Optional news-description timestamps (default off)
 
-`NEWS_TIMESTAMPS=0` (default) bypasses the timestamp scanner completely (`0.30 µs`
-no-op), leaving rendered text byte-identical and making zero network calls.
+`NEWS_TIMESTAMPS=0` (default) bypasses the timestamp scanner completely (`0` parser
+invocations), leaving rendered text byte-identical and making zero network calls.
 
 Setting `NEWS_TIMESTAMPS=1` enables render-only conversion (`gamexpress/news_timestamps.py`)
 after source-text normalization and immediately before pagination/sizing across the five
@@ -399,9 +399,13 @@ supported news games (`genshin`, `starrail`, `hna`, `zzz`, `wuwa`):
   ambiguous timezone suffixes (`UTC+99`, `(CST)`, etc.) never partially match bare `UTC`,
   and timezone-less times stay untouched unless a shared trailing timezone qualifies both
   ends of a valid non-inverted range.
-- **Missing years & rollover:** inferred strictly from `item.published_ts` with explicit
-  Dec → Jan and early-Jan → late-Dec year-boundary handling. If `published_ts` is absent
-  and no year is written, the expression is left untouched.
+- **Missing years & rollover:** explicit years in source text are always authoritative.
+  Yearless dates require `item.published_ts > 0` and resolve strictly to the unique
+  calendar year within `±180` days (`YEARLESS_MAX_DELTA_DAYS = 180`) of `item.published_ts`
+  — keeping recent past dates in `pub.year` (e.g. June 1 on an October 21 post stays in
+  the same year), supporting genuine Dec ↔ Jan rollovers within `±180` days, leaving
+  yearless dates outside `±180` days or missing `published_ts` untouched, and never
+  repairing inverted yearless ranges by adding a year.
 - **Safety exclusions:** existing `<t:…>` tokens, URLs, inline backticks, fenced code
   blocks, date-only phrases, `"After the Version X.Y update"` clauses, approximate durations
   and invalid, inverted or half-qualified ranges are left completely untouched without

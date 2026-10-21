@@ -468,11 +468,18 @@ All three additions are **disabled by default** and strictly opt-in via environm
 repository Variables:
 
 - **`NEWS_TIMESTAMPS=0` (default):** bypasses `gamexpress/news_timestamps.py` completely
-  (`0.17 µs` median, byte-identical output). When `1`, converts exact TZ-qualified date-times
-  (including bare `UTC`/`GMT` at `+00:00`, explicit `UTC±H[:MM]` / named offsets, and news-only
-  `server time` fallback at `UTC+8`) to `<t:EPOCH:…>` after text normalization and before
-  sizing/pagination, without backtracking malformed timezone tokens, partially converting
-  invalid/unresolved/inverted ranges, or mutating `Item`, raw HTML or `timeparse.py`.
+  (`0` parser calls, `0` extra HTTP requests, byte-identical output). When `1`, converts
+  exact TZ-qualified date-times (including bare `UTC`/`GMT` at `+00:00`, explicit
+  `UTC±H[:MM]` / named offsets, and news-only `server time` fallback at `UTC+8`) to
+  `<t:EPOCH:f>` after text normalization and before sizing/pagination. Explicit years are
+  always authoritative; yearless dates require `published_ts > 0` and resolve strictly
+  within an exact `±180`-day window (`YEARLESS_MAX_DELTA_DAYS = 180`) around `published_ts`
+  (keeping recent past dates in `pub.year`, supporting genuine Dec ↔ Jan rollovers within
+  `±180` days, leaving ambiguous dates outside `±180` days untouched, and never adding a
+  year to inverted ranges). In two-endpoint ranges, `_resolve_range_tzs` inherits a valid
+  trailing zone only when the first endpoint omits its timezone and rejects the entire range
+  verbatim if either endpoint carries an invalid or ambiguous explicit zone, without mutating
+  `Item`, raw HTML, or `timeparse.py`.
 - **`MAINTENANCE_ENABLED=0` + `MAINTENANCE_GAMES=""` (default):** `gamexpress/maintenance.py`
   posts independent `Pre-Load Started` and `Maintenance Started` Components V2 cards to
   dedicated `DISCORD_WEBHOOK_MAINTENANCE_<GAME>` webhooks (with optional `PING_MAINTENANCE_<GAME>`
@@ -481,28 +488,23 @@ repository Variables:
   precedence (no invented HNA cadence or unknown end time), separating version/launch identity
   lock from selected media tier across 4 priority tiers against Phase II swaps, and bounding
   post-delivery media checks/edits strictly to `0 <= now - posted_at <= LATE_MEDIA_EDIT_WINDOW_S`
-  (`6 h` / `21,600 s`, once per scheduled poll with per-run URL deduplication), `MAX_LATE_MEDIA_ATTEMPTS = 3`
-  consecutive failed `PATCH` calls (`edit_attempts`, reset to `0` on `res.ok`), and `MAX_LATE_EDITS = 6`
-  total succeeded `PATCH` edits (`edit_count`, monotonic).
-- **`NEWS_EXPAND_FULL=0` (default):** preserves the exact 1-message / `<= 7,000`-char max-2-page /
-  labelled excerpt policy. When `1`, expands full articles across multiple independently
-  validated pages up to `NEWS_EXPAND_MAX_PAGES = 20` (`NEWS_EXPAND_MAX_MEDIA = 120`), with
-  explicitly labelled excerpt fallback if exceeded and `SendResult.ambiguous` holds on
-  indeterminate webhook `POST` outcomes (adding sequential preflight/webhook requests proportional
-  to media and page count).
+  (`6 h` / `21,600 s`, once per scheduled poll with per-run `verified_cache` URL deduplication),
+  `MAX_LATE_MEDIA_ATTEMPTS = 3` consecutive failed `PATCH` calls (`edit_attempts`, reset to `0` on
+  `res.ok`), and `MAX_LATE_EDITS = 6` total succeeded `PATCH` edits (`edit_count`, monotonic).
+- **`NEWS_EXPAND_FULL=0` (default):** independent of `main`'s removed per-run article-count cap
+  and independent of `NEWS_GROUP_LONG_STRIPS`; preserves the exact per-article 1-message /
+  `<= 7,000`-char max-2-page / halved-word labelled excerpt policy. When `1`, expands full
+  articles across multiple independently validated pages up to `NEWS_EXPAND_MAX_PAGES = 20`
+  (`NEWS_EXPAND_MAX_MEDIA = 120`), with explicitly labelled excerpt fallback if exceeded and
+  `SendResult.ambiguous` holds on indeterminate webhook `POST` outcomes (adding media validation
+  `GET`s, webhook `POST`s, and inter-page pacing proportional to media and page count).
 
-Measured local offline benchmark (`.venv/bin/python -m gamexpress benchmark --iterations 300`, CPython 3.11.2 x86_64; deterministic counts: `short = 1 msg / 1 media GET / 1 POST`, `long(off) = 1 msg / 1 media GET / 1 POST`, `long(on) = 4 msgs / 18 media GETs / 4 POSTs + 3.6s min pacing`, `disabled_output_equal = True`):
-
-| Case | Median (µs) | Mean (µs) | p95 (µs) |
-|---|---:|---:|---:|
-| `token_format_16_epochs` | 1.83 | 1.86 | 1.93 |
-| `human_strftime_16_epochs` | 31.60 | 32.60 | 35.83 |
-| `timestamp_scan_disabled_12346c` | 0.17 | 0.27 | 0.22 |
-| `timestamp_scan_enabled_short_341c` | 106.80 | 111.77 | 137.59 |
-| `timestamp_scan_enabled_long_12346c` | 3,943.97 | 4,004.54 | 4,353.43 |
-| `short_news_render_default_off` | 95.39 | 101.96 | 133.23 |
-| `short_news_render_timestamps_on` | 219.37 | 232.50 | 295.82 |
-| `long_news_render_expand_off_1msg_12348c` | 1,760.15 | 1,809.76 | 2,189.21 |
-| `long_news_render_expand_on_4pages_12348c` | 2,223.29 | 2,464.75 | 4,129.41 |
-| `long_news_render_both_on_4pages` | 6,377.80 | 6,387.09 | 6,488.66 |
+Run `.venv/bin/python -m gamexpress benchmark --iterations 300` (or add `--json`) on any clean
+revision to reproduce the exact SHA-stamped `median`/`mean`/`p95` offline CPU timings across all
+12 cases (`short=341c+1img`, `medium=4926c+1img <=7000`, `long=12348c+18imgs`), default-off
+parity checks (`output_equal=True`, `timestamp_parser_calls=0`, `extra_feature_http_or_webhook=0`),
+and mocked/derived protocol counts (`short(off)=1 msg / 1 media GET / 1 POST`,
+`medium<=7000(off)=2 msgs / 1 media GET / 2 POSTs (+1.2s min pacing)`,
+`long>7000(off)=1 excerpt msg / 1 media GET / 1 POST`,
+`long>7000(expand_full=1)=4 msgs / 18 media GETs / 4 POSTs (+3.6s min pacing)`).
 

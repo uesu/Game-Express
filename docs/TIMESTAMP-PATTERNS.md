@@ -262,13 +262,17 @@ or `gamexpress/schedule.py`:
    `YYYY-MM-DD`, month-name dates, and `MM/DD[/YYYY]` forms such as HoYoLAB special-program notices'
    `10/23/2026 at 08:00 AM (UTC-4)`). Bare `UTC` / `GMT` resolve to `+00:00`, explicit source
    offsets (`UTC+8`, `UTC-4`, etc.) always win, and `(server time)` / `server time` uses the approved
-   `UTC+8` fallback only inside rendered news bodies; yearless dates infer their year from
-   `item.published_ts` across Dec/Jan rollovers; in two-endpoint ranges, a shared trailing zone is
-   inherited only when the first endpoint genuinely omits its timezone, while any invalid or
-   ambiguous explicit timezone on either endpoint (`(UTC+99)`, `(CST)`, `local time`, etc.),
-   invalid/inverted/half-qualified ranges, existing `<t:…>`, URLs, code spans/blocks, date-only
-   phrases, `"After the Version X.Y update"`, approximate durations and TZ-less times stay completely
-   untouched. When disabled (`NEWS_TIMESTAMPS=0`), the scanner is bypassed completely.
+   `UTC+8` fallback only inside rendered news bodies; explicit years always win, while yearless dates
+   resolve strictly within an exact `±180`-day window (`YEARLESS_MAX_DELTA_DAYS = 180`) around
+   `item.published_ts` (keeping recent dates such as June 1 on an Oct 21 post in `pub.year`,
+   handling Dec ↔ Jan rollovers within `±180` days, leaving dates outside `±180` days untouched,
+   and never adding a year to inverted same-season/September ranges); in two-endpoint ranges, a
+   shared trailing zone is inherited only when the first endpoint genuinely omits its timezone,
+   while any invalid or ambiguous explicit timezone on either endpoint (`(UTC+99)`, `(CST)`,
+   `local time`, etc.), invalid/inverted/half-qualified ranges, existing `<t:…>`, URLs, code
+   spans/blocks, date-only phrases, `"After the Version X.Y update"`, approximate durations and
+   TZ-less times stay completely untouched. When disabled (`NEWS_TIMESTAMPS=0`), the scanner is
+   bypassed completely.
 2. **`gamexpress/maintenance.py` (`MAINTENANCE_ENABLED=1` + `MAINTENANCE_GAMES`, default off):**
    resolves `Pre-Load Started` and `Maintenance Started` timestamps with strict precedence
    **official notice/tweet (`40 <= rank < 100`) > explicit `config/overrides.json` > persisted

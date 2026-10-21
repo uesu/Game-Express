@@ -10482,6 +10482,116 @@ def test_followup_6_range_explicit_invalid_tz_rejected_vs_omitted_inherited():
     )
 
 
+def test_followup_7_yearless_publication_window_rollover_and_explicit_years():
+    """Verify exact conservative `±180`-day yearless resolution & range rollover rules:
+    1) October 21, 2026 publication with a recent June date resolves to June 2026 (never June 2027).
+    2) Valid December-to-January and early-January-to-December rollovers within `±180` days succeed
+       (both yearless-to-yearless and explicit-year-to-yearless across year wrap).
+    3) Inverted September-to-September (and autumn-to-autumn) yearless or mixed ranges remain
+       byte-for-byte unchanged rather than rolling the end date +1 year into a ~365-day span.
+    4) Exact minute-level `±180`-day publication-window boundaries accept `<= 180d` and leave
+       ambiguous half-year antipode dates (`> 180d`) untouched.
+    5) Explicit years are always 100% authoritative regardless of `published_ts`.
+    """
+    from gamexpress.news_timestamps import SERVER_TZ, convert_news_timestamps
+
+    oct_pub = int(datetime(2026, 10, 21, 12, 0, 0, tzinfo=SERVER_TZ).timestamp())  # 1792555200
+    sep_pub = int(datetime(2026, 9, 20, 12, 0, 0, tzinfo=SERVER_TZ).timestamp())   # 1789876800
+    dec_pub = int(datetime(2026, 12, 20, 0, 0, 0, tzinfo=timezone.utc).timestamp())  # 1797724800
+    jan_pub = int(datetime(2027, 1, 2, 0, 0, 0, tzinfo=timezone.utc).timestamp())    # 1798848000
+
+    # 1) October 21, 2026 publication with recent June yearless date stays in 2026 (~142d earlier):
+    expected_jun1_2026 = int(datetime(2026, 6, 1, 12, 0, 0, tzinfo=SERVER_TZ).timestamp())
+    expected_jun15_2026 = int(datetime(2026, 6, 15, 3, 59, 0, tzinfo=SERVER_TZ).timestamp())
+    assert (
+        convert_news_timestamps("June 1, 12:00 (UTC+8)", published_ts=oct_pub, enabled=True)
+        == f"<t:{expected_jun1_2026}:f>"
+    )
+    assert (
+        convert_news_timestamps("06/01 12:00 (UTC+8)", published_ts=oct_pub, enabled=True)
+        == f"<t:{expected_jun1_2026}:f>"
+    )
+    assert (
+        convert_news_timestamps("June 1, 12:00 – June 15, 03:59 (UTC+8)", published_ts=oct_pub, enabled=True)
+        == f"<t:{expected_jun1_2026}:f> – <t:{expected_jun15_2026}:f>"
+    )
+
+    # 2) Valid December <-> January rollover (both yearless AND explicit-first -> yearless-second):
+    assert (
+        convert_news_timestamps("December 25, 10:00 — January 12, 03:59 (UTC+8)", published_ts=dec_pub, enabled=True)
+        == "<t:1798164000:f> — <t:1799697540:f>"
+    )
+    assert (
+        convert_news_timestamps("December 25, 10:00 — January 12, 03:59 (UTC+8)", published_ts=jan_pub, enabled=True)
+        == "<t:1798164000:f> — <t:1799697540:f>"
+    )
+    assert (
+        convert_news_timestamps("December 25, 2026 10:00 — January 12, 03:59 (UTC+8)", published_ts=dec_pub, enabled=True)
+        == "<t:1798164000:f> — <t:1799697540:f>"
+    )
+    assert (
+        convert_news_timestamps("2026/12/25 10:00 – 01/12 03:59 (UTC+8)", published_ts=dec_pub, enabled=True)
+        == "<t:1798164000:f> – <t:1799697540:f>"
+    )
+
+    # 3) Inverted September-to-September (and autumn-to-autumn) ranges remain byte-identical:
+    for inverted_range in (
+        "September 28, 11:00 – September 20, 06:00 (UTC+8)",
+        "09/28 11:00 – 09/20 06:00 (UTC+8)",
+        "September 28, 11:00 – September 28, 06:00 (UTC+8)",
+        "2026/09/28 11:00 – 09/20 06:00 (UTC+8)",
+        "2026/09/28 11:00 – 09/28 06:00 (UTC+8)",
+        "September 28, 2026 11:00 – September 20, 06:00 (UTC+8)",
+        "October 10, 12:00 – September 25, 12:00 (UTC+8)",
+        "October 10, 2026 12:00 – September 25, 12:00 (UTC+8)",
+    ):
+        got = convert_news_timestamps(inverted_range, published_ts=sep_pub, enabled=True)
+        assert got == inverted_range and got.encode("utf-8") == inverted_range.encode("utf-8"), (inverted_range, got)
+
+    # 4) Exact minute-level `±180`-day boundaries around `oct_pub` (`2026-10-21 12:00 UTC+8`):
+    minus_180d_exact = int(datetime(2026, 4, 24, 12, 0, 0, tzinfo=SERVER_TZ).timestamp())  # -180d 00m
+    plus_180d_exact = int(datetime(2027, 4, 19, 12, 0, 0, tzinfo=SERVER_TZ).timestamp())   # +180d 00m
+    assert (
+        convert_news_timestamps("04/24 12:00 (UTC+8)", published_ts=oct_pub, enabled=True)
+        == f"<t:{minus_180d_exact}:f>"
+    )
+    assert (
+        convert_news_timestamps("04/24 11:59 (UTC+8)", published_ts=oct_pub, enabled=True)
+        == "04/24 11:59 (UTC+8)"
+    )
+    assert (
+        convert_news_timestamps("04/19 12:00 (UTC+8)", published_ts=oct_pub, enabled=True)
+        == f"<t:{plus_180d_exact}:f>"
+    )
+    assert (
+        convert_news_timestamps("04/19 12:01 (UTC+8)", published_ts=oct_pub, enabled=True)
+        == "04/19 12:01 (UTC+8)"
+    )
+
+    # 5) Explicit years remain 100% authoritative regardless of `published_ts` (even outside `±180d` or `published_ts=0`):
+    assert (
+        convert_news_timestamps("2026/04/24 11:59 (UTC+8)", published_ts=oct_pub, enabled=True)
+        == f"<t:{minus_180d_exact - 60}:f>"
+    )
+    assert (
+        convert_news_timestamps("2027/04/19 12:01 (UTC+8)", published_ts=oct_pub, enabled=True)
+        == f"<t:{plus_180d_exact + 60}:f>"
+    )
+    jun1_2027 = int(datetime(2027, 6, 1, 12, 0, 0, tzinfo=SERVER_TZ).timestamp())
+    assert (
+        convert_news_timestamps("June 1, 2027 12:00 (UTC+8)", published_ts=oct_pub, enabled=True)
+        == f"<t:{jun1_2027}:f>"
+    )
+    assert (
+        convert_news_timestamps("June 1, 2026 12:00 (UTC+8)", published_ts=0, enabled=True)
+        == f"<t:{expected_jun1_2026}:f>"
+    )
+    assert (
+        convert_news_timestamps("2026/09/28 06:00 – 2027/09/28 06:00 (UTC+8)", published_ts=oct_pub, enabled=True)
+        == "<t:1790546400:f> – <t:1822082400:f>"
+    )
+
+
 
 
 if __name__ == "__main__":

@@ -22,6 +22,8 @@ import re
 from datetime import datetime, timedelta, timezone
 
 SERVER_TZ = timezone(timedelta(hours=8))
+YEARLESS_MAX_DELTA_DAYS = 180
+YEARLESS_MAX_DELTA_S = YEARLESS_MAX_DELTA_DAYS * 86400
 
 _MONTHS: dict[str, int] = {
     "jan": 1, "january": 1,
@@ -223,6 +225,17 @@ def _build_dt(
     tz: timezone,
     published_ts: int,
 ) -> datetime | None:
+    """Resolve calendar fields into a timezone-aware ``datetime``.
+
+    * Explicit years (``year is not None``) are always authoritative and ignore
+      ``published_ts``.
+    * Yearless dates (``year is None``) require ``published_ts > 0`` and resolve to the
+      unique calendar year in ``(pub.year - 1, pub.year, pub.year + 1)`` whose timestamp
+      lies within ``±YEARLESS_MAX_DELTA_DAYS`` (``±180`` days) of ``published_ts``.
+      Recent dates within the past 180 days (e.g. June 1 on an October 21 publication)
+      stay in ``pub.year``; Dec/Jan year-boundary dates within ±180 days roll across the
+      year boundary; dates outside ``±180`` days return ``None`` rather than guessing.
+    """
     if not 1 <= month <= 12 or not 1 <= day <= 31:
         return None
     hh, mm, ss = hms
@@ -236,25 +249,58 @@ def _build_dt(
     if not published_ts or published_ts <= 0:
         return None
     pub = datetime.fromtimestamp(published_ts, tz)
-    candidates: list[datetime] = []
     for cand_year in (pub.year - 1, pub.year, pub.year + 1):
         if day <= calendar.monthrange(cand_year, month)[1]:
-            candidates.append(datetime(cand_year, month, day, hh, mm, ss, tzinfo=tz))
-    if not candidates:
+            cand = datetime(cand_year, month, day, hh, mm, ss, tzinfo=tz)
+            if abs((cand - pub).total_seconds()) <= YEARLESS_MAX_DELTA_S:
+                return cand
+    return None
+
+
+def _resolve_two_date_range_dts(
+    d1: tuple[int | None, int, int],
+    t1: tuple[int, int, int],
+    tz1: timezone,
+    d2: tuple[int | None, int, int],
+    t2: tuple[int, int, int],
+    tz2: timezone,
+    published_ts: int,
+) -> tuple[datetime, datetime] | None:
+    """Resolve ``(dt1, dt2)`` conservatively without repairing inverted yearless ranges.
+
+    * Explicit years on either endpoint remain authoritative.
+    * When both endpoints are yearless, each resolves independently within ``±180`` days
+      of ``published_ts`` and must satisfy ``dt2 >= dt1`` without adding a year to
+      inverted same-season ranges (e.g. September 28 -> September 20).
+    * When only the second endpoint omits its year after an explicit first year (e.g.
+      ``2026/12/25 10:00 – 01/12 03:59 (UTC+8)``), ``d1[0]`` is tried first and ``d1[0] + 1``
+      is allowed solely across a genuine year-end month wrap (``d2[1] < d1[1]``) within
+      ``180`` days of ``dt1`` (and within ``±180`` days of ``published_ts`` when present).
+    """
+    dt1 = _build_dt(d1[0], d1[1], d1[2], t1, tz1, published_ts)
+    if dt1 is None:
         return None
-    same = next((c for c in candidates if c.year == pub.year), None)
-    if same is not None:
-        delta_days = (same - pub).total_seconds() / 86400.0
-        if delta_days < -120:
-            later = next((c for c in candidates if c.year == pub.year + 1), None)
-            if later is not None:
-                return later
-        elif delta_days > 245:
-            earlier = next((c for c in candidates if c.year == pub.year - 1), None)
-            if earlier is not None:
-                return earlier
-        return same
-    return min(candidates, key=lambda c: abs((c - pub).total_seconds()))
+    if d2[0] is not None or d1[0] is None:
+        dt2 = _build_dt(d2[0], d2[1], d2[2], t2, tz2, published_ts)
+        if dt2 is None or int(dt2.timestamp()) < int(dt1.timestamp()):
+            return None
+        return dt1, dt2
+
+    cand_same = _build_dt(d1[0], d2[1], d2[2], t2, tz2, published_ts)
+    if cand_same is not None and int(cand_same.timestamp()) >= int(dt1.timestamp()):
+        return dt1, cand_same
+    if d2[1] < d1[1]:
+        cand_next = _build_dt(d1[0] + 1, d2[1], d2[2], t2, tz2, published_ts)
+        if cand_next is not None:
+            span_s = int(cand_next.timestamp()) - int(dt1.timestamp())
+            pub_ok = (
+                not published_ts
+                or published_ts <= 0
+                or abs((cand_next - datetime.fromtimestamp(published_ts, tz2)).total_seconds()) <= YEARLESS_MAX_DELTA_S
+            )
+            if 0 <= span_s <= YEARLESS_MAX_DELTA_S and pub_ok:
+                return dt1, cand_next
+    return None
 
 
 def _is_approximate(segment: str, match_start: int, matched: str) -> bool:
@@ -321,18 +367,14 @@ def _replace_prose_segment(segment: str, published_ts: int) -> str:
                     t2 = _parse_time_parts(gd2)
                     if tz_pair and d1 and t1 and d2 and t2:
                         tz1, tz2 = tz_pair
-                        dt1 = _build_dt(d1[0], d1[1], d1[2], t1, tz1, published_ts)
-                        if dt1 is not None:
-                            if d2[0] is None:
-                                dt2 = _build_dt(dt1.year, d2[1], d2[2], t2, tz2, published_ts)
-                                if dt2 is not None and dt2 < dt1:
-                                    dt2 = _build_dt(dt1.year + 1, d2[1], d2[2], t2, tz2, published_ts)
-                            else:
-                                dt2 = _build_dt(d2[0], d2[1], d2[2], t2, tz2, published_ts)
-                            if dt2 is not None and int(dt2.timestamp()) >= int(dt1.timestamp()):
-                                edits.append(
-                                    (s1, e2, f"<t:{int(dt1.timestamp())}:f>{between}<t:{int(dt2.timestamp())}:f>")
-                                )
+                        resolved_pair = _resolve_two_date_range_dts(
+                            d1, t1, tz1, d2, t2, tz2, published_ts
+                        )
+                        if resolved_pair is not None:
+                            dt1, dt2 = resolved_pair
+                            edits.append(
+                                (s1, e2, f"<t:{int(dt1.timestamp())}:f>{between}<t:{int(dt2.timestamp())}:f>")
+                            )
                 idx += 2
                 continue
 
