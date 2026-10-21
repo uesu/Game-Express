@@ -349,15 +349,19 @@ def parse_fandom(data: dict, now: float | None = None) -> list[CodeHit]:
 
     # 2) plain wikitable rows (Wuthering Waves page)
     if not hits:
-        heading = re.search(r"\n=+\s*(?:Expired|Inactive|Invalid)\b[^\n]*", wikitext, re.I)
+        heading = re.search(r"(?m)^=+\s*(?:Expired|Inactive|Invalid)\b[^\n]*", wikitext, re.I)
         expired_from = heading.start() if heading else len(wikitext)
         offset = 0
         for chunk in re.split(r"(\n\|-|\n\|\})", wikitext):
             pos, offset = offset, offset + len(chunk)
-            m = re.search(r"(?m)^\|(?![-}+])\s*([^|\n]*?)\s*\|\|", chunk)
+            m = re.search(r"(?m)^\|(?![-}+])([^\n]*)", chunk)
             if not m:
                 continue
-            raw = re.sub(r"'{2,3}|<[^>]+>|\[\[|\]\]", "", m.group(1)).strip(" *")
+            cleaned = re.sub(r"<ref\b[^>]*>.*?</ref>", "", m.group(1), flags=re.I | re.S)
+            cleaned = re.sub(r"\{\{\s*(?:Code|Copy|Tt)\s*\|\s*([A-Za-z0-9]+)(?:\|[^}]*)?\}\}",
+                             r"\1", cleaned, flags=re.I)
+            cell0 = cleaned.split("||", 1)[0].rsplit("|", 1)[-1]
+            raw = re.sub(r"'{2,3}|<[^>]+>|\[\[|\]\]", "", cell0).strip(" *")
             if not re.fullmatch(r"[A-Z0-9]{5,20}", raw):     # headers, templates, prose
                 continue
             code = sanitize(raw)

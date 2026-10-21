@@ -115,7 +115,7 @@
       "kuro_news": true,
       "x_accounts": ["Wuthering_Waves"],
       "program_label": "Special Broadcast",
-      "program_patterns": ["special broadcast"],
+      "program_patterns": ["special broadcast", "preview livestream", "preview live stream"],
       "banner_patterns": ["featured resonator", "resonator convene", "convene"],
       "banner_titles": ["Version {v} Featured Resonator/Weapon Convene: Phase {p}"],
       "cadence": {

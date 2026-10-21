@@ -14,6 +14,11 @@ YOUTUBE_ID_RE = re.compile(
     r"(?:youtube\.com/(?:watch\?(?:[^\s]*&)?v=|live/|shorts/|embed/)|youtu\.be/)([A-Za-z0-9_-]{11})")
 
 
+def _http_media_url(raw: str | None) -> str:
+    url = html.unescape(str(raw or "")).strip()
+    return url if url.lower().startswith(("http://", "https://")) else ""
+
+
 class _HTMLText(HTMLParser):
     BLOCK = {"p", "div", "br", "li", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "section"}
 
@@ -32,10 +37,14 @@ class _HTMLText(HTMLParser):
             self.parts.append("\n")
         if tag == "a" and a.get("href"):
             self.links.append(a["href"])
-        if tag == "img" and a.get("src"):
-            self.images.append(a["src"])
-        if tag in ("iframe", "video") and a.get("src"):
-            self.links.append(a["src"])
+        if tag == "img":
+            src = _http_media_url(a.get("src"))
+            if src:
+                self.images.append(src)
+        if tag in ("iframe", "video"):
+            src = _http_media_url(a.get("src"))
+            if src:
+                self.links.append(src)
 
     def handle_endtag(self, tag):
         if tag in ("script", "style") and self._skip:
@@ -79,10 +88,12 @@ def structured_to_text(structured: str) -> tuple[str, list[str], list[str]]:
             if attrs.get("link"):
                 links.append(attrs["link"])
         elif isinstance(ins, dict):
-            if ins.get("image"):
-                images.append(ins["image"])
-            if ins.get("video"):
-                links.append(ins["video"])
+            img = _http_media_url(ins.get("image"))
+            if img:
+                images.append(img)
+            vid = _http_media_url(ins.get("video"))
+            if vid:
+                links.append(vid)
     return clean_text("".join(parts)), dedupe(links), dedupe(images)
 
 
@@ -366,11 +377,11 @@ class _NewsHTML(HTMLParser):
                 self.bold_open = True
             self.anchor = (a.get("href"), len(self.parts))
         if tag in ("img", "video", "source", "iframe"):
-            url = a.get("src") or a.get("data-src")
+            url = _http_media_url(a.get("src") or a.get("data-src"))
             if url:
                 self.flush()
                 self.blocks.append({"kind": "image" if tag == "img" else "link" if tag == "iframe" else "video",
-                                    "url": html.unescape(url)})
+                                    "url": url})
 
     def handle_endtag(self, tag):
         if tag in ("script", "style"):
@@ -451,10 +462,10 @@ def news_blocks(content: str, structured: str = "", videos: dict[str, str] | Non
                            or (videos or {}).get(str(url.get("id") or url.get("video_id") or url.get("vod_id") or "")))
                 elif kind == "vod":
                     url = (videos or {}).get(str(url))
-                if not isinstance(url, str) or not url:
+                if not isinstance(url, str) or not _http_media_url(url):
                     blocks.append({"kind": "text", "text": "\n[Embedded media unavailable — open the original article.]\n"})
                     continue
-                blocks.append({"kind": "video" if kind == "vod" else kind, "url": html.unescape(url)})
+                blocks.append({"kind": "video" if kind == "vod" else kind, "url": _http_media_url(url)})
         return blocks
     if re.fullmatch(r"[a-z]{2}-[a-z]{2}", (content or "").strip()):
         raise ValueError("article body unavailable")

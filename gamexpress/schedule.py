@@ -49,7 +49,8 @@ MAINT_RE = re.compile(
     r"update\s+details|version\s+update\s+(?:notice|details)|pre-?install(?:ation)?|pre-?download|pre-?load",
     re.I)
 PROGRAM_EXCLUDE = re.compile(
-    r"\b(recap|replay|re-?watch|highlights?|vod|thank(?:s| you) for (?:watching|tuning)|has ended|"
+    r"\b(recap|replay|re-?watch|highlights?|vod|thank(?:s| you) for (?:watching|tuning)|"
+    r"has (?:ended|concluded)|"
     r"codes? (?:are|is) (?:now )?(?:live|available|here))\b", re.I)
 NOT_PROGRAM_TITLE = re.compile(
     r"\b(?:(?:prize|sharing|fan[- ]?art|creation|community|login|check-?in|web|in-?game|"
@@ -71,7 +72,9 @@ DEFAULT_BANNER_RE = (r"event\s+wish|event\s+warp|signal\s+search|exclusive\s+cha
 #        real 3.7 announcement, so the giveaway words must not be allowed to veto it
 PROGRAM_AIR = re.compile(
     r"\b(?:will\s+(?:premiere|begin|air|release|start|go\s+live|be\s+broadcast|be\s+available)|"
-    r"is\s+scheduled\s+to\s+air|scheduled\s+for|airing\s+on|premieres?\s+on|"
+    r"is\s+(?:scheduled|set)\s+to\s+(?:air|begin|start|premiere|broadcast|go\s+live)|"
+    r"scheduled\s+for|airing\s+on|airs\s+on|premieres?\s+on|goes\s+live\s+on|"
+    r"(?:broadcast|livestream|live\s+stream)\s+time\s*[:：]|"
     r"livestream\s+starts?|tune\s+in\s+(?:on|at)|starts?\s+(?:on|at)\b)", re.I)
 AIR_DATE = re.compile(
     r"\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2}|"
@@ -1388,7 +1391,8 @@ def _recoverable_announcement(data: dict, game_key: str, now: int, maint_start) 
     with no cached id keeps the old behaviour and never retries, and a frozen card ends it either
     way. The cache is also what makes this work on a `mode=test` run, whose state starts empty.
     """
-    if data.get("program_ts") or not game_key or not data.get("version"):
+    has_official_ts = bool(data.get("program_ts")) and "program_ts" not in (data.get("estimated") or [])
+    if has_official_ts or data.get("media_from") or data.get("program_seen") or not game_key or not data.get("version"):
         return False
     if now > int(maint_start) + CARD_FREEZE_D * 86400:
         return False                       # frozen card: nothing the lookup finds can be shown
@@ -1407,7 +1411,8 @@ def announcement_gap(record: dict, game_key: str, now: int) -> str:
     operator can act on, so the run summary can say it (once) instead.
     """
     data = (record or {}).get("data") or {}
-    if data.get("program_ts") or data.get("program_seen") or data.get("media_from"):
+    has_official_ts = bool(data.get("program_ts")) and "program_ts" not in (data.get("estimated") or [])
+    if has_official_ts or data.get("program_seen") or data.get("media_from"):
         return ""                                  # the card has (or had) its announcement
     start = data.get("maint_start_ts")
     if not start or not TS_MIN <= int(start) <= TS_MAX:
@@ -1676,8 +1681,9 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
         if key in override:
             ts = _to_ts(override[key])
             if ts:
+                if data.get(key) != ts or prov.get(key, [0])[0] != PRIORITY["override"]:
+                    prov[key] = [PRIORITY["override"], now]
                 data[key] = ts
-                prov[key] = [PRIORITY["override"], now]
                 _unmark_estimated(data, key)
     for key in ("program_name", "version_name", "compensation"):
         if override.get(key):
@@ -1703,8 +1709,9 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
         banners = dict(data.get("banners") or {})
         for k, v in override["banners"].items():
             if isinstance(v, list):
+                if banners.get(k) != v or prov.get(f"b_{k}", [0])[0] != PRIORITY["override"]:
+                    prov[f"b_{k}"] = [PRIORITY["override"], now]
                 banners[k] = v
-                prov[f"b_{k}"] = [PRIORITY["override"], now]
                 if v:                                  # a human-set name is confirmed and locked
                     data["banners_settled"] = sorted(banner_settled(data) | {k})
         data["banners"] = banners

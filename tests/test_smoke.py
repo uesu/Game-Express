@@ -12436,5 +12436,318 @@ def test_estimated_milestone_card_upgrades_silently_when_official_notice_arrives
             assert len(edits) == 1
 
 
+def test_wuwa_upcoming_broadcast_phrasings_post_stream_exclusion_and_unnumbered_seed():
+    """Verify all Wuthering Waves 3.8/4.0 broadcast phrasings, unnumbered X seed lookup,
+    and exclusion of post-stream Kuro 'has concluded' recap articles."""
+    from unittest.mock import patch
+
+    from gamexpress import runner
+    from gamexpress.config import load_overrides, load_settings
+    from gamexpress.discord import SendResult
+    from gamexpress.sources import twitter as tw
+
+    want_ww = schedule.wants(GAMES["wuwa"])
+    templates = [
+        ("3.8", "Wuthering Waves Version 3.8 Preview Special Broadcast is scheduled to air on "
+                "October 30, 2026, at 19:00 (UTC+8).\nYouTube: https://youtube.com/live/AbCdEfGh123"),
+        ("4.0", "Wuthering Waves Version 4.0 Preview Special Broadcast is scheduled to air on "
+                "October 30, 2026, at 19:00 (UTC+8).\nYouTube: https://youtube.com/live/AbCdEfGh124"),
+        ("3.8", "Dear Rovers,\nWuthering Waves Version 3.8 Preview Special Broadcast is set to begin "
+                "on October 30, 2026, at 19:00 (UTC+8)!\nWatch: https://youtu.be/AbCdEfGh125"),
+        ("3.8", "Wuthering Waves Version 3.8 Preview Special Broadcast\n\nBroadcast Time: "
+                "2026/10/30 19:00 (UTC+8)\nYouTube: https://www.youtube.com/watch?v=AbCdEfGh126"),
+        ("3.8", "Wuthering Waves Version 3.8 Preview Livestream will air on 2026-10-30 at 19:00 (UTC+8).\n"
+                "YouTube: https://youtube.com/live/AbCdEfGh127"),
+        ("3.8", "Wuthering Waves V3.8 Special Broadcast starts on Oct 30, 2026, 19:00 (UTC+8)!\n"
+                "YouTube: https://youtube.com/live/AbCdEfGh128"),
+        ("3.8", "Wuthering Waves Preview Special Broadcast is scheduled to air on October 30, 2026, "
+                "at 19:00 (UTC+8).\nYouTube: https://youtube.com/live/AbCdEfGh129"),
+    ]
+    for expected_ver, tweet_text in templates:
+        assert want_ww(tweet_text)
+        assert schedule.is_program_announcement(GAMES["wuwa"], tweet_text)
+        saved = []
+        client = tw.XClient(None, load_settings())
+
+        async def _tl(_acc, text=tweet_text):
+            return [
+                {"id": "2100000000000000001", "ts": 1792750000, "title": "", "links": [], "images": [],
+                 "text": "Wuthering Waves Version 3.6 Preview Special Broadcast is scheduled to air "
+                         "on August 8, 2026, at 19:00 (UTC+8)."},
+                {"id": "2119999999999999999", "ts": 1792753200, "title": "", "links": [],
+                 "images": ["https://pbs.twimg.com/media/KEYART38.jpg?name=orig"], "text": text},
+            ]
+
+        async def _tw(_tid, _acc=None):
+            return None
+
+        client.timeline, client.tweet = _tl, _tw
+        with (
+            patch.object(tw, "program_seed", return_value={}),
+            patch.object(tw, "save_program_seed",
+                         side_effect=lambda gk, v, entry, s=saved: s.append((gk, v, entry["id"])) or True),
+        ):
+            item = asyncio.run(client.program_tweet(GAMES["wuwa"], expected_ver))
+        assert item is not None and item.id == "2119999999999999999"
+        assert saved == [("wuwa", expected_ver, "2119999999999999999")]
+
+    # Post-stream Kuro recap articles ("The Preview Special Broadcast has concluded.") must NEVER match
+    post_stream_recap = (
+        'Wuthering Waves Version Preview | Version 3.6 "Lamplight in Mirage, Sword\'s Resolve in Heart" '
+        "Scheduled for Release on August 20 (UTC+8)\n\n"
+        "The Preview Special Broadcast has concluded. Take a look back at all these exciting updates!"
+    )
+    assert not schedule.is_program_announcement(
+        GAMES["wuwa"],
+        post_stream_recap,
+        'Wuthering Waves Version Preview | Version 3.6 "Lamplight in Mirage, Sword\'s Resolve in Heart"',
+    )
+
+    # Full schedule.run() end-to-end check on upcoming WuWa 3.8 broadcast
+    sent = []
+
+    class _WH:
+        async def send(self, url, payload, stop_on_ambiguous=False):
+            sent.append(payload)
+            return SendResult(True, 200, "999888777666555444")
+
+        async def edit(self, url, mid, payload):
+            return SendResult(True, 200, mid)
+
+    with tempfile.TemporaryDirectory() as td, patch.dict(
+        os.environ, {"DISCORD_WEBHOOK_SCHEDULE": "https://discord.com/api/webhooks/111/aaa"}
+    ):
+        sp = Path(td) / "state.json"
+        st = State.load(sp)
+        st.mark_bootstrapped("schedule", "wuwa")
+        s = load_settings()
+        ctx = runner.Ctx(
+            settings=s, games=[GAMES["wuwa"]], state=st, fetcher=None, webhook=_WH(),
+            x=None, code_sources=None, overrides=load_overrides(), now=1792753200,
+        )
+        ctx.versions["wuwa"] = {"live": "3.7"}
+        ctx.items["wuwa"] = [
+            Item("x", "wuwa", "2119999999999999999",
+                 "https://x.com/Wuthering_Waves/status/2119999999999999999",
+                 "", templates[0][1], 1792753200,
+                 ["https://pbs.twimg.com/media/KEYART38.jpg?name=orig"], [])
+        ]
+        asyncio.run(schedule.run(ctx))
+    assert len(sent) == 1 and cards.validate_payload(sent[0]) == []
+    assert st.schedule_records("wuwa")["3.8"]["data"]["program_ts"] == 1793358000
+
+
+def test_schedule_cached_seed_replaces_sticky_countdown_estimate_and_override_zero_churn():
+    """A card seeded post-maintenance with a countdown-estimated program_ts replays its cached
+    tweet seed once, clears estimated, and produces zero state churn on subsequent 5-min ticks."""
+    from unittest.mock import patch
+
+    from gamexpress import runner
+    from gamexpress.config import load_overrides, load_settings
+    from gamexpress.discord import SendResult
+    from gamexpress.sources import twitter as tw
+
+    fx37 = fx("fx_wuwa_3_7_broadcast.json")
+    seeded_state = {
+        "bootstrapped": {"schedule:wuwa": 1790323161},
+        "schedule": {
+            "wuwa": {
+                "3.7": {
+                    "status": "seeded",
+                    "first_seen": 1790323161,
+                    "data": {
+                        "version": "3.7",
+                        "program_ts": 1790341813,
+                        "estimated": ["program_ts"],
+                        "estimate_sources": ["wuthering-countdown"],
+                        "maint_start_ts": 1790712000,
+                        "maint_end_ts": 1790737200,
+                        "preinstall_ts": 1790560800,
+                        "banners": {
+                            "phase1": ["Chisa", "Iuno", "Hsin"],
+                            "phase1_4": ["Aalto", "Taoqi", "Yuanwu"],
+                            "phase2": ["Lucilla", "Lynae"],
+                            "phase2_4": ["Lumi", "Danjin", "Chixia"],
+                            "reruns": ["Iuno", "Lynae"],
+                            "four_star": ["Aalto", "Taoqi", "Yuanwu"],
+                        },
+                        "banners_settled": ["phase1", "phase1_4", "phase2", "phase2_4", "reruns", "four_star"],
+                        "source_url": "https://wutheringwaves.kurogames.com/en/main/news/detail/5476",
+                        "title_url": "https://wutheringwaves.kurogames.com/en/main/news/detail/5476",
+                        "source_label": "Official News",
+                    },
+                    "prov": {"b_phase1": [100, 1790500000]},
+                }
+            }
+        },
+    }
+
+    # Without a seed in program_announcements.json, announcement_gap() now surfaces the missing-seed notice
+    no_seed_rec = json.loads(json.dumps(seeded_state["schedule"]["wuwa"]["3.7"]))
+    no_seed_rec["data"]["version"] = "9.9"
+    assert "program_announcements.json" in schedule.announcement_gap(no_seed_rec, "wuwa", 1792625500)
+
+    class _WH:
+        async def send(self, *a, **kw):
+            return SendResult(True, 200, "1")
+
+        async def edit(self, *a, **kw):
+            return SendResult(True, 200, "1")
+
+    class _FXFetcher:
+        calls = 0
+
+        async def get_json(self, url, **kw):
+            if "2098607530780021002" in url:
+                self.calls += 1
+                return fx37
+            return None
+
+        async def get_text(self, url, **kw):
+            return None
+
+    with tempfile.TemporaryDirectory() as td, patch.dict(
+        os.environ, {"DISCORD_WEBHOOK_SCHEDULE": "https://discord.com/api/webhooks/111/aaa"}
+    ):
+        sp = Path(td) / "state.json"
+        sp.write_text(json.dumps(seeded_state))
+        fxf = _FXFetcher()
+        st1 = State.load(sp)
+        s = load_settings()
+        ctx1 = runner.Ctx(
+            settings=s, games=[GAMES["wuwa"]], state=st1, fetcher=fxf, webhook=_WH(),
+            x=tw.XClient(fxf, s), code_sources=None, overrides=load_overrides(), now=1792625500,
+        )
+        ctx1.versions["wuwa"] = {"live": "3.7"}
+        assert schedule.needs_program_lookup([], st1.schedule_records("wuwa")["3.7"], ctx1.now, "wuwa") is True
+        asyncio.run(runner.gather_program_media(ctx1))
+        asyncio.run(schedule.run(ctx1))
+        st1.save()
+        snap1 = sp.read_text()
+        d37 = st1.schedule_records("wuwa")["3.7"]["data"]
+        assert d37["program_ts"] == 1789815600
+        assert "estimated" not in d37
+        assert d37["title_url"] == "https://x.com/Wuthering_Waves/status/2098607530780021002"
+        assert d37["youtube_video"] == "https://www.youtube.com/watch?v=nMa_e5ChL6w"
+        assert fxf.calls == 1
+
+        # Second cron tick 5 minutes later must produce ZERO fxtwitter calls and ZERO bytes diff in state.json
+        st2 = State.load(sp)
+        ctx2 = runner.Ctx(
+            settings=s, games=[GAMES["wuwa"]], state=st2, fetcher=fxf, webhook=_WH(),
+            x=tw.XClient(fxf, s), code_sources=None, overrides=load_overrides(), now=1792625800,
+        )
+        ctx2.versions["wuwa"] = {"live": "3.7"}
+        asyncio.run(runner.gather_program_media(ctx2))
+        asyncio.run(schedule.run(ctx2))
+        st2.save()
+        snap2 = sp.read_text()
+        assert fxf.calls == 1
+        assert snap1 == snap2
+
+
+def test_fandom_wuwa_wikitable_cited_multiline_and_template_codes_unblock_pending():
+    """Cited (<ref>...</ref>), multi-line VisualEditor cells, and {{Code|...}} rows on the
+    Wuthering Waves Fandom wiki parse cleanly so pending OGC codes corroborate and post."""
+    from gamexpress.sources import codes
+    ww_wikitext = {
+        "query": {
+            "pages": {
+                "1": {
+                    "revisions": [
+                        {
+                            "slots": {
+                                "main": {
+                                    "*": (
+                                        "===Active===\n{| class=\"wikitable sortable\"\n"
+                                        "!Code !! Server !! Rewards !! Duration\n"
+                                        "|-\n|KEEPONSHINING<ref>[https://x.com/Wuthering_Waves/status/1 X]</ref>"
+                                        "||All||{{Card List|Astrite*80|delim=;}}\n"
+                                        "|Discovered: October 11, 2026'''Valid until: November 11, 2026 08:59 (PT)'''\n"
+                                        "|-\n| class=\"bg-new\" | {{Code|STARRYSTAGE2}}<ref>Discord</ref>\n"
+                                        "|All\n|{{Card List|Astrite*80|delim=;}}\n"
+                                        "|Discovered: October 11, 2026'''Valid until: November 11, 2026 08:59 (PT)'''\n"
+                                        "|}\n===Expired===\n{| class=\"wikitable\"\n"
+                                        "|-\n|OLDWWCODE<ref>Old</ref>||All||50 Astrite\n|}\n"
+                                    )
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    }
+    parsed = codes.parse_fandom(ww_wikitext, now=1792625500)
+    assert [(h.code, h.expired, h.rewards) for h in parsed] == [
+        ("KEEPONSHINING", False, "Astrite*80"),
+        ("STARRYSTAGE2", False, "Astrite*80"),
+        ("OLDWWCODE", True, None),
+    ]
+    grouped = codeposter.group_hits(
+        parsed + codes.parse_ogc([
+            {"code": "KEEPONSHINING", "rewards": ["Astrite x80"]},
+            {"code": "STARRYSTAGE2", "rewards": ["Astrite x80"]},
+            {"code": "OLDWWCODE", "rewards": ["Astrite x50"]},
+        ]),
+        now=1792625500,
+    )
+    assert codeposter.gate(grouped["KEEPONSHINING"], 2) == (True, "2 independent sources")
+    assert codeposter.gate(grouped["STARRYSTAGE2"], 2) == (True, "2 independent sources")
+    assert codeposter.gate(grouped["OLDWWCODE"], 2)[0] is False
+
+
+def test_news_malformed_cms_img_src_renders_cleanly_across_default_timestamps_and_expand_full():
+    """Real Kuro article 4665 (<img alt='' src='800' /> alongside valid CDN media) and Quill
+    non-HTTP embeds render cleanly across default, NEWS_TIMESTAMPS=1, and NEWS_EXPAND_FULL=1."""
+    from gamexpress.textutil import html_to_text, news_blocks
+
+    denia_html = (
+        "<p>Event Window: 2026-10-22 10:00 - 2026-11-11 11:59 (server time)</p>"
+        '<p><img alt="" src="https://hw-media-cdn-mingchao.kurogame.com/object/denia_1.jpg" />'
+        '<img alt="" src="800" />'
+        '<img alt="" src="https://hw-media-cdn-mingchao.kurogame.com/object/denia_2.gif" /></p>'
+    )
+    txt, links, imgs = html_to_text(denia_html)
+    assert imgs == [
+        "https://hw-media-cdn-mingchao.kurogame.com/object/denia_1.jpg",
+        "https://hw-media-cdn-mingchao.kurogame.com/object/denia_2.gif",
+    ]
+    blocks = news_blocks(denia_html)
+    it = Item(
+        "kuro", "wuwa", "4665",
+        "https://wutheringwaves.kurogames.com/en/main/news/detail/4665",
+        "Profile Reveal | Bubbles of Nihility - Denia",
+        txt, 1792490000, imgs, links, article_blocks=blocks, author="Kuro Games",
+    )
+    for exp in (False, True):
+        for ts in (False, True):
+            pls = cards.news_payloads(GAMES["wuwa"], it, timestamps=ts, expand_full=exp)
+            assert all(cards.validate_payload(p) == [] for p in pls)
+            raw_json = json.dumps(pls)
+            assert "denia_1.jpg" in raw_json and "denia_2.gif" in raw_json
+            if ts:
+                assert "<t:1792634400:f> - <t:1794369540:f>" in raw_json
+
+    # Quill embed with non-HTTP id emits safe unavailable placeholder instead of raising ValueError
+    quill_blocks = news_blocks("en-us", json.dumps([
+        {"insert": "Hello\n"},
+        {"insert": {"image": "800"}},
+        {"insert": {"image": "https://upload-os-bbs.hoyolab.com/upload/real.png"}},
+    ]))
+    assert any("Embedded media unavailable" in b.get("text", "") for b in quill_blocks)
+    # Strict cards.news_payloads contract still rejects raw unsafe article_blocks directly
+    bad_item = Item(
+        "kuro", "wuwa", "bad", "https://wutheringwaves.kurogames.com/en/main/news/detail/1",
+        "Bad Media", "Body", 1792490000, [], [],
+        article_blocks=[{"kind": "image", "url": "javascript:alert(1)"}], author="Kuro Games",
+    )
+    try:
+        cards.news_payloads(GAMES["wuwa"], bad_item)
+        raise AssertionError("expected ValueError for raw unsafe article_blocks URL")
+    except ValueError as exc:
+        assert "unsupported article media URL" in str(exc)
+
+
 if __name__ == "__main__":
     sys.exit(main())

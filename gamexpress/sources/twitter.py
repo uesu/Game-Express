@@ -23,7 +23,7 @@ from ..config import CONFIG_DIR, Game, Settings
 from ..http import Fetcher
 from ..media import nitter_pic_to_twimg, sane_aspect
 from ..models import Item
-from ..textutil import find_urls, html_to_text
+from ..textutil import find_urls, find_versions, html_to_text
 
 log = logging.getLogger("gamexpress.x")
 
@@ -339,7 +339,8 @@ class XClient:
             for e in await self.timeline(account):
                 if not schedule.is_program_announcement(game, e["text"]):
                     continue
-                if version and version not in e["text"]:
+                mentioned = find_versions(e["text"])
+                if version and mentioned and version not in mentioned and version not in e["text"]:
                     continue                      # an announcement for some other version
                 if found is None or e["ts"] < found[1]["ts"]:
                     found = (account, e)
