@@ -258,13 +258,15 @@ Two strictly opt-in consumers build on these same rules without changing `gamexp
 or `gamexpress/schedule.py`:
 
 1. **`gamexpress/news_timestamps.py` (`NEWS_TIMESTAMPS=1`, default `0`):** single-pass render-only
-   conversion of exact date-time expressions inside normalized official-news prose. Bare `UTC` / `GMT`
-   resolve to `+00:00`, explicit source offsets (`UTC+8`, `UTC-4`, etc.) always win, and `(server time)`
-   / `server time` uses the approved `UTC+8` fallback only inside rendered news bodies; yearless dates
-   infer their year from `item.published_ts` across Dec/Jan rollovers; malformed/ambiguous timezone
-   suffixes, invalid/inverted/half-qualified ranges, existing `<t:…>`, URLs, code spans/blocks,
-   date-only phrases, `"After the Version X.Y update"`, approximate durations and TZ-less times
-   stay completely untouched. When disabled (`NEWS_TIMESTAMPS=0`), the scanner is bypassed completely.
+   conversion of exact date-time expressions inside normalized official-news prose (`YYYY/MM/DD`,
+   `YYYY-MM-DD`, month-name dates, and `MM/DD[/YYYY]` forms such as HoYoLAB special-program notices'
+   `10/23/2026 at 08:00 AM (UTC-4)`). Bare `UTC` / `GMT` resolve to `+00:00`, explicit source
+   offsets (`UTC+8`, `UTC-4`, etc.) always win, and `(server time)` / `server time` uses the approved
+   `UTC+8` fallback only inside rendered news bodies; yearless dates infer their year from
+   `item.published_ts` across Dec/Jan rollovers; malformed/ambiguous timezone suffixes,
+   invalid/inverted/half-qualified ranges, existing `<t:…>`, URLs, code spans/blocks, date-only
+   phrases, `"After the Version X.Y update"`, approximate durations and TZ-less times stay completely
+   untouched. When disabled (`NEWS_TIMESTAMPS=0`), the scanner is bypassed completely.
 2. **`gamexpress/maintenance.py` (`MAINTENANCE_ENABLED=1` + `MAINTENANCE_GAMES`, default off):**
    resolves `Pre-Load Started` and `Maintenance Started` timestamps with strict precedence
    **official notice/tweet (`40 <= rank < 100`) > explicit `config/overrides.json` > persisted

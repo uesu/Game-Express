@@ -296,12 +296,21 @@ held for operator review, not silently reposted. The existing workflow already
 imports repository variables/secrets via its JSON blobs: no workflow edit,
 scheduler change, new token, dependency or state file is required.
 
-Version-maintenance/preinstall and special-program announcement titles stay in
-the existing schedule pipeline and are excluded from news. General news is sent
-only to the dedicated channels. Codes and configured schedule/code mirrors keep
-their existing routing and behavior; the news adapter does not extract codes or
-add a second mirror. News cards are silent, with Read Post, Citlali News and Donate.
-ANANTA remains an inactive source slot (no verified adapter); Wangyue is excluded.
+Official news delivery is strictly independent of schedule extraction, schedule
+mirrors (`DISCORD_WEBHOOK_SCHEDULE_MIRROR_<GAME>`), redemption codes, and started
+announcements (`MAINTENANCE_ENABLED`): Special Program / broadcast previews and
+preload / maintenance notices remain eligible for full official-article delivery on
+`DISCORD_WEBHOOK_NEWS_<GAME>` even when also consumed by schedule or when a user
+intentionally points a schedule mirror at the same channel. Previously persisted
+legacy records marked `{"status": "posted", "excluded": "schedule"}` stay completed
+in place so rollout never triggers a historical repost flood without explicit
+authorization, and `prune_news` advances `floor` before evicting aged records.
+Removing the retired per-run article-count cap (`NEWS_MAX_POSTS_PER_RUN`) applies
+only to how many eligible articles a run processes — when `NEWS_EXPAND_FULL` is
+absent or `0`, the per-article **7,000-character / maximum-two-page policy and
+labelled-excerpt fallback** remain completely intact. News cards are silent, with
+Read Post, Citlali News and Donate. ANANTA remains an inactive source slot (no
+verified adapter); Wangyue is excluded.
 
 News defaults to article-order layout; optional measured grouping is described
 below. Follow the full-content paging/excerpt rules below: limits are shared by

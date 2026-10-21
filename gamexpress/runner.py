@@ -21,7 +21,7 @@ from .sources import bannerfeed, countdown, hoyolab, kuro, launcher, newspage
 from .sources.codes import CodeSources
 from .sources.twitter import XClient
 from .state import State
-from .textutil import find_version, version_key
+from .textutil import version_key
 
 log = logging.getLogger("gamexpress")
 
@@ -458,20 +458,12 @@ async def run_news(ctx: Ctx) -> None:
                 item = await source.news_article(ctx.fetcher, game, row)
                 if item is None:
                     raise ValueError("full article unavailable/mismatched")
-                # Existing version/program notices remain schedule-only; do not duplicate them
-                # into news. Codes and schedule mirrors still use their original pipelines.
-                is_program = (any(re.search(pattern, item.title, re.I) for pattern in game.program_patterns)
-                              and not schedule.PROGRAM_EXCLUDE.search(item.title)
-                              and not schedule.NOT_PROGRAM_TITLE.search(item.title))
-                # A third-party payment/service maintenance notice is ordinary news,
-                # not game-version maintenance. Do not exclude every "Maintenance Notice".
-                is_version_notice = (schedule.MAINT_RE.search(item.title)
-                                     and (find_version(item.title) or schedule.PRE_WORDS.search(item.title)))
-                if is_version_notice or is_program:
-                    records[row["id"]] = {"status": "posted", "ts": row["ts"], "messages": [],
-                                          "excluded": "schedule"}
-                    ctx.report.append(f"ℹ️ {game.short} news {item.id}: schedule-only announcement")
-                    continue
+                # Official news delivery is strictly independent of schedule, schedule mirrors,
+                # codes, and preload/maintenance started alerts (Monitor #456 / GI 47151000).
+                # Schedule classification or mirror routing never suppresses an eligible official
+                # article. Previously persisted legacy entries carrying {"status": "posted",
+                # "excluded": "schedule"} stay marked "posted" above so historical articles are
+                # never mass-reposted on rollout without separate operator authorization.
                 payloads = news_payloads(
                     game,
                     item,
@@ -546,5 +538,5 @@ async def run_news(ctx: Ctx) -> None:
             except (TypeError, ValueError, KeyError, AttributeError) as exc:
                 failures += 1
                 ctx.warnings.append(f"{game.short} news {row['id']}: {type(exc).__name__}: {exc}")
-        ctx.report.append(f"📰 {game.short} news: discovered={len(rows)}, attempted={attempted}, "
-                          f"delivered={delivered}, deferred/error={failures}")
+        ctx.report.append(f"📰 {game.short} news: discovered={len(rows)}, eligible={len(eligible)}, "
+                          f"attempted={attempted}, delivered={delivered}, deferred/error={failures}")

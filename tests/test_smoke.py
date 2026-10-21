@@ -6534,7 +6534,7 @@ def test_news_full_fetch_failure_does_not_mark_or_block_later_candidate():
         assert len(ctx.webhook.sent) == 1 and any("bad" in line for line in ctx.warnings)
 
 
-def test_news_schedule_announcements_are_excluded_from_news_without_moving_codes():
+def test_news_schedule_announcements_deliver_independently_without_touching_schedule_or_codes():
     from unittest.mock import patch
 
     from gamexpress.runner import run_news
@@ -6547,8 +6547,12 @@ def test_news_schedule_announcements_are_excluded_from_news_without_moving_codes
             row = {"id": str(i), "ts": ctx.now - 10}
             with patch.object(hoyolab, "discover_news", return_value=[row]), patch.object(hoyolab, "news_article", return_value=news_item(str(i), title=title)):
                 asyncio.run(run_news(ctx))
-        assert not ctx.webhook.sent
-        assert all(rec["excluded"] == "schedule" for rec in ctx.state.news_record("genshin")["records"].values())
+        assert len(ctx.webhook.sent) == 2
+        assert all(
+            rec["status"] == "posted" and rec["messages"] and "excluded" not in rec
+            for rec in ctx.state.news_record("genshin")["records"].values()
+        )
+        assert not any("schedule-only" in line for line in ctx.report)
         assert ctx.state.data["schedule"] == {} and ctx.state.data["codes"] == {}
 
 
@@ -8788,7 +8792,11 @@ def test_reproducible_offline_benchmark_command_and_bypass_invariants():
     assert data["request_counts"]["short_default_off"]["webhook_posts"] == 1
     assert data["request_counts"]["long_expand_off"]["webhook_posts"] == 1
     assert data["request_counts"]["long_expand_on"]["webhook_posts"] == data["expanded_long_messages"]
-    assert len(data["benchmarks"]) == 10
+    assert data["default_short_messages"] == 1
+    assert data["default_medium_messages"] == 2
+    assert data["timestamp_converter_calls_when_off"] == 0
+    assert data["request_counts"]["basis"] == "derived_from_rendered_payloads_not_live_http"
+    assert len(data["benchmarks"]) == 12
     assert all(b["median_us"] >= 0 and b["iterations"] == 20 for b in data["benchmarks"])
 
 
@@ -9815,6 +9823,571 @@ def test_followup_3_complete_expanded_news_disabled_parity_strips_and_failure_ma
                 restarted_ctx.webhook = ScriptedWebhook([], [])
                 asyncio.run(runner.run_news(restarted_ctx))
                 assert restarted_ctx.webhook.sends == []
+
+
+def test_followup_4_default_off_preservation_7000_policy_and_production_baselines():
+    """Verify default-off preservation, intact 7,000-char / max-2-page policy, independent
+    NEWS_GROUP_LONG_STRIPS behavior, real captured HoYoLAB fixtures, and production baseline
+    structural invariants (#432 / #436 / #444) without claiming live network execution."""
+    import copy
+    import io
+    from contextlib import redirect_stdout
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import __main__ as cli_mod
+    from gamexpress import media as media_mod
+    from gamexpress import news_timestamps, runner
+    from gamexpress.sources import hoyolab as hoyolab_mod
+
+    # 1. Both switches default to False when absent and when explicitly false.
+    s_absent = settings()
+    s_false = settings(NEWS_TIMESTAMPS="0", NEWS_EXPAND_FULL="0")
+    assert s_absent.news_timestamps is False and s_absent.news_expand_full is False
+    assert s_false.news_timestamps is False and s_false.news_expand_full is False
+    assert not hasattr(settings(NEWS_MAX_POSTS_PER_RUN="5"), "news_max_posts")
+
+    # 2. Real captured HoYoLAB fixtures in tests/fixtures/: raw dict & Item immutability,
+    # complete timestamp-parser bypass, and byte-identical absent vs False outputs.
+    real_fixtures = (
+        ("hoyolab_genshin_46604275_full.json", "genshin"),
+        ("hoyolab_starrail_46814308_full.json", "starrail"),
+        ("hoyolab_zzz_46604530_full.json", "zzz"),
+        ("hoyolab_zzz_46863847_full.json", "zzz"),
+    )
+    spy_calls = 0
+    real_convert = news_timestamps.convert_news_timestamps
+
+    def _spy(*args, **kwargs):
+        nonlocal spy_calls
+        spy_calls += 1
+        return real_convert(*args, **kwargs)
+
+    with patch.object(news_timestamps, "convert_news_timestamps", side_effect=_spy):
+        for fname, gkey in real_fixtures:
+            raw = fx(fname)
+            raw_snap = copy.deepcopy(raw)
+            post = raw["data"]["post"]["post"]
+            row = {"id": post["post_id"], "ts": post["created_at"]}
+            item = asyncio.run(hoyolab_mod.news_article(NewsFetcher([raw]), GAMES[gkey], row))
+            item_snap = copy.deepcopy(item)
+            out_absent = cards.news_payloads(GAMES[gkey], item)
+            out_false = cards.news_payloads(GAMES[gkey], item, timestamps=False, expand_full=False)
+            assert out_absent == out_false
+            assert raw == raw_snap and item == item_snap
+            assert f"<t:{post['created_at']}:f>" in json.dumps(out_absent, ensure_ascii=False)
+        # 3. Verify all 3 regimes of the default-off 7,000-char / max-2-page policy across all 5 games:
+        #    (a) 1-message fit -> 1 msg
+        #    (b) >1 msg & <= 7,000 chars -> 2 msgs (Page 1 + Page 2)
+        #    (c) > 7,000 chars -> 1-message labelled excerpt fallback
+        for gkey in ("genshin", "starrail", "hna", "zzz", "wuwa"):
+            fit1 = Item(
+                "hoyolab", gkey, "3101", "https://www.hoyolab.com/article/3101",
+                "Short official notice", "", 1792549120,
+                article_blocks=[
+                    {"kind": "text", "text": "Opens on October 25, 2026 and October 28, 2026 at 12:00 (UTC+8)."},
+                    {"kind": "image", "url": "https://upload-os-bbs.hoyolab.com/upload/short.jpg"},
+                ],
+                author="Official",
+            )
+            fit2 = Item(
+                "hoyolab", gkey, "3102", "https://www.hoyolab.com/article/3102",
+                "Moderate two-page official notice", "", 1792549120,
+                article_blocks=[
+                    {"kind": "text", "text": ("Event section alpha opens 2026/10/25 12:00 (UTC+8).\n\n" * 42)},
+                    {"kind": "image", "url": "https://upload-os-bbs.hoyolab.com/upload/mid.jpg"},
+                    {"kind": "text", "text": ("Event section beta closes 2026/11/05 03:59 (UTC+8).\n\n" * 42)},
+                ],
+                author="Official",
+            )
+            over7k = Item(
+                "hoyolab", gkey, "3103", "https://www.hoyolab.com/article/3103",
+                "Long official patch notes", "", 1792549120,
+                article_blocks=[
+                    {"kind": "text", "text": ("Detailed patch adjustment entry on October 25, 2026.\n\n" * 200)},
+                    {"kind": "image", "url": "https://upload-os-bbs.hoyolab.com/upload/inline1.jpg"},
+                ],
+                images=["https://upload-os-bbs.hoyolab.com/upload/cover.jpg"],
+                author="Official",
+            )
+            p1_abs = cards.news_payloads(GAMES[gkey], fit1)
+            p1_fls = cards.news_payloads(GAMES[gkey], fit1, timestamps=False, expand_full=False)
+            p2_abs = cards.news_payloads(GAMES[gkey], fit2)
+            p2_fls = cards.news_payloads(GAMES[gkey], fit2, timestamps=False, expand_full=False)
+            p3_abs = cards.news_payloads(GAMES[gkey], over7k)
+            p3_fls = cards.news_payloads(GAMES[gkey], over7k, timestamps=False, expand_full=False)
+            assert p1_abs == p1_fls and len(p1_abs) == 1
+            # Date-only phrases AND TZ phrases stay literal when NEWS_TIMESTAMPS is absent/off:
+            assert "October 25, 2026 and October 28, 2026 at 12:00 (UTC+8)" in json.dumps(p1_abs)
+            # 7,000-character / maximum-two-page policy intact:
+            assert p2_abs == p2_fls and len(p2_abs) == 2
+            assert "-# Page 1" in json.dumps(p2_abs[0]) and "-# Page 2" in json.dumps(p2_abs[1])
+            assert any(c["type"] == 1 for c in p2_abs[1]["components"][-1]["components"])
+            assert not any(c["type"] == 1 for c in p2_abs[0]["components"][-1]["components"])
+            # Over-7,000 labelled excerpt fallback intact:
+            assert p3_abs == p3_fls and len(p3_abs) == 1
+            dumped_ex = json.dumps(p3_abs[0], ensure_ascii=False)
+            assert "**Excerpt — this article exceeds Discord's single-message limits.**" in dumped_ex
+            assert dumped_ex.count("https://upload-os-bbs.hoyolab.com/upload/cover.jpg") == 1
+            assert "inline1.jpg" not in dumped_ex
+    assert spy_calls == 0
+
+    # 4. Production regression baseline shapes (#432 ZZZ 47150244, #436 ZZZ 47150315 4-issue short
+    # card, #444 ZZZ 47150540 tall image in 1 msg/1 container + preserved dedup state):
+    zzz_436 = Item(
+        "hoyolab", "zzz", "47150315", "https://www.hoyolab.com/article/47150315",
+        "Known Issues & Optimization Summary", "", 1792549120,
+        article_blocks=[
+            {"kind": "text", "text": (
+                "Dear Proxies,\nHere are the current known issues as of October 21, 2026:\n"
+                "1. Fixed an issue where Agent animations could clip during Chain Attacks.\n"
+                "2. Fixed an issue with Signal Search details text alignment.\n"
+                "3. Fixed an audio playback issue in Hollow Zero stages.\n"
+                "4. Adjusted controller navigation focus in the Event menu."
+            )},
+        ],
+        images=["https://upload-os-bbs.hoyolab.com/upload/2026/10/21/zzz_47150315_cover.jpg"],
+        author="Zenless Zone Zero",
+    )
+    tall_url = "https://upload-os-bbs.hoyolab.com/upload/2026/10/21/zzz_47150540_tall.jpg?x-oss-process=image/quality,q_90"
+    zzz_444 = Item(
+        "hoyolab", "zzz", "47150540", "https://www.hoyolab.com/article/47150540",
+        "Agent Mechanics Overview", "", 1792551604,
+        article_blocks=[
+            {"kind": "text", "text": "Dear Proxies,\nCheck out the full mechanics overview starting October 22, 2026!"},
+            {"kind": "image", "url": tall_url},
+        ],
+        images=["https://upload-os-bbs.hoyolab.com/upload/2026/10/21/zzz_47150540_cover.jpg"],
+        author="Zenless Zone Zero",
+    )
+    out_436 = cards.news_payloads(GAMES["zzz"], zzz_436)
+    out_444 = cards.news_payloads(GAMES["zzz"], zzz_444)
+    assert len(out_436) == 1 and len(out_436[0]["components"]) == 1
+    assert len(out_444) == 1 and len(out_444[0]["components"]) == 1
+    # Single tall image keeps exact source URL without cropping, splitting, stitching, or removal:
+    tall_grouped = asyncio.run(
+        media_mod.group_news_media(
+            SimpleNamespace(media_dimensions=AsyncMock(return_value=(1080, 4200))),
+            out_444,
+            enabled=True,
+        )
+    )
+    gals_444 = [c for c in tall_grouped[0]["components"][0]["components"] if c["type"] == 12]
+    assert [it["media"]["url"] for g in gals_444 for it in g["items"]] == [
+        "https://upload-os-bbs.hoyolab.com/upload/2026/10/21/zzz_47150540_cover.jpg",
+        tall_url,
+    ]
+    assert out_444[0]["components"][0]["components"][-1]["type"] == 1
+    assert len(out_444[0]["components"][0]["components"][-1]["components"]) == 3
+
+    # End-to-end `run_news` request count comparison: absent switches vs explicit `0` make
+    # identical discovery + article + media preflight + webhook POST counts (0 feature HTTP calls):
+    counts_by_mode = {}
+    for mode_label, extra_env in (("absent", {}), ("explicit_false", {"NEWS_TIMESTAMPS": "0", "NEWS_EXPAND_FULL": "0"})):
+        with tempfile.TemporaryDirectory() as td:
+            ctx_m = make_ctx(
+                Path(td) / "state.json", now=1792552000,
+                NEWS_ENABLED="1", NEWS_GAMES="zzz", DISCORD_WEBHOOK_NEWS_ZZZ=HOOK,
+                **extra_env,
+            )
+            ctx_m.state.news_record("zzz").update(floor=1792550000, records={})
+            disc_mock = AsyncMock(return_value=[{"id": "47150540", "ts": 1792551604}])
+            art_mock = AsyncMock(return_value=zzz_444)
+            media_mock = AsyncMock(return_value=True)
+            with (
+                patch.object(hoyolab_mod, "discover_news", new=disc_mock),
+                patch.object(hoyolab_mod, "news_article", new=art_mock),
+                patch.object(media_mod, "news_media_available", new=media_mock),
+            ):
+                asyncio.run(runner.run_news(ctx_m))
+            counts_by_mode[mode_label] = (
+                disc_mock.call_count, art_mock.call_count, media_mock.call_count, len(ctx_m.webhook.sent),
+            )
+    assert counts_by_mode["absent"] == counts_by_mode["explicit_false"] == (1, 1, 1, 1)
+
+    # Verify benchmark CLI JSON provenance fields directly:
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = cli_mod.cmd_benchmark(SimpleNamespace(iterations=25, json=True))
+    assert rc == 0
+    bench = json.loads(buf.getvalue())
+    assert bench["disabled_output_equal"] is True
+    assert bench["timestamp_converter_calls_when_off"] == 0
+    assert bench["default_short_messages"] == 1
+    assert bench["default_medium_messages"] == 2
+    assert bench["default_long_messages"] == 1
+    assert bench["expanded_long_messages"] == 4
+    assert bench["request_counts"]["basis"] == "derived_from_rendered_payloads_not_live_http"
+    assert len(bench["benchmarks"]) == 12
+
+
+def test_followup_5_independent_official_news_delivery_shared_mirror_and_historical_safety():
+    """Verify independent delivery across schedule, schedule mirrors (including shared channel),
+    codes, official news, and started announcements — covering Monitor #456 / GI 47151000
+    (scoped from the captured HoYoLAB Special Program HTML layout + #456 metadata), real
+    HSR 46814308 preload/maintenance notice, asymmetric retries, restarts, and historical
+    rollout safety against legacy `excluded == 'schedule'` state records."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import maintenance as maint_mod
+    from gamexpress import media as media_mod
+    from gamexpress import runner, schedule
+    from gamexpress.discord import SendResult
+    from gamexpress.sources import hoyolab as hoyolab_mod
+
+    SCHED_HOOK = "https://discord.com/api/webhooks/111/sched"
+    SHARED_GI_NEWS_HOOK = "https://discord.com/api/webhooks/222/gi-news-shared"
+    MAINT_HOOK = "https://discord.com/api/webhooks/333/maint"
+
+    # Scoped HoYoLAB Special Program fixture built directly from the captured HTML schema in
+    # `hoyolab_genshin_46604275_full.json` with Monitor #456's verified GI 7.2 metadata
+    # (post_id=47151000, ts=1792555204, 10/23/2026 at 08:00 AM UTC-4 == 1792756800 == 20:00 UTC+8).
+    gi_47151000_raw = {
+        "retcode": 0,
+        "data": {
+            "post": {
+                "post": {
+                    "game_id": 2,
+                    "post_id": "47151000",
+                    "subject": "Genshin Impact Version 7.2 Special Program Preview",
+                    "content": (
+                        '<p class="ql-align-center"><br></p>'
+                        '<div class="ql-image"><img src="https://upload-os-bbs.hoyolab.com/upload/2026/10/21/gi_7_2_sp_keyart.jpg"></div>'
+                        '<p class="ql-align-center"><strong>Dear Traveler, it\'s announcement time!</strong></p>'
+                        '<p class="ql-align-center"><strong>The special program for Genshin Impact\'s new version will premiere on the official Twitch and YouTube channels on 10/23/2026 at 08:00 AM (UTC-4)!</strong></p>'
+                        '<p class="ql-align-center"><strong>This special program will feature juicy details about new game content and developments in Version 7.2. It will also "drop" some redemption codes and other goodies!</strong></p>'
+                        '<p class="ql-align-center"><br></p>'
+                        '<p class="ql-align-center"><strong>Make sure to follow us, Traveler. We\'ll see you there!</strong></p>'
+                        '<p class="ql-align-center"><a class="blot-link" href="https://www.twitch.tv/genshinimpactofficial"><strong>Twitch</strong></a></p>'
+                        '<p class="ql-align-center"><a class="blot-link" href="https://www.youtube.com/@GenshinImpact"><strong>YouTube</strong></a></p>'
+                    ),
+                    "created_at": 1792555204,
+                    "structured_content": "",
+                },
+                "image_list": [],
+                "cover_list": [],
+            }
+        },
+    }
+    row_47151000 = {"id": "47151000", "ts": 1792555204}
+    item_47151000 = asyncio.run(
+        hoyolab_mod.news_article(NewsFetcher([gi_47151000_raw]), GAMES["genshin"], row_47151000)
+    )
+    assert item_47151000 is not None
+    # Verify rendered news payload retains full article content, links, artwork & 3 buttons:
+    rendered_off = cards.news_payloads(GAMES["genshin"], item_47151000)
+    rendered_on = cards.news_payloads(GAMES["genshin"], item_47151000, timestamps=True, expand_full=False)
+    dumped_off = json.dumps(rendered_off, ensure_ascii=False)
+    dumped_on = json.dumps(rendered_on, ensure_ascii=False)
+    assert "Dear Traveler, it's announcement time!" in dumped_off
+    assert "10/23/2026 at 08:00 AM (UTC-4)" in dumped_off
+    assert "<t:1792756800:f>" in dumped_on  # Oct 23, 2026 08:00 UTC-4 == Oct 23, 2026 20:00 UTC+8
+    assert "Make sure to follow us, Traveler. We'll see you there!" in dumped_off
+    assert "https://upload-os-bbs.hoyolab.com/upload/2026/10/21/gi_7_2_sp_keyart.jpg" in dumped_off
+    assert "[**Twitch**](https://www.twitch.tv/genshinimpactofficial)" in dumped_off or "https://www.twitch.tv/genshinimpactofficial" in dumped_off
+    assert "https://www.youtube.com/@GenshinImpact" in dumped_off
+    assert len(rendered_off[0]["components"][-1]["components"][-1]["components"]) == 3
+    # Also verify schedule extraction from the exact same announcement:
+    sched_item = Item(
+        "x", "genshin", "2112755760107081755",
+        "https://x.com/GenshinImpact/status/2112755760107081755",
+        item_47151000.title,
+        "Dear Traveler! The special program for Version 7.2 premieres on 10/23/2026 at 08:00 AM (UTC-4)!",
+        1792555200,
+        images=["https://pbs.twimg.com/media/HVHuNNXXQAAlYwT.jpg?name=orig"],
+    )
+    prog_fields = schedule.extract_program(GAMES["genshin"], sched_item)
+    assert prog_fields["program_ts"] == 1792756800
+
+    class MultiRouteWebhook:
+        def __init__(self, fail_urls=()):
+            self.fail_urls = set(fail_urls)
+            self.calls = []
+            self._seq = 0
+
+        async def send(self, url, payload, **kwargs):
+            self._seq += 1
+            self.calls.append(("POST", url, payload))
+            if url in self.fail_urls:
+                return SendResult(False, 500, None)
+            return SendResult(True, 200, f"msg-{self._seq}")
+
+        async def edit(self, url, msg_id, payload, **kwargs):
+            self.calls.append(("PATCH", url, msg_id, payload))
+            return SendResult(True, 200, msg_id)
+
+    # (A) News enabled while schedule disabled: 47151000 delivers via news alone.
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "state.json"
+        ctx = make_ctx(
+            p, now=1792555240,
+            ENABLED_FEATURES="news", NEWS_ENABLED="1", NEWS_GAMES="genshin",
+            DISCORD_WEBHOOK_NEWS_GENSHIN=SHARED_GI_NEWS_HOOK,
+        )
+        ctx.state.news_record("genshin").update(floor=1792550000, records={})
+        wh = MultiRouteWebhook()
+        ctx.webhook = wh
+        with (
+            patch.object(hoyolab_mod, "discover_news", new=AsyncMock(return_value=[row_47151000])),
+            patch.object(hoyolab_mod, "news_article", new=AsyncMock(return_value=item_47151000)),
+            patch.object(media_mod, "news_media_available", new=AsyncMock(return_value=True)),
+        ):
+            asyncio.run(runner.run_news(ctx))
+        assert [c[1] for c in wh.calls] == [SHARED_GI_NEWS_HOOK]
+        assert ctx.state.news_record("genshin")["records"]["47151000"]["status"] == "posted"
+        assert "excluded" not in ctx.state.news_record("genshin")["records"]["47151000"]
+
+    # (B) Schedule enabled while news disabled: schedule + mirror post; news state untouched.
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "state.json"
+        ctx = make_ctx(
+            p, now=1792555240,
+            ENABLED_FEATURES="schedule", GAMES="genshin",
+            DISCORD_WEBHOOK_SCHEDULE_GENSHIN=SCHED_HOOK,
+            DISCORD_WEBHOOK_SCHEDULE_MIRROR_GI=SHARED_GI_NEWS_HOOK,
+        )
+        ctx.state.mark_bootstrapped("schedule", "genshin")
+        ctx.items = {"genshin": [sched_item]}
+        wh = MultiRouteWebhook()
+        ctx.webhook = wh
+        asyncio.run(schedule.run(ctx))
+        assert [c[1] for c in wh.calls] == [SCHED_HOOK, SHARED_GI_NEWS_HOOK]
+        assert "news" not in ctx.state.data
+
+    # (C) BOTH enabled WITH intentional shared destination (`DISCORD_WEBHOOK_SCHEDULE_MIRROR_GI == DISCORD_WEBHOOK_NEWS_GENSHIN`),
+    # asymmetric retry isolation, and rerun/restart deduplication:
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "state.json"
+        ctx = make_ctx(
+            p, now=1792555240,
+            ENABLED_FEATURES="schedule,news", GAMES="genshin",
+            NEWS_ENABLED="1", NEWS_GAMES="genshin",
+            DISCORD_WEBHOOK_SCHEDULE_GENSHIN=SCHED_HOOK,
+            DISCORD_WEBHOOK_SCHEDULE_MIRROR_GI=SHARED_GI_NEWS_HOOK,
+            DISCORD_WEBHOOK_NEWS_GENSHIN=SHARED_GI_NEWS_HOOK,
+        )
+        ctx.state.mark_bootstrapped("schedule", "genshin")
+        ctx.state.news_record("genshin").update(floor=1792550000, records={})
+        ctx.items = {"genshin": [sched_item]}
+        wh = MultiRouteWebhook()
+        ctx.webhook = wh
+        with (
+            patch.object(hoyolab_mod, "discover_news", new=AsyncMock(return_value=[row_47151000])),
+            patch.object(hoyolab_mod, "news_article", new=AsyncMock(return_value=item_47151000)),
+            patch.object(media_mod, "news_media_available", new=AsyncMock(return_value=True)),
+        ):
+            asyncio.run(schedule.run(ctx))
+            asyncio.run(runner.run_news(ctx))
+        # Schedule posts to SCHED_HOOK + mirror to SHARED_GI_NEWS_HOOK, AND official news ALSO posts to SHARED_GI_NEWS_HOOK!
+        assert [c[1] for c in wh.calls] == [SCHED_HOOK, SHARED_GI_NEWS_HOOK, SHARED_GI_NEWS_HOOK]
+        # Stage-accurate reporting: mirror reported separately, news reports eligible=1, delivered=1:
+        assert any("DISCORD_WEBHOOK_SCHEDULE_MIRROR_GI" in line for line in ctx.report)
+        assert any("GI news: discovered=1, eligible=1, attempted=1, delivered=1, deferred/error=0" in line for line in ctx.report)
+        assert not any("schedule-only" in line for line in ctx.report)
+        ctx.state.save()
+
+        # Reload from disk and rerun: 0 duplicate posts on both schedule/mirror and news!
+        ctx2 = make_ctx(
+            p, now=1792555540,
+            ENABLED_FEATURES="schedule,news", GAMES="genshin",
+            NEWS_ENABLED="1", NEWS_GAMES="genshin",
+            DISCORD_WEBHOOK_SCHEDULE_GENSHIN=SCHED_HOOK,
+            DISCORD_WEBHOOK_SCHEDULE_MIRROR_GI=SHARED_GI_NEWS_HOOK,
+            DISCORD_WEBHOOK_NEWS_GENSHIN=SHARED_GI_NEWS_HOOK,
+        )
+        ctx2.state = State.load(p)
+        ctx2.items = {"genshin": [sched_item]}
+        wh2 = MultiRouteWebhook()
+        ctx2.webhook = wh2
+        with (
+            patch.object(hoyolab_mod, "discover_news", new=AsyncMock(return_value=[row_47151000])),
+            patch.object(hoyolab_mod, "news_article", new=AsyncMock(return_value=item_47151000)),
+            patch.object(media_mod, "news_media_available", new=AsyncMock(return_value=True)),
+        ):
+            asyncio.run(schedule.run(ctx2))
+            asyncio.run(runner.run_news(ctx2))
+        assert wh2.calls == []
+
+    # (D) Asymmetric failures: (1) schedule succeeds + news fails -> retry sends only news;
+    #     (2) schedule fails + news succeeds -> retry sends only schedule.
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "state.json"
+        NEWS_ONLY_HOOK = "https://discord.com/api/webhooks/444/gi-news-dedicated"
+        ctx = make_ctx(
+            p, now=1792555240,
+            ENABLED_FEATURES="schedule,news", GAMES="genshin",
+            NEWS_ENABLED="1", NEWS_GAMES="genshin",
+            DISCORD_WEBHOOK_SCHEDULE_GENSHIN=SCHED_HOOK,
+            DISCORD_WEBHOOK_NEWS_GENSHIN=NEWS_ONLY_HOOK,
+        )
+        ctx.state.mark_bootstrapped("schedule", "genshin")
+        ctx.state.news_record("genshin").update(floor=1792550000, records={})
+        ctx.items = {"genshin": [sched_item]}
+        wh_fail_news = MultiRouteWebhook(fail_urls={NEWS_ONLY_HOOK})
+        ctx.webhook = wh_fail_news
+        with (
+            patch.object(hoyolab_mod, "discover_news", new=AsyncMock(return_value=[row_47151000])),
+            patch.object(hoyolab_mod, "news_article", new=AsyncMock(return_value=item_47151000)),
+            patch.object(media_mod, "news_media_available", new=AsyncMock(return_value=True)),
+        ):
+            asyncio.run(schedule.run(ctx))
+            asyncio.run(runner.run_news(ctx))
+            assert ctx.state.schedule_record("genshin", "7.2")["status"] == "posted"
+            assert "47151000" not in ctx.state.news_record("genshin")["records"]
+            wh_recover = MultiRouteWebhook()
+            ctx.webhook = wh_recover
+            asyncio.run(schedule.run(ctx))
+            asyncio.run(runner.run_news(ctx))
+            assert [c[1] for c in wh_recover.calls] == [NEWS_ONLY_HOOK]
+
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "state.json"
+        NEWS_ONLY_HOOK = "https://discord.com/api/webhooks/444/gi-news-dedicated"
+        ctx = make_ctx(
+            p, now=1792555240,
+            ENABLED_FEATURES="schedule,news", GAMES="genshin",
+            NEWS_ENABLED="1", NEWS_GAMES="genshin",
+            DISCORD_WEBHOOK_SCHEDULE_GENSHIN=SCHED_HOOK,
+            DISCORD_WEBHOOK_NEWS_GENSHIN=NEWS_ONLY_HOOK,
+        )
+        ctx.state.mark_bootstrapped("schedule", "genshin")
+        ctx.state.news_record("genshin").update(floor=1792550000, records={})
+        ctx.items = {"genshin": [sched_item]}
+        wh_fail_sched = MultiRouteWebhook(fail_urls={SCHED_HOOK})
+        ctx.webhook = wh_fail_sched
+        with (
+            patch.object(hoyolab_mod, "discover_news", new=AsyncMock(return_value=[row_47151000])),
+            patch.object(hoyolab_mod, "news_article", new=AsyncMock(return_value=item_47151000)),
+            patch.object(media_mod, "news_media_available", new=AsyncMock(return_value=True)),
+        ):
+            asyncio.run(schedule.run(ctx))
+            asyncio.run(runner.run_news(ctx))
+            assert ctx.state.news_record("genshin")["records"]["47151000"]["status"] == "posted"
+            wh_recover2 = MultiRouteWebhook()
+            ctx.webhook = wh_recover2
+            asyncio.run(schedule.run(ctx))
+            asyncio.run(runner.run_news(ctx))
+            assert [c[1] for c in wh_recover2.calls] == [SCHED_HOOK]
+
+    # (E) Real HSR 46814308 preload/maintenance notice consumed simultaneously by `maintenance` + `news`:
+    hsr_raw = fx("hoyolab_starrail_46814308_full.json")
+    hsr_post = hsr_raw["data"]["post"]["post"]
+    hsr_row = {"id": hsr_post["post_id"], "ts": hsr_post["created_at"]}
+    hsr_item = asyncio.run(hoyolab_mod.news_article(NewsFetcher([hsr_raw]), GAMES["starrail"], hsr_row))
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "state.json"
+        HSR_NEWS_HOOK = "https://discord.com/api/webhooks/555/hsr-news"
+        ctx = make_ctx(
+            p, now=1790380900,
+            ENABLED_FEATURES="maintenance,news", GAMES="starrail",
+            MAINTENANCE_ENABLED="1", MAINTENANCE_GAMES="starrail",
+            NEWS_ENABLED="1", NEWS_GAMES="starrail",
+            DISCORD_WEBHOOK_MAINTENANCE_STARRAIL=MAINT_HOOK,
+            DISCORD_WEBHOOK_NEWS_STARRAIL=HSR_NEWS_HOOK,
+        )
+        from gamexpress.sources import launcher as launcher_mod
+
+        ctx.state.schedule_records("starrail")["4.6"] = {
+            "status": "posted",
+            "data": {
+                "version": "4.6",
+                "preinstall_ts": hsr_row["ts"] + 30,
+                "maint_start_ts": hsr_row["ts"] + 18030,
+                "maint_end_ts": hsr_row["ts"] + 36030,
+                "estimated": [],
+            },
+            "prov": {"preinstall_ts": [50, 1], "maint_start_ts": [50, 1]},
+        }
+        ctx.items["starrail"] = []
+        ctx.state.news_record("starrail").update(floor=1790200000, records={})
+        ctx.fetcher = SimpleNamespace(
+            get_json=AsyncMock(return_value={}),
+            get_text=AsyncMock(return_value=None),
+            verify_media=AsyncMock(return_value=True),
+            media_dimensions=AsyncMock(return_value=None),
+        )
+        with (
+            patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value={})),
+            patch.object(hoyolab_mod, "discover_news", new=AsyncMock(return_value=[hsr_row])),
+            patch.object(hoyolab_mod, "news_article", new=AsyncMock(return_value=hsr_item)),
+            patch.object(media_mod, "news_media_available", new=AsyncMock(return_value=True)),
+        ):
+            ctx.versions["starrail"] = {"live": "4.4.0", "pre": ""}
+            ctx.webhook = MultiRouteWebhook()
+            ctx.now = 1790056000
+            asyncio.run(maint_mod.run(ctx))  # silent baseline seed before 4.5 pre-load starts
+            ctx.versions["starrail"] = {"live": "4.4.0", "pre": "4.5.0"}
+            wh = MultiRouteWebhook()
+            ctx.webhook = wh
+            ctx.now = hsr_row["ts"] + 60
+            asyncio.run(maint_mod.run(ctx))  # real 46814308 notice + launcher fire 4.5 Pre-Load & Maintenance Started
+            asyncio.run(runner.run_news(ctx))  # AND 46814308 ALSO delivers as a full official news article!
+        assert [c[1] for c in wh.calls] == [MAINT_HOOK, MAINT_HOOK, HSR_NEWS_HOOK]
+        assert ctx.state.news_record("starrail")["records"]["46814308"]["status"] == "posted"
+
+    # (F) Historical rollout safety on exact live `5952b04` / `#444` state shape:
+    # Existing `47151000` (`excluded: "schedule"`) & ZZZ `47150244`/`47150315`/`47150540` NEVER repost,
+    # while future special-program / maintenance articles (`47152000`) deliver normally!
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "state.json"
+        ctx = make_ctx(
+            p, now=1792556000,
+            ENABLED_FEATURES="news", NEWS_ENABLED="1", NEWS_GAMES="genshin,zzz",
+            DISCORD_WEBHOOK_NEWS_GENSHIN=SHARED_GI_NEWS_HOOK,
+            DISCORD_WEBHOOK_NEWS_ZZZ="https://discord.com/api/webhooks/666/zzz-news",
+        )
+        ctx.state.news_record("genshin").update(
+            floor=1792468000,
+            records={
+                "47141479": {"messages": ["1561971101599404043"], "status": "posted", "ts": 1792468806},
+                "47151000": {"excluded": "schedule", "messages": [], "status": "posted", "ts": 1792555204},
+            },
+        )
+        ctx.state.news_record("zzz").update(
+            floor=1792500000,
+            records={
+                "47150244": {"messages": ["1562284486060671079"], "status": "posted", "ts": 1792548005},
+                "47150315": {"messages": ["1562289437352656917"], "status": "posted", "ts": 1792549120},
+                "47150540": {"messages": ["1562299578181746699"], "status": "posted", "ts": 1792551604},
+            },
+        )
+        row_future = {"id": "47152000", "ts": 1792555900}
+        art_future = news_item("47152000", ts=1792555900, title="Genshin Impact Version 7.2 Update and Maintenance Notice")
+        wh = MultiRouteWebhook()
+        ctx.webhook = wh
+        with (
+            patch.object(
+                hoyolab_mod, "discover_news",
+                new=AsyncMock(side_effect=lambda _f, g, _s: [row_47151000, row_future] if g.key == "genshin" else [{"id": "47150540", "ts": 1792551604}]),
+            ),
+            patch.object(hoyolab_mod, "news_article", new=AsyncMock(return_value=art_future)),
+            patch.object(media_mod, "news_media_available", new=AsyncMock(return_value=True)),
+        ):
+            asyncio.run(runner.run_news(ctx))
+        # ONLY `47152000` posts; `47151000` and all historical ZZZ articles are NEVER replayed!
+        assert len(wh.calls) == 1 and wh.calls[0][1] == SHARED_GI_NEWS_HOOK
+        assert ctx.state.news_record("genshin")["records"]["47151000"] == {
+            "excluded": "schedule", "messages": [], "status": "posted", "ts": 1792555204,
+        }
+        assert ctx.state.news_record("genshin")["records"]["47152000"]["status"] == "posted"
+        assert "excluded" not in ctx.state.news_record("genshin")["records"]["47152000"]
+        # After 31 days, `prune_news` advances `floor` >= 1792555204 so pruned entries never resurrect:
+        ctx.state.prune_news(1792556000 + 31 * 86400)
+        assert ctx.state.news_record("genshin")["floor"] >= 1792555900
+
+    # Also verify real live capture `hoyolab_genshin_46604275_full.json` (`09/12/2026 at 08:00 AM (UTC-4)` -> `<t:1789214400:f>`):
+    real_46604275_raw = fx("hoyolab_genshin_46604275_full.json")
+    real_46604275_post = real_46604275_raw["data"]["post"]["post"]
+    real_46604275_item = asyncio.run(
+        hoyolab_mod.news_article(
+            NewsFetcher([real_46604275_raw]),
+            GAMES["genshin"],
+            {"id": real_46604275_post["post_id"], "ts": real_46604275_post["created_at"]},
+        )
+    )
+    assert "09/12/2026 at 08:00 AM (UTC-4)" in json.dumps(cards.news_payloads(GAMES["genshin"], real_46604275_item))
+    assert "<t:1789214400:f>" in json.dumps(cards.news_payloads(GAMES["genshin"], real_46604275_item, timestamps=True))
 
 
 

@@ -336,8 +336,15 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
   the newest delta in existing files, with the existing smoke/CI gates.
 - `NEWS_ENABLED` defaults off; feature selection alone cannot enable news and
   global disable wins. Five dedicated destinations, no catch-all/force/mirror fallback.
-- Schedule/version-program announcements stay schedule-only; codes and existing
-  mirrors keep their routing. No Wangyue; ANANTA has no verified news adapter.
+- Official news, schedule, schedule mirrors, codes, and preload/maintenance started
+  alerts are strictly independent features: Special Program previews, broadcasts,
+  pre-installation notices, and version maintenance notices remain eligible for
+  official news delivery under normal news validation/deduplication rules even when
+  consumed by schedule, mirrored to `DISCORD_WEBHOOK_SCHEDULE_MIRROR_<GAME>`, or
+  used by `maintenance`. Existing legacy `state["news"]` records carrying
+  `{"status": "posted", "excluded": "schedule"}` stay completed in place so
+  historical articles are never mass-reposted on rollout without explicit operator
+  authorization. No Wangyue; ANANTA has no verified news adapter.
 - Never substitute a list preview for a failed full fetch. Use one message when
   full text/media fits; otherwise <=7,000 normalized chars may use at most two
   independently validated pages. Unpageable/longer articles use one labelled

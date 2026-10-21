@@ -93,7 +93,7 @@ _CANDIDATE_DT_RE = re.compile(
     r"(?P<ymd>\d{4}[./-]\d{1,2}[./-]\d{1,2})"
     rf"|(?P<mdy>{_MONTH_PAT}\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,?\s+\d{{4}})?)"
     rf"|(?P<dmy>\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH_PAT}(?:,?\s+\d{{4}})?)"
-    r"|(?P<md>(?<!\d)\d{1,2}/\d{1,2}(?![/\d]))"
+    r"|(?P<md>(?<!\d)\d{1,2}/\d{1,2}(?:/\d{4})?(?![/\d]))"
     r")"
     r"(?:\s*(?:,|\bat\b)\s*|\s+)"
     r"(?P<hh>\d{1,2}):(?P<mm>\d{2})(?::(?P<ss>\d{2}))?(?:\s*(?P<ampm>[AaPp]\.?[Mm]\.?))?"
@@ -116,7 +116,7 @@ _SAME_DATE_TAIL_RE = re.compile(
 # or `– After the Version 3.3 update` so the start half is never converted in isolation.
 _UNRESOLVED_RANGE_TAIL_RE = re.compile(
     r"\s*(?:[–—~]|-(?!\d)|\bto\b|\buntil\b)\s*"
-    r"(?:\d{4}[./-]\d{1,2}[./-]\d{1,2}\b|TBA\b|TBD\b|permanently\b|indefinitely\b|further\s+notice\b|after\s+the\b)",
+    r"(?:\d{4}[./-]\d{1,2}[./-]\d{1,2}\b|\d{1,2}/\d{1,2}/\d{4}\b|TBA\b|TBD\b|permanently\b|indefinitely\b|further\s+notice\b|after\s+the\b)",
     re.I,
 )
 
@@ -206,8 +206,8 @@ def _parse_date_parts(gd: dict[str, str | None]) -> tuple[int | None, int, int] 
         return (int(m.group(3)) if m.group(3) else None), month, int(m.group(1))
     md = gd.get("md")
     if md:
-        m_s, d_s = md.split("/")
-        return None, int(m_s), int(d_s)
+        parts = md.split("/")
+        return (int(parts[2]) if len(parts) == 3 else None), int(parts[0]), int(parts[1])
     return None
 
 

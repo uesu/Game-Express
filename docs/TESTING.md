@@ -321,10 +321,11 @@ is exceeded or a single indivisible block cannot fit.
 ### Reproducible offline benchmark (`python -m gamexpress benchmark`)
 
 Run `.venv/bin/python -m gamexpress benchmark --iterations 300` (add `--json` for
-machine-readable output) to reproduce local microbenchmarks across timestamp
-formatting, disabled vs enabled single-pass `news_timestamps` scanning, and short vs
-long (`12,348`-char, `18`-media, `4`-page expanded) news card construction without
-network access or secrets.
+machine-readable output) to inspect exact git revision + clean-tree provenance,
+Python/platform details, fixture sizes (`short=341c`, `medium=5,244c` 2-page `<=7,000`
+policy, `long=12,348c` + `18` media), default-off parity & timestamp-parser bypass
+checks, separated derived/mocked protocol counts vs measured local CPU timings
+(`median`/`mean`/`p95` µs), and higher expanded-mode media/webhook/pacing costs.
 
 
 
@@ -341,8 +342,9 @@ and Part 2/2 for containers in one message, Page 1/Page 2 for separate messages.
 Compact consecutive square (■) entries like numbered lists. HTML list items
 containing nested paragraphs must keep '- ' attached to their first visible text;
 fix parser block boundaries, not source-specific wording. Source HTML/API/mirror
-responses and media URLs remain untouched. A historical maintenance notice remains
-schedule-routed: a length allowance does not make it eligible for news/backfill.
+responses and media URLs remain untouched. Schedule extraction/mirrors never suppress
+eligible official news articles, while existing `"status": "posted"` state records and
+`floor` watermarks prevent historical backfill without state resets.
 The one integrated HTML contains the main previews and complete browser-only
 long-strip laboratory; optional backend grouping is implemented below.
 

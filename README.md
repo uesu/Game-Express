@@ -163,12 +163,20 @@ Nexus Anima, Zenless Zone Zero and Wuthering Waves**, sent to explicitly configu
 news webhooks. Existing schedule/code behavior stays independent; ANANTA news is
 inactive and Wangyue is excluded.
 
-- **Source-order content:** one full message when it fits; by default, eligible
-  moderate overflow up to 7,000 normalized characters uses at most two validated
-  pages, while longer/unpageable articles use a labelled excerpt with at most one
-  lead image and Read Post for the full source. Setting `NEWS_EXPAND_FULL=1` lifts
-  the 2-page / 7,000-character ceiling so complete multi-page articles post in full
-  up to an explicit 20-page / 120-media safety bound.
+- **Source-order content & independent policies:** one full message when it fits;
+  by default (`NEWS_EXPAND_FULL=0`), the **7,000-character / maximum-two-page
+  per-article policy** remains intact (1 message when fitting → up to 2 validated
+  pages within 7,000 normalized chars → 1 labelled excerpt message with at most one
+  lead image and Read Post for the full source). Removing the retired per-run
+  article-count cap (`NEWS_MAX_POSTS_PER_RUN`) only allows processing all newly
+  published articles per poll and does **not** remove the default-off 7,000 / 2-page
+  per-article policy. Setting `NEWS_EXPAND_FULL=1` lifts that per-article ceiling
+  up to an explicit `20`-page / `120`-media safety bound (increasing media validation
+  `GET`s, message count, webhook `POST`s, and pacing proportionally).
+- **Independent feature eligibility:** schedule extraction/mirrors, codes, official
+  news, and started alerts are independent — Special Program, broadcast, preload, and
+  maintenance notices remain eligible for official news delivery when `NEWS_ENABLED=1`,
+  while legacy `status: "posted"` state entries remain deduplicated without backfill.
 - **Optional native timestamps (`NEWS_TIMESTAMPS=1`, off by default):** converts
   exact timezone-qualified dates/times in rendered news bodies (plus `server time`
   on `UTC+8`) into Discord `<t:EPOCH:…>` tags without touching source payloads,

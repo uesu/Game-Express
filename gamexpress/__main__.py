@@ -377,14 +377,34 @@ def cmd_benchmark(args) -> int:
     human vs Discord epoch formatting, and expanded long-article pagination."""
     import platform
     import statistics
+    import subprocess
     from datetime import datetime, timezone
+    from unittest.mock import patch
 
+    from . import news_timestamps
     from .cards import news_payloads
     from .models import Item
     from .news_timestamps import convert_news_timestamps
 
+    repo_root = Path(__file__).resolve().parent.parent
+    try:
+        commit_sha = subprocess.check_output(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        tree_clean = subprocess.check_output(
+            ["git", "-C", str(repo_root), "status", "--porcelain"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip() == ""
+    except Exception:
+        commit_sha = build_id()
+        tree_clean = False
+
     games = load_games()
     iters = max(20, int(getattr(args, "iterations", 200) or 200))
+    cmd_str = f"python -m gamexpress benchmark --iterations {iters}"
 
     short_body = (
         "Dear Proxies,\n"
@@ -394,7 +414,16 @@ def cmd_benchmark(args) -> int:
         "Event window: From June 22, 2026 12:00 (UTC+8) to July 3, 2026 23:59 (UTC+8).\n"
         "Reference link: https://hoyo.link/example and inline code `2026/10/21 06:00 (UTC+8)`."
     )
-    long_body = ("\n\n".join([short_body] * 36))
+    med_para = (
+        "Version 7.2 event details open on October 25, 2026 10:00 (UTC+8) with domains, "
+        "story quests, and seasonal rewards available across all regions."
+    )
+    medium_blocks = [
+        {"kind": "text", "text": "\n\n".join([med_para] * 17)},
+        {"kind": "image", "url": "https://upload-os-bbs.hoyolab.com/bench-mid.jpg"},
+        {"kind": "text", "text": "\n\n".join([med_para] * 17)},
+    ]
+    long_body = "\n\n".join([short_body] * 36)
     short_item = Item(
         "hoyolab", "zzz", "bench-short", "https://www.hoyolab.com/article/46863847",
         "Version 3.3 Event & Pre-Download Details", "", 1790650000,
@@ -403,6 +432,12 @@ def cmd_benchmark(args) -> int:
             {"kind": "image", "url": "https://upload-os-bbs.hoyolab.com/bench-lead.jpg"},
         ],
         author="Zenless Zone Zero",
+    )
+    medium_item = Item(
+        "hoyolab", "genshin", "bench-2page", "https://www.hoyolab.com/article/47151000",
+        "Version 7.2 Event Overview", "", 1792555204,
+        article_blocks=medium_blocks,
+        author="Genshin Impact",
     )
     long_blocks = []
     for idx in range(18):
@@ -415,14 +450,31 @@ def cmd_benchmark(args) -> int:
         author="Kuro Games",
     )
 
-    # Verify deterministic disabled-path exact equality before timing.
+    # Verify default-off parity, timestamp-converter bypass, and 7000/2-page sequence before timing.
     assert convert_news_timestamps(long_body, published_ts=1790650000, enabled=False) is long_body
-    base_short = news_payloads(games["zzz"], short_item)
-    assert news_payloads(games["zzz"], short_item, timestamps=False, expand_full=False) == base_short
-    base_long = news_payloads(games["wuwa"], long_item)
-    assert news_payloads(games["wuwa"], long_item, timestamps=False, expand_full=False) == base_long
+    ts_calls = 0
+    real_convert = news_timestamps.convert_news_timestamps
+
+    def _spy_convert(*c_args, **c_kwargs):
+        nonlocal ts_calls
+        ts_calls += 1
+        return real_convert(*c_args, **c_kwargs)
+
+    with patch.object(news_timestamps, "convert_news_timestamps", side_effect=_spy_convert):
+        default_short = news_payloads(games["zzz"], short_item)
+        base_short = news_payloads(games["zzz"], short_item, timestamps=False, expand_full=False)
+        default_medium = news_payloads(games["genshin"], medium_item)
+        base_medium = news_payloads(games["genshin"], medium_item, timestamps=False, expand_full=False)
+        default_long = news_payloads(games["wuwa"], long_item)
+        base_long = news_payloads(games["wuwa"], long_item, timestamps=False, expand_full=False)
+    assert ts_calls == 0
+    assert base_short == default_short
+    assert base_medium == default_medium
+    assert base_long == default_long
+    expanded_medium = news_payloads(games["genshin"], medium_item, timestamps=False, expand_full=True)
     expanded_long = news_payloads(games["wuwa"], long_item, timestamps=False, expand_full=True)
-    assert len(base_long) == 1 and len(expanded_long) > 2
+    assert len(base_short) == 1 and len(base_medium) == 2 and len(base_long) == 1
+    assert len(expanded_medium) == 2 and len(expanded_long) > 2
 
     epochs = [1789214400 + i * 3600 for i in range(16)]
     utc8 = timezone.utc
@@ -444,6 +496,8 @@ def cmd_benchmark(args) -> int:
             "p95_us": round(p95, 2),
         }
 
+    med_chars = sum(len(b.get("text", "")) for b in medium_blocks)
+    long_chars = sum(len(b.get("text", "")) for b in long_blocks)
     results = [
         _measure("token_format_16_epochs", lambda: [f"<t:{ts}:f>" for ts in epochs]),
         _measure(
@@ -463,6 +517,10 @@ def cmd_benchmark(args) -> int:
             lambda: convert_news_timestamps(long_body, published_ts=1790650000, enabled=True),
         ),
         _measure(
+            "short_news_render_absent_switches",
+            lambda: news_payloads(games["zzz"], short_item),
+        ),
+        _measure(
             "short_news_render_default_off",
             lambda: news_payloads(games["zzz"], short_item, timestamps=False, expand_full=False),
         ),
@@ -471,11 +529,15 @@ def cmd_benchmark(args) -> int:
             lambda: news_payloads(games["zzz"], short_item, timestamps=True, expand_full=False),
         ),
         _measure(
-            f"long_news_render_expand_off_1msg_{sum(len(b.get('text', '')) for b in long_blocks)}c",
+            f"medium_news_render_2pages_under_7000_off_{med_chars}c",
+            lambda: news_payloads(games["genshin"], medium_item, timestamps=False, expand_full=False),
+        ),
+        _measure(
+            f"long_news_render_expand_off_1msg_{long_chars}c",
             lambda: news_payloads(games["wuwa"], long_item, timestamps=False, expand_full=False),
         ),
         _measure(
-            f"long_news_render_expand_on_{len(expanded_long)}pages_{sum(len(b.get('text', '')) for b in long_blocks)}c",
+            f"long_news_render_expand_on_{len(expanded_long)}pages_{long_chars}c",
             lambda: news_payloads(games["wuwa"], long_item, timestamps=False, expand_full=True),
         ),
         _measure(
@@ -483,9 +545,6 @@ def cmd_benchmark(args) -> int:
             lambda: news_payloads(games["wuwa"], long_item, timestamps=True, expand_full=True),
         ),
     ]
-    base_short = news_payloads(games["zzz"], short_item, timestamps=False, expand_full=False)
-    default_short = news_payloads(games["zzz"], short_item)
-    default_long = news_payloads(games["wuwa"], long_item)
 
     def _media_urls(payloads: list[dict]) -> list[str]:
         seen: list[str] = []
@@ -500,11 +559,18 @@ def cmd_benchmark(args) -> int:
         return seen
 
     request_counts = {
+        "basis": "derived_from_rendered_payloads_not_live_http",
         "short_default_off": {
             "payloads": len(base_short),
             "distinct_media_preflights": len(_media_urls(base_short)),
             "webhook_posts": len(base_short),
             "min_pacing_s": round(max(0, len(base_short) - 1) * 1.2, 2),
+        },
+        "medium_under_7000_default_off": {
+            "payloads": len(base_medium),
+            "distinct_media_preflights": len(_media_urls(base_medium)),
+            "webhook_posts": len(base_medium),
+            "min_pacing_s": round(max(0, len(base_medium) - 1) * 1.2, 2),
         },
         "long_expand_off": {
             "payloads": len(base_long),
@@ -521,40 +587,63 @@ def cmd_benchmark(args) -> int:
     }
 
     report = {
+        "revision": commit_sha,
+        "working_tree_clean": tree_clean,
         "python": platform.python_version(),
         "platform": platform.platform(),
+        "command": cmd_str,
+        "iterations": iters,
         "short_input_chars": len(short_body),
-        "long_input_chars": sum(len(b.get("text", "")) for b in long_blocks),
+        "medium_input_chars": med_chars,
+        "long_input_chars": long_chars,
         "long_inline_media": sum(1 for b in long_blocks if b["kind"] == "image"),
+        "default_short_messages": len(base_short),
+        "default_medium_messages": len(base_medium),
         "default_long_messages": len(base_long),
         "expanded_long_messages": len(expanded_long),
-        "disabled_output_equal": (base_short == default_short and base_long == default_long),
+        "disabled_output_equal": (
+            base_short == default_short
+            and base_medium == default_medium
+            and base_long == default_long
+        ),
+        "timestamp_converter_calls_when_off": ts_calls,
         "request_counts": request_counts,
         "benchmarks": results,
     }
     if getattr(args, "json", False):
         print(json.dumps(report, indent=2))
         return 0
+    tree_state = "clean" if tree_clean else "uncommitted-edits"
+    print(f"Revision: {commit_sha} ({tree_state}) | Command: {cmd_str}")
     print(f"Environment: Python {report['python']} on {report['platform']}")
     print(
-        f"Fixtures: short={report['short_input_chars']} chars | "
-        f"long={report['long_input_chars']} chars + {report['long_inline_media']} media items "
-        f"(default={report['default_long_messages']} msg -> expanded={report['expanded_long_messages']} pages | "
-        f"disabled_output_equal={report['disabled_output_equal']})"
+        f"Fixtures: short={report['short_input_chars']}c+1img ({report['default_short_messages']} msg) | "
+        f"medium={report['medium_input_chars']}c+1img ({report['default_medium_messages']} msgs <=7000 policy) | "
+        f"long={report['long_input_chars']}c+{report['long_inline_media']}imgs "
+        f"(off={report['default_long_messages']} excerpt msg -> expand_full={report['expanded_long_messages']} pages)"
     )
     print(
-        f"Deterministic counts: "
-        f"short={request_counts['short_default_off']['payloads']} msg / "
+        f"Default-off checks: output_equal={report['disabled_output_equal']} | "
+        f"timestamp_parser_calls={ts_calls} | extra_feature_http_or_webhook=0"
+    )
+    print(
+        f"Derived protocol counts (mocked/offline, not live network): "
+        f"short(off)={request_counts['short_default_off']['payloads']} msg / "
         f"{request_counts['short_default_off']['distinct_media_preflights']} media GET / "
         f"{request_counts['short_default_off']['webhook_posts']} POST | "
-        f"long(off)={request_counts['long_expand_off']['payloads']} msg / "
+        f"medium<=7000(off)={request_counts['medium_under_7000_default_off']['payloads']} msgs / "
+        f"{request_counts['medium_under_7000_default_off']['distinct_media_preflights']} media GET / "
+        f"{request_counts['medium_under_7000_default_off']['webhook_posts']} POSTs "
+        f"(+{request_counts['medium_under_7000_default_off']['min_pacing_s']:.1f}s min pacing) | "
+        f"long>7000(off)={request_counts['long_expand_off']['payloads']} excerpt msg / "
         f"{request_counts['long_expand_off']['distinct_media_preflights']} media GET / "
         f"{request_counts['long_expand_off']['webhook_posts']} POST | "
-        f"long(on)={request_counts['long_expand_on']['payloads']} msgs / "
+        f"long>7000(expand_full=1)={request_counts['long_expand_on']['payloads']} msgs / "
         f"{request_counts['long_expand_on']['distinct_media_preflights']} media GETs / "
-        f"{request_counts['long_expand_on']['webhook_posts']} POSTs (+{request_counts['long_expand_on']['min_pacing_s']:.1f}s min pacing)"
+        f"{request_counts['long_expand_on']['webhook_posts']} POSTs "
+        f"(+{request_counts['long_expand_on']['min_pacing_s']:.1f}s min pacing)"
     )
-    print(f"{'Benchmark case':52} {'iters':>6} {'median µs':>11} {'mean µs':>11} {'p95 µs':>11}")
+    print(f"{'Measured local CPU case (offline in-memory)':52} {'iters':>6} {'median µs':>11} {'mean µs':>11} {'p95 µs':>11}")
     print("-" * 95)
     for row in results:
         print(

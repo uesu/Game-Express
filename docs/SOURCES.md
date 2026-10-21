@@ -529,9 +529,9 @@ the final message, including one-message/multi-container articles. Keep Part 1/2
 and Part 2/2 for containers in one message, Page 1/Page 2 for separate messages.
 Compact consecutive square (■) entries like numbered lists. HTML list items
 containing nested paragraphs must keep '- ' attached to their first visible text;
-fix parser block boundaries, not source-specific wording. Source HTML/API/mirror
-responses and media URLs remain untouched. A historical maintenance notice remains
-schedule-routed: a length allowance does not make it eligible for news/backfill.
+the policy. Source HTML/API/mirror responses and media URLs remain untouched.
+Schedule classification/mirrors never suppress eligible official news articles, while
+existing `"status": "posted"` records and `floor` watermarks prevent historical backfill.
 The one integrated HTML contains the main previews and complete browser-only
 long-strip laboratory; optional backend grouping is implemented below.
 
