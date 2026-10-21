@@ -239,7 +239,7 @@ def cmd_speculate(args) -> int:
     """
     from datetime import datetime, timezone
 
-    from .schedule import observed_starts, predict_cycle
+    from .schedule import observed_lead_h, observed_starts, predict_cycle
     from .state import State
     settings, games = load_settings(), load_games()
     state = State.load(settings.state_path)
@@ -254,7 +254,7 @@ def cmd_speculate(args) -> int:
         if g.cadence is None:
             continue
         records = state.schedule_records(g.key)
-        guess = predict_cycle(g, records, now)
+        guess = predict_cycle(g, records, now, lead_h=observed_lead_h(records))
         if not guess:
             print(f"{g.short:5} {g.name:22} no prediction (no anchor, or the next cycle is "
                   "outside the 120-day horizon)")

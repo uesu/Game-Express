@@ -419,14 +419,21 @@ def resolve_version_plans(
         }
 
     # 5. Full cycle prediction (`predict_cycle`) for the upcoming version when no official/override
-    #    record exists yet — evaluated at `now - ACTIVE_WINDOW_S` so a cycle whose milestone just
-    #    crossed `now` is not rolled +42d past the active trigger window.
+    #    record exists yet — evaluated at both `now - ACTIVE_WINDOW_S` (so a cycle whose milestone
+    #    just crossed `now` is not rolled +42d past the active trigger window) and `now` (so the
+    #    successor cycle is projected immediately once maintenance starts, without a 12h blind spot).
     if game.cadence is not None:
-        guess = schedule.predict_cycle(
-            game, schedule_records, max(1, now - ACTIVE_WINDOW_S), lead_h=lead_h
-        )
-        if guess and guess.get("version"):
-            gver = str(guess["version"])
+        seen_guesses: set[str] = set()
+        for ref_now in (max(1, now - ACTIVE_WINDOW_S), now):
+            guess = schedule.predict_cycle(game, schedule_records, ref_now, lead_h=lead_h)
+            if not guess or not guess.get("version"):
+                continue
+            raw_ver = str(guess["version"])
+            if raw_ver in seen_guesses:
+                continue
+            seen_guesses.add(raw_ver)
+            major_rollover = f"{version_key(raw_ver)[0] + 1}.0"
+            gver = major_rollover if major_rollover in plans else raw_ver
             ov = copy.deepcopy((game_overrides or {}).get(gver) or {})
             existing = plans.get(gver)
             if existing is None:
@@ -884,8 +891,7 @@ async def run(ctx) -> None:
                                     ctx.fetcher, cur_url, ctx.now, cache=verified_cache
                                 )
                             auth_ts_upgrade = (
-                                kind == "preload"
-                                and entry.get("provenance") == "observed"
+                                entry.get("provenance") in ("observed", "estimated")
                                 and prov_tag in ("official", "override")
                                 and start_ts is not None
                             )
@@ -934,6 +940,8 @@ async def run(ctx) -> None:
                                         entry["ts"] = effective_ts
                                         if auth_ts_upgrade:
                                             entry["provenance"] = prov_tag
+                                            if kind == "maintenance":
+                                                entry["end_ts"] = int(end_ts) if end_ts else None
                                         entry["edited_at"] = ctx.now
                                         entry["edit_attempts"] = 0
                                         entry["edit_count"] = int(entry.get("edit_count") or 0) + 1

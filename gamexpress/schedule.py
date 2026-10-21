@@ -655,7 +655,7 @@ def observed_lead_h(records: dict) -> float | None:
             continue
         if math.isfinite(hours) and 0 < hours <= MAX_LEAD_H:
             values.append(hours)
-    return float(median(values)) if values else None
+    return float(median(values)) if len(values) >= SPECULATE_MIN_HISTORY else None
 
 
 def derive_preinstall(game: Game, data: dict, prov: dict, now: int,
@@ -826,7 +826,10 @@ def predict_cycle(game: Game, records: dict, now: int,
     if hours is not None and not (math.isfinite(hours) and 0 < hours <= MAX_LEAD_H):
         hours = None
 
-    guess, alt = next_version(anchor_version)
+    base_version = anchor_version
+    for _ in range(guard):
+        base_version = bump_minor(base_version) if base_version else ""
+    guess, alt = next_version(base_version)
     return {
         "version": guess,
         "version_alt": alt,

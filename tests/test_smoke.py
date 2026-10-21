@@ -12200,5 +12200,241 @@ def test_bracketed_links_feature_switches_pagination_boundary_and_holds():
             assert len(sent_calls) == 2
 
 
+def test_post_zzz_33_live_rollover_and_cold_start_version_bump():
+    """After ZZZ 3.3 goes live (2026-10-21 06:00 UTC+8), every path advances cleanly to 3.4."""
+    from gamexpress import maintenance
+
+    now_after_33 = at8("2026-10-22 07:00")
+    # 1. Cold start ({}) where config anchor is still 3.2 (2026-09-09): roll-forward guard=1
+    #    must advance version 3.2 -> 3.3 -> 3.4 instead of stamping Dec 2 as version "3.3".
+    cold_zzz = schedule.predict_cycle(GAMES["zzz"], {}, now_after_33)
+    assert cold_zzz is not None
+    assert cold_zzz["version"] == "3.4"
+    assert cold_zzz["preinstall_ts"] == at8("2026-11-30 12:00")
+    assert cold_zzz["maint_start_ts"] == at8("2026-12-02 06:00")
+    assert cold_zzz["maint_end_ts"] == at8("2026-12-02 11:00")
+
+    # 2. Immediate post-maintenance window (2026-10-21 12:00 UTC+8, 6h after 3.3 maint start,
+    #    inside ACTIVE_WINDOW_S=12h): unannounced cycle 3.3 retains its active trigger window AND
+    #    successor 3.4 is projected immediately with zero 12h blind spot.
+    plans_window = maintenance.resolve_version_plans(
+        GAMES["zzz"], {}, [], {"live": "3.3"}, {}, at8("2026-10-21 12:00")
+    )
+    assert "3.3" in plans_window and "3.4" in plans_window
+    assert plans_window["3.4"]["preinstall_ts"] == at8("2026-11-30 12:00")
+    assert plans_window["3.4"]["maint_start_ts"] == at8("2026-12-02 06:00")
+    assert plans_window["3.4"]["maint_end_ts"] == at8("2026-12-02 11:00")
+
+    # 3. Full four-game agreement across predict_cycle, schedule.merge, and resolve_version_plans
+    #    on production-shape state at 2026-10-22 07:00 UTC+8.
+    prod_like = {
+        "genshin": {
+            "7.1": {
+                "data": {
+                    "version": "7.1",
+                    "preinstall_ts": at8("2026-09-21 11:00"),
+                    "maint_start_ts": at8("2026-09-23 06:00"),
+                    "maint_end_ts": at8("2026-09-23 11:00"),
+                    "estimated": ["preinstall_ts"],
+                },
+                "prov": {"maint_start_ts": [50, 1], "maint_end_ts": [50, 1], "preinstall_ts": [9, 1]},
+            }
+        },
+        "starrail": {
+            "4.6": {
+                "data": {
+                    "version": "4.6",
+                    "preinstall_ts": at8("2026-09-24 14:00"),
+                    "maint_start_ts": at8("2026-09-28 06:00"),
+                    "maint_end_ts": at8("2026-09-28 11:00"),
+                },
+                "preinstall_offset_h": 88.0,
+                "prov": {"maint_start_ts": [50, 1], "maint_end_ts": [50, 1], "preinstall_ts": [50, 1]},
+            }
+        },
+        "zzz": {
+            "3.3": {
+                "data": {
+                    "version": "3.3",
+                    "preinstall_ts": at8("2026-10-19 12:00"),
+                    "maint_start_ts": at8("2026-10-21 06:00"),
+                    "maint_end_ts": at8("2026-10-21 11:00"),
+                },
+                "preinstall_offset_h": 42.0,
+                "prov": {"maint_start_ts": [50, 1], "maint_end_ts": [50, 1], "preinstall_ts": [50, 1]},
+            }
+        },
+        "wuwa": {
+            "3.7": {
+                "data": {
+                    "version": "3.7",
+                    "preinstall_ts": at8("2026-09-28 10:00"),
+                    "maint_start_ts": at8("2026-09-30 04:00"),
+                    "maint_end_ts": at8("2026-09-30 11:00"),
+                },
+                "preinstall_offset_h": 42.0,
+                "prov": {"maint_start_ts": [50, 1], "maint_end_ts": [50, 1], "preinstall_ts": [50, 1]},
+            }
+        },
+    }
+    expected_next = {
+        "genshin": ("7.2", "2026-11-02 11:00", "2026-11-04 06:00", "2026-11-04 11:00"),
+        "starrail": ("4.7", "2026-11-09 14:00", "2026-11-11 06:00", "2026-11-11 11:00"),
+        "zzz": ("3.4", "2026-11-30 12:00", "2026-12-02 06:00", "2026-12-02 11:00"),
+        "wuwa": ("3.8", "2026-11-10 10:00", "2026-11-12 04:00", "2026-11-12 11:00"),
+    }
+    for gkey, (ver, pre_s, start_s, end_s) in expected_next.items():
+        recs = prod_like[gkey]
+        lead = schedule.observed_lead_h(recs)
+        guess = schedule.predict_cycle(GAMES[gkey], recs, now_after_33, lead_h=lead)
+        plans = maintenance.resolve_version_plans(GAMES[gkey], recs, [], {}, {}, now_after_33)
+        assert guess is not None and guess["version"] == ver
+        assert ver in plans
+        assert guess["preinstall_ts"] == plans[ver]["preinstall_ts"] == at8(pre_s), gkey
+        assert guess["maint_start_ts"] == plans[ver]["maint_start_ts"] == at8(start_s), gkey
+        assert guess["maint_end_ts"] == plans[ver]["maint_end_ts"] == at8(end_s), gkey
+
+
+def test_single_holiday_lead_outlier_does_not_skew_predicted_preload():
+    """A single version (HSR 4.6 = 88h Golden Week outlier) must not override 40h corpus lead."""
+    single = {"4.6": {"preinstall_offset_h": 88.0}}
+    assert schedule.observed_lead_h(single) is None
+    two = {"4.6": {"preinstall_offset_h": 88.0}, "4.7": {"preinstall_offset_h": 40.0}}
+    assert schedule.observed_lead_h(two) == 64.0
+    three = {**two, "4.8": {"preinstall_offset_h": 40.0}}
+    assert schedule.observed_lead_h(three) == 40.0
+
+
+def test_major_version_rollover_suppresses_phantom_minor_plan():
+    """When a publisher rolls 3.7 -> 4.0 directly, no phantom 3.8 maintenance plan is emitted."""
+    from gamexpress import maintenance
+
+    recs = {
+        "3.7": {
+            "data": {"version": "3.7", "maint_start_ts": at8("2026-09-30 04:00")},
+            "prov": {"maint_start_ts": [50, 1]},
+        },
+        "4.0": {
+            "data": {"version": "4.0", "program_ts": at8("2026-10-30 19:00")},
+            "prov": {"program_ts": [50, 2]},
+        },
+    }
+    plans = maintenance.resolve_version_plans(
+        GAMES["wuwa"], recs, [], {}, {}, at8("2026-11-01 12:00")
+    )
+    assert "3.8" not in plans
+    assert "4.0" in plans
+    assert plans["4.0"]["preinstall_ts"] == at8("2026-11-10 10:00")
+    assert plans["4.0"]["maint_start_ts"] == at8("2026-11-12 04:00")
+
+
+def test_estimated_milestone_card_upgrades_silently_when_official_notice_arrives():
+    """An estimated maintenance alert with Tier-1 media edits silently once when official data arrives."""
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import maintenance
+    from gamexpress.discord import SendResult
+
+    hook = "https://discord.com/api/webhooks/123456789/maint-token"
+    sent: list[dict] = []
+    edits: list[tuple[str, dict]] = []
+
+    class TrackingWebhook:
+        async def send(self, url, payload, *, stop_on_ambiguous=False):
+            sent.append(payload)
+            return SendResult(True, 200, message_id="maint-msg-1")
+
+        async def edit(self, url, msg_id, payload):
+            edits.append((msg_id, payload))
+            return SendResult(True, 200, message_id=msg_id)
+
+    t_base = at8("2026-10-22 07:00")
+    t_maint = at8("2026-11-04 06:00")
+    banner = "https://upload-os-bbs.hoyolab.com/upload/2026/10/23/gi72_program.jpg"
+
+    with tempfile.TemporaryDirectory() as td:
+        st_path = Path(td) / "maint_upgrade.json"
+        # Baseline run at 2026-10-22 07:00
+        ctx0 = make_ctx(
+            st_path,
+            now=t_base,
+            MAINTENANCE_ENABLED="1",
+            MAINTENANCE_GAMES="genshin",
+            DISCORD_WEBHOOK_MAINTENANCE_GENSHIN=hook,
+        )
+        ctx0.state.data.setdefault("schedule", {})["genshin"] = {
+            "7.1": {
+                "data": {"version": "7.1", "maint_start_ts": at8("2026-09-23 06:00")},
+                "prov": {"maint_start_ts": [50, 1]},
+            }
+        }
+        ctx0.webhook = TrackingWebhook()
+        with (
+            patch.object(maintenance, "_ensure_inputs_for_games", new=AsyncMock()),
+            patch.object(maintenance.launcher, "hoyoplay_basic_info", new=AsyncMock(return_value={})),
+        ):
+            asyncio.run(maintenance.run(ctx0))
+        assert len(sent) == 0
+
+        # Maintenance start at 2026-11-04 06:00:05 with Tier-1 livestream media already present,
+        # still on cadence estimate -> posts estimated card once.
+        ctx1 = make_ctx(
+            st_path,
+            now=t_maint + 5,
+            MAINTENANCE_ENABLED="1",
+            MAINTENANCE_GAMES="genshin",
+            DISCORD_WEBHOOK_MAINTENANCE_GENSHIN=hook,
+        )
+        ctx1.state.data["maintenance"]["genshin"]["versions"]["7.2"] = {
+            "preload": {"status": "posted", "ts": at8("2026-11-02 11:00"), "provenance": "official"},
+        }
+        ctx1.items["genshin"] = []
+        ctx1.webhook = TrackingWebhook()
+        with (
+            patch.object(maintenance, "_ensure_inputs_for_games", new=AsyncMock()),
+            patch.object(maintenance.launcher, "hoyoplay_basic_info", new=AsyncMock(return_value={})),
+            patch.object(maintenance, "resolve_launch_media", new=AsyncMock(return_value=(1, banner))),
+            patch.object(maintenance, "_verify_url", new=AsyncMock(return_value=True)),
+        ):
+            asyncio.run(maintenance.run(ctx1))
+        assert len(sent) == 1
+        assert "Estimated (version cadence)" in json.dumps(sent[0])
+
+        # 5 minutes later (06:05:05): official HoYoLAB notice arrives with 6h maintenance end ->
+        # silently edits card ONCE to clear caveat and apply official end_ts, then stays quiet.
+        official_end = at8("2026-11-04 12:00")
+        ctx2 = make_ctx(
+            st_path,
+            now=t_maint + 305,
+            MAINTENANCE_ENABLED="1",
+            MAINTENANCE_GAMES="genshin",
+            DISCORD_WEBHOOK_MAINTENANCE_GENSHIN=hook,
+        )
+        ctx2.state.data["schedule"]["genshin"]["7.2"] = {
+            "data": {
+                "version": "7.2",
+                "maint_start_ts": t_maint,
+                "maint_end_ts": official_end,
+            },
+            "prov": {"maint_start_ts": [50, t_maint + 300], "maint_end_ts": [50, t_maint + 300]},
+        }
+        ctx2.webhook = TrackingWebhook()
+        with (
+            patch.object(maintenance, "_ensure_inputs_for_games", new=AsyncMock()),
+            patch.object(maintenance.launcher, "hoyoplay_basic_info", new=AsyncMock(return_value={})),
+            patch.object(maintenance, "resolve_launch_media", new=AsyncMock(return_value=(1, banner))),
+            patch.object(maintenance, "_verify_url", new=AsyncMock(return_value=True)),
+        ):
+            asyncio.run(maintenance.run(ctx2))
+            assert len(edits) == 1
+            edit_json = json.dumps(edits[0][1])
+            assert "Estimated (version cadence)" not in edit_json
+            assert f"<t:{official_end}:t>" in edit_json
+            # Next 5-minute poll makes zero further edits:
+            ctx2.now = t_maint + 605
+            asyncio.run(maintenance.run(ctx2))
+            assert len(edits) == 1
+
+
 if __name__ == "__main__":
     sys.exit(main())
