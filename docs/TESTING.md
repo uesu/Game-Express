@@ -322,7 +322,7 @@ is exceeded or a single indivisible block cannot fit.
 
 Run `.venv/bin/python -m gamexpress benchmark --iterations 300` (add `--json` for
 machine-readable output) to inspect exact git revision + clean-tree provenance,
-Python/platform details, fixture sizes (`short=341c`, `medium=5,244c` 2-page `<=7,000`
+Python/platform details, fixture sizes (`short=341c`, `medium=4,926c` 2-page `<=7,000`
 policy, `long=12,348c` + `18` media), default-off parity & timestamp-parser bypass
 checks, separated derived/mocked protocol counts vs measured local CPU timings
 (`median`/`mean`/`p95` µs), and higher expanded-mode media/webhook/pacing costs.

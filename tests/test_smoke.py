@@ -8394,8 +8394,30 @@ def test_maintenance_payload_exact_v2_template_gallery_omission_and_no_tiktok():
     )
     assert kids[4]["accessory"]["url"] == "https://discord.gg/HyrVP9wRXu"
     assert kids[4]["accessory"]["emoji"] == {"id": "1483074533073223843", "name": "starwardyayy", "animated": True}
+    assert all(c["type"] != 1 for c in kids)
     dumped = json.dumps(pre)
     assert "tiktok" not in dumped.lower() and "minilorax" not in dumped.lower()
+
+    # Maintenance with known end_ts uses start `:f` + known end `:t` and Citlali News section footer.
+    maint_known = cards.maintenance_payload(
+        GAMES["zzz"],
+        "3.3",
+        "maintenance",
+        start_ts=1792533600,
+        end_ts=1792551600,
+        ping=role,
+        media_url="https://fastcdn.hoyoverse.com/static-resource-v2/2026/10/19/d9666bfb6df441d244dc24dfdfac5a58_8954332136235293402.webm",
+    )
+    assert not cards.validate_payload(maint_known)
+    mk_kids = maint_known["components"][0]["components"]
+    assert [c["type"] for c in mk_kids] == [10, 14, 10, 12, 9]
+    assert mk_kids[2]["content"] == (
+        "※ **Date Time:** <t:1792533600:f> ※ **End Time:** <t:1792551600:t> <a:gearfinal:1483076702551805983>"
+    )
+    assert mk_kids[4]["type"] == 9
+    assert mk_kids[4]["accessory"]["label"] == "Citlali News"
+    assert mk_kids[4]["accessory"]["url"] == "https://discord.gg/HyrVP9wRXu"
+    assert all(c["type"] != 1 for c in mk_kids)
 
     # Maintenance with unknown end omits invented End Time; missing media omits type 12 gallery;
     # empty Ping() produces no trailing newline or mention.
@@ -10865,6 +10887,60 @@ def test_correction_6_ambiguous_post_no_replay_and_state_durability():
                 )
                 assert len(patch_session.calls) == 2
                 assert res_patch.ok is True and res_patch.ambiguous is False
+
+                # Property 6d: Maintenance milestone POST timeout also stops after 1 POST (no retry),
+                # persists `status: "ambiguous"`, holds across reruns, and cannot be cleared by a
+                # stale `"seeded"` peer record during `State.merge_peer(..., include_maintenance=True)`.
+                from gamexpress import maintenance as maint_mod
+                from gamexpress.sources import launcher as launcher_mod
+
+                maint_state_path = Path(tmp) / "maint_state.json"
+                mctx = make_ctx(
+                    maint_state_path,
+                    now=1792380000,
+                    MAINTENANCE_ENABLED="1",
+                    ONLY="maintenance",
+                    MAINTENANCE_GAMES="zzz",
+                    DISCORD_WEBHOOK_MAINTENANCE_ZZZ=HOOK,
+                )
+                mctx.state.schedule_records("zzz")["3.3"] = {
+                    "status": "posted",
+                    "data": {"version": "3.3", "preinstall_ts": 1792382400, "maint_start_ts": 1792533600},
+                    "prov": {"preinstall_ts": [50, 1], "maint_start_ts": [50, 1]},
+                }
+                mctx.versions["zzz"] = {"live": "3.2", "pre": "3.3"}
+                mctx.items["zzz"] = []
+                await maint_mod.run(mctx)  # silent baseline seed
+                mctx.now = 1792382460
+                maint_session = _QueuedSession(
+                    [
+                        aiohttp.ServerTimeoutError("maintenance POST timeout after write"),
+                        _MockResp(200, '{"id":"maint-dup-never-sent"}'),
+                    ]
+                )
+                mctx.webhook = discord_mod.WebhookClient(maint_session, dry_run=False)
+                with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value={})):
+                    await maint_mod.run(mctx)
+                    assert len(maint_session.calls) == 1
+                    assert len(maint_session.steps) == 1
+                    m_persisted = State.load(maint_state_path)
+                    assert m_persisted.maintenance_record("zzz")["versions"]["3.3"]["preload"]["status"] == "ambiguous"
+                    m_peer = {
+                        "maintenance": {
+                            "zzz": {
+                                "route": m_persisted.maintenance_record("zzz")["route"],
+                                "seeded_at": m_persisted.maintenance_record("zzz")["seeded_at"],
+                                "versions": {"3.3": {"preload": {"status": "seeded", "ts": 1792382400}}},
+                            }
+                        }
+                    }
+                    m_persisted.merge_peer(m_peer, include_maintenance=True)
+                    assert m_persisted.maintenance_record("zzz")["versions"]["3.3"]["preload"]["status"] == "ambiguous"
+                    m_rerun_session = _QueuedSession([])
+                    mctx.state = m_persisted
+                    mctx.webhook = discord_mod.WebhookClient(m_rerun_session, dry_run=False)
+                    await maint_mod.run(mctx)
+                    assert m_rerun_session.calls == []
 
         asyncio.run(_run_all_checks())
 

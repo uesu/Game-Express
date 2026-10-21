@@ -207,13 +207,12 @@ Two independent milestone alerts per version — **`Pre-Load Started`** and
 Works standalone or alongside schedule, codes and news without modifying existing cards.
 
 ```
-┌───────────────────────────────────────────────────────────── (game color)
+┌─────────────────────────────────────────────────────────────
 │ ## [ZZZ - 3.3] Pre-Load Started <a:starwardlove:…><a:starwardspark3:…>
 │ <@&ROLE>                                                       ← optional per-game ping
 │ ─────────────
 │ ※ **Date Time:** <t:1792382400:f> ※ **Hour Time:** <t:1792382400:R> <a:gearfinal:…>
 │ [ version-verified launch video / artwork (optional) ]
-│ ─────────────
 │ <a:starwardsleepywink:…> **Citlali News**          [ <a:starwardyayy:…> ]
 │ -# Delivering news and official updates
 └─────────────────────────────────────────────────────────────
@@ -222,17 +221,20 @@ Works standalone or alongside schedule, codes and news without modifying existin
 - **Separate milestones & silent baseline:** enabling seeds already-passed
   milestones silently and tracks `preload` and `maintenance` separately in
   `state/state.json`, so first activation never reposts settled versions and
-  `Pre-Load Started` never suppresses `Maintenance Started`.
+  `Pre-Load Started` never suppresses `Maintenance Started` (which renders
+  `※ **Date Time:** <t:START:f> ※ **End Time:** <t:END:t>` when `end_ts` is known,
+  or omits `End Time` cleanly when unknown).
 - **Source precedence:** official notices/tweets → explicit `config/overrides.json` →
   persisted first-observed launcher pre-download signal (explicitly marked observed,
   never moving `now`) → documented cadence predictions (clearly marked estimated; no
   invented HNA cadence or fabricated end time when unknown).
 - **Version-verified launch media:** prefers (1) matching-version launch video,
-  (2) matching-version launcher artwork/WebP, (3) matching-version Special Program
-  key art, or (4) cleanly omits the gallery — locking launch identity against Phase II
-  swaps while allowing bounded silent `PATCH` upgrades (`tier 2/3/4 → tier 1`),
-  corroborated same-asset signed URL renewal (`auth_key=` query intact), or fallback to
-  matching-version artwork / gallery omission inside `LATE_MEDIA_EDIT_WINDOW_S`.
+  (2) matching-version launch artwork/WebP, (3) matching-version official X/Twitter
+  or HoYoLAB program artwork, or (4) cleanly omits media — locking launch identity
+  against Phase II swaps while allowing bounded silent `PATCH` upgrades
+  (`tier 2/3/4 → tier 1`), corroborated same-asset signed URL renewal (`auth_key=`
+  query intact), or fallback to matching-version artwork / omitted media inside
+  `LATE_MEDIA_EDIT_WINDOW_S`.
 
 Full setup and safeguards: **[docs/CONFIGURATION.md → Pre-load & maintenance started](docs/CONFIGURATION.md#pre-load--maintenance-started-explicit-per-game-opt-in-default-off)**.
 

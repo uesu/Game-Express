@@ -161,7 +161,7 @@ class State:
                         if src_a.get("status") not in ("posted", "seeded", "ambiguous"):
                             continue
                         cur_a = dst.get(kind)
-                        if cur_a and cur_a.get("status") == "posted":
+                        if cur_a and cur_a.get("status") in ("posted", "ambiguous"):
                             continue
                         dst[kind] = copy.deepcopy(src_a)
                         imported += 1
