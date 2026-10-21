@@ -32,6 +32,7 @@ Continue the specified existing PR with concise diffs and no extra standalone au
 - Clean only verified disposable task-owned artifacts after inspecting status, ownership and retention needs. Never remove the repository root, `.git`, dirty user work, tracked fixtures, source captures, state or durable handoffs/evidence. No broad destructive cleanup as a capacity workaround.
 - If a snapshot/storage/tool limit blocks execution, report whether commands ran. Do not repeat identical blocked calls or claim writes/deletions succeeded. Request platform intervention or use a compact handoff when safe cleanup is impossible. Never promise automatic cross-session memory or unlimited storage.
 - Separate editing, committing/pushing, PR updates, merging, deployment, workflow dispatch, live API writes, state resets and production switch changes. Obtain the required authorization for each.
+- Update the PR title, PR body, and benchmarks **only** when those specific items actually changed; if nothing changed, keep them as-is so full prior details remain completely visible. Always publish session comments, verification results, and findings directly in the PR thread as well so every change preserves complete details for future reference.
 
 ## Operational summary output
 
