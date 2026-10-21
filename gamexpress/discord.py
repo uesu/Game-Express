@@ -102,7 +102,7 @@ class WebhookClient:
         url: str,
         payload: dict,
         *,
-        stop_on_ambiguous: bool = True,
+        stop_on_ambiguous: bool = False,
     ) -> SendResult:
         problems = validate_payload(payload)
         if problems:
@@ -116,7 +116,6 @@ class WebhookClient:
             return SendResult(True, 200, message_id="dry-run")
         await self._pace()
         delay = 1.0
-        saw_indeterminate_post = False
         for attempt in range(5):
             try:
                 async with self.session.request(method, url, json=payload,
@@ -125,26 +124,23 @@ class WebhookClient:
                     try:
                         body = await r.text()
                     except (aiohttp.ClientError, asyncio.TimeoutError, UnicodeDecodeError) as e:
-                        if method == "POST" and (status == 0 or 200 <= status < 400):
-                            saw_indeterminate_post = True
-                            if stop_on_ambiguous:
-                                log.warning(
-                                    "Discord POST response body read failed after HTTP %s (%s)"
-                                    " — holding as ambiguous without retry",
-                                    status,
-                                    e,
-                                )
-                                return SendResult(
-                                    False,
-                                    status,
-                                    error=f"response body read failed after HTTP {status}: {e}",
-                                    ambiguous=True,
-                                )
-                            log.warning("Discord request error %s — retry %d", e, attempt + 1)
-                            await asyncio.sleep(delay)
-                            delay *= 2
-                            continue
-                        body = ""
+                        if stop_on_ambiguous and method == "POST" and (status == 0 or 200 <= status < 400):
+                            log.warning(
+                                "Discord POST response body read failed after HTTP %s (%s)"
+                                " — holding as ambiguous without retry",
+                                status,
+                                e,
+                            )
+                            return SendResult(
+                                False,
+                                status,
+                                error=f"response body read failed after HTTP {status}: {e}",
+                                ambiguous=True,
+                            )
+                        if isinstance(e, UnicodeDecodeError):
+                            body = ""
+                        else:
+                            raise
                     if status in (200, 204):
                         mid = None
                         if body:
@@ -156,7 +152,7 @@ class WebhookClient:
                             True,
                             status,
                             message_id=mid,
-                            ambiguous=(method == "POST" and (mid is None or saw_indeterminate_post)),
+                            ambiguous=(stop_on_ambiguous and method == "POST" and mid is None),
                         )
                     if status == 429:
                         try:
@@ -174,13 +170,12 @@ class WebhookClient:
                         await asyncio.sleep(delay)
                         delay *= 2
                         continue
-                    return SendResult(False, status, error=body[:500], ambiguous=saw_indeterminate_post)
+                    return SendResult(False, status, error=body[:500])
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                if _is_non_retryable_pre_send_error(e):
-                    return SendResult(False, 0, error=str(e), ambiguous=saw_indeterminate_post)
-                if method == "POST" and not _is_definite_pre_send_error(e):
-                    saw_indeterminate_post = True
-                    if stop_on_ambiguous:
+                if stop_on_ambiguous:
+                    if _is_non_retryable_pre_send_error(e):
+                        return SendResult(False, 0, error=str(e), ambiguous=False)
+                    if method == "POST" and not _is_definite_pre_send_error(e):
                         log.warning(
                             "Discord POST outcome indeterminate (%s) — holding as ambiguous without retry",
                             e,
@@ -194,14 +189,14 @@ class WebhookClient:
                 log.warning("Discord request error %s — retry %d", e, attempt + 1)
                 await asyncio.sleep(delay)
                 delay *= 2
-        return SendResult(False, 0, error="gave up after retries", ambiguous=saw_indeterminate_post)
+        return SendResult(False, 0, error="gave up after retries")
 
     async def send(
         self,
         webhook_url: str,
         payload: dict,
         *,
-        stop_on_ambiguous: bool = True,
+        stop_on_ambiguous: bool = False,
     ) -> SendResult:
         base, keep = _split(webhook_url)
         q = urlencode({"wait": "true", "with_components": "true", **keep})

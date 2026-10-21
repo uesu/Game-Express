@@ -433,9 +433,11 @@ ceiling is lifted up to an explicit operational safety bound (`NEWS_EXPAND_MAX_P
 - If an article exceeds `NEWS_EXPAND_MAX_PAGES = 20` or contains an indivisible single unit
   exceeding single-message limits, rendering degrades cleanly to an explicitly labelled
   `Excerpt — …` single card rather than truncating silently or claiming to be full.
-- Confirmed per-page message IDs save after each send; if a webhook `POST` returns HTTP 2xx
-  without a parseable `message_id` or times out ambiguously, the record marks `ambiguous = True`
-  and holds rather than blindly re-posting duplicate pages on subsequent 5-minute runs.
+- Confirmed per-page message IDs save after each send; official-news and maintenance-alert
+  `POST`s pass `stop_on_ambiguous=True` so if a webhook `POST` returns HTTP `2xx` without a
+  parseable `message_id` or fails after dispatch ambiguously, it stops after 1 attempt, marks
+  `ambiguous = True`, and holds rather than blindly re-posting duplicates (existing `schedule`
+  and `codes` callers retain baseline `stop_on_ambiguous=False` retries).
 
 
 ### Source-preserving formatting

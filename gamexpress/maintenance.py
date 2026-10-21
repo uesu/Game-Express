@@ -981,7 +981,7 @@ async def run(ctx) -> None:
                     estimate_source=est_src,
                     observed=is_obs,
                 )
-                result = await ctx.webhook.send(hook, payload)
+                result = await ctx.webhook.send(hook, payload, stop_on_ambiguous=True)
                 if result.ambiguous or (result.ok and not result.message_id):
                     vstate[kind] = {
                         "status": "ambiguous",

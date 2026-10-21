@@ -160,10 +160,10 @@ same run share a card.
 
 Full retrievable official articles for **Genshin Impact, Honkai: Star Rail, Honkai:
 Nexus Anima, Zenless Zone Zero and Wuthering Waves**, sent to explicitly configured
-news webhooks. Existing schedule/code routing and state schemas stay independent
-(while sharing `WebhookClient.send()`'s single-attempt stop on indeterminate
-in-flight `POST` timeouts instead of blind in-run `POST` replays); ANANTA news is
-inactive and Wangyue is excluded.
+news webhooks. Conservative stop-and-hold recovery is explicitly enabled for official
+news and maintenance alerts. Existing schedule/code retry behavior remains at the
+pre-PR baseline (`stop_on_ambiguous=False` by default); ANANTA news is inactive and
+Wangyue is excluded.
 
 - **Source-order content & independent policies:** one full message when it fits;
   by default (`NEWS_EXPAND_FULL=0`), the **7,000-character / maximum-two-page

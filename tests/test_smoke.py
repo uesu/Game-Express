@@ -2267,8 +2267,10 @@ class ScriptedWebhook:
         self.edits.append((message_id, payload))
         return self.edit_results.pop(0)
 
-    async def send(self, webhook: str, payload: dict) -> SendResult:
+    async def send(self, webhook: str, payload: dict, *, stop_on_ambiguous: bool = False) -> SendResult:
         self.sends.append(payload)
+        self.stop_flags = getattr(self, "stop_flags", [])
+        self.stop_flags.append(stop_on_ambiguous)
         return self.send_results.pop(0)
 
 
@@ -2361,7 +2363,7 @@ class FanOutWebhook:
             return SendResult(False, self.status, error="channel is gone")
         return SendResult(True, 200, message_id=message_id)
 
-    async def send(self, webhook: str, payload: dict) -> SendResult:
+    async def send(self, webhook: str, payload: dict, *, stop_on_ambiguous: bool = False) -> SendResult:
         fp = webhook_fingerprint(webhook)
         self.calls.append(("POST", fp, payload))
         self._n += 1
@@ -8886,12 +8888,15 @@ def test_webhook_ambiguous_response_auth_key_redaction_and_video_preview_html():
         with patch.object(asyncio, "sleep", new=AsyncMock()):
             no_id_session = types.SimpleNamespace(request=lambda *a, **kw: _Resp(204, ""))
             client = discord_mod.WebhookClient(no_id_session, dry_run=False)
-            res_204 = await client.send(HOOK, sample_payload)
+            res_204_default = await client.send(HOOK, sample_payload)
+            assert res_204_default.ok is True and res_204_default.message_id is None and res_204_default.ambiguous is False
+            client._next_slot = 0.0
+            res_204 = await client.send(HOOK, sample_payload, stop_on_ambiguous=True)
             assert res_204.ok is True and res_204.message_id is None and res_204.ambiguous is True
 
             ok_session = types.SimpleNamespace(request=lambda *a, **kw: _Resp(200, '{"id":"999111"}'))
             client_ok = discord_mod.WebhookClient(ok_session, dry_run=False)
-            res_ok = await client_ok.send(HOOK, sample_payload)
+            res_ok = await client_ok.send(HOOK, sample_payload, stop_on_ambiguous=True)
             assert res_ok.ok is True and res_ok.message_id == "999111" and res_ok.ambiguous is False
 
             res_patch = await client.edit(HOOK, "999111", sample_payload)
@@ -8906,9 +8911,15 @@ def test_webhook_ambiguous_response_auth_key_redaction_and_video_preview_html():
 
             to_session = types.SimpleNamespace(request=_make_to_ctx)
             client_to = discord_mod.WebhookClient(to_session, dry_run=False)
-            res_to = await client_to.send(HOOK, sample_payload)
+            res_to = await client_to.send(HOOK, sample_payload, stop_on_ambiguous=True)
             assert to_calls == 1
             assert res_to.ok is False and res_to.ambiguous is True
+
+            to_calls = 0
+            client_to_base = discord_mod.WebhookClient(to_session, dry_run=False)
+            res_to_base = await client_to_base.send(HOOK, sample_payload)
+            assert to_calls == 5
+            assert res_to_base == SendResult(False, 0, error="gave up after retries")
 
     asyncio.run(_exercise())
 
@@ -10850,9 +10861,8 @@ def test_correction_6_ambiguous_post_no_replay_and_state_durability():
                 assert reloaded_after_reruns.schedule_records("genshin")["5.1"]["message_id"] == "sched-51"
                 assert reloaded_after_reruns.code_records("genshin")["GENSHINGIFT"]["status"] == "posted"
 
-            # Property 5 (white-box defense-in-depth): even when `stop_on_ambiguous=False` forces
-            # retry past an initial timeout onto a `200 {"id": "later-ok-id"}` response, sticky
-            # `saw_indeterminate_post` STILL preserves `ambiguous=True` so uncertainty can never be erased!
+            # Property 5: Default `WebhookClient.send(url, payload)` (`stop_on_ambiguous=False`)
+            # preserves pre-PR baseline retry & `SendResult` behavior for `schedule`/`codes`/CLI:
             with patch.object(asyncio, "sleep", new=AsyncMock()):
                 sticky_session = _QueuedSession(
                     [
@@ -10861,13 +10871,13 @@ def test_correction_6_ambiguous_post_no_replay_and_state_durability():
                     ]
                 )
                 sticky_client = discord_mod.WebhookClient(sticky_session, dry_run=False)
-                sticky_res = await sticky_client.send(HOOK, rendered_pages[0], stop_on_ambiguous=False)
+                sticky_res = await sticky_client.send(HOOK, rendered_pages[0])
                 assert len(sticky_session.calls) == 2
-                assert sticky_res.ok is True
-                assert sticky_res.message_id == "later-ok-id"
-                assert sticky_res.ambiguous is True
+                assert sticky_res == SendResult(True, 200, message_id="later-ok-id")
+                assert sticky_res.ambiguous is False
 
-                # Property 6a: Post-dispatch disconnect & HTTP 200 body-read failures stop at 1 POST with `ambiguous=True`.
+                # Property 6a: With `stop_on_ambiguous=True`, post-dispatch disconnect & HTTP 200
+                # body-read failures stop at 1 POST with `ambiguous=True` (queued step untouched).
                 for post_dispatch_step in (
                     aiohttp.ServerDisconnectedError("server closed connection after POST write"),
                     aiohttp.ClientConnectionResetError("connection reset after dispatch"),
@@ -10876,14 +10886,14 @@ def test_correction_6_ambiguous_post_no_replay_and_state_durability():
                 ):
                     ind_session = _QueuedSession([post_dispatch_step, _MockResp(200, '{"id":"never-sent"}')])
                     ind_client = discord_mod.WebhookClient(ind_session, dry_run=False)
-                    ind_res = await ind_client.send(HOOK, rendered_pages[0])
+                    ind_res = await ind_client.send(HOOK, rendered_pages[0], stop_on_ambiguous=True)
                     assert len(ind_session.calls) == 1
                     assert len(ind_session.steps) == 1
                     assert ind_res.ok is False and ind_res.ambiguous is True
 
                 # Property 6b: Definite pre-send connection setup errors (`ClientConnectorError`,
-                # `ConnectionTimeoutError`) safely retry and succeed with `ambiguous=False`, and when
-                # permanently unreachable exhaust retries with `ambiguous=False` (not false-locked).
+                # `ConnectionTimeoutError`) safely retry even under `stop_on_ambiguous=True` and
+                # succeed/exhaust with `ambiguous=False` (never false-locked).
                 conn_key = types.SimpleNamespace(host="discord.com", port=443, ssl=True)
                 presend_ok_session = _QueuedSession(
                     [
@@ -10893,7 +10903,7 @@ def test_correction_6_ambiguous_post_no_replay_and_state_durability():
                     ]
                 )
                 presend_client = discord_mod.WebhookClient(presend_ok_session, dry_run=False)
-                presend_res = await presend_client.send(HOOK, rendered_pages[0])
+                presend_res = await presend_client.send(HOOK, rendered_pages[0], stop_on_ambiguous=True)
                 assert len(presend_ok_session.calls) == 3
                 assert presend_res.ok is True
                 assert presend_res.message_id == "msg-after-presend-retry"
@@ -10903,14 +10913,16 @@ def test_correction_6_ambiguous_post_no_replay_and_state_durability():
                     [aiohttp.ConnectionTimeoutError("pool/connect timeout") for _ in range(5)]
                 )
                 presend_down_client = discord_mod.WebhookClient(presend_down_session, dry_run=False)
-                presend_down_res = await presend_down_client.send(HOOK, rendered_pages[0])
+                presend_down_res = await presend_down_client.send(HOOK, rendered_pages[0], stop_on_ambiguous=True)
                 assert len(presend_down_session.calls) == 5
                 assert presend_down_res.ok is False and presend_down_res.ambiguous is False
 
                 # Property 6c: Explicit 4xx rejection (`ambiguous=False`, 1 call), 429 rate-limit backoff + retry,
                 # and idempotent PATCH retry (`ambiguous=False`).
                 explicit_400_session = _QueuedSession([_MockResp(400, '{"message":"Invalid Form Body"}')])
-                res_400 = await discord_mod.WebhookClient(explicit_400_session, dry_run=False).send(HOOK, rendered_pages[0])
+                res_400 = await discord_mod.WebhookClient(explicit_400_session, dry_run=False).send(
+                    HOOK, rendered_pages[0], stop_on_ambiguous=True
+                )
                 assert len(explicit_400_session.calls) == 1
                 assert res_400.ok is False and res_400.status == 400 and res_400.ambiguous is False
 
@@ -10920,7 +10932,9 @@ def test_correction_6_ambiguous_post_no_replay_and_state_durability():
                         _MockResp(200, '{"id":"msg-after-429"}'),
                     ]
                 )
-                res_429 = await discord_mod.WebhookClient(rate_429_session, dry_run=False).send(HOOK, rendered_pages[0])
+                res_429 = await discord_mod.WebhookClient(rate_429_session, dry_run=False).send(
+                    HOOK, rendered_pages[0], stop_on_ambiguous=True
+                )
                 assert len(rate_429_session.calls) == 2
                 assert res_429.ok is True and res_429.message_id == "msg-after-429" and res_429.ambiguous is False
 
@@ -11049,15 +11063,15 @@ def test_final_acceptance_baseline_parity_shared_callers_and_template():
     1) Actual pre-PR `main` (`1e071d82eba82baa0a2977f33d6f8180d3677aaf`) payload & request parity
        across real HoYoLAB fixtures, all 5 games x 3 pagination regimes, and production baselines
        (cryptographic SHA-256 digests + live `git archive` cross-check when `1e071d8` is present).
-    2) End-to-end behavior of EVERY shared `WebhookClient` caller across the codebase:
-       - `schedule.run` (primary `POST`, `404` recovery `POST`, mirror `POST`, primary & mirror `PATCH`)
-       - `codeposter.run` (code card `POST`, `_mark_expired` `PATCH`)
-       - `runner.run_news` (multi-page `POST` + persistent ambiguity hold)
-       - `maintenance.run` (started-alert `POST` & silent `PATCH` + persistent ambiguity hold)
-       - `gamexpress.__main__.cmd_check_webhooks` / `cmd_test_card` (interactive CLI `POST`)
-       under normal `200`, `429` retry, `502` retry, definite pre-send `ClientConnectorError` retry,
-       explicit `400` rejection, `PATCH` retry, AND indeterminate `POST` timeout (`1` in-run `POST`
-       attempt instead of `5` blind replays, documenting and verifying exact caller state effects).
+    2) Preserved pre-PR baseline retry & `SendResult` behavior (`stop_on_ambiguous=False` default)
+       for all existing shared callers:
+       - `schedule.run` (primary `POST`, mirror `POST`, `404`-recovery repost `POST`, `PATCH` edits)
+       - `codeposter.run` (code-card `POST`, `_mark_expired` `PATCH`)
+       - `gamexpress.__main__.cmd_check_webhooks` / `cmd_test_card` (CLI sends)
+       including live side-by-side comparison against `main` (`1e071d8`) when present in git.
+    3) Explicit `stop_on_ambiguous=True` opt-in on official news (`runner.run_news`, ordinary and
+       expanded) and maintenance alerts (`maintenance.run`, `preload` and `maintenance`) — single
+       `POST` attempt, queued retry unexecuted, intact prior page IDs, restart & peer-merge hold.
     """
     import hashlib
     import io
@@ -11245,12 +11259,31 @@ def test_final_acceptance_baseline_parity_shared_callers_and_template():
                 raise nxt
             return nxt
 
-    with patch("gamexpress.discord.asyncio.sleep", new=AsyncMock()):
-        # 1) `schedule.run`: normal primary `POST` + mirror `POST`, silent `PATCH` edits, `404` repost,
-        #    AND intentional shared `1`-attempt stop on indeterminate `POST` timeout:
+    import inspect
+
+    assert inspect.signature(WebhookClient.send).parameters["stop_on_ambiguous"].default is False
+    assert inspect.signature(WebhookClient._request).parameters["stop_on_ambiguous"].default is False
+
+    orig_send = WebhookClient.send
+    observed_send_flags: list[bool] = []
+
+    async def _spy_send(self, webhook_url: str, payload: dict, *, stop_on_ambiguous: bool = False):
+        observed_send_flags.append(stop_on_ambiguous)
+        return await orig_send(self, webhook_url, payload, stop_on_ambiguous=stop_on_ambiguous)
+
+    with (
+        patch("gamexpress.discord.asyncio.sleep", new=AsyncMock()),
+        patch.object(WebhookClient, "send", _spy_send),
+    ):
+        # 1) `schedule.run`: preserves exact pre-PR `main` (`1e071d8`) retry & result handling across
+        #    primary `POST`, mirror `POST`, silent `PATCH` edits, `404`-recovery repost `POST`, and
+        #    full 5-attempt exhaustion (`"gave up after retries"`):
         with tempfile.TemporaryDirectory() as td:
+            observed_send_flags.clear()
             sess_ok = _WireSession([
+                asyncio.TimeoutError("transient primary timeout"),
                 _WireResp(200, '{"id": "sched-msg-1"}'),
+                aiohttp.ServerDisconnectedError("transient mirror disconnect"),
                 _WireResp(200, '{"id": "mirror-msg-1"}'),
             ])
             ctx_s = _wuwa_ctx(
@@ -11264,12 +11297,18 @@ def test_final_acceptance_baseline_parity_shared_callers_and_template():
             assert [(m, "wait=true" in u) for m, u, _ in sess_ok.calls] == [
                 ("POST", True),
                 ("POST", True),
+                ("POST", True),
+                ("POST", True),
             ]
+            assert observed_send_flags == [False, False]
             rec_37 = ctx_s.state.schedule_records("wuwa")["3.7"]
             assert rec_37["message_id"] == "sched-msg-1"
             assert rec_37["mirror_message_id"] == "mirror-msg-1"
+            assert any("schedule card posted" in r for r in ctx_s.report)
+            assert any("also posted" in r for r in ctx_s.report)
+            assert ctx_s.errors == []
 
-            # Update maintenance details -> triggers silent `PATCH` on primary + mirror (retries transient error):
+            # Update maintenance details -> silent `PATCH` on primary + mirror (retries transient error):
             sess_patch = _WireSession([
                 asyncio.TimeoutError("transient PATCH timeout"),
                 _WireResp(200, '{"id": "sched-msg-1"}'),
@@ -11289,53 +11328,90 @@ def test_final_acceptance_baseline_parity_shared_callers_and_template():
             asyncio.run(schedule.run(ctx_s))
             assert [m for m, _, _ in sess_patch.calls] == ["PATCH", "PATCH", "PATCH"]
 
-            # Deleted primary card (`404` on `PATCH`) -> `POST` recovery stops after `1` attempt on timeout:
-            rec_37["payload_hash"] = "force-edit"
-            sess_404_amb = _WireSession([
+            # Deleted primary card (`404` on `PATCH`) -> `POST` repost retries transient error & adopts new ID:
+            observed_send_flags.clear()
+            rec_37["payload_hash"] = "force-repost-ok"
+            sess_404_ok = _WireSession([
                 _WireResp(404, '{"code": 10008, "message": "Unknown Message"}'),
-                asyncio.TimeoutError("repost timeout after write"),
+                asyncio.TimeoutError("transient repost timeout"),
+                _WireResp(200, '{"id": "sched-reposted-2"}'),
             ])
-            ctx_s.webhook = WebhookClient(sess_404_amb)
+            ctx_s.webhook = WebhookClient(sess_404_ok)
             ctx_s.webhook._next_slot = 0.0
             ctx_s.errors.clear()
             asyncio.run(schedule.run(ctx_s))
-            assert [m for m, _, _ in sess_404_amb.calls] == ["PATCH", "POST"]
-            assert any("repost failed" in e for e in ctx_s.errors)
+            assert [m for m, _, _ in sess_404_ok.calls] == ["PATCH", "POST", "POST"]
+            assert observed_send_flags == [False]
+            assert rec_37["message_id"] == "sched-reposted-2"
+            assert ctx_s.errors == []
 
-            # Intentional shared behavior on indeterminate primary `POST` timeout in `schedule.run`:
-            # stops after `1` `POST` attempt in-run (never `5` blind replays), records error cleanly,
-            # and leaves unrecorded card eligible for next scheduled run (existing `schedule` state schema).
-            sess_s_amb = _WireSession([asyncio.TimeoutError("schedule post-write timeout")])
-            ctx_s_amb = _wuwa_ctx(Path(td) / "state_amb.json", WebhookClient(sess_s_amb), BOOTSTRAP_POST="1")
-            ctx_s_amb.webhook._next_slot = 0.0
-            asyncio.run(schedule.run(ctx_s_amb))
-            assert len(sess_s_amb.calls) == 1 and sess_s_amb.calls[0][0] == "POST"
-            assert any("post failed" in err for err in ctx_s_amb.errors)
-            assert "message_id" not in ctx_s_amb.state.schedule_records("wuwa").get("3.7", {})
+            # Deleted primary card (`404` on `PATCH`) -> `POST` repost exhausts all 5 baseline attempts:
+            rec_37["payload_hash"] = "force-repost-fail"
+            sess_404_fail = _WireSession([
+                _WireResp(404, '{"code": 10008, "message": "Unknown Message"}'),
+                *[asyncio.TimeoutError("repost timeout") for _ in range(5)],
+            ])
+            ctx_s.webhook = WebhookClient(sess_404_fail)
+            ctx_s.webhook._next_slot = 0.0
+            ctx_s.errors.clear()
+            asyncio.run(schedule.run(ctx_s))
+            assert [m for m, _, _ in sess_404_fail.calls] == ["PATCH", "POST", "POST", "POST", "POST", "POST"]
+            assert any("repost failed (0) gave up after retries" in e for e in ctx_s.errors)
+            assert rec_37["message_id"] == "sched-reposted-2"
+            assert rec_37["payload_hash"] == "force-repost-fail"
 
-        # 2) `codeposter.run`: normal `429` retry -> `200` `POST` + `_mark_expired` `PATCH`, AND
-        #    intentional shared `1`-attempt stop on indeterminate `POST` timeout (`status == "pending"`):
+            # Primary schedule `POST` exhausts all 5 baseline attempts -> error logged, unrecorded for retry:
+            sess_s_fail = _WireSession([asyncio.TimeoutError("schedule post timeout") for _ in range(5)])
+            ctx_s_fail = _wuwa_ctx(Path(td) / "state_fail.json", WebhookClient(sess_s_fail), BOOTSTRAP_POST="1")
+            ctx_s_fail.webhook._next_slot = 0.0
+            asyncio.run(schedule.run(ctx_s_fail))
+            assert [m for m, _, _ in sess_s_fail.calls] == ["POST"] * 5
+            assert any("post failed (0) gave up after retries" in err for err in ctx_s_fail.errors)
+            assert "message_id" not in ctx_s_fail.state.schedule_records("wuwa").get("3.7", {})
+
+            # Mirror `POST` exhausts all 5 baseline attempts while primary succeeds cleanly:
+            sess_mir_fail = _WireSession([
+                _WireResp(200, '{"id": "sched-prim-ok"}'),
+                *[asyncio.TimeoutError("mirror post timeout") for _ in range(5)],
+            ])
+            ctx_mir_fail = _wuwa_ctx(
+                Path(td) / "state_mir_fail.json",
+                WebhookClient(sess_mir_fail),
+                BOOTSTRAP_POST="1",
+                DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA=MIRROR,
+            )
+            ctx_mir_fail.webhook._next_slot = 0.0
+            asyncio.run(schedule.run(ctx_mir_fail))
+            assert [m for m, _, _ in sess_mir_fail.calls] == ["POST"] * 6
+            assert ctx_mir_fail.state.schedule_records("wuwa")["3.7"]["message_id"] == "sched-prim-ok"
+            assert any("copy failed (0) gave up after retries" in r for r in ctx_mir_fail.report)
+
+        # 2) `codeposter.run`: preserves 5-attempt baseline retry (`"gave up after retries"` -> `"pending"`),
+        #    transient disconnect + `429` recovery -> `"posted"`, and `_mark_expired` `PATCH` retry:
         with tempfile.TemporaryDirectory() as td:
-            ctx_c = make_ctx(Path(td) / "codes_amb.json", now=1790000000, DISCORD_WEBHOOK_CODES_GENSHIN=HOOK)
+            ctx_c = make_ctx(Path(td) / "codes_base.json", now=1790000000, DISCORD_WEBHOOK_CODES_GENSHIN=HOOK)
             ctx_c.state.mark_bootstrapped("codes", "genshin")
             official_code_item = Item(
                 "x", "genshin", "991", "https://x.com/GenshinImpact/status/991",
                 "Redemption Code: GENSHINGIFT", "Redemption Code: GENSHINGIFT", 1789999900,
             )
             ctx_c.items["genshin"] = [official_code_item]
-            sess_c_amb = _WireSession([aiohttp.ServerDisconnectedError("codes disconnect after write")])
-            ctx_c.webhook = WebhookClient(sess_c_amb)
+            observed_send_flags.clear()
+            sess_c_fail = _WireSession([aiohttp.ServerDisconnectedError("codes disconnect") for _ in range(5)])
+            ctx_c.webhook = WebhookClient(sess_c_fail)
             ctx_c.webhook._next_slot = 0.0
             with patch.object(codeposter, "prefetch", new=AsyncMock(return_value={})):
                 asyncio.run(codeposter.run(ctx_c))
-            assert len(sess_c_amb.calls) == 1 and sess_c_amb.calls[0][0] == "POST"
+            assert observed_send_flags == [False]
+            assert [m for m, _, _ in sess_c_fail.calls] == ["POST"] * 5
             assert ctx_c.state.code_records("genshin")["GENSHINGIFT"]["status"] == "pending"
-            assert any("code post failed" in e for e in ctx_c.errors)
+            assert any("code post failed (0) gave up after retries" in e for e in ctx_c.errors)
 
-            # Next run with `429` -> `200` succeeds once, and expiry triggers `PATCH` edit:
             sess_c_ok = _WireSession([
+                aiohttp.ServerDisconnectedError("transient disconnect"),
                 _WireResp(429, '{"retry_after": 0.1}'),
                 _WireResp(200, '{"id": "code-msg-1"}'),
+                asyncio.TimeoutError("transient PATCH timeout"),
                 _WireResp(200, '{"id": "code-msg-1"}'),
             ])
             ctx_c.webhook = WebhookClient(sess_c_ok)
@@ -11353,17 +11429,20 @@ def test_final_acceptance_baseline_parity_shared_callers_and_template():
             ctx_c.items["genshin"] = []
             with patch.object(codeposter, "prefetch", new=AsyncMock(return_value=expired_table)):
                 asyncio.run(codeposter.run(ctx_c))
-            assert [m for m, _, _ in sess_c_ok.calls] == ["POST", "POST", "PATCH"]
+            assert [m for m, _, _ in sess_c_ok.calls] == ["POST", "POST", "POST", "PATCH", "PATCH"]
 
-        # 3) CLI `check-webhooks` & `test-card` callers (`gamexpress/__main__.py`):
+        # 3) CLI `check-webhooks` & `test-card` callers (`gamexpress/__main__.py`): baseline 5-attempt retry:
         long_hook = (
             "https://discord.com/api/webhooks/123456789012345678/"
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-abcd"
         )
+        observed_send_flags.clear()
         sess_cli = _WireSession([
-            asyncio.TimeoutError("cli check timeout"),
+            *[asyncio.TimeoutError("cli check timeout") for _ in range(5)],
+            asyncio.TimeoutError("cli transient check timeout"),
             _WireResp(200, '{"id": "cli-ok-1"}'),
-            asyncio.TimeoutError("cli sample timeout"),
+            *[asyncio.TimeoutError("cli sample timeout") for _ in range(5)],
+            asyncio.TimeoutError("cli transient sample timeout"),
             _WireResp(200, '{"id": "cli-sample-ok-1"}'),
         ])
         out_cli = io.StringIO()
@@ -11379,11 +11458,73 @@ def test_final_acceptance_baseline_parity_shared_callers_and_template():
             tc_args = SimpleNamespace(kind="codes", game="genshin", dry_run=False, ping=False, unlaunched=False)
             rc_smp_fail = asyncio.run(cli_mod.cmd_test_card(tc_args))
             rc_smp_ok = asyncio.run(cli_mod.cmd_test_card(tc_args))
+        assert observed_send_flags == [False, False, False, False]
         assert (rc_cli_fail, rc_cli_ok, rc_smp_fail, rc_smp_ok) == (1, 0, 1, 0)
-        assert [m for m, _, _ in sess_cli.calls] == ["POST", "POST", "POST", "POST"]
+        assert [m for m, _, _ in sess_cli.calls] == ["POST"] * 14
 
-        # 4) Default-off `runner.run_news` end-to-end wire request log + payload parity with `main` (`1e071d8`):
+        # Live side-by-side `WebhookClient.send()` behavioral comparison against clean `1e071d8` when present:
+        if subprocess.run(
+            ["git", "cat-file", "-e", "1e071d82eba82baa0a2977f33d6f8180d3677aaf^{commit}"],
+            capture_output=True,
+        ).returncode == 0:
+            with tempfile.TemporaryDirectory() as base_dir:
+                subprocess.run(
+                    f"git archive 1e071d82eba82baa0a2977f33d6f8180d3677aaf | tar -x -C {base_dir}",
+                    shell=True,
+                    check=True,
+                )
+                probe_code = """
+import asyncio, json
+from unittest.mock import AsyncMock, patch
+import aiohttp
+from gamexpress import discord
+
+class R:
+    def __init__(self, status, body="", headers=None):
+        self.status, self._b, self.headers = status, body, headers or {}
+    async def __aenter__(self): return self
+    async def __aexit__(self, *e): return False
+    async def text(self): return self._b
+
+class S:
+    def __init__(self, steps):
+        self.steps, self.n = list(steps), 0
+    def request(self, m, u, json=None, timeout=None):
+        self.n += 1
+        x = self.steps.pop(0)
+        if isinstance(x, BaseException): raise x
+        return x
+
+async def run():
+    p = {"flags": 32768, "components": [{"type": 17, "components": [{"type": 10, "content": "hi"}]}]}
+    hook = "https://discord.com/api/webhooks/111/tok"
+    out = []
+    with patch("gamexpress.discord.asyncio.sleep", new=AsyncMock()):
+        for name, steps in [
+            ("ok", [R(200, '{"id":"m1"}')]),
+            ("retry_ok", [asyncio.TimeoutError("t"), R(200, '{"id":"m2"}')]),
+            ("give_up", [asyncio.TimeoutError("t") for _ in range(5)]),
+            ("disc_retry", [aiohttp.ServerDisconnectedError("d"), R(200, '{"id":"m3"}')]),
+            ("r429", [R(429, '{"retry_after":0.1}'), R(200, '{"id":"m4"}')]),
+            ("r400", [R(400, "bad")]),
+        ]:
+            s = S(steps)
+            c = discord.WebhookClient(s)
+            c._next_slot = 0.0
+            r = await c.send(hook, p)
+            out.append((name, s.n, r.ok, r.status, r.message_id, r.error))
+    print(json.dumps(out))
+
+asyncio.run(run())
+"""
+                base_out = json.loads(subprocess.check_output([sys.executable, "-c", probe_code], cwd=base_dir, text=True))
+                head_out = json.loads(subprocess.check_output([sys.executable, "-c", probe_code], text=True))
+                assert head_out == base_out
+
+        # 4) Default-off `runner.run_news` end-to-end wire trace + explicit `stop_on_ambiguous=True`
+        #    protection on BOTH ordinary single-card news (`NEWS_EXPAND_FULL=0`) AND maintenance alerts:
         with tempfile.TemporaryDirectory() as td_n:
+            observed_send_flags.clear()
             ctx_n = make_ctx(
                 Path(td_n) / "news_wire.json",
                 now=1792552000,
@@ -11404,6 +11545,7 @@ def test_final_acceptance_baseline_parity_shared_callers_and_template():
                 patch.object(hoyolab_mod, "news_article", new=AsyncMock(return_value=zzz_444)),
             ):
                 asyncio.run(runner.run_news(ctx_n))
+            assert observed_send_flags == [True]
             assert verified_media_log == [
                 "https://upload-os-bbs.hoyolab.com/upload/2026/10/21/zzz_47150540_cover.jpg",
                 tall_url,
@@ -11411,6 +11553,137 @@ def test_final_acceptance_baseline_parity_shared_callers_and_template():
             assert len(sess_n.calls) == 1
             assert sess_n.calls[0][0] == "POST" and "wait=true" in sess_n.calls[0][1]
             assert _canon_sha256([sess_n.calls[0][2]]) == MAIN_1E071D8_SHA256["prod:zzz_444"][1]
+
+            # Ordinary single-card news (`NEWS_EXPAND_FULL=0`) with indeterminate post-dispatch disconnect:
+            # explicitly passes `stop_on_ambiguous=True`, makes strictly 1 attempt, NEVER runs queued
+            # retry step, holds as partial+ambiguous across restart & peer merge with 0 duplicate sends:
+            observed_send_flags.clear()
+            ord_state_path = Path(td_n) / "news_ord_amb.json"
+            ctx_ord = make_ctx(
+                ord_state_path,
+                now=1792552000,
+                NEWS_ENABLED="1",
+                NEWS_GAMES="zzz",
+                NEWS_EXPAND_FULL="0",
+                DISCORD_WEBHOOK_NEWS_ZZZ=HOOK,
+            )
+            ctx_ord.state.news_record("zzz").update(floor=1792548000, records={})
+            ctx_ord.fetcher = types.SimpleNamespace(verify_media=lambda _u: asyncio.sleep(0, result=True))
+            sess_ord = _WireSession([
+                aiohttp.ServerDisconnectedError("socket dropped after POST write"),
+                _WireResp(200, '{"id": "queued-retry-must-not-run"}'),
+            ])
+            ctx_ord.webhook = WebhookClient(sess_ord)
+            ctx_ord.webhook._next_slot = 0.0
+            with (
+                patch.object(hoyolab_mod, "discover_news", new=AsyncMock(return_value=[{"id": "47150315", "ts": 1792549120}])),
+                patch.object(hoyolab_mod, "news_article", new=AsyncMock(return_value=zzz_436)),
+            ):
+                asyncio.run(runner.run_news(ctx_ord))
+            assert observed_send_flags == [True]
+            assert len(sess_ord.calls) == 1
+            assert len(sess_ord.steps) == 1  # queued retry strictly unexecuted
+            saved_ord = State.load(ord_state_path).news_record("zzz")["records"]["47150315"]
+            assert saved_ord["status"] == "partial" and saved_ord["ambiguous"] is True and saved_ord["messages"] == []
+
+            # Restart + peer merge on ordinary news hold -> 0 requests and hold intact:
+            restarted_ord = make_ctx(
+                ord_state_path,
+                now=1792552300,
+                NEWS_ENABLED="1",
+                NEWS_GAMES="zzz",
+                NEWS_EXPAND_FULL="0",
+                DISCORD_WEBHOOK_NEWS_ZZZ=HOOK,
+            )
+            restarted_ord.fetcher = types.SimpleNamespace(verify_media=lambda _u: asyncio.sleep(0, result=True))
+            restarted_ord.state.merge_peer({"news": {"zzz": {"floor": 1792548000, "records": {}}}})
+            assert restarted_ord.state.news_record("zzz")["records"]["47150315"]["ambiguous"] is True
+            sess_ord_rerun = _WireSession([])
+            restarted_ord.webhook = WebhookClient(sess_ord_rerun)
+            with (
+                patch.object(hoyolab_mod, "discover_news", new=AsyncMock(return_value=[{"id": "47150315", "ts": 1792549120}])),
+                patch.object(hoyolab_mod, "news_article", new=AsyncMock(return_value=zzz_436)),
+            ):
+                asyncio.run(runner.run_news(restarted_ord))
+            assert sess_ord_rerun.calls == []
+
+            # Maintenance alerts (`maintenance.run`: BOTH `preload` AND `maintenance`) explicitly
+            # pass `stop_on_ambiguous=True`, stop after 1 attempt without running queued retries,
+            # persist `status == "ambiguous"`, and stay suppressed across restart + peer merge:
+            from gamexpress import maintenance as maint_mod
+            from gamexpress.sources import launcher as launcher_mod
+
+            observed_send_flags.clear()
+            m_state_path = Path(td_n) / "maint_amb_explicit.json"
+            mctx = make_ctx(
+                m_state_path,
+                now=1792380000,
+                MAINTENANCE_ENABLED="1",
+                ONLY="maintenance",
+                MAINTENANCE_GAMES="zzz",
+                DISCORD_WEBHOOK_MAINTENANCE_ZZZ=HOOK,
+            )
+            mctx.state.schedule_records("zzz")["3.3"] = {
+                "status": "posted",
+                "data": {"version": "3.3", "preinstall_ts": 1792382400, "maint_start_ts": 1792383600},
+                "prov": {"preinstall_ts": [50, 1], "maint_start_ts": [50, 1]},
+            }
+            mctx.versions["zzz"] = {"live": "3.2", "pre": "3.3"}
+            mctx.items["zzz"] = []
+            with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value={})):
+                asyncio.run(maint_mod.run(mctx))  # silent baseline seed
+                mctx.now = 1792383700
+                sess_maint = _WireSession([
+                    aiohttp.ClientConnectionResetError("reset after preload POST write"),
+                    asyncio.TimeoutError("timeout after maintenance POST write"),
+                    _WireResp(200, '{"id": "queued-maint-retry-must-not-run"}'),
+                ])
+                mctx.webhook = WebhookClient(sess_maint)
+                mctx.webhook._next_slot = 0.0
+                asyncio.run(maint_mod.run(mctx))
+            assert observed_send_flags == [True, True]
+            assert len(sess_maint.calls) == 2
+            assert len(sess_maint.steps) == 1  # queued 3rd response strictly unexecuted
+            m_persisted = State.load(m_state_path).maintenance_record("zzz")
+            mrecs = m_persisted["versions"]["3.3"]
+            assert mrecs["preload"]["status"] == "ambiguous"
+            assert mrecs["maintenance"]["status"] == "ambiguous"
+
+            mctx_rerun = make_ctx(
+                m_state_path,
+                now=1792384000,
+                MAINTENANCE_ENABLED="1",
+                ONLY="maintenance",
+                MAINTENANCE_GAMES="zzz",
+                DISCORD_WEBHOOK_MAINTENANCE_ZZZ=HOOK,
+            )
+            mctx_rerun.state.merge_peer(
+                {
+                    "maintenance": {
+                        "zzz": {
+                            "route": m_persisted["route"],
+                            "seeded_at": m_persisted["seeded_at"],
+                            "versions": {
+                                "3.3": {
+                                    "preload": {"status": "seeded", "ts": 1792382400},
+                                    "maintenance": {"status": "seeded", "ts": 1792383600},
+                                }
+                            },
+                        }
+                    }
+                },
+                include_maintenance=True,
+            )
+            assert mctx_rerun.state.maintenance_record("zzz")["versions"]["3.3"]["preload"]["status"] == "ambiguous"
+            assert mctx_rerun.state.maintenance_record("zzz")["versions"]["3.3"]["maintenance"]["status"] == "ambiguous"
+            mctx_rerun.versions["zzz"] = {"live": "3.2", "pre": "3.3"}
+            mctx_rerun.items["zzz"] = []
+            sess_maint_rerun = _WireSession([_WireResp(200, '{"id": "must-not-replay-maint"}')])
+            mctx_rerun.webhook = WebhookClient(sess_maint_rerun)
+            mctx_rerun.webhook._next_slot = 0.0
+            with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value={})):
+                asyncio.run(maint_mod.run(mctx_rerun))
+            assert sess_maint_rerun.calls == []
 
 
 

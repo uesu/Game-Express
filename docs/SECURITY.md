@@ -80,9 +80,11 @@ run reports it as an error. Test: `test_a_source_dumping_hundreds_of_codes_canno
 * Source logging prints `url.split("?")[0]`, so the token in a token-gated nitter mirror's query
   string cannot be printed; `runner._summary_text()` also scrubs signed query parameters including
   `auth_key=` before writing job summaries or workflow annotations.
-* Webhook `POST` outcomes that return HTTP `200`/`204` without a parseable `message_id` or exhaust
-  post-write timeouts set `SendResult.ambiguous = True` so multi-page news and milestone state
-  hold for review instead of blindly re-posting duplicate messages on later 5-minute runs.
+* Official-news and maintenance-alert `POST` calls pass `stop_on_ambiguous=True` so HTTP `200`/`204`
+  responses without a parseable `message_id` or indeterminate post-dispatch timeouts/disconnects stop
+  after 1 attempt with `SendResult.ambiguous = True`, holding news (ordinary and expanded) and
+  milestone state for review instead of blindly re-posting duplicates while preserving pre-PR
+  retry behavior (`stop_on_ambiguous=False`) for `schedule`, `codes`, and CLI callers.
 * Discord error bodies are truncated to 500 characters and never include the URL.
 * Actions masks every secret value in logs as a second line of defence.
 

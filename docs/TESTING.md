@@ -387,16 +387,19 @@ the original layout. Do not repack pages or modify titles, Part/Page labels,
 final-container buttons, full-content eligibility or the one-lead overflow excerpt.
 The existing partial-delivery signature guard holds changed layouts for manual
 review rather than replaying already confirmed pages. Do not toggle layout modes
-mid-partial delivery without reviewing that hold. Indeterminate webhook `POST`
-outcomes (response timeouts after dispatch, post-connect socket resets, `2xx`
-response-body read errors, or `2xx` responses lacking `"id"`) return `ambiguous=True`
-immediately without blind retry (`test_correction_6_ambiguous_post_no_replay_and_state_durability`
-and `test_final_acceptance_baseline_parity_shared_callers_and_template`),
-preserving confirmed `messages` IDs in `state.json` and holding across restarts and
-peer merges for `news`/`maintenance` while keeping definite pre-send connection errors,
-`429` rate-limit backoff, explicit `4xx` rejections, and idempotent `PATCH` edits intact.
-Shared `WebhookClient.send()` callers in `schedule.py` and `codeposter.py` inherit the
-same single-attempt non-replay stop within a run on indeterminate `POST` errors without
-redesigning their existing cross-run retry state schemas. No state reset or old-post edits.
+mid-partial delivery without reviewing that hold. Conservative stop-and-hold recovery
+is explicitly enabled for official news and maintenance alerts. Existing schedule/code
+retry behavior remains at the pre-PR baseline (`stop_on_ambiguous=False` by default
+across `schedule`, `codes`, and CLI `WebhookClient.send()` callers). Specifically,
+for `runner.run_news` (`stop_on_ambiguous=True`) and `maintenance.run` (`stop_on_ambiguous=True`),
+indeterminate webhook `POST` outcomes (response timeouts after dispatch, post-connect
+socket resets, `2xx` response-body read errors, or `2xx` responses lacking `"id"`) return
+`ambiguous=True` immediately after 1 attempt without blind retry
+(`test_correction_6_ambiguous_post_no_replay_and_state_durability` and
+`test_final_acceptance_baseline_parity_shared_callers_and_template`), preserving
+confirmed `messages` IDs in `state.json` and holding across restarts and peer merges
+while keeping definite pre-send connection errors, `429` rate-limit backoff, explicit
+`4xx` rejections, and idempotent `PATCH` edits intact.
+No state reset or old-post edits.
 Discord controls thumbnail cropping; neither header measurements, HTML previews
 nor passing offline tests prove live media decoding/readability or delivery.

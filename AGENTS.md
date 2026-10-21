@@ -498,17 +498,21 @@ repository Variables:
   (`NEWS_EXPAND_MAX_MEDIA = 120`), with explicitly labelled excerpt fallback if exceeded and
   `SendResult.ambiguous` holds on indeterminate webhook `POST` outcomes (adding media validation
   `GET`s, webhook `POST`s, and inter-page pacing proportional to media and page count).
-- **Shared `WebhookClient` caller behavior (`gamexpress/discord.py`):** although
-  `gamexpress/schedule.py` and `gamexpress/codeposter.py` source files are unmodified, every
-  caller of `WebhookClient.send()` (`schedule.py` primary `POST`, `404` recovery repost, and
-  mirror `POST`; `codeposter.py` code-card `POST`; `runner.py` news `POST`; `maintenance.py`
-  started-alert `POST`; and `__main__.py` `test-card`/`check-webhooks`) intentionally shares
-  the 1-attempt stop on indeterminate in-flight `POST` errors (eliminating up to 4 blind in-run
-  duplicate `POST` replays per call while preserving definite pre-send retries, `429`/`5xx`
-  retries, explicit `4xx` handling, and idempotent `PATCH` retries). Because `schedule` and
-  `codes` state schemas are intentionally unchanged, unrecorded `schedule`/`codes` cards remain
-  retryable on the next scheduled run, whereas `news` and `maintenance` also persist cross-run
-  and peer-merged `"ambiguous"` holds.
+- **Shared `WebhookClient` recovery policy (`gamexpress/discord.py`):** Conservative
+  stop-and-hold recovery is explicitly enabled for official news and maintenance alerts.
+  Existing schedule/code retry behavior remains at the pre-PR baseline. Specifically,
+  `runner.py:run_news` (ordinary single-card, `<=7,000` 2-page, excerpt, and
+  `NEWS_EXPAND_FULL=1` multi-page articles) and `maintenance.py:run` (`Pre-Load Started` /
+  `Maintenance Started` alerts) pass `stop_on_ambiguous=True` explicitly, stopping blind
+  replay after 1 `POST` attempt and returning `SendResult(..., ambiguous=True)` while
+  preserving definite pre-send connection retries, explicit `4xx` rejection handling, `429`
+  `Retry-After` backoff, `5xx` retries, and idempotent `PATCH` edits; existing `schedule`
+  (`schedule.py` primary `POST`, `404`-recovery repost, and mirror `POST`), `codes`
+  (`codeposter.py`), and CLI (`__main__.py` `test-card`/`check-webhooks`) callers leave
+  `stop_on_ambiguous=False` by default and retain their exact pre-PR baseline retry and
+  `SendResult` behavior. Keep default-off formatting/pagination parity, authorized
+  independent official-news delivery, news/maintenance recovery hardening, and preserved
+  `schedule`/`codes` behavior clearly distinct.
 
 Run `.venv/bin/python -m gamexpress benchmark --iterations 300` (or add `--json`) on any clean
 revision to reproduce the exact SHA-stamped `median`/`mean`/`p95` offline CPU timings across all

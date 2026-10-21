@@ -514,7 +514,7 @@ async def run_news(ctx: Ctx) -> None:
                     rec = {"status": "partial", "ts": row["ts"], "row": row,
                            "signature": signature, "messages": []}
                 for payload in payloads[len(rec["messages"]):]:
-                    result = await ctx.webhook.send(hook, payload)
+                    result = await ctx.webhook.send(hook, payload, stop_on_ambiguous=True)
                     if result.ambiguous or (result.ok and not result.message_id):
                         rec["ambiguous"] = True
                         records[row["id"]] = rec
