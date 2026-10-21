@@ -264,6 +264,8 @@ A schedule/code-only selector does not count as toggling news off.
 |---|---|---|
 | `NEWS_ENABLED` | `0` | Explicit news opt-in; independent of the existing schedule/code defaults |
 | `NEWS_GROUP_LONG_STRIPS` | `0` | Opt-in measured grouping; failure keeps article order |
+| `NEWS_TIMESTAMPS` | `0` | Opt-in render-time `<t:EPOCH:…>` conversion for exact TZ-qualified news dates/times |
+| `NEWS_EXPAND_FULL` | `0` | Opt-in multi-page full articles beyond 2 pages (bounded at `NEWS_EXPAND_MAX_PAGES = 20` and `NEWS_EXPAND_MAX_MEDIA = 120`) |
 | `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | Canonical game keys; removing a game pauses its existing news state |
 
 Each run attempts all discovered eligible unposted articles in publication order,
@@ -372,26 +374,53 @@ Event start/end dates and "In Progress"/"Already Ended" badges are not new
 publication times: existing old events are not reposted when enabled.
 
 
+### Optional news-description timestamps (default off)
+
+`NEWS_TIMESTAMPS=0` (default) bypasses the timestamp scanner completely (`0.30 µs`
+no-op), leaving rendered text byte-identical and making zero network calls.
+
+Setting `NEWS_TIMESTAMPS=1` enables render-only conversion (`gamexpress/news_timestamps.py`)
+after source-text normalization and immediately before pagination/sizing across the five
+supported news games (`genshin`, `starrail`, `hna`, `zzz`, `wuwa`):
+
+- **Timezone rules:** an explicit offset in the source (`UTC+8`, `UTC-4`, `(UTC+8)`, etc.)
+  always wins; `server time` uses the approved `UTC+8` fallback for news descriptions only
+  (`gamexpress/timeparse.py` for schedule extraction remains untouched). Timezone-less
+  times are left unchanged unless a shared trailing timezone explicitly qualifies both ends
+  of a range (e.g. `July 9, 10:00 — July 27, 18:00 (UTC+8)`).
+- **Missing years & rollover:** inferred strictly from `item.published_ts` with explicit
+  Dec → Jan and early-Jan → late-Dec year-boundary handling. If `published_ts` is absent
+  and no year is written, the expression is left untouched.
+- **Safety exclusions:** existing `<t:…>` tokens, URLs, inline backticks, fenced code
+  blocks, date-only phrases, `"After the Version X.Y update"` clauses, approximate durations
+  and unresolved ranges are never rewritten. Source `Item` fields and raw HTML/captures
+  are never mutated.
+
 ### Full-content paging and overflow
 
 Keep fitting full articles unchanged in one message (possibly multiple containers).
-If that fails, permit at most two actual messages when normalized source text plus
-title/byline once is <=7,000 characters and both payloads validate independently
-against 4,000 text characters / 40 components / 1–10 gallery items. The 7,000
-ceiling is fixed policy, not a Discord limit and not a new environment variable.
-Preserve complete wording and source media order. Prefer source block boundaries;
-use safe paragraph boundaries only for larger text blocks. Never split a link or
-unbalanced bold span. If packing fails, use the existing one-container excerpt
-with at most one lead image; never publish a partial full-article proposal.
-Paged messages: title/byline and lead only once at the start, then Page 1 / Page 2
-labels and dividers; three custom-emoji buttons only at the end of the final
-message. One-message articles also put buttons in the final container. Articles
-above the ceiling or unpageable within two messages keep the approved half-fitting
-word excerpt. Never truncate fitting full articles or modify official API HTML.
-Retain confirmed per-message progress, no-repost handling, media preflight and
-refresh/holds. No new scheduler or delivery-state reset. Historical incomplete
-captures are not full-source length evidence. Pagination is tested across all
-five game keys with synthetic boundary inputs, not five live integrations.
+By default (`NEWS_EXPAND_FULL=0`), if one message fails, at most two actual messages
+are permitted when normalized source text plus title/byline once is `<= 7,000`
+characters and both payloads validate independently against `4,000` text characters /
+`40` components / `1–10` gallery items.
+
+When `NEWS_EXPAND_FULL=1` is explicitly enabled, the 2-page / 7,000-character policy
+ceiling is lifted up to an explicit operational safety bound (`NEWS_EXPAND_MAX_PAGES = 20`,
+`NEWS_EXPAND_MAX_MEDIA = 120`):
+
+- Every emitted page still validates independently against Discord's limits (`4,000` text
+  characters, `40` components, `1–10` media gallery items).
+- Source text and media order, unique-cover deduplication, native MP4/WebM cover suppression,
+  link-only video covers, `Page N` headers, non-repeated title/byline and final-container-only
+  3-button controls (`Read Post`, `Citlali News`, `Donate`) are preserved across all pages.
+- Overlong paragraphs inside a block split only on safe newline/sentence/whitespace
+  boundaries outside Markdown links, inline code and unbalanced `**` bold spans.
+- If an article exceeds `NEWS_EXPAND_MAX_PAGES = 20` or contains an indivisible single unit
+  exceeding single-message limits, rendering degrades cleanly to an explicitly labelled
+  `Excerpt — …` single card rather than truncating silently or claiming to be full.
+- Confirmed per-page message IDs save after each send; if a webhook `POST` returns HTTP 2xx
+  without a parseable `message_id` or times out ambiguously, the record marks `ambiguous = True`
+  and holds rather than blindly re-posting duplicate pages on subsequent 5-minute runs.
 
 
 ### Source-preserving formatting
@@ -461,6 +490,45 @@ Discord media access, codecs, delivery or thumbnail readability. Keep news off
 until the operator explicitly approves opt-in. Review partial-delivery holds;
 never reset delivery state merely to test. No new scheduler, tokens or upload
 service are needed. Keep each installation's state and secrets independent.
+
+## Pre-load & maintenance started (explicit per-game opt-in; default off)
+
+`MAINTENANCE_ENABLED=0` (default) makes zero extra requests and adds no maintenance
+entries to `state/state.json`. Activating the fourth feature requires **both**
+`MAINTENANCE_ENABLED=1` **and** an explicit non-empty `MAINTENANCE_GAMES` list,
+plus a dedicated per-game webhook secret for each opted-in game:
+
+| Setting | Kind | Default | Meaning |
+|---|---|---|---|
+| `MAINTENANCE_ENABLED` | Variable | `0` | Master switch; disabled unless explicitly truthy (and overridden by `ENABLED_FEATURES=none/off/standby/0`) |
+| `MAINTENANCE_GAMES` | Variable | *(empty)* | Required explicit per-game opt-in list (e.g. `genshin,starrail,zzz,wuwa,hna`); empty activates nothing |
+| `DISCORD_WEBHOOK_MAINTENANCE_<GAME>` | Secret | *(unset)* | Dedicated per-game channel webhook (`GENSHIN`, `STARRAIL`, `HNA`, `ZZZ`, `WUWA`, `ANANTA` + aliases); no generic/catch-all/mirror/`FORCE_WEBHOOK` fallback |
+| `PING_MAINTENANCE_<GAME>` / `PING_MAINTENANCE` | Variable | `none` | Optional per-game or feature role ping inside the headline block (`<@&ROLE>`); silent by default |
+
+Behavior and safety invariants (`gamexpress/maintenance.py`):
+
+- **Independent milestones & separate state:** posts `Pre-Load Started` and
+  `Maintenance Started` independently per `(game, version)` on the existing 5-minute
+  poll cycle. `state["maintenance"][game]` tracks `preload` and `maintenance`
+  separately from `schedule`, `codes` and `news`, and merges across fail-over peers.
+- **Silent baseline on first enable:** on first activation (or re-enable after pause),
+  already-passed milestones and live/settled versions are marked `seeded` silently
+  without posting historical announcements.
+- **Strict precedence:** official notices/tweets (`rank 40–50`) → explicit
+  `config/overrides.json` entries → documented cadence predictions (`rank 9`,
+  clearly marked estimated). Holiday-shifted official notices always override both
+  cadence predictions and stale overrides; HNA never invents an unverified cadence,
+  and unknown `maint_end_ts` omits `End Time` rather than guessing.
+- **Components V2 card & 4-tier media priority:** single container (`flags: 32768`)
+  with `[SHORT - VERSION] Pre-Load Started` / `Maintenance Started`, optional role
+  mention, `Date Time` (`<t:…:f>`) + `Hour Time` (`<t:…:R>`) or `End Time` (`<t:…:t>`),
+  optional version-verified gallery ((1) matching-version launch video `.webm`/`.mp4`,
+  (2) matching-version launcher artwork/WebP, (3) matching-version Special Program art,
+  (4) omitted cleanly), and the Citlali News section footer. Launch assets lock once
+  verified so mid-patch Phase II background swaps never overwrite launch cards; if
+  higher-priority launch video goes live shortly after initial post, a bounded silent
+  `PATCH` upgrades the card without re-pinging. Signed Kuro `auth_key=` query parameters
+  are preserved intact and refreshed before expiry.
 
 ## Discord webhook versus bot delivery
 

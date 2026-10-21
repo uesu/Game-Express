@@ -22,7 +22,9 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = ROOT / "config"
 DEFAULT_STATE_PATH = ROOT / "state" / "state.json"
 
-FEATURES = ("schedule", "codes", "news")
+FEATURES = ("schedule", "codes", "news", "maintenance")
+DEDICATED_FEATURES = ("news", "maintenance")
+DEFAULT_OPTIONAL_GAMES = ("genshin", "starrail", "zzz", "wuwa", "hna")
 DEFAULT_COLOR = 14922399  # the gold accent used by every reference card
 MAINTENANCE_NOTE = ("※ In the event that the maintenance is extended, the dev team will issue a "
                     "follow-up notice and adjust the compensation accordingly.")
@@ -404,6 +406,10 @@ class Settings:
     news_enabled: bool = False
     news_games: set[str] = field(default_factory=set)
     news_group_long_strips: bool = False
+    news_timestamps: bool = False
+    news_expand_full: bool = False
+    maintenance_enabled: bool = False
+    maintenance_games: set[str] = field(default_factory=set)
 
     # -- routing ---------------------------------------------------------------
     def _game_slugs(self, game_key: str) -> list[str]:
@@ -417,12 +423,12 @@ class Settings:
         """(secret name, url). Order: FORCE_WEBHOOK (test channel) > DISCORD_WEBHOOK_<FEATURE>_<GAME>
         (the game key, or its short name: CODES_GENSHIN / CODES_GI, CODES_STARRAIL / CODES_HSR …)
         > DISCORD_WEBHOOK_<FEATURE> > DISCORD_WEBHOOK_URL."""
-        if self.force_webhook and feature != "news":
+        if self.force_webhook and feature not in DEDICATED_FEATURES:
             return "FORCE_WEBHOOK", self.force_webhook
         f = slug(feature)
         names = [f"DISCORD_WEBHOOK_{f}_{g}" for g in self._game_slugs(game_key)]
-        # News must never inherit the schedule/code catch-all or a shared news channel.
-        if feature != "news":
+        # Opt-in per-game features must never inherit the schedule/code catch-all or shared channel.
+        if feature not in DEDICATED_FEATURES:
             names += [f"DISCORD_WEBHOOK_{f}", "DISCORD_WEBHOOK_URL"]
         for name in names:
             v = _env(self.env, name)
@@ -446,7 +452,7 @@ class Settings:
         FORCE_WEBHOOK (the test channel) switches the fan-out off entirely: it already
         redirects the primary card, so a second copy must not leak into a real game channel.
         """
-        if self.force_webhook:
+        if self.force_webhook or feature in DEDICATED_FEATURES:
             return "", None
         f = slug(feature)
         names = [f"DISCORD_WEBHOOK_{f}_MIRROR_{g}" for g in self._game_slugs(game_key)]
@@ -459,15 +465,19 @@ class Settings:
 
     def expected_webhook_names(self, feature: str, game_key: str) -> str:
         f = slug(feature)
+        if feature in DEDICATED_FEATURES:
+            return f"DISCORD_WEBHOOK_{f}_{slug(game_key)}"
         return f"DISCORD_WEBHOOK_{f}_{slug(game_key)} (or DISCORD_WEBHOOK_{f})"
 
     def ping(self, feature: str, game_key: str) -> Ping:
-        """PING_<FEATURE>_<GAME>  >  PING_<FEATURE>  >  PING_ROLE_ID.  'none' = explicit off.
-        NO_PING=1 (test runs) silences everything."""
+        """PING_<FEATURE>_<GAME>  >  PING_<FEATURE>  (>  PING_ROLE_ID for schedule/codes).
+        'none' = explicit off. NO_PING=1 (test runs) silences everything."""
         if self.no_ping:
             return Ping()
         f = slug(feature)
-        names = [f"PING_{f}_{g}" for g in self._game_slugs(game_key)] + [f"PING_{f}", "PING_ROLE_ID"]
+        names = [f"PING_{f}_{g}" for g in self._game_slugs(game_key)] + [f"PING_{f}"]
+        if feature != "maintenance":
+            names.append("PING_ROLE_ID")
         for name in names:
             p = parse_ping(_env(self.env, name))
             if p is not None:
@@ -510,22 +520,54 @@ def _buttons_env(env: Mapping[str, str], name: str, limit: int = 3) -> list[dict
     return [b for b in parsed if isinstance(b, dict) and b.get("url") and b.get("label")][:limit]
 
 
+def _game_set_env(
+    env: Mapping[str, str],
+    name: str,
+    aliases: Mapping[str, list[str]],
+    default: tuple[str, ...] = DEFAULT_OPTIONAL_GAMES,
+) -> set[str]:
+    raw = _env(env, name)
+    if not raw:
+        return set(default)
+    reverse = {a.lower(): key for key, vals in aliases.items() for a in vals}
+    tokens = [g.strip().lower() for g in raw.split(",") if g.strip()]
+    if not tokens:
+        return set(default)
+    if len(tokens) == 1 and tokens[0] in ("none", "off", "0", "-"):
+        return set()
+    out: set[str] = set()
+    for tok in tokens:
+        if tok == "all":
+            out.update(DEFAULT_OPTIONAL_GAMES)
+        else:
+            out.add(reverse.get(tok, tok))
+    return out
+
+
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     env = dict(os.environ if env is None else env)
     _merge_json_blobs(env)
     feats_raw = _env(env, "ENABLED_FEATURES", "schedule,codes").lower()
     only = _env(env, "ONLY", "").lower()
-    if feats_raw in ("none", "off", "standby", "0"):
+    standby = feats_raw in ("none", "off", "standby", "0")
+    if standby:
         features: set[str] = set()
     else:
         features = {f.strip() for f in feats_raw.split(",") if f.strip() in FEATURES}
     # Explicit opt-in even if a pre-existing installation asks for all features.
     features.discard("news")
-    if feats_raw not in ("none", "off", "standby", "0") and _bool(env, "NEWS_ENABLED"):
+    features.discard("maintenance")
+    if not standby and _bool(env, "NEWS_ENABLED"):
         features.add("news")
+    if not standby and _bool(env, "MAINTENANCE_ENABLED"):
+        features.add("maintenance")
+    if only:
+        only_set = {f.strip() for f in only.split(",") if f.strip() in FEATURES}
+        if only_set:
+            features &= only_set
     news_enabled = "news" in features
-    if only in FEATURES:
-        features &= {only}
+    maintenance_enabled = "maintenance" in features
+    aliases = _game_aliases()
     games_filter = {g.strip().lower() for g in (_env(env, "GAMES") + "," + _env(env, "GAME")).split(",")
                     if g.strip()}
     nitter = [u.strip().rstrip("/") for u in _env(env, "NITTER_INSTANCES").split(",") if u.strip()]
@@ -570,11 +612,15 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         force_webhook=_env(env, "FORCE_WEBHOOK"),
         test_mode=_bool(env, "TEST_MODE"),
         enable_games={g.strip().lower() for g in _env(env, "ENABLE_GAMES").split(",") if g.strip()},
-        aliases=_game_aliases(),
+        aliases=aliases,
         codes_mark_expired=_bool(env, "CODES_MARK_EXPIRED", True),
         news_enabled=news_enabled,
-        news_games={g.strip().lower() for g in _env(env, "NEWS_GAMES", "genshin,starrail,zzz,wuwa,hna").split(",") if g.strip()},
+        news_games=_game_set_env(env, "NEWS_GAMES", aliases),
         news_group_long_strips=_bool(env, "NEWS_GROUP_LONG_STRIPS", False),
+        news_timestamps=_bool(env, "NEWS_TIMESTAMPS", False),
+        news_expand_full=_bool(env, "NEWS_EXPAND_FULL", False),
+        maintenance_enabled=maintenance_enabled,
+        maintenance_games=_game_set_env(env, "MAINTENANCE_GAMES", aliases, default=()),
     )
 
 

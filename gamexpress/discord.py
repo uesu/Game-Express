@@ -34,6 +34,7 @@ class SendResult:
     status: int
     message_id: str | None = None
     error: str = ""
+    ambiguous: bool = False
 
 
 def webhook_fingerprint(url: str) -> str:
@@ -87,6 +88,7 @@ class WebhookClient:
             return SendResult(True, 200, message_id="dry-run")
         await self._pace()
         delay = 1.0
+        saw_post_timeout = False
         for attempt in range(5):
             try:
                 async with self.session.request(method, url, json=payload,
@@ -99,7 +101,12 @@ class WebhookClient:
                                 mid = str(json.loads(body).get("id") or "") or None
                             except json.JSONDecodeError:
                                 mid = None
-                        return SendResult(True, r.status, message_id=mid)
+                        return SendResult(
+                            True,
+                            r.status,
+                            message_id=mid,
+                            ambiguous=(method == "POST" and mid is None),
+                        )
                     if r.status == 429:
                         try:
                             retry = float(json.loads(body).get("retry_after", 1.0))
@@ -114,11 +121,17 @@ class WebhookClient:
                         delay *= 2
                         continue
                     return SendResult(False, r.status, error=body[:500])
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            except asyncio.TimeoutError as e:
+                if method == "POST":
+                    saw_post_timeout = True
                 log.warning("Discord request error %s — retry %d", e, attempt + 1)
                 await asyncio.sleep(delay)
                 delay *= 2
-        return SendResult(False, 0, error="gave up after retries")
+            except aiohttp.ClientError as e:
+                log.warning("Discord request error %s — retry %d", e, attempt + 1)
+                await asyncio.sleep(delay)
+                delay *= 2
+        return SendResult(False, 0, error="gave up after retries", ambiguous=saw_post_timeout)
 
     async def send(self, webhook_url: str, payload: dict) -> SendResult:
         base, keep = _split(webhook_url)

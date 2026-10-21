@@ -63,8 +63,33 @@ async def fetch_items(fetcher: Fetcher, game: Game, want: Callable[[str], bool],
     return out
 
 
+def _launcher_media_fields(section: dict | None) -> tuple[str, str]:
+    """Extract optional structured video/artwork URLs without altering signed queries."""
+    if not isinstance(section, dict):
+        return "", ""
+    video = ""
+    artwork = ""
+    for key in ("bgVideo", "videoUrl", "video_url", "video"):
+        val = section.get(key)
+        if isinstance(val, str) and val.strip():
+            video = val.strip()
+            break
+        if isinstance(val, dict) and isinstance(val.get("url"), str) and val["url"].strip():
+            video = val["url"].strip()
+            break
+    for key in ("background", "bgImage", "imageUrl", "image_url", "poster", "cover", "image"):
+        val = section.get(key)
+        if isinstance(val, str) and val.strip():
+            artwork = val.strip()
+            break
+        if isinstance(val, dict) and isinstance(val.get("url"), str) and val["url"].strip():
+            artwork = val["url"].strip()
+            break
+    return video, artwork
+
+
 def parse_launcher_index(data: dict) -> dict:
-    """{'live': '3.6', 'pre': '3.7' | None} from the Kuro launcher index.json."""
+    """{'live': '3.6', 'pre': '3.7' | None} (+ optional structured launch media) from index.json."""
     if not isinstance(data, dict):
         return {}
     default = data.get("default") or {}
@@ -73,7 +98,19 @@ def parse_launcher_index(data: dict) -> dict:
     pre = None
     if isinstance(pre_obj, dict) and pre_obj:
         pre = short_version(pre_obj.get("version") or (pre_obj.get("config") or {}).get("version"))
-    return {"live": live, "pre": pre}
+    out: dict = {"live": live, "pre": pre}
+    pre_video, pre_art = _launcher_media_fields(pre_obj if isinstance(pre_obj, dict) else None)
+    live_video, live_art = _launcher_media_fields(default if isinstance(default, dict) else None)
+    top_video, top_art = _launcher_media_fields(data)
+    if pre and (pre_video or pre_art):
+        out["pre_media"] = {"version": pre, "video": pre_video, "artwork": pre_art}
+    if live and (live_video or live_art or top_video or top_art):
+        out["live_media"] = {
+            "version": live,
+            "video": live_video or top_video,
+            "artwork": live_art or top_art,
+        }
+    return out
 
 
 async def launcher_versions(fetcher: Fetcher) -> dict:

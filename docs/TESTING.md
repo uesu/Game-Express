@@ -310,23 +310,22 @@ separate from offline test success. No production posts were made during impleme
 ## Current official-news paging policy (supersedes earlier one-message-only wording)
 
 Keep fitting full articles unchanged in one message (possibly multiple containers).
-If that fails, permit at most two actual messages when normalized source text plus
-title/byline once is <=7,000 characters and both payloads validate independently
-against 4,000 text characters / 40 components / 1–10 gallery items. The 7,000
-ceiling is fixed policy, not a Discord limit and not a new environment variable.
-Preserve complete wording and source media order. Prefer source block boundaries;
-use safe paragraph boundaries only for larger text blocks. Never split a link or
-unbalanced bold span. If packing fails, use the existing one-container excerpt
-with at most one lead image; never publish a partial full-article proposal.
-Paged messages: title/byline and lead only once at the start, then Page 1 / Page 2
-labels and dividers; three custom-emoji buttons only at the end of the final
-message. One-message articles also put buttons in the final container. Articles
-above the ceiling or unpageable within two messages keep the approved half-fitting
-word excerpt. Never truncate fitting full articles or modify official API HTML.
-Retain confirmed per-message progress, no-repost handling, media preflight and
-refresh/holds. No new scheduler or delivery-state reset. Historical incomplete
-captures are not full-source length evidence. Pagination is tested across all
-five game keys with synthetic boundary inputs, not five live integrations.
+By default (`NEWS_EXPAND_FULL=0`), if that fails, permit at most two actual messages
+when normalized source text plus title/byline once is `<= 7,000` characters and both
+payloads validate independently against 4,000 text characters / 40 components /
+1–10 gallery items. When `NEWS_EXPAND_FULL=1`, full articles expand across multiple
+validated pages up to `NEWS_EXPAND_MAX_PAGES = 20` (`NEWS_EXPAND_MAX_MEDIA = 120`),
+degrading to a clearly labelled `Excerpt — …` single message only if the safety bound
+is exceeded or a single indivisible block cannot fit.
+
+### Reproducible offline benchmark (`python -m gamexpress benchmark`)
+
+Run `.venv/bin/python -m gamexpress benchmark --iterations 300` (add `--json` for
+machine-readable output) to reproduce local microbenchmarks across timestamp
+formatting, disabled vs enabled single-pass `news_timestamps` scanning, and short vs
+long (`12,348`-char, `18`-media, `4`-page expanded) news card construction without
+network access or secrets.
+
 
 
 ### Latest layout corrections: 7,000 eligibility / final-container controls

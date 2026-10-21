@@ -78,7 +78,11 @@ run reports it as an error. Test: `test_a_source_dumping_hundreds_of_codes_canno
 * Webhook URLs never reach the log: dry-run output rewrites them to `/webhooks/…`, and state
   stores only `webhook_fingerprint()` — a short, non-reversible id, never the URL.
 * Source logging prints `url.split("?")[0]`, so the token in a token-gated nitter mirror's query
-  string cannot be printed.
+  string cannot be printed; `runner._summary_text()` also scrubs signed query parameters including
+  `auth_key=` before writing job summaries or workflow annotations.
+* Webhook `POST` outcomes that return HTTP `200`/`204` without a parseable `message_id` or exhaust
+  post-write timeouts set `SendResult.ambiguous = True` so multi-page news and milestone state
+  hold for review instead of blindly re-posting duplicate messages on later 5-minute runs.
 * Discord error bodies are truncated to 500 characters and never include the URL.
 * Actions masks every secret value in logs as a second line of defence.
 

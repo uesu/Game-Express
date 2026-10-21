@@ -8123,5 +8123,730 @@ def test_news_validate_reports_no_article_count_cap_and_no_retired_field():
     assert 'article count cap=none' in text
     assert 'max articles/run=' not in text and not hasattr(s, 'news_max_posts')
 
+
+# ===========================================================================
+# Additions 1–3 comprehensive offline test suite (Sections 8A–8G & Section 9)
+# ===========================================================================
+
+
+def test_three_additions_default_off_independent_matrix_and_validation():
+    import contextlib
+    import io
+    from unittest.mock import patch
+
+    # Default absent: all three switches are strictly off; only schedule + codes active.
+    base = settings()
+    assert base.news_timestamps is False
+    assert base.news_expand_full is False
+    assert base.maintenance_enabled is False
+    assert base.features == {"schedule", "codes"}
+
+    # Explicit false tokens stay off; explicit true tokens opt in independently.
+    for falsy in ("0", "false", "no", "off", ""):
+        s = settings(NEWS_TIMESTAMPS=falsy, NEWS_EXPAND_FULL=falsy, MAINTENANCE_ENABLED=falsy)
+        assert not s.news_timestamps and not s.news_expand_full and not s.maintenance_enabled
+        assert "maintenance" not in s.features and "news" not in s.features
+
+    for truthy in ("1", "true", "yes", "on"):
+        s_ts = settings(NEWS_TIMESTAMPS=truthy)
+        assert s_ts.news_timestamps is True
+        assert s_ts.news_expand_full is False and s_ts.maintenance_enabled is False
+        assert "news" not in s_ts.features and "maintenance" not in s_ts.features
+
+        s_ex = settings(NEWS_EXPAND_FULL=truthy)
+        assert s_ex.news_expand_full is True
+        assert s_ex.news_timestamps is False and s_ex.maintenance_enabled is False
+        assert "news" not in s_ex.features and "maintenance" not in s_ex.features
+
+        s_mn = settings(MAINTENANCE_ENABLED=truthy)
+        assert s_mn.maintenance_enabled is True and "maintenance" in s_mn.features
+        assert s_mn.news_timestamps is False and s_mn.news_expand_full is False
+        assert "news" not in s_mn.features
+
+    # Maintenance-only mode works cleanly without features 1–3 (both ONLY and ENABLED_FEATURES).
+    assert settings(MAINTENANCE_ENABLED="1", ONLY="maintenance").features == {"maintenance"}
+    assert settings(MAINTENANCE_ENABLED="1", ENABLED_FEATURES="maintenance").features == {"maintenance"}
+    assert "maintenance" not in settings(ENABLED_FEATURES="maintenance").features
+    for standby in ("none", "off", "standby", "0"):
+        assert not settings(MAINTENANCE_ENABLED="1", NEWS_ENABLED="1", ENABLED_FEATURES=standby).features
+
+    # Per-game activation, isolated per-game webhooks, and scoped per-game pings.
+    s_route = settings(
+        MAINTENANCE_ENABLED="1",
+        MAINTENANCE_GAMES="hsr,zzz,ww",
+        DISCORD_WEBHOOK_MAINTENANCE=HOOK,
+        DISCORD_WEBHOOK_URL=HOOK,
+        FORCE_WEBHOOK=HOOK,
+        DISCORD_WEBHOOK_MAINTENANCE_HSR=HOOK + "hsr",
+        DISCORD_WEBHOOK_MAINTENANCE_ZZZ=HOOK + "zzz",
+        PING_ROLE_ID="111111111111111111",
+        PING_MAINTENANCE_ZZZ="1296268365593186426",
+        PING_MAINTENANCE_HSR="none",
+    )
+    assert s_route.maintenance_games == {"starrail", "zzz", "wuwa"}
+    assert settings(MAINTENANCE_ENABLED="1").maintenance_games == set()
+    assert s_route.webhook("maintenance", "starrail") == HOOK + "hsr"
+    assert s_route.webhook("maintenance", "zzz") == HOOK + "zzz"
+    assert s_route.webhook("maintenance", "genshin") is None
+    assert s_route.webhook("maintenance", "wuwa") is None
+    assert s_route.ping("maintenance", "zzz").text == "<@&1296268365593186426>"
+    assert s_route.ping("maintenance", "starrail").text == ""
+    # Global schedule PING_ROLE_ID never leaks onto unconfigured per-game maintenance routes.
+    assert s_route.ping("maintenance", "genshin").text == ""
+    assert settings(PING_MAINTENANCE_ZZZ="1296268365593186426", NO_PING="1").ping("maintenance", "zzz").text == ""
+
+    # Invalid configuration values are flagged cleanly by `gamexpress validate`.
+    for bad_env in (
+        {"NEWS_TIMESTAMPS": "maybe"},
+        {"NEWS_EXPAND_FULL": "invalid"},
+        {"MAINTENANCE_ENABLED": "sometimes"},
+        {"MAINTENANCE_GAMES": "wangyue"},
+        {"DISCORD_WEBHOOK_MAINTENANCE_ZZZ": "https://example.com/not-discord"},
+        {"PING_MAINTENANCE_ZZZ": "not-a-snowflake"},
+    ):
+        buf = io.StringIO()
+        with patch.object(gxmain, "load_settings", return_value=settings(**bad_env)), contextlib.redirect_stdout(buf):
+            assert gxmain.cmd_validate(None) == 1, bad_env
+
+
+def test_news_timestamps_explicit_tz_server_time_rollover_ranges_and_exclusions():
+    from gamexpress.news_timestamps import convert_news_timestamps
+
+    # Representative investigated fixtures across GI, HSR, ZZZ, WuWa, and HNA:
+    assert convert_news_timestamps("September 12, 2026, 08:00 (UTC-4)", published_ts=1789000000, enabled=True) == "<t:1789214400:f>"
+    assert (
+        convert_news_timestamps(
+            "Preload September 24, 14:00 (UTC+8)\nMaintenance September 28, 06:00 (UTC+8)",
+            published_ts=1789300000,
+            enabled=True,
+        )
+        == "Preload <t:1790229600:f>\nMaintenance <t:1790546400:f>"
+    )
+    assert (
+        convert_news_timestamps(
+            "After the Version 3.2 update – 2026/09/30 11:59 (server time)",
+            published_ts=1789900000,
+            enabled=True,
+        )
+        == "After the Version 3.2 update – <t:1790740740:f>"
+    )
+    assert (
+        convert_news_timestamps(
+            "September 30, 12:00 — October 20, 14:59 server time",
+            published_ts=1790650000,
+            enabled=True,
+        )
+        == "<t:1790740800:f> — <t:1792479540:f>"
+    )
+    assert convert_news_timestamps("September 19, 19:00 UTC+8", published_ts=1789182000, enabled=True) == "<t:1789815600:f>"
+    # HNA: left untouched when timezone is absent; converted cleanly when trailing UTC+8 is present.
+    assert convert_news_timestamps("July 9, 10:00 — July 27, 18:00", published_ts=1783300000, enabled=True) == "July 9, 10:00 — July 27, 18:00"
+    assert (
+        convert_news_timestamps("July 9, 10:00 — July 27, 18:00 (UTC+8)", published_ts=1783300000, enabled=True)
+        == "<t:1783562400:f> — <t:1785146400:f>"
+    )
+    assert convert_news_timestamps("10/19 22:59 (UTC+8)", published_ts=1792300000, enabled=True) == "<t:1792421940:f>"
+    assert (
+        convert_news_timestamps("2026/09/28 06:00 – 11:00 (UTC+8)", published_ts=1790000000, enabled=True)
+        == "<t:1790546400:f> – <t:1790564400:f>"
+    )
+
+    # Year rollover: Dec -> Jan, early Jan -> late Dec, Dec-to-Jan span, and missing published_ts guard.
+    dec_pub = 1797724800  # 2026-12-20 00:00 UTC
+    jan_pub = 1798848000  # 2027-01-02 00:00 UTC
+    assert convert_news_timestamps("January 5, 06:00 (UTC+8)", published_ts=dec_pub, enabled=True) == "<t:1799100000:f>"
+    assert convert_news_timestamps("December 28, 12:00 (UTC+8)", published_ts=jan_pub, enabled=True) == "<t:1798430400:f>"
+    assert (
+        convert_news_timestamps("December 25, 10:00 — January 12, 03:59 (UTC+8)", published_ts=dec_pub, enabled=True)
+        == "<t:1798164000:f> — <t:1799697540:f>"
+    )
+    assert convert_news_timestamps("October 9, 19:30 (UTC+8)", published_ts=0, enabled=True) == "October 9, 19:30 (UTC+8)"
+
+    # Date-only, after-update, approximate times, and protected non-prose remain untouched.
+    unchanged_samples = [
+        "Event Duration: 2025/06/11 – 2025/06/25 and July 9 (UTC+8)",
+        "Permanently available after the Version 3.3 update",
+        "Maintenance ends around October 21, 2026 11:00 (UTC+8) or ~2026/10/21 11:30 (server time)",
+        "Existing <t:1792533600:f>, `2026/10/21 06:00 (UTC+8)`, https://hoyo.link/2026/10/21?t=12:00",
+        "```txt\nSeptember 12, 2026, 08:00 (UTC-4)\n``` and [September 12, 2026, 08:00 (UTC-4)](https://example.com)",
+    ]
+    for sample in unchanged_samples:
+        assert convert_news_timestamps(sample, published_ts=1792300000, enabled=True) == sample
+
+
+def test_news_timestamps_disabled_bypass_source_immutability_and_schedule_isolation():
+    import copy
+    from unittest.mock import patch
+
+    from gamexpress import news_timestamps, timeparse
+
+    schedule_before = timeparse.find_datetimes("September 28, 2026 06:00 (UTC+8)")
+
+    for fixture_name, game_key in (
+        ("hoyolab_genshin_46604275_full.json", "genshin"),
+        ("hoyolab_starrail_46814308_full.json", "starrail"),
+        ("hoyolab_zzz_46604530_full.json", "zzz"),
+        ("hoyolab_zzz_46863847_full.json", "zzz"),
+    ):
+        raw = fx(fixture_name)
+        post = raw["data"]["post"]["post"]
+        item = asyncio.run(hoyolab.news_article(NewsFetcher([raw]), GAMES[game_key],
+                                                {"id": post["post_id"], "ts": post["created_at"]}))
+        frozen_item = copy.deepcopy(item)
+        expected_default = cards.news_payloads(GAMES[game_key], item)
+        with patch.object(news_timestamps, "convert_news_timestamps", side_effect=AssertionError("must bypass")):
+            actual_disabled = cards.news_payloads(GAMES[game_key], item, timestamps=False, expand_full=False)
+        assert actual_disabled == expected_default
+        enabled_out = cards.news_payloads(GAMES[game_key], item, timestamps=True, expand_full=False)
+        assert item == frozen_item
+        assert all(not cards.validate_payload(p) for p in enabled_out)
+
+    # Conversion happens before 4,000-char sizing so converted tokens never overflow a payload.
+    near_cap_body = ("Event notice text. " * 195) + "Starts September 12, 2026, 08:00 (UTC-4)."
+    near_item = news_item(body=near_cap_body)
+    rendered = cards.news_payloads(GAMES["genshin"], near_item, timestamps=True, expand_full=False)
+    assert all(not cards.validate_payload(p) for p in rendered)
+    assert "<t:1789214400:f>" in json.dumps(rendered)
+    assert timeparse.find_datetimes("September 28, 2026 06:00 (UTC+8)") == schedule_before
+
+
+def test_maintenance_precedence_holiday_shifts_unknown_end_and_no_hna_cadence():
+    from gamexpress.maintenance import resolve_version_plans
+
+    now = 1793900000
+    hsr_records = {
+        "4.6": {
+            "data": {"version": "4.6", "maint_start_ts": 1790546400, "preinstall_ts": 1790229600},
+            "prov": {"maint_start_ts": [50, 1790500000], "preinstall_ts": [50, 1790200000]},
+        }
+    }
+    # 1) Cold/cadence prediction for 4.7 is flagged estimated.
+    predicted = resolve_version_plans(GAMES["starrail"], hsr_records, [], {}, {}, now)
+    assert predicted["4.7"]["maint_estimated"] is True
+    assert predicted["4.7"]["preinstall_estimated"] is True
+
+    # 2) Explicit holiday override beats cadence prediction and preserves unknown end time when omitted.
+    holiday_ov = {"4.7": {"preinstall_ts": 1794186000, "maint_start_ts": 1794330000}}
+    with_override = resolve_version_plans(GAMES["starrail"], hsr_records, [], {}, holiday_ov, now)
+    assert with_override["4.7"]["preinstall_ts"] == 1794186000
+    assert with_override["4.7"]["maint_start_ts"] == 1794330000
+    assert with_override["4.7"]["maint_end_ts"] is None
+    assert with_override["4.7"]["maint_estimated"] is False
+
+    # 3) Official Chinese-holiday-shifted announcement overrides BOTH cadence and prior overrides.
+    official_item = Item(
+        source="hoyolab",
+        game="starrail",
+        id="49000001",
+        url="https://www.hoyolab.com/article/49000001",
+        title="Version 4.7 Update and Maintenance Notice",
+        text=(
+            "Pre-installation opens on 2026/11/10 14:00 (UTC+8).\n"
+            "Version 4.7 update maintenance begins at 2026/11/12 06:00 (UTC+8) and is estimated to take 5 hours."
+        ),
+        published_ts=now,
+    )
+    with_official = resolve_version_plans(GAMES["starrail"], hsr_records, [official_item], {}, holiday_ov, now)
+    assert with_official["4.7"]["preinstall_ts"] == 1794290400
+    assert with_official["4.7"]["maint_start_ts"] == 1794434400
+    assert with_official["4.7"]["maint_end_ts"] == 1794452400
+    assert with_official["4.7"]["maint_estimated"] is False
+
+    # 4) HNA never invents cadence predictions or unknown maintenance end times.
+    assert resolve_version_plans(GAMES["hna"], {}, [], {}, {}, now) == {}
+    hna_plans = resolve_version_plans(GAMES["hna"], {}, [], {}, {"1.0": {"maint_start_ts": now + 600}}, now)
+    assert hna_plans["1.0"]["maint_start_ts"] == now + 600
+    assert hna_plans["1.0"]["maint_end_ts"] is None
+    assert hna_plans["1.0"]["preinstall_ts"] is None
+
+
+def test_maintenance_payload_exact_v2_template_gallery_omission_and_no_tiktok():
+    from gamexpress.config import Ping
+
+    role = Ping(roles=["1296268365593186426"])
+    pre = cards.maintenance_payload(
+        GAMES["zzz"],
+        "3.3",
+        "preload",
+        start_ts=1792382400,
+        ping=role,
+        media_url="https://fastcdn.hoyoverse.com/static-resource-v2/2026/10/19/d9666bfb6df441d244dc24dfdfac5a58_8954332136235293402.webm",
+    )
+    assert not cards.validate_payload(pre)
+    assert pre["flags"] == 32768
+    assert pre["allowed_mentions"] == {"parse": [], "roles": ["1296268365593186426"]}
+    box = pre["components"][0]
+    assert box["type"] == 17 and box["accent_color"] is None
+    kids = box["components"]
+    assert [c["type"] for c in kids] == [10, 14, 10, 12, 9]
+    assert kids[0]["content"] == (
+        "## [ZZZ - 3.3] Pre-Load Started "
+        "<a:starwardlove:1483082509439733893><a:starwardspark3:1483083423290490891>\n"
+        "<@&1296268365593186426>"
+    )
+    assert kids[1] == {"type": 14, "divider": True, "spacing": 1}
+    assert kids[2]["content"] == (
+        "※ **Date Time:** <t:1792382400:f> ※ **Hour Time:** <t:1792382400:R> <a:gearfinal:1483076702551805983>"
+    )
+    assert kids[4]["accessory"]["url"] == "https://discord.gg/HyrVP9wRXu"
+    assert kids[4]["accessory"]["emoji"] == {"id": "1483074533073223843", "name": "starwardyayy", "animated": True}
+    dumped = json.dumps(pre)
+    assert "tiktok" not in dumped.lower() and "minilorax" not in dumped.lower()
+
+    # Maintenance with unknown end omits invented End Time; missing media omits type 12 gallery;
+    # empty Ping() produces no trailing newline or mention.
+    maint_no_media = cards.maintenance_payload(
+        GAMES["wuwa"], "3.7", "maintenance", start_ts=1792533600, end_ts=None, ping=Ping(), media_url=None,
+        estimated=True, estimate_source="version cadence",
+    )
+    assert not cards.validate_payload(maint_no_media)
+    mkids = maint_no_media["components"][0]["components"]
+    assert [c["type"] for c in mkids] == [10, 14, 10, 9]
+    assert "\n" not in mkids[0]["content"]
+    assert "End Time" not in mkids[2]["content"]
+    assert "Estimated (version cadence)" in mkids[2]["content"]
+
+
+def test_maintenance_media_priority_version_matching_phase2_lock_and_wuwa_signed_url():
+    from gamexpress.maintenance import resolve_launch_media
+    from gamexpress.sources.launcher import parse_basic_info
+
+    zzz_video = "https://fastcdn.hoyoverse.com/static-resource-v2/2026/10/19/d9666bfb6df441d244dc24dfdfac5a58_8954332136235293402.webm"
+    zzz_webp = "https://fastcdn.hoyoverse.com/static-resource-v2/2026/10/19/7fed3cc9957dc9d9ee124489ca986432_2474341198014569023.webp"
+    zzz_prog = "https://pbs.twimg.com/media/HTxU4O3W4AAGolV.jpg?name=orig"
+    zzz_32_launch = "https://fastcdn.hoyoverse.com/static-resource-v2/2026/09/07/4cce94f51e9c284d57aca5b1e8eb4402_2004184150440516738.webm"
+    zzz_32_phase2 = "https://fastcdn.hoyoverse.com/static-resource-v2/2026/09/28/b0a00690fb2c2a6b8d475a281bfd676d_1399158587140561816.webm"
+    wuwa_signed = (
+        "https://wutheringwaves.kurogames.com/website-preface/video/bg/bg-video.mp4"
+        "?auth_key=1792498595-Zn8XHdFgOx-0-655f65a3d6db767106e57a2834c05fdc"
+    )
+    wuwa_renewed = (
+        "https://wutheringwaves.kurogames.com/website-preface/video/bg/bg-video.mp4"
+        "?auth_key=1792600000-RenewedTok-0-abcdef1234567890abcdef1234567890"
+    )
+    pins = {"zzz": {"3.3": {"image": zzz_prog}}, "wuwa": {"3.7": {"image": "https://pbs.twimg.com/media/HR70hTAaoAA8Dzz.jpg?name=orig"}}}
+    raw_info = {
+        "data": {
+            "game_info_list": [
+                {
+                    "game": {"id": "U5hbdsT9W7", "biz": "nap_global"},
+                    "backgrounds": [{"video": {"url": zzz_video}, "background": {"url": zzz_webp}}],
+                }
+            ]
+        }
+    }
+    binfo = parse_basic_info(raw_info)
+
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = make_ctx(Path(directory) / "state.json", now=1792382500)
+        plan_33 = {"preinstall_ts": 1792382400, "maint_start_ts": 1792533600, "schedule_images": [], "override": {}}
+
+        # Wrong live launcher branch (still 3.2, pre=None) must NOT claim 3.2 media for 3.3 -> falls back to tier 3.
+        ctx.versions["zzz"] = {"live": "3.2", "pre": None}
+        allowed = {zzz_video, zzz_webp, zzz_prog}
+        ctx.fetcher = types.SimpleNamespace(verify_media=lambda u: asyncio.sleep(0, result=(u in allowed)))
+        tier, url = asyncio.run(resolve_launch_media(ctx, GAMES["zzz"], "3.3", plan_33, {}, basic_info=binfo, program_pins=pins))
+        assert (tier, url) == (3, zzz_prog)
+
+        # Matching launcher `pre == 3.3`: Priority 1 video -> Priority 2 WebP -> Priority 3 X art -> Priority 4 None.
+        ctx.versions["zzz"] = {"live": "3.2", "pre": "3.3"}
+        vstate: dict = {}
+        assert asyncio.run(resolve_launch_media(ctx, GAMES["zzz"], "3.3", plan_33, vstate, basic_info=binfo, program_pins=pins)) == (1, zzz_video)
+        assert vstate["launch_media"]["locked"] is True
+
+        allowed = {zzz_webp, zzz_prog}
+        assert asyncio.run(resolve_launch_media(ctx, GAMES["zzz"], "3.3", plan_33, {}, basic_info=binfo, program_pins=pins)) == (2, zzz_webp)
+        allowed = {zzz_prog}
+        assert asyncio.run(resolve_launch_media(ctx, GAMES["zzz"], "3.3", plan_33, {}, basic_info=binfo, program_pins=pins)) == (3, zzz_prog)
+        allowed = set()
+        assert asyncio.run(resolve_launch_media(ctx, GAMES["zzz"], "3.3", plan_33, {}, basic_info=binfo, program_pins=pins)) == (4, None)
+
+        # ZZZ 3.2 launch lock rejects Phase II background BOTH when locked AND on cold state!
+        allowed = {zzz_32_launch, zzz_32_phase2}
+        ctx.now = 1790600000
+        ctx.versions["zzz"] = {"live": "3.2", "pre": None}
+        phase2_info = parse_basic_info({
+            "data": {"game_info_list": [{"game": {"id": "U5hbdsT9W7"}, "backgrounds": [{"video": {"url": zzz_32_phase2}}]}]}
+        })
+        plan_32 = {"preinstall_ts": 1788753600, "maint_start_ts": 1788904800, "schedule_images": [], "override": {}}
+        locked_32 = {"launch_media": {"video": zzz_32_launch, "locked": True}}
+        assert asyncio.run(resolve_launch_media(ctx, GAMES["zzz"], "3.2", plan_32, locked_32, basic_info=phase2_info, program_pins={})) == (1, zzz_32_launch)
+        assert asyncio.run(resolve_launch_media(ctx, GAMES["zzz"], "3.2", plan_32, {}, basic_info=phase2_info, program_pins={})) == (4, None)
+
+        # WuWa signed URL preserves exact `auth_key` query, renews same asset cleanly, and falls back when expired.
+        allowed = {wuwa_signed, wuwa_renewed, pins["wuwa"]["3.7"]["image"]}
+        ctx.now = 1792490000  # before 1792498595 expiry
+        ctx.versions["wuwa"] = {"live": "3.6", "pre": "3.7", "pre_media": {"version": "3.7", "video": wuwa_signed, "artwork": ""}}
+        wuwa_state: dict = {}
+        plan_ww = {"preinstall_ts": 1792480000, "maint_start_ts": 1792630000, "schedule_images": [], "override": {}}
+        assert asyncio.run(resolve_launch_media(ctx, GAMES["wuwa"], "3.7", plan_ww, wuwa_state, basic_info={}, program_pins=pins)) == (1, wuwa_signed)
+
+        # After `1792498595` expires with no renewal -> falls back cleanly to official 3.7 broadcast key art!
+        ctx.now = 1792500000
+        assert asyncio.run(resolve_launch_media(ctx, GAMES["wuwa"], "3.7", plan_ww, wuwa_state, basic_info={}, program_pins=pins)) == (
+            3, pins["wuwa"]["3.7"]["image"]
+        )
+        # Same verified asset path with renewed `auth_key` renews cleanly:
+        ctx.versions["wuwa"]["pre_media"]["video"] = wuwa_renewed
+        assert asyncio.run(resolve_launch_media(ctx, GAMES["wuwa"], "3.7", plan_ww, wuwa_state, basic_info={}, program_pins=pins)) == (1, wuwa_renewed)
+
+
+def test_maintenance_separate_dedup_silent_seed_late_edit_and_isolated_collection():
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import maintenance, runner
+    from gamexpress.sources import launcher as launcher_mod
+
+    zzz_video = "https://fastcdn.hoyoverse.com/static-resource-v2/2026/10/19/d9666bfb6df441d244dc24dfdfac5a58_8954332136235293402.webm"
+    zzz_prog = "https://pbs.twimg.com/media/HTxU4O3W4AAGolV.jpg?name=orig"
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "state.json"
+        ctx = make_ctx(
+            path,
+            now=1792380000,
+            MAINTENANCE_ENABLED="1",
+            ONLY="maintenance",
+            MAINTENANCE_GAMES="zzz",
+            DISCORD_WEBHOOK_MAINTENANCE_ZZZ=HOOK,
+            PING_MAINTENANCE_ZZZ="1296268365593186426",
+        )
+        # Pre-existing settled schedule history must NEVER repost on first activation.
+        ctx.state.schedule_records("zzz")["3.2"] = {
+            "status": "posted",
+            "data": {"version": "3.2", "preinstall_ts": 1788753600, "maint_start_ts": 1788904800, "maint_end_ts": 1788922800},
+            "prov": {"preinstall_ts": [50, 1], "maint_start_ts": [50, 1], "maint_end_ts": [50, 1]},
+        }
+        ctx.state.schedule_records("zzz")["3.3"] = {
+            "status": "posted",
+            "data": {"version": "3.3", "preinstall_ts": 1792382400, "maint_start_ts": 1792533600, "maint_end_ts": 1792551600, "images": [zzz_prog]},
+            "prov": {"preinstall_ts": [50, 1], "maint_start_ts": [50, 1], "maint_end_ts": [50, 1]},
+        }
+        ctx.versions["zzz"] = {"live": "3.2", "pre": "3.3"}
+        ctx.items["zzz"] = []
+        available_urls = {zzz_prog}
+        ctx.fetcher = types.SimpleNamespace(verify_media=lambda u: asyncio.sleep(0, result=(u in available_urls)))
+
+        # Run 1 (first enable): silent seed — zero webhook posts!
+        asyncio.run(maintenance.run(ctx))
+        assert ctx.webhook.sent == []
+        assert ctx.state.maintenance_record("zzz")["versions"]["3.2"]["preload"]["status"] == "seeded"
+        assert ctx.state.maintenance_record("zzz")["versions"]["3.2"]["maintenance"]["status"] == "seeded"
+
+        # Run 2 (Pre-Load Started window at 1792382460, before video is live): posts with tier-3 art + role ping.
+        ctx.now = 1792382460
+        ctx.webhook = ScriptedWebhook([SendResult(True, 200)], [SendResult(True, 200, "preload-msg-1")])
+        with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value={})):
+            asyncio.run(maintenance.run(ctx))
+        assert len(ctx.webhook.sends) == 1 and len(ctx.webhook.edits) == 0
+        assert "<@&1296268365593186426>" in json.dumps(ctx.webhook.sends[0])
+
+        # Run 3 (15 min later, video becomes live on HoYoPlay): edits `preload-msg-1` SILENTLY (`parse: []`, 0 sends)!
+        ctx.now = 1792383360
+        available_urls.add(zzz_video)
+        live_binfo = {"U5hbdsT9W7": [{"video": zzz_video, "background": "", "theme": "", "links": []}]}
+        with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value=live_binfo)):
+            asyncio.run(maintenance.run(ctx))
+            # Run 4: now locked at tier 1 -> zero duplicate edits and zero duplicate sends!
+            asyncio.run(maintenance.run(ctx))
+        assert len(ctx.webhook.sends) == 1 and len(ctx.webhook.edits) == 1
+        assert ctx.webhook.edits[0][0] == "preload-msg-1"
+        assert ctx.webhook.edits[0][1]["allowed_mentions"] == {"parse": []}
+        assert zzz_video in json.dumps(ctx.webhook.edits[0][1])
+
+        # Run 5 (Maintenance Started at 1792533660): independent from preload -> posts `Maintenance Started` once!
+        ctx.now = 1792533660
+        ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, "maint-msg-1")])
+        with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value=live_binfo)):
+            asyncio.run(maintenance.run(ctx))
+            asyncio.run(maintenance.run(ctx))
+        assert len(ctx.webhook.sends) == 1
+        assert "Maintenance Started" in json.dumps(ctx.webhook.sends[0])
+
+        # Verify `runner.run_once` in maintenance-only mode never invokes codes/countdown/banners/news.
+        maint_only = settings(
+            MAINTENANCE_ENABLED="1",
+            ONLY="maintenance",
+            MAINTENANCE_GAMES="zzz",
+            DISCORD_WEBHOOK_MAINTENANCE_ZZZ=HOOK,
+        )
+        maint_only.state_path = Path(directory) / "isolated.json"
+        fake_fetcher = types.SimpleNamespace(summary=lambda: "ok")
+        with (
+            patch.object(runner, "Fetcher", return_value=fake_fetcher),
+            patch.object(runner, "XClient", return_value=types.SimpleNamespace(items=AsyncMock(return_value=[]))),
+            patch.object(runner, "gather_estimates", side_effect=AssertionError("no countdown in maint-only")),
+            patch.object(runner, "gather_banners", side_effect=AssertionError("no banners in maint-only")),
+            patch.object(runner, "run_news", side_effect=AssertionError("no news in maint-only")),
+            patch.object(launcher_mod, "hoyoplay_versions", new=AsyncMock(return_value={})),
+            patch.object(hoyolab, "fetch_items", new=AsyncMock(return_value=[])),
+            patch.object(runner, "write_summary"),
+        ):
+            asyncio.run(runner.run_once(maint_only, {"zzz": GAMES["zzz"]}, {}, session=object()))
+
+
+def test_news_expand_full_disabled_equality_multipage_order_cover_video_and_fallback():
+    import copy
+
+    from gamexpress.media import group_news_media
+
+    cover_url = "https://upload-os-bbs.hoyolab.com/cover-art.png"
+    inline_urls = [f"https://upload-os-bbs.hoyolab.com/section-{i}.gif" for i in range(6)]
+    video_url = "https://vod-static.hoyolab.com/4/2026-10-19/demo_1080p.mp4"
+    yt_embed = "https://www.youtube.com/embed/drFgtruoPe8"
+
+    blocks = []
+    expected_sections = []
+    for idx in range(6):
+        sec_text = (
+            f"**▌Section {idx + 1} Overview**\n\n"
+            f"1. Rule {idx + 1}A with [Official Guide](https://hoyo.link/sec{idx}) and https://hoyo.link/bare{idx}\n"
+            f"2. Rule {idx + 1}B preserved verbatim.\n\n"
+            f"※ Footnote {idx + 1} first\n"
+            f"※ Footnote {idx + 1} second\n\n"
+            + (f"Detailed explanation sentence for section {idx + 1}. " * 32)
+        )
+        blocks.append({"kind": "text", "text": sec_text})
+        blocks.append({"kind": "image", "url": inline_urls[idx]})
+        expected_sections.append(f"**▌Section {idx + 1} Overview**")
+    blocks.append({"kind": "video", "url": video_url})
+    blocks.append({"kind": "link", "url": yt_embed})
+    blocks.append({"kind": "text", "text": "Closing official summary paragraph."})
+
+    item = Item(
+        "hoyolab", "zzz", "expand-1", "https://www.hoyolab.com/article/999001",
+        "Version 3.3 Complete Patch Notes", "", 1792400000,
+        images=[cover_url],
+        article_blocks=blocks,
+        author="Zenless Zone Zero",
+    )
+    frozen = copy.deepcopy(item)
+
+    # Disabled: identical to original single-message excerpt fallback.
+    default_out = cards.news_payloads(GAMES["zzz"], item)
+    disabled_out = cards.news_payloads(GAMES["zzz"], item, timestamps=False, expand_full=False)
+    assert disabled_out == default_out and len(default_out) == 1
+    assert "Excerpt" in json.dumps(default_out)
+
+    # Enabled: multi-page full article > 2 pages preserving ALL text, media, videos, links, and order!
+    expanded = cards.news_payloads(GAMES["zzz"], item, timestamps=False, expand_full=True)
+    assert item == frozen
+    assert len(expanded) > 2
+    assert all(not cards.validate_payload(p) for p in expanded)
+
+    # Native `.mp4` suppresses separate listing cover; title/byline ONLY on Page 1; buttons ONLY at end!
+    rendered_media = [
+        entry["media"]["url"]
+        for p in expanded
+        for co in p["components"]
+        for c in co["components"]
+        if c["type"] == 12
+        for entry in c["items"]
+    ]
+    assert rendered_media == inline_urls + [video_url]
+    for idx, page in enumerate(expanded, start=1):
+        kids = page["components"][0]["components"]
+        body_str = "\n".join(c.get("content", "") for c in kids if c["type"] == 10)
+        assert f"-# Page {idx}" in body_str
+        if idx == 1:
+            assert "## [Version 3.3 Complete Patch Notes]" in body_str
+        else:
+            assert "## [Version 3.3 Complete Patch Notes]" not in body_str
+        has_buttons = any(c["type"] == 1 for c in kids)
+        assert has_buttons is (idx == len(expanded))
+    final_buttons = expanded[-1]["components"][-1]["components"][-1]["components"]
+    assert [b["label"] for b in final_buttons] == ["Read Post", "Citlali News", "Donate"]
+    flattened_all = "\n".join(
+        c["content"]
+        for p in expanded
+        for co in p["components"]
+        for c in co["components"]
+        if c["type"] == 10
+    )
+    assert "Excerpt" not in flattened_all
+    assert f"[Open original media]({yt_embed})" in flattened_all
+    assert "Closing official summary paragraph." in flattened_all
+    for marker in expected_sections:
+        assert marker in flattened_all
+    # Long-strip grouping stays strictly off unless `NEWS_GROUP_LONG_STRIPS=1`.
+    assert asyncio.run(group_news_media(None, expanded, enabled=False)) is expanded
+
+    # Link-only video article (no native .mp4/.webm) keeps unique cover deduplicated once on Page 1.
+    link_only_item = copy.deepcopy(item)
+    link_only_item.article_blocks = [b for b in link_only_item.article_blocks if b.get("url") != video_url]
+    link_pages = cards.news_payloads(GAMES["zzz"], link_only_item, expand_full=True)
+    link_media = [
+        e["media"]["url"]
+        for p in link_pages for co in p["components"] for c in co["components"]
+        if c["type"] == 12 for e in c["items"]
+    ]
+    assert link_media == [cover_url] + inline_urls
+
+    # Safety-bound & indivisible fallbacks are explicitly labelled and NEVER pretend to be full.
+    over_bound = news_item(body=("Paragraph exceeding operational page cap. " * 190 + "\n\n") * 25)
+    over_pages = cards.news_payloads(GAMES["wuwa"], over_bound, expand_full=True)
+    assert len(over_pages) == 1 and not cards.validate_payload(over_pages[0])
+    assert "**Excerpt — this article exceeds the expanded delivery safety limit.**" in json.dumps(
+        over_pages[0], ensure_ascii=False
+    )
+
+    indivisible = news_item(body="x" * 5000)
+    indiv_pages = cards.news_payloads(GAMES["wuwa"], indivisible, expand_full=True)
+    assert len(indiv_pages) == 1 and not cards.validate_payload(indiv_pages[0])
+    assert "**Excerpt —" in json.dumps(indiv_pages[0], ensure_ascii=False)
+
+
+def test_delivery_failure_recovery_partial_resume_ambiguous_hold_and_state_isolation():
+    from unittest.mock import patch
+
+    from gamexpress.runner import run_news
+
+    long_item = news_item(
+        "777",
+        body=("\n\n".join(f"Section {i}: " + ("Complete sentence here. " * 80) for i in range(6))),
+    )
+    pages_preview = cards.news_payloads(GAMES["genshin"], long_item, expand_full=True)
+    assert len(pages_preview) >= 3
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "state.json"
+        ctx = news_ctx(path, NEWS_EXPAND_FULL="1")
+        ctx.state.schedule_records("genshin")["7.1"] = {"status": "posted", "data": {"version": "7.1"}}
+        ctx.state.code_records("genshin")["GENSHINGIFT"] = {"status": "posted", "first_seen": 100}
+        with patch.object(hoyolab, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+
+        ctx.now += 30
+        row = {"id": "777", "ts": ctx.now - 10}
+
+        # 1) Failure BEFORE page 1 -> nothing marked in records; retries cleanly from page 1.
+        ctx.webhook = ScriptedWebhook([], [SendResult(False, 503)])
+        with patch.object(hoyolab, "discover_news", return_value=[row]), patch.object(hoyolab, "news_article", return_value=long_item):
+            asyncio.run(run_news(ctx))
+        assert "777" not in ctx.state.news_record("genshin")["records"]
+
+        # 2) Pages 1 & 2 succeed, Page 3 fails -> persisted on disk as `partial` with `["p1", "p2"]`!
+        ctx.webhook = ScriptedWebhook([], [
+            SendResult(True, 200, "p1"),
+            SendResult(True, 200, "p2"),
+            SendResult(False, 502),
+        ])
+        with patch.object(hoyolab, "discover_news", return_value=[row]), patch.object(hoyolab, "news_article", return_value=long_item):
+            asyncio.run(run_news(ctx))
+        reloaded = State.load(path)
+        partial = reloaded.news_record("genshin")["records"]["777"]
+        assert partial["status"] == "partial" and partial["messages"] == ["p1", "p2"]
+
+        # 3) Restart from persisted `State.load(path)` -> sends ONLY remaining pages without duplicating p1/p2!
+        ctx.state = reloaded
+        remaining_count = len(pages_preview) - 2
+        ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, f"p{3 + i}") for i in range(remaining_count)])
+        with patch.object(hoyolab, "discover_news", return_value=[row]), patch.object(hoyolab, "news_article", return_value=long_item):
+            asyncio.run(run_news(ctx))
+        assert len(ctx.webhook.sends) == remaining_count
+        done = State.load(path).news_record("genshin")["records"]["777"]
+        assert done["status"] == "posted"
+        assert done["messages"] == ["p1", "p2"] + [f"p{3 + i}" for i in range(remaining_count)]
+
+        # 4) Ambiguous webhook outcome (200 with missing message_id) holds safely without blind unlimited reposts!
+        amb_row = {"id": "888", "ts": ctx.now - 5}
+        ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, None), SendResult(True, 200, "never-reached")])
+        with patch.object(hoyolab, "discover_news", return_value=[amb_row]), patch.object(hoyolab, "news_article", return_value=news_item("888")):
+            asyncio.run(run_news(ctx))
+            asyncio.run(run_news(ctx))
+        assert len(ctx.webhook.sends) == 1
+        amb_rec = ctx.state.news_record("genshin")["records"]["888"]
+        assert amb_rec["status"] == "partial" and amb_rec["ambiguous"] is True
+
+        # Unrelated schedule/codes state untouched throughout all failures and recoveries.
+        assert ctx.state.schedule_records("genshin")["7.1"]["data"]["version"] == "7.1"
+        assert ctx.state.code_records("genshin")["GENSHINGIFT"]["status"] == "posted"
+
+
+def test_reproducible_offline_benchmark_command_and_bypass_invariants():
+    import contextlib
+    import io
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc = gxmain.main(["benchmark", "--iterations", "20", "--json"])
+    assert rc == 0
+    data = json.loads(out.getvalue())
+    assert data["default_long_messages"] == 1
+    assert data["expanded_long_messages"] > 2
+    assert len(data["benchmarks"]) == 10
+    assert all(b["median_us"] >= 0 and b["iterations"] == 20 for b in data["benchmarks"])
+
+
+def test_webhook_ambiguous_response_auth_key_redaction_and_video_preview_html():
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import discord as discord_mod
+    from gamexpress import preview_html, runner
+
+    class _Resp:
+        def __init__(self, status: int, body: str):
+            self.status = status
+            self._body = body
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def text(self):
+            return self._body
+
+    class _TimeoutCtx:
+        async def __aenter__(self):
+            raise asyncio.TimeoutError("post-write timeout")
+
+        async def __aexit__(self, *exc):
+            return False
+
+    sample_payload = cards.news_payloads(GAMES["wuwa"], news_item())[0]
+
+    async def _exercise():
+        with patch.object(asyncio, "sleep", new=AsyncMock()):
+            no_id_session = types.SimpleNamespace(request=lambda *a, **kw: _Resp(204, ""))
+            client = discord_mod.WebhookClient(no_id_session, dry_run=False)
+            res_204 = await client.send(HOOK, sample_payload)
+            assert res_204.ok is True and res_204.message_id is None and res_204.ambiguous is True
+
+            ok_session = types.SimpleNamespace(request=lambda *a, **kw: _Resp(200, '{"id":"999111"}'))
+            client_ok = discord_mod.WebhookClient(ok_session, dry_run=False)
+            res_ok = await client_ok.send(HOOK, sample_payload)
+            assert res_ok.ok is True and res_ok.message_id == "999111" and res_ok.ambiguous is False
+
+            res_patch = await client.edit(HOOK, "999111", sample_payload)
+            assert res_patch.ok is True and res_patch.ambiguous is False
+
+            to_session = types.SimpleNamespace(request=lambda *a, **kw: _TimeoutCtx())
+            client_to = discord_mod.WebhookClient(to_session, dry_run=False)
+            res_to = await client_to.send(HOOK, sample_payload)
+            assert res_to.ok is False and res_to.ambiguous is True
+
+    asyncio.run(_exercise())
+
+    signed_video = (
+        "https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/video/3.7/bg.mp4"
+        "?auth_key=1792500000-0-0-deadbeefcafe1234"
+    )
+    redacted = runner._summary_text(f"loaded media {signed_video}")
+    assert "deadbeefcafe1234" not in redacted and "auth_key=[REDACTED]" in redacted
+
+    maint_card = cards.maintenance_payload(
+        GAMES["wuwa"],
+        "3.7",
+        "preload",
+        start_ts=1790560800,
+        media_url=signed_video,
+    )
+    rendered_html = preview_html.render_page([("maintenance", "wuwa_preload", maint_card)])
+    assert "<video " in rendered_html and "auth_key=1792500000-0-0-deadbeefcafe1234" in rendered_html
+
+
+
 if __name__ == "__main__":
     sys.exit(main())

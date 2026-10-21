@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 import aiohttp
 
-from . import build_id, codeposter, schedule
+from . import build_id, codeposter, maintenance, schedule
 from .config import Game, Settings, active_games, load_games, load_overrides
 from .discord import WebhookClient, webhook_fingerprint
 from .http import BOT_UA, Fetcher, Probe
@@ -236,7 +236,11 @@ async def failover_check(ctx: Ctx) -> None:
     peer = await ctx.fetcher.get_json(s.peer_state_url, source="peer-state",
                                       headers={"Cache-Control": "no-cache"}, retries=1)
     if isinstance(peer, dict):
-        n = ctx.state.merge_peer(peer, include_news="news" in s.features)
+        n = ctx.state.merge_peer(
+            peer,
+            include_news="news" in s.features,
+            include_maintenance="maintenance" in s.features,
+        )
         if n:
             ctx.report.append(f"🔄 imported {n} posted key(s) from the peer instance")
     if s.instance_role != "standby":
@@ -285,6 +289,11 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
                 await schedule.run(ctx)
             if "codes" in features:
                 await codeposter.run(ctx)
+        if "maintenance" in features:
+            await maintenance.run(ctx)
+        elif ctx.active and not settings.maintenance_enabled:
+            for record in (state.data.get("maintenance") or {}).values():
+                record["paused"] = True
         if "news" in features:
             await run_news(ctx)
         elif ctx.active and not settings.news_enabled:
@@ -321,7 +330,7 @@ def _summary_text(value):
             text = text.replace(secret, "[REDACTED]")
     text = re.sub(r"https?://[^\s/]*(?:discord(?:app)?\.com)/api/webhooks/[^\s<>]+",
                   "[REDACTED_WEBHOOK]", text, flags=re.I)
-    text = re.sub(r"([?&](?:token|feed|key|api_key|access_token)=)[^&\s<>]+",
+    text = re.sub(r"([?&](?:token|feed|key|api_key|access_token|auth_key)=)[^&\s<>]+",
                   r"\1[REDACTED]", text, flags=re.I)
     text = re.sub(r"(Bearer\s+)[^\s<>]+", r"\1[REDACTED]", text, flags=re.I)
     return html.escape(text.replace("\r", " ").replace("\n", " "), quote=False).replace("`", "'")[:1200]
@@ -369,7 +378,7 @@ async def run_news(ctx: Ctx) -> None:
     Persist progress per part using the existing atomic state writer. Cross-process failures
     after Discord accepts but before state is saved remain an inherently ambiguous outcome.
     """
-    from .cards import news_payloads
+    from .cards import NEWS_EXPAND_MAX_MEDIA, news_payloads
     from .state import stable_hash
 
     if "news" not in ctx.settings.features or not ctx.active:
@@ -454,20 +463,37 @@ async def run_news(ctx: Ctx) -> None:
                                           "excluded": "schedule"}
                     ctx.report.append(f"ℹ️ {game.short} news {item.id}: schedule-only announcement")
                     continue
-                payloads = news_payloads(game, item)
+                payloads = news_payloads(
+                    game,
+                    item,
+                    timestamps=ctx.settings.news_timestamps,
+                    expand_full=ctx.settings.news_expand_full,
+                )
                 from .media import group_news_media, news_media_available
 
-                if not await news_media_available(ctx.fetcher, payloads):
+                media_cap = NEWS_EXPAND_MAX_MEDIA if ctx.settings.news_expand_full else 40
+                if not await news_media_available(ctx.fetcher, payloads, max_urls=media_cap):
                     # One fresh official full response can supply a corrected/renewed URL.
                     fresh = await source.news_article(ctx.fetcher, game, row)
                     if fresh is None or fresh.title != item.title:
                         raise ValueError("media unavailable; fresh official article mismatched")
                     item = fresh
-                    payloads = news_payloads(game, item)
-                    if not await news_media_available(ctx.fetcher, payloads):
+                    payloads = news_payloads(
+                        game,
+                        item,
+                        timestamps=ctx.settings.news_timestamps,
+                        expand_full=ctx.settings.news_expand_full,
+                    )
+                    if not await news_media_available(ctx.fetcher, payloads, max_urls=media_cap):
                         raise ValueError("media unavailable after official refresh; held for retry, not posted")
                 payloads = await group_news_media(
-                    ctx.fetcher, payloads, enabled=ctx.settings.news_group_long_strips)
+                    ctx.fetcher,
+                    payloads,
+                    enabled=ctx.settings.news_group_long_strips,
+                    max_urls=media_cap,
+                )
+                if rec and rec.get("ambiguous"):
+                    raise ValueError("partially delivered article had an ambiguous webhook outcome; manual review required")
                 signature = stable_hash(payloads)
                 if rec and rec.get("signature") != signature:
                     raise ValueError("partially delivered article changed; manual review required")
@@ -476,7 +502,13 @@ async def run_news(ctx: Ctx) -> None:
                            "signature": signature, "messages": []}
                 for payload in payloads[len(rec["messages"]):]:
                     result = await ctx.webhook.send(hook, payload)
-                    if not result.ok or not result.message_id:
+                    if result.ambiguous or (result.ok and not result.message_id):
+                        rec["ambiguous"] = True
+                        records[row["id"]] = rec
+                        if not ephemeral:
+                            ctx.state.save()
+                        raise ValueError("ambiguous Discord webhook outcome; held to prevent duplicate repost")
+                    if not result.ok:
                         raise ValueError(f"Discord delivery failed ({result.status}); retry required")
                     rec["messages"].append(result.message_id)
                     records[row["id"]] = rec

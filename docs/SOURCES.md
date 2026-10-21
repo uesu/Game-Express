@@ -572,3 +572,16 @@ review rather than replaying already confirmed pages. Do not toggle layout modes
 mid-partial delivery without reviewing that hold. No state reset or old-post edits.
 Discord controls thumbnail cropping; neither header measurements, HTML previews
 nor passing offline tests prove live media decoding/readability or delivery.
+
+
+## Structured launch media for Pre-Load & Maintenance Started (2026-10-21)
+
+When `MAINTENANCE_ENABLED=1` and a game is explicitly listed in `MAINTENANCE_GAMES`,
+`gamexpress/maintenance.py` resolves optional launch media from structured official
+endpoints and existing caches only (never headless browsers or HTML scraping):
+
+| Game(s) | Structured source | Priority assets & safeguards |
+|---|---|---|
+| GI / HSR / ZZZ / HNA | HoYoPlay `getAllGameBasicInfo` (`hyp-api.hoyoverse.com`) + existing HoYoLAB / X Special Program cache | (1) version-matched `.webm`/`.mp4` background clip, (2) version-matched `.webp`/image background, (3) Special Program key art, (4) omit gallery; Phase II background swaps rejected via launch media lock |
+| Wuthering Waves | Kuro launcher index + structured website/article JSON (`hw-media-cdn-mingchao.kurogame.com`, `akiwebsite`) + Special Program X/Kuro art | (1) version-matched `.mp4` clip preserving signed `?auth_key=…` query parameters (re-resolved before expiry), (2) version-matched artwork, (3) Special Program key art, (4) omit gallery |
+

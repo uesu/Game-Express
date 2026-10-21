@@ -27,6 +27,7 @@ nothing is renumbered after the fact.
 
 | Entry | Date | Headline |
 |---|---|---|
+| [2026-10-21](CHANGELOG.md#2026-10-21--optional-news-timestamps-pre-loadmaintenance-started-cards-and-expanded-full-articles-unreleased) | 2026-10-21 | unreleased: default-off render-time news `<t:…>` timestamps (`NEWS_TIMESTAMPS`), independent per-game `Pre-Load Started` & `Maintenance Started` Components V2 alerts (`MAINTENANCE_ENABLED` / `MAINTENANCE_GAMES`), expanded multi-page news articles (`NEWS_EXPAND_FULL`), ambiguous-POST hold protection, and reproducible `benchmark` CLI |
 | [2026-10-20](CHANGELOG.md#2026-10-20--news-article-count-cap-removal-unreleased) | 2026-10-20 | unreleased: attempt all discovered eligible news in publication order; retire count/attempt caps and stale settings, preserve safety guards |
 | [2026-10-20](CHANGELOG.md#2026-10-20--news-gif-mime-compatibility-unreleased) | 2026-10-20 | unreleased: signature-gated bare GIF MIME compatibility in shared news preflight/dimensions; original animated media preserved, safeguards unchanged |
 | [2026-10-19](CHANGELOG.md#2026-10-19--wuwa-news-publication-time) | 2026-10-19 | dedicated WuWa news uses official publication start instead of draft creation; real Lucilla regression and protected baseline/future/dedup behavior |

@@ -137,9 +137,15 @@ def component(c: dict) -> str:
         return f'<div class="{cls}"></div>'
     if t == 12:
         items = c.get("items") or []
-        imgs = "".join(f'<img src="{html.escape((i.get("media") or {}).get("url") or "")}" alt="image" loading="lazy">'
-                       for i in items)
-        return f'<div class="gallery n{min(len(items), 4)}">{imgs}</div>'
+        parts = []
+        for i in items:
+            raw_url = (i.get("media") or {}).get("url") or ""
+            esc_url = html.escape(raw_url)
+            if re.search(r"\.(?:mp4|webm)(?:[?#]|$)", raw_url, re.I):
+                parts.append(f'<video src="{esc_url}" controls muted playsinline preload="metadata"></video>')
+            else:
+                parts.append(f'<img src="{esc_url}" alt="image" loading="lazy">')
+        return f'<div class="gallery n{min(len(items), 4)}">{"".join(parts)}</div>'
     if t == 11:
         return f'<img class="thumb" src="{html.escape((c.get("media") or {}).get("url") or "")}" alt="thumbnail">'
     if t == 9:
@@ -210,7 +216,7 @@ img.emoji{width:1.375em;height:1.375em;vertical-align:-.3em;object-fit:contain}
 .thumb{width:85px;height:85px;border-radius:8px;object-fit:cover;background:#1e1f22}
 .gallery{display:grid;gap:4px;margin-top:8px}
 .gallery.n1{grid-template-columns:1fr}.gallery.n2,.gallery.n4{grid-template-columns:1fr 1fr}.gallery.n3{grid-template-columns:1fr 1fr 1fr}
-.gallery img{width:100%;max-height:360px;object-fit:cover;border-radius:8px;background:#1e1f22;min-height:120px}
+.gallery img,.gallery video{width:100%;max-height:360px;object-fit:cover;border-radius:8px;background:#1e1f22;min-height:120px}
 .row{display:flex;flex-wrap:wrap;gap:8px}
 .btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:8px;background:#4e5058;color:#fff;
   font-size:14px;font-weight:500;white-space:nowrap}

@@ -137,7 +137,7 @@ class Fetcher:
         from .media import image_dimensions
 
         hosts = ("hoyolab.com", "hoyoverse.com", "hoyocdn.com", "mihoyo.com",
-                 "mihoyocdn.com", "kurogame.com", "kurogames.com", "ytimg.com")
+                 "mihoyocdn.com", "kurogame.com", "kurogames.com", "ytimg.com", "twimg.com")
         try:
             for _ in range(4):
                 parts = urlsplit(url)

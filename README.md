@@ -3,7 +3,8 @@
 # 🎮 Game-Express
 
 **Version-schedule announcements and redemption codes for six gacha games, plus optional
-official news for five — posted to Discord as Components V2 cards, with no server or bot token.**
+official news and pre-load/maintenance alerts — posted to Discord as Components V2 cards,
+with no server or bot token.**
 
 [![CI](https://github.com/uesu/Game-Express/actions/workflows/ci.yml/badge.svg)](https://github.com/uesu/Game-Express/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.14.8-3776AB?logo=python&logoColor=white&labelColor=2b2d31)](docs/PYTHON_VERSION.md)
@@ -20,8 +21,10 @@ official news for five — posted to Discord as Components V2 cards, with no ser
 Game-Express watches the official channels of **Genshin Impact**, **Honkai: Star Rail**,
 **Zenless Zone Zero**, **Wuthering Waves**, **Honkai: Nexus Anima** and **ANANTA**. When a
 Special Program is announced or a new redemption code appears, it posts one card — and then
-keeps that card correct by editing it silently as official information arrives. An independent,
-off-by-default official-news feature can also post new articles from five supported games.
+keeps that card correct by editing it silently as official information arrives. Independent,
+off-by-default features can also post full official news articles for five supported games
+(with optional Discord `<t:…>` timestamps and expanded multi-page rendering) and live
+**Pre-Load Started** / **Maintenance Started** alerts per game.
 
 It runs entirely on **GitHub Actions** (free and unlimited on public repos), triggered every
 5 minutes by **[cron-job.org](https://cron-job.org)**. There is nothing to deploy: merging to
@@ -160,9 +163,16 @@ Nexus Anima, Zenless Zone Zero and Wuthering Waves**, sent to explicitly configu
 news webhooks. Existing schedule/code behavior stays independent; ANANTA news is
 inactive and Wangyue is excluded.
 
-- **Source-order content:** one full message when it fits; eligible moderate
-  overflow may use at most two validated pages. Longer/unpageable articles use a
-  labelled excerpt with at most one lead image and Read Post for the full source.
+- **Source-order content:** one full message when it fits; by default, eligible
+  moderate overflow up to 7,000 normalized characters uses at most two validated
+  pages, while longer/unpageable articles use a labelled excerpt with at most one
+  lead image and Read Post for the full source. Setting `NEWS_EXPAND_FULL=1` lifts
+  the 2-page / 7,000-character ceiling so complete multi-page articles post in full
+  up to an explicit 20-page / 120-media safety bound.
+- **Optional native timestamps (`NEWS_TIMESTAMPS=1`, off by default):** converts
+  exact timezone-qualified dates/times in rendered news bodies (plus `server time`
+  on `UTC+8`) into Discord `<t:EPOCH:…>` tags without touching source payloads,
+  URLs, inline/fenced code, date-only phrases or schedule extraction.
 - **Controls at the end:** all three custom-emoji buttons occur only in the final
   container of the final message. Part labels identify containers; Page labels
   identify separate messages.
@@ -175,9 +185,46 @@ inactive and Wangyue is excluded.
 
 Use the **[official-news setup and full instructions](docs/CONFIGURATION.md#official-news-explicit-opt-in-default-off)**
 for all variables, per-game secrets, selecting two games, paging/excerpt rules,
-measured grouping, retries and safe verification. See also the
+optional timestamp conversion, expanded articles, measured grouping, retries and safe verification. See also the
 **[source limits](docs/SOURCES.md#optional-full-content-news-adapter-2026-10-18)**
 and **[offline/live-check distinction](docs/TESTING.md#official-news-offline-coverage-and-read-only-checks)**.
+
+---
+
+### 4 · Pre-load & maintenance started (optional; off by default)
+
+Two independent milestone alerts per version — **`Pre-Load Started`** and
+**`Maintenance Started`** — for explicitly enabled games, using the existing
+5-minute scheduler and dedicated per-game webhooks (`DISCORD_WEBHOOK_MAINTENANCE_<GAME>`).
+Works standalone or alongside schedule, codes and news without modifying existing cards.
+
+```
+┌───────────────────────────────────────────────────────────── (game color)
+│ ## [ZZZ - 3.3] Pre-Load Started <a:starwardlove:…><a:starwardspark3:…>
+│ <@&ROLE>                                                       ← optional per-game ping
+│ ─────────────
+│ ※ **Date Time:** <t:1792382400:f> ※ **Hour Time:** <t:1792382400:R> <a:gearfinal:…>
+│ [ version-verified launch video / artwork (optional) ]
+│ ─────────────
+│ <a:starwardsleepywink:…> **Citlali News**          [ <a:starwardyayy:…> ]
+│ -# Delivering news and official updates
+└─────────────────────────────────────────────────────────────
+```
+
+- **Separate milestones & silent baseline:** enabling seeds already-passed
+  milestones silently and tracks `preload` and `maintenance` separately in
+  `state/state.json`, so first activation never reposts settled versions and
+  `Pre-Load Started` never suppresses `Maintenance Started`.
+- **Source precedence:** official notices/tweets → explicit `config/overrides.json` →
+  corroborated/cadence estimates (clearly labelled; no invented HNA cadence or
+  fabricated end time when unknown).
+- **Version-verified launch media:** prefers (1) matching-version launch video,
+  (2) matching-version launcher artwork/WebP, (3) matching-version Special Program
+  key art, or (4) cleanly omits the gallery — locking launch media before Phase II
+  swaps and silently upgrading if higher-priority media goes live shortly after
+  initial post without re-pinging.
+
+Full setup and safeguards: **[docs/CONFIGURATION.md → Pre-load & maintenance started](docs/CONFIGURATION.md#pre-load--maintenance-started-explicit-per-game-opt-in-default-off)**.
 
 ---
 
@@ -251,7 +298,9 @@ Optional schedule mirror secrets are `DISCORD_WEBHOOK_SCHEDULE_MIRROR_<GAME>`.
 For news, use dedicated secrets `DISCORD_WEBHOOK_NEWS_GENSHIN`,
 `DISCORD_WEBHOOK_NEWS_STARRAIL`, `DISCORD_WEBHOOK_NEWS_HNA`,
 `DISCORD_WEBHOOK_NEWS_ZZZ`, and `DISCORD_WEBHOOK_NEWS_WUWA`.
-News never uses the generic webhook, FORCE_WEBHOOK or mirror fallback.
+For pre-load/maintenance started cards, use dedicated secrets
+`DISCORD_WEBHOOK_MAINTENANCE_<GAME>`. Neither feature uses the generic webhook,
+`FORCE_WEBHOOK` or mirror fallback.
 See [the full secret reference](docs/CONFIGURATION.md).
 
 The same URL may be used for several secrets, for example one codes channel for every game.
@@ -331,6 +380,10 @@ editing YAML. The ones worth knowing:
 | `NEWS_ENABLED` | `0` | explicit opt-in; adds news unless globally disabled |
 | `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | news subset, independent of schedule/codes |
 | `NEWS_GROUP_LONG_STRIPS` | `0` | optional measured grouping; off retains article order |
+| `NEWS_TIMESTAMPS` | `0` | optional `<t:EPOCH:…>` conversion in rendered news text |
+| `NEWS_EXPAND_FULL` | `0` | optional multi-page full articles (up to 20 pages / 120 media) |
+| `MAINTENANCE_ENABLED` | `0` | explicit opt-in for `Pre-Load Started` / `Maintenance Started` |
+| `MAINTENANCE_GAMES` | *(empty)* | explicit per-game list required to activate maintenance alerts |
 | `GAMES` / `ENABLE_GAMES` | all enabled / — | run a subset · switch prepared games on |
 | `LOOKBACK_HOURS` | 72 | how far back official posts are considered |
 | `CODES_MIN_SOURCES` | 2 | independent sources needed for an unverified code |
@@ -436,6 +489,7 @@ For local runs and debugging: `python -m gamexpress <command>`
 | `check-webhooks [--kind …] [--game …]` | one "connected" card per unique webhook (no ping) |
 | `test-card [--kind …] [--game …] [--ping] [--unlaunched]` | post the sample cards, labelled 🧪 TEST. `--unlaunched` keeps only the games with `"released": false` |
 | `speculate [--game …] [--verbose] [--now <unix>]` | read-only: what the bot would predict for each game's next version, the confidence, and the real dates it is anchored on |
+| `benchmark [--iterations N] [--json]` | offline microbenchmark for timestamp formatting/scanning and short vs multi-page news rendering |
 
 Flags: `--dry-run --only --game --repost --kind --ping --out --unlaunched --verbose --now`.
 
