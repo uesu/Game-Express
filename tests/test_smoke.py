@@ -8473,10 +8473,15 @@ def test_maintenance_media_priority_version_matching_phase2_lock_and_wuwa_signed
         assert asyncio.run(resolve_launch_media(ctx, GAMES["zzz"], "3.2", plan_32, locked_32, basic_info=phase2_info, program_pins={})) == (1, zzz_32_launch)
         assert asyncio.run(resolve_launch_media(ctx, GAMES["zzz"], "3.2", plan_32, {}, basic_info=phase2_info, program_pins={})) == (4, None)
 
-        # WuWa signed URL preserves exact `auth_key` query, renews same asset cleanly, and falls back when expired.
+        # WuWa signed URL preserves exact `auth_key` query, rejects uncorroborated same-path swap,
+        # renews when corroborated metadata matches, and falls back when expired.
         allowed = {wuwa_signed, wuwa_renewed, pins["wuwa"]["3.7"]["image"]}
         ctx.now = 1792490000  # before 1792498595 expiry
-        ctx.versions["wuwa"] = {"live": "3.6", "pre": "3.7", "pre_media": {"version": "3.7", "video": wuwa_signed, "artwork": ""}}
+        ctx.versions["wuwa"] = {
+            "live": "3.6",
+            "pre": "3.7",
+            "pre_media": {"version": "3.7", "video": wuwa_signed, "video_md5": "wuwa37md5", "artwork": ""},
+        }
         wuwa_state: dict = {}
         plan_ww = {"preinstall_ts": 1792480000, "maint_start_ts": 1792630000, "schedule_images": [], "override": {}}
         assert asyncio.run(resolve_launch_media(ctx, GAMES["wuwa"], "3.7", plan_ww, wuwa_state, basic_info={}, program_pins=pins)) == (1, wuwa_signed)
@@ -8486,8 +8491,13 @@ def test_maintenance_media_priority_version_matching_phase2_lock_and_wuwa_signed
         assert asyncio.run(resolve_launch_media(ctx, GAMES["wuwa"], "3.7", plan_ww, wuwa_state, basic_info={}, program_pins=pins)) == (
             3, pins["wuwa"]["3.7"]["image"]
         )
-        # Same verified asset path with renewed `auth_key` renews cleanly:
-        ctx.versions["wuwa"]["pre_media"]["video"] = wuwa_renewed
+        # Same host/path WITHOUT matching corroboration -> STILL rejected, falls back to official 3.7 art:
+        ctx.versions["wuwa"]["pre_media"] = {"version": "3.7", "video": wuwa_renewed, "artwork": ""}
+        assert asyncio.run(resolve_launch_media(ctx, GAMES["wuwa"], "3.7", plan_ww, wuwa_state, basic_info={}, program_pins=pins)) == (
+            3, pins["wuwa"]["3.7"]["image"]
+        )
+        # Corroborated same asset (`video_md5 == "wuwa37md5"`) -> renews `auth_key` cleanly to Tier 1!
+        ctx.versions["wuwa"]["pre_media"] = {"version": "3.7", "video": wuwa_renewed, "video_md5": "wuwa37md5", "artwork": ""}
         assert asyncio.run(resolve_launch_media(ctx, GAMES["wuwa"], "3.7", plan_ww, wuwa_state, basic_info={}, program_pins=pins)) == (1, wuwa_renewed)
 
 
@@ -8774,6 +8784,10 @@ def test_reproducible_offline_benchmark_command_and_bypass_invariants():
     data = json.loads(out.getvalue())
     assert data["default_long_messages"] == 1
     assert data["expanded_long_messages"] > 2
+    assert data["disabled_output_equal"] is True
+    assert data["request_counts"]["short_default_off"]["webhook_posts"] == 1
+    assert data["request_counts"]["long_expand_off"]["webhook_posts"] == 1
+    assert data["request_counts"]["long_expand_on"]["webhook_posts"] == data["expanded_long_messages"]
     assert len(data["benchmarks"]) == 10
     assert all(b["median_us"] >= 0 and b["iterations"] == 20 for b in data["benchmarks"])
 
@@ -8845,6 +8859,393 @@ def test_webhook_ambiguous_response_auth_key_redaction_and_video_preview_html():
     )
     rendered_html = preview_html.render_page([("maintenance", "wuwa_preload", maint_card)])
     assert "<video " in rendered_html and "auth_key=1792500000-0-0-deadbeefcafe1234" in rendered_html
+
+
+def test_correction_1_launch_media_lock_vs_tier_upgrade_window_and_edit_failure():
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import maintenance
+    from gamexpress.sources import launcher as launcher_mod
+
+    zzz_art = "https://fastcdn.hoyoverse.com/static-resource-v2/2026/10/19/launch_art_33.webp"
+    zzz_vid = "https://fastcdn.hoyoverse.com/static-resource-v2/2026/10/19/launch_vid_33.webm"
+    phase2_vid = "https://fastcdn.hoyoverse.com/static-resource-v2/2026/11/12/phase2_vid_33.webm"
+    other_ver_vid = "https://fastcdn.hoyoverse.com/static-resource-v2/2026/10/19/launch_vid_34.webm"
+    unverified_vid = "https://fastcdn.hoyoverse.com/static-resource-v2/2026/10/19/broken_vid_33.webm"
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "state.json"
+        ctx = make_ctx(
+            path,
+            now=1792380000,
+            MAINTENANCE_ENABLED="1",
+            ONLY="maintenance",
+            MAINTENANCE_GAMES="zzz",
+            DISCORD_WEBHOOK_MAINTENANCE_ZZZ=HOOK,
+            PING_MAINTENANCE_ZZZ="1296268365593186426",
+        )
+        ctx.state.schedule_records("zzz")["3.3"] = {
+            "status": "posted",
+            "data": {"version": "3.3", "preinstall_ts": 1792382400, "maint_start_ts": 1792533600},
+            "prov": {"preinstall_ts": [50, 1], "maint_start_ts": [50, 1]},
+        }
+        ctx.versions["zzz"] = {"live": "3.2", "pre": "3.3"}
+        ctx.items["zzz"] = []
+        valid_urls = {zzz_art, zzz_vid, phase2_vid, other_ver_vid}
+        ctx.fetcher = types.SimpleNamespace(verify_media=lambda u: asyncio.sleep(0, result=(u in valid_urls)))
+
+        # Seed baseline at 1792380000.
+        asyncio.run(maintenance.run(ctx))
+        assert ctx.webhook.sent == []
+
+        # 1) Initial post promptly selects matching Tier-2 launch artwork (`launch_art_33.webp`) — never delayed!
+        ctx.now = 1792382460
+        ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, "preload-art-msg")])
+        art_binfo = {
+            "U5hbdsT9W7": [
+                {
+                    "id": "bg-launch-33",
+                    "video": unverified_vid,
+                    "background": zzz_art,
+                    "links": ["https://hoyo.link/v3.3"],
+                }
+            ]
+        }
+        with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value=art_binfo)):
+            asyncio.run(maintenance.run(ctx))
+        assert len(ctx.webhook.sends) == 1 and len(ctx.webhook.edits) == 0
+        posted_entry = ctx.state.maintenance_record("zzz")["versions"]["3.3"]["preload"]
+        assert posted_entry["media_tier"] == 2 and posted_entry["media_url"] == zzz_art
+
+        # 2) Failed PATCH edit does NOT persist false Tier-1 replacement or emit a second announcement.
+        ctx.now = 1792382760
+        vid_binfo = {
+            "U5hbdsT9W7": [
+                {
+                    "id": "bg-launch-33",
+                    "video": zzz_vid,
+                    "background": zzz_art,
+                    "links": ["https://hoyo.link/v3.3"],
+                }
+            ]
+        }
+        ctx.webhook = ScriptedWebhook([SendResult(False, 500, error="upstream error")], [])
+        with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value=vid_binfo)):
+            asyncio.run(maintenance.run(ctx))
+        assert len(ctx.webhook.sends) == 0 and len(ctx.webhook.edits) == 1
+        assert posted_entry["media_tier"] == 2 and posted_entry["media_url"] == zzz_art
+        assert not ctx.state.maintenance_record("zzz")["versions"]["3.3"]["launch_media"].get("video")
+
+        # 3) Next poll within window succeeds: upgrades SAME message (`preload-art-msg`) to Tier-1 video silently!
+        ctx.now = 1792383060
+        ctx.webhook = ScriptedWebhook([SendResult(True, 200)], [])
+        with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value=vid_binfo)):
+            asyncio.run(maintenance.run(ctx))
+        assert len(ctx.webhook.sends) == 0 and len(ctx.webhook.edits) == 1
+        assert ctx.webhook.edits[0][0] == "preload-art-msg"
+        assert ctx.webhook.edits[0][1]["allowed_mentions"] == {"parse": []}
+        assert zzz_vid in json.dumps(ctx.webhook.edits[0][1])
+        assert posted_entry["media_tier"] == 1 and posted_entry["media_url"] == zzz_vid
+
+        # 4) Phase II, different-version (`3.4`), and unverified media never replace the locked launch selection.
+        bad_binfo = {
+            "U5hbdsT9W7": [
+                {"id": "bg-phase2", "video": phase2_vid, "background": "", "links": []},
+                {"id": "bg-v34", "video": other_ver_vid, "background": "", "links": ["https://hoyo.link/v3.4"]},
+                {"id": "bg-broken", "video": unverified_vid, "background": "", "links": ["https://hoyo.link/v3.3"]},
+            ]
+        }
+        ctx.now = 1792383600
+        ctx.webhook = ScriptedWebhook([], [])
+        with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value=bad_binfo)):
+            asyncio.run(maintenance.run(ctx))
+        assert ctx.webhook.sends == [] and ctx.webhook.edits == []
+        assert posted_entry["media_url"] == zzz_vid
+
+        # 5) Outside `LATE_MEDIA_EDIT_WINDOW_S`, NO upgrade edit occurs even when `cur_tier > 1`.
+        ctx.state.schedule_records("zzz")["3.4"] = {
+            "status": "posted",
+            "data": {"version": "3.4", "preinstall_ts": 1795900000, "maint_start_ts": 1796050000},
+            "prov": {"preinstall_ts": [50, 1], "maint_start_ts": [50, 1]},
+        }
+        ctx.versions["zzz"] = {"live": "3.3", "pre": "3.4"}
+        ctx.now = 1795900060
+        ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, "preload-34-msg")])
+        with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value={})):
+            asyncio.run(maintenance.run(ctx))
+        assert len(ctx.webhook.sends) == 1
+        assert ctx.state.maintenance_record("zzz")["versions"]["3.4"]["preload"]["media_tier"] == 4
+
+        ctx.now = 1795900060 + maintenance.LATE_MEDIA_EDIT_WINDOW_S + 120
+        ctx.webhook = ScriptedWebhook([], [])
+        late_34_binfo = {
+            "U5hbdsT9W7": [{"id": "bg-34", "video": other_ver_vid, "background": "", "links": ["https://hoyo.link/v3.4"]}]
+        }
+        with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value=late_34_binfo)):
+            asyncio.run(maintenance.run(ctx))
+        assert ctx.webhook.sends == [] and ctx.webhook.edits == []
+
+
+def test_correction_2_expiring_tier1_video_same_tier_renewal_and_safe_fallbacks():
+    from gamexpress import maintenance
+    from gamexpress.sources import kuro as kuro_mod
+
+    vid_tok1 = "https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/video/bg.mp4?auth_key=1790563000-0-0-tok1"
+    vid_tok2 = "https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/video/bg.mp4?auth_key=1790568000-0-0-tok2"
+    unrelated_vid = "https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/video/phase2_other.mp4?auth_key=1790575000-0-0-other"
+    art_37 = "https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/image/3.7/kv.webp?auth_key=1790590000-0-0-art1"
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "state.json"
+        ctx = make_ctx(
+            path,
+            now=1790560000,
+            MAINTENANCE_ENABLED="1",
+            ONLY="maintenance",
+            MAINTENANCE_GAMES="wuwa",
+            DISCORD_WEBHOOK_MAINTENANCE_WUWA=HOOK,
+        )
+        ctx.state.schedule_records("wuwa")["3.7"] = {
+            "status": "posted",
+            "data": {"version": "3.7", "preinstall_ts": 1790560800, "maint_start_ts": 1790712000},
+            "prov": {"preinstall_ts": [50, 1], "maint_start_ts": [50, 1]},
+        }
+        ctx.items["wuwa"] = []
+        valid_urls = {vid_tok1, vid_tok2, unrelated_vid, art_37}
+        ctx.fetcher = types.SimpleNamespace(verify_media=lambda u: asyncio.sleep(0, result=(u in valid_urls)))
+
+        # Seed baseline at 1790560000.
+        ctx.versions["wuwa"] = kuro_mod.parse_launcher_index({"default": {"version": "3.6.0"}})
+        asyncio.run(maintenance.run(ctx))
+
+        # 1) Initial Pre-Load Started posts Tier-1 signed video (`vid_tok1`) + locks corroborated MD5 metadata.
+        ctx.now = 1790560860
+        ctx.versions["wuwa"] = kuro_mod.parse_launcher_index({
+            "default": {"version": "3.6.0"},
+            "predownload": {
+                "version": "3.7.0",
+                "bgVideo": vid_tok1,
+                "bgVideoMd5": "md5-launch-37",
+                "bgImage": art_37,
+                "bgImageMd5": "md5-art-37",
+            },
+        })
+        ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, "wuwa-preload-1")])
+        asyncio.run(maintenance.run(ctx))
+        entry = ctx.state.maintenance_record("wuwa")["versions"]["3.7"]["preload"]
+        assert entry["media_tier"] == 1 and entry["media_url"] == vid_tok1
+
+        # 2) Once `vid_tok1` expires (`now > 1790563000`), corroborated same-asset renewal (`vid_tok2`)
+        #    succeeds DESPITE remaining Tier 1 (`1 -> 1`) and preserves full `auth_key=` query!
+        ctx.now = 1790563500
+        ctx.versions["wuwa"] = kuro_mod.parse_launcher_index({
+            "default": {"version": "3.6.0"},
+            "predownload": {
+                "version": "3.7.0",
+                "bgVideo": vid_tok2,
+                "bgVideoMd5": "md5-launch-37",
+                "bgImage": art_37,
+                "bgImageMd5": "md5-art-37",
+            },
+        })
+        ctx.webhook = ScriptedWebhook([SendResult(True, 200)], [])
+        asyncio.run(maintenance.run(ctx))
+        assert len(ctx.webhook.sends) == 0 and len(ctx.webhook.edits) == 1
+        assert entry["media_tier"] == 1 and entry["media_url"] == vid_tok2
+        assert "auth_key=1790568000-0-0-tok2" in json.dumps(ctx.webhook.edits[0][1])
+
+        # 3) When `vid_tok2` expires (`now > 1790568000`) and ONLY an uncorroborated/unrelated video is offered,
+        #    unrelated video is NEVER substituted — card falls back to matching-version `art_37` (`tier 2`)!
+        ctx.now = 1790568500
+        ctx.versions["wuwa"] = kuro_mod.parse_launcher_index({
+            "default": {"version": "3.6.0"},
+            "predownload": {
+                "version": "3.7.0",
+                "bgVideo": unrelated_vid,
+                "bgVideoMd5": "md5-different-asset",
+                "bgImage": art_37,
+                "bgImageMd5": "md5-art-37",
+            },
+        })
+        ctx.webhook = ScriptedWebhook([SendResult(True, 200)], [])
+        asyncio.run(maintenance.run(ctx))
+        assert len(ctx.webhook.sends) == 0 and len(ctx.webhook.edits) == 1
+        assert unrelated_vid not in json.dumps(ctx.webhook.edits[0][1])
+        assert entry["media_tier"] == 2 and entry["media_url"] == art_37
+
+        # 4) When `art_37` also becomes unavailable and no valid media remains, omits gallery cleanly (`tier 4`)
+        #    AND respects bounded `MAX_LATE_MEDIA_ATTEMPTS` when webhook edits fail!
+        valid_urls.discard(art_37)
+        ctx.now = 1790569000
+        ctx.webhook = ScriptedWebhook(
+            [SendResult(False, 502, error="bad gateway") for _ in range(maintenance.MAX_LATE_MEDIA_ATTEMPTS)],
+            [],
+        )
+        for step in range(maintenance.MAX_LATE_MEDIA_ATTEMPTS + 2):
+            ctx.now = 1790569000 + step * 60
+            asyncio.run(maintenance.run(ctx))
+        assert len(ctx.webhook.edits) == maintenance.MAX_LATE_MEDIA_ATTEMPTS
+        assert ctx.webhook.sends == []
+        assert entry["edit_attempts"] == maintenance.MAX_LATE_MEDIA_ATTEMPTS
+        assert entry["media_tier"] == 2 and entry["media_url"] == art_37
+
+
+def test_correction_3_wuwa_mutable_path_never_suffices_without_corroboration():
+    from gamexpress.maintenance import _build_asset_meta, _corroborated_same_asset
+
+    mutable_old = "https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/video/bg.mp4?auth_key=1790561000-0-0-old"
+    mutable_new = "https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/video/bg.mp4?auth_key=1790599000-0-0-new"
+
+    # 1) Same host + mutable path ALONE without corroborating asset identity -> MUST BE REJECTED!
+    bare_locked = _build_asset_meta(mutable_old, "3.7")
+    bare_cand = _build_asset_meta(mutable_new, "3.7")
+    assert _corroborated_same_asset(mutable_new, bare_cand, mutable_old, bare_locked, "3.7") is False
+
+    # 2) Same host + path with changed version (`3.8` vs `3.7`) -> REJECTED!
+    locked_hash = _build_asset_meta(mutable_old, "3.7", extra={"hash": "abc123"})
+    wrong_ver = _build_asset_meta(mutable_new, "3.8", extra={"hash": "abc123"})
+    assert _corroborated_same_asset(mutable_new, wrong_ver, mutable_old, locked_hash, "3.7") is False
+
+    # 3) Same host + path with conflicting content hash / Phase II bytes -> REJECTED!
+    phase2_swap = _build_asset_meta(mutable_new, "3.7", extra={"hash": "phase2diff999"})
+    assert _corroborated_same_asset(mutable_new, phase2_swap, mutable_old, locked_hash, "3.7") is False
+
+    # 4) Same host + path where candidate dropped the hash of a hash-locked asset -> REJECTED!
+    assert _corroborated_same_asset(mutable_new, bare_cand, mutable_old, locked_hash, "3.7") is False
+
+    # 5) Genuinely corroborated renewal (matching version + matching content hash + intact query) -> ACCEPTED!
+    valid_renewal = _build_asset_meta(mutable_new, "3.7", extra={"hash": "abc123"})
+    assert _corroborated_same_asset(mutable_new, valid_renewal, mutable_old, locked_hash, "3.7") is True
+
+
+def test_correction_4_first_observed_preload_timestamp_provenance_and_seeding():
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import maintenance
+    from gamexpress.sources import launcher as launcher_mod
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "state.json"
+        # 1) Initial seeding when launcher `pre == "3.2"` ALREADY exists: seeds silently with ZERO posts!
+        ctx = make_ctx(
+            path,
+            now=1792300000,
+            MAINTENANCE_ENABLED="1",
+            ONLY="maintenance",
+            MAINTENANCE_GAMES="genshin",
+            DISCORD_WEBHOOK_MAINTENANCE_GENSHIN=HOOK,
+        )
+        ctx.versions["genshin"] = {"live": "3.1", "pre": "3.2"}
+        ctx.items["genshin"] = []
+        ctx.fetcher = types.SimpleNamespace(verify_media=lambda u: asyncio.sleep(0, result=True))
+        asyncio.run(maintenance.run(ctx))
+        assert ctx.webhook.sent == []
+        assert ctx.state.maintenance_record("genshin")["versions"]["3.2"]["preload"]["status"] == "seeded"
+
+        # 2) New version `3.3` appears in launcher `pre` at `first_seen = 1792310000` with NO official start timestamp:
+        #    posts with persisted `observed_preinstall_ts == 1792310000` and explicit observed provenance wording!
+        first_seen = 1792310000
+        ctx.now = first_seen
+        ctx.versions["genshin"] = {"live": "3.2", "pre": "3.3"}
+        ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, "gi-obs-msg")])
+        with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value={})):
+            asyncio.run(maintenance.run(ctx))
+        assert len(ctx.webhook.sends) == 1
+        sent_blob = json.dumps(ctx.webhook.sends[0], ensure_ascii=False)
+        assert f"<t:{first_seen}:f>" in sent_blob
+        assert "Observed available in launcher — official start time not published" in sent_blob
+
+        # 3) Repeated runs (+5m, +15m) AND full disk reload keep the EXACT original `first_seen` timestamp!
+        reloaded_state = State.load(path)
+        for later_now in (first_seen + 300, first_seen + 900):
+            plans_later = maintenance.resolve_version_plans(
+                GAMES["genshin"],
+                {},
+                [],
+                {"live": "3.2", "pre": "3.3"},
+                {},
+                later_now,
+                maintenance_versions=reloaded_state.maintenance_record("genshin")["versions"],
+            )
+            assert plans_later["3.3"]["preinstall_ts"] == first_seen
+            assert plans_later["3.3"]["preinstall_observed"] is True
+            assert plans_later["3.3"]["preinstall_provenance"] == "observed"
+
+        # 4) Explicit override AND official notice both outrank observation and clear `preinstall_observed`!
+        official_published_ts = 1792304400
+        official_notice = Item(
+            source="hoyolab",
+            game="genshin",
+            id="499991",
+            url="https://www.hoyolab.com/article/499991",
+            title="Version 3.3 Pre-Installation Function Now Available",
+            text="Pre-installation opens on 2026/10/18 14:20 (UTC+8).",
+            published_ts=first_seen + 600,
+        )
+        ctx.state = reloaded_state
+        ctx.items["genshin"] = [official_notice]
+        ctx.now = first_seen + 600
+        ctx.webhook = ScriptedWebhook([SendResult(True, 200)], [])
+        with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value={})):
+            asyncio.run(maintenance.run(ctx))
+        assert len(ctx.webhook.sends) == 0 and len(ctx.webhook.edits) == 1
+        upgraded_blob = json.dumps(ctx.webhook.edits[0][1], ensure_ascii=False)
+        assert f"<t:{official_published_ts}:f>" in upgraded_blob
+        assert "Observed available in launcher" not in upgraded_blob
+
+
+def test_correction_5_bare_utc_gmt_explicit_offsets_and_invalid_ranges():
+    from gamexpress.news_timestamps import _parse_tz, convert_news_timestamps
+
+    pub = 1790000000
+
+    # 1) Bare `UTC` and `GMT` resolve cleanly to zero offset (`+00:00`) standalone and in ranges!
+    assert _parse_tz("UTC") == _parse_tz("GMT") == datetime.now(timezone.utc).tzinfo
+    assert convert_news_timestamps("2026/09/28 06:00 UTC", published_ts=pub, enabled=True) == "<t:1790575200:f>"
+    assert convert_news_timestamps("2026/09/28 06:00 (UTC)", published_ts=pub, enabled=True) == "<t:1790575200:f>"
+    assert convert_news_timestamps("September 28, 2026 06:00 GMT", published_ts=pub, enabled=True) == "<t:1790575200:f>"
+    assert convert_news_timestamps("September 28, 2026, 06:00 (GMT)", published_ts=pub, enabled=True) == "<t:1790575200:f>"
+    assert (
+        convert_news_timestamps("2026/09/28 06:00 – 11:00 (UTC)", published_ts=pub, enabled=True)
+        == "<t:1790575200:f> – <t:1790593200:f>"
+    )
+
+    # 2) Explicit offsets retain strict precedence over `"server time"` (`UTC+8`).
+    assert (
+        convert_news_timestamps("2026/09/28 06:00 (UTC) vs 2026/09/28 06:00 (server time)", published_ts=pub, enabled=True)
+        == "<t:1790575200:f> vs <t:1790546400:f>"
+    )
+    assert (
+        convert_news_timestamps("2026/09/28 06:00 (UTC-4) (server time)", published_ts=pub, enabled=True)
+        == "<t:1790589600:f> (server time)"
+    )
+
+    # 3) Malformed, ambiguous, or out-of-range TZ forms remain 100% unchanged (no partial bare-UTC backtrack!).
+    for unchanged_tz in (
+        "2026/09/28 06:00 UTC+99",
+        "2026/09/28 06:00 (UTC+99)",
+        "2026/09/28 06:00 UTC+123",
+        "2026/09/28 06:00 UTC+8:5",
+        "2026/09/28 06:00 UTC+foo",
+        "2026/09/28 06:00 UTCfoo",
+        "2026/09/28 06:00 (CST)",
+        "2026/09/28 06:00 PT",
+        "2026/09/28 06:00 local time",
+    ):
+        assert convert_news_timestamps(unchanged_tz, published_ts=pub, enabled=True) == unchanged_tz, unchanged_tz
+
+    # 4) Invalid, inverted, or partially unresolved ranges are NEVER partially converted into misleading half-tokens!
+    for bad_range in (
+        "2026/09/28 11:00 (UTC+8) – 2026/09/28 06:00 (UTC+8)",
+        "2026/09/28 11:00 – 06:00 (UTC+8)",
+        "2026/09/28 06:00 (UTC+8) – 11:00",
+        "2026/09/28 06:00 (UTC+8) – 2026/09/28 11:00",
+        "2026/09/28 06:00 (UTC+8) – 2026/02/30 11:00 (UTC+8)",
+        "2026/09/28 06:00 (UTC+8) – 25:00 (UTC+8)",
+        "2026/09/28 06:00 (UTC+8) – TBA",
+        "2026/09/28 06:00 (UTC+8) – After the Version 3.3 update",
+    ):
+        assert convert_news_timestamps(bad_range, published_ts=pub, enabled=True) == bad_range, bad_range
 
 
 

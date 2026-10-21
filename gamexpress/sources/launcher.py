@@ -50,13 +50,15 @@ def parse_basic_info(data: dict) -> dict[str, list[dict]]:
         for bg in info.get("backgrounds") or []:
             if not isinstance(bg, dict):
                 continue
-            video = str((bg.get("video") or {}).get("url") or "").strip()
-            image = str((bg.get("background") or {}).get("url") or "").strip()
+            video_obj = bg.get("video") if isinstance(bg.get("video"), dict) else {}
+            bg_obj = bg.get("background") if isinstance(bg.get("background"), dict) else {}
+            video = str(video_obj.get("url") or "").strip()
+            image = str(bg_obj.get("url") or "").strip()
             theme = str((bg.get("theme") or {}).get("url") or "").strip()
             links = [
                 str(u).strip()
                 for u in (
-                    (bg.get("background") or {}).get("link"),
+                    bg_obj.get("link"),
                     (bg.get("icon") or {}).get("link"),
                 )
                 if u
@@ -66,7 +68,9 @@ def parse_basic_info(data: dict) -> dict[str, list[dict]]:
                     "id": str(bg.get("id") or ""),
                     "type": str(bg.get("type") or ""),
                     "video": video,
+                    "video_md5": str(video_obj.get("md5") or video_obj.get("hash") or "").strip(),
                     "background": image,
+                    "background_md5": str(bg_obj.get("md5") or bg_obj.get("hash") or "").strip(),
                     "theme": theme,
                     "links": links,
                 })

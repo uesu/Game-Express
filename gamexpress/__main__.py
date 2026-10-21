@@ -483,6 +483,43 @@ def cmd_benchmark(args) -> int:
             lambda: news_payloads(games["wuwa"], long_item, timestamps=True, expand_full=True),
         ),
     ]
+    base_short = news_payloads(games["zzz"], short_item, timestamps=False, expand_full=False)
+    default_short = news_payloads(games["zzz"], short_item)
+    default_long = news_payloads(games["wuwa"], long_item)
+
+    def _media_urls(payloads: list[dict]) -> list[str]:
+        seen: list[str] = []
+        for p in payloads:
+            for co in p.get("components") or []:
+                for child in co.get("components") or []:
+                    if child.get("type") == 12:
+                        for item_obj in child.get("items") or []:
+                            u = (item_obj.get("media") or {}).get("url") or ""
+                            if u and u not in seen:
+                                seen.append(u)
+        return seen
+
+    request_counts = {
+        "short_default_off": {
+            "payloads": len(base_short),
+            "distinct_media_preflights": len(_media_urls(base_short)),
+            "webhook_posts": len(base_short),
+            "min_pacing_s": round(max(0, len(base_short) - 1) * 1.2, 2),
+        },
+        "long_expand_off": {
+            "payloads": len(base_long),
+            "distinct_media_preflights": len(_media_urls(base_long)),
+            "webhook_posts": len(base_long),
+            "min_pacing_s": round(max(0, len(base_long) - 1) * 1.2, 2),
+        },
+        "long_expand_on": {
+            "payloads": len(expanded_long),
+            "distinct_media_preflights": len(_media_urls(expanded_long)),
+            "webhook_posts": len(expanded_long),
+            "min_pacing_s": round(max(0, len(expanded_long) - 1) * 1.2, 2),
+        },
+    }
+
     report = {
         "python": platform.python_version(),
         "platform": platform.platform(),
@@ -491,6 +528,8 @@ def cmd_benchmark(args) -> int:
         "long_inline_media": sum(1 for b in long_blocks if b["kind"] == "image"),
         "default_long_messages": len(base_long),
         "expanded_long_messages": len(expanded_long),
+        "disabled_output_equal": (base_short == default_short and base_long == default_long),
+        "request_counts": request_counts,
         "benchmarks": results,
     }
     if getattr(args, "json", False):
@@ -500,7 +539,20 @@ def cmd_benchmark(args) -> int:
     print(
         f"Fixtures: short={report['short_input_chars']} chars | "
         f"long={report['long_input_chars']} chars + {report['long_inline_media']} media items "
-        f"(default={report['default_long_messages']} msg -> expanded={report['expanded_long_messages']} pages)"
+        f"(default={report['default_long_messages']} msg -> expanded={report['expanded_long_messages']} pages | "
+        f"disabled_output_equal={report['disabled_output_equal']})"
+    )
+    print(
+        f"Deterministic counts: "
+        f"short={request_counts['short_default_off']['payloads']} msg / "
+        f"{request_counts['short_default_off']['distinct_media_preflights']} media GET / "
+        f"{request_counts['short_default_off']['webhook_posts']} POST | "
+        f"long(off)={request_counts['long_expand_off']['payloads']} msg / "
+        f"{request_counts['long_expand_off']['distinct_media_preflights']} media GET / "
+        f"{request_counts['long_expand_off']['webhook_posts']} POST | "
+        f"long(on)={request_counts['long_expand_on']['payloads']} msgs / "
+        f"{request_counts['long_expand_on']['distinct_media_preflights']} media GETs / "
+        f"{request_counts['long_expand_on']['webhook_posts']} POSTs (+{request_counts['long_expand_on']['min_pacing_s']:.1f}s min pacing)"
     )
     print(f"{'Benchmark case':52} {'iters':>6} {'median µs':>11} {'mean µs':>11} {'p95 µs':>11}")
     print("-" * 95)

@@ -383,18 +383,20 @@ Setting `NEWS_TIMESTAMPS=1` enables render-only conversion (`gamexpress/news_tim
 after source-text normalization and immediately before pagination/sizing across the five
 supported news games (`genshin`, `starrail`, `hna`, `zzz`, `wuwa`):
 
-- **Timezone rules:** an explicit offset in the source (`UTC+8`, `UTC-4`, `(UTC+8)`, etc.)
-  always wins; `server time` uses the approved `UTC+8` fallback for news descriptions only
-  (`gamexpress/timeparse.py` for schedule extraction remains untouched). Timezone-less
-  times are left unchanged unless a shared trailing timezone explicitly qualifies both ends
-  of a range (e.g. `July 9, 10:00 — July 27, 18:00 (UTC+8)`).
+- **Timezone rules:** bare `UTC` and `GMT` resolve to `+00:00`, explicit source offsets
+  (`UTC+8`, `UTC-4`, `(UTC+05:30)`, supported unambiguous abbreviations, etc.) always win,
+  and `server time` uses the approved `UTC+8` fallback for news descriptions only
+  (`gamexpress/timeparse.py` for schedule extraction remains untouched). Malformed or
+  ambiguous timezone suffixes (`UTC+99`, `(CST)`, etc.) never partially match bare `UTC`,
+  and timezone-less times stay untouched unless a shared trailing timezone qualifies both
+  ends of a valid non-inverted range.
 - **Missing years & rollover:** inferred strictly from `item.published_ts` with explicit
   Dec → Jan and early-Jan → late-Dec year-boundary handling. If `published_ts` is absent
   and no year is written, the expression is left untouched.
 - **Safety exclusions:** existing `<t:…>` tokens, URLs, inline backticks, fenced code
   blocks, date-only phrases, `"After the Version X.Y update"` clauses, approximate durations
-  and unresolved ranges are never rewritten. Source `Item` fields and raw HTML/captures
-  are never mutated.
+  and invalid, inverted or half-qualified ranges are left completely untouched without
+  converting half of a range. Source `Item` fields and raw HTML/captures are never mutated.
 
 ### Full-content paging and overflow
 
@@ -515,20 +517,27 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
   already-passed milestones and live/settled versions are marked `seeded` silently
   without posting historical announcements.
 - **Strict precedence:** official notices/tweets (`rank 40–50`) → explicit
-  `config/overrides.json` entries → documented cadence predictions (`rank 9`,
-  clearly marked estimated). Holiday-shifted official notices always override both
-  cadence predictions and stale overrides; HNA never invents an unverified cadence,
-  and unknown `maint_end_ts` omits `End Time` rather than guessing.
+  `config/overrides.json` entries → persisted first-observed launcher pre-download
+  availability (`observed_preinstall_ts`, retained across polls/restarts and rendered
+  with explicit observation wording rather than claiming a published start time) →
+  documented cadence predictions (`rank 9`, clearly marked estimated). Holiday-shifted
+  official notices always override cadence predictions, observations and stale overrides;
+  HNA never invents an unverified cadence, and unknown `maint_end_ts` omits `End Time`
+  rather than guessing.
 - **Components V2 card & 4-tier media priority:** single container (`flags: 32768`)
   with `[SHORT - VERSION] Pre-Load Started` / `Maintenance Started`, optional role
   mention, `Date Time` (`<t:…:f>`) + `Hour Time` (`<t:…:R>`) or `End Time` (`<t:…:t>`),
   optional version-verified gallery ((1) matching-version launch video `.webm`/`.mp4`,
   (2) matching-version launcher artwork/WebP, (3) matching-version Special Program art,
-  (4) omitted cleanly), and the Citlali News section footer. Launch assets lock once
-  verified so mid-patch Phase II background swaps never overwrite launch cards; if
-  higher-priority launch video goes live shortly after initial post, a bounded silent
-  `PATCH` upgrades the card without re-pinging. Signed Kuro `auth_key=` query parameters
-  are preserved intact and refreshed before expiry.
+  (4) omitted cleanly), and the Citlali News section footer. Launch version identity is
+  separated from selected tier so prompt initial artwork posts can silently `PATCH` to
+  matching-version launch video inside `LATE_MEDIA_EDIT_WINDOW_S` (`12 h`) while rejecting
+  Phase II swaps. Signed Kuro `?auth_key=…` URLs keep query parameters intact and expire:
+  within `LATE_MEDIA_EDIT_WINDOW_S` (`MAX_LATE_MEDIA_ATTEMPTS = 3`), expired media renews
+  only when corroborating source metadata (`hash`/`md5`/`size`+`full_version`/`asset_id`)
+  proves identical asset identity (never host/path equality alone), otherwise falling back
+  to matching-version artwork or cleanly omitting the gallery without durable mirroring.
+  Failed `PATCH` edits keep prior card state intact.
 
 ## Discord webhook versus bot delivery
 

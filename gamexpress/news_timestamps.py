@@ -5,12 +5,14 @@ Design invariants:
     and calling `convert_news_timestamps(..., enabled=False)` returns input untouched.
   * Render-only: never mutates `Item`, `article_blocks`, raw HTML/JSON/XML, or state.
   * Never touches `gamexpress/timeparse.py` schedule defaults or consumers.
-  * Explicit timezone in the source text always wins; explicit `"server time"` uses
-    the approved `UTC+8` fallback; expressions with neither an explicit timezone nor
-    `"server time"` are left unchanged (never guess UTC or UTC+8 on bare clock prose).
-  * Date-only expressions, `"After the update"`, approximate times, unresolved ranges,
-    and non-prose spans (Discord tokens, URLs, Markdown link targets, inline/fenced code)
-    are preserved verbatim.
+  * Explicit timezone in the source text (including bare `UTC` / `GMT` as `+00:00`)
+    always wins over the approved `UTC+8` `"server time"` fallback; expressions with
+    neither an explicit supported timezone nor `"server time"` are left unchanged.
+  * Date-only expressions, `"After the update"`, approximate times, malformed timezone
+    tokens, and invalid or partially resolved ranges are preserved verbatim without
+    partial conversion.
+  * Non-prose spans (existing Discord tokens, URLs, Markdown links, inline/fenced code)
+    are protected verbatim before any prose scan runs.
 """
 
 from __future__ import annotations
@@ -36,8 +38,8 @@ _MONTHS: dict[str, int] = {
     "dec": 12, "december": 12,
 }
 
-# Fixed-offset timezone abbreviations matching gamexpress.timeparse.TZ_OFFSETS.
-# Bare "CST" without a UTC/GMT offset is excluded because prose varies between UTC-6 and UTC+8.
+# Unambiguous fixed-offset timezone abbreviations matching gamexpress.timeparse.TZ_OFFSETS.
+# Ambiguous abbreviations such as bare "CST", "PT", "ET", or "IST" are deliberately excluded.
 _NAMED_TZ_HOURS: dict[str, float] = {
     "UTC": 0.0,
     "GMT": 0.0,
@@ -74,11 +76,14 @@ _MONTH_PAT = (
     r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?"
 )
 
+# Greedily consume the full trailing TZ token so malformed forms such as `UTC+99`,
+# `UTC+123`, `UTC+8:5`, `UTC+foo`, or `(CST)` cannot backtrack to bare `UTC` and leave
+# trailing characters behind. `_parse_tz()` then accepts or rejects the whole token.
 _TZ_CORE = (
     r"(?:"
-    r"(?:UTC|GMT)\s*(?:[+-−]\s*\d{1,2}(?::\d{2})?)?"
-    r"|server\s+time"
-    r"|(?:PST|PDT|MST|MDT|EST|EDT|JST|KST|SGT|HKT|AEST|AEDT|BST|CET|CEST)\b"
+    r"(?:UTC|GMT)(?:\s*[+-−]\s*\d+(?::\d+)?)?(?![A-Za-z0-9_+:-])"
+    r"|server\s+time(?![A-Za-z0-9_])"
+    r"|[A-Za-z]{2,5}(?:\s*[+-−]\s*\d+(?::\d+)?)?(?![A-Za-z0-9_+:-])"
     r")"
 )
 
@@ -98,12 +103,20 @@ _CANDIDATE_DT_RE = re.compile(
 
 _RANGE_BETWEEN_RE = re.compile(r"^\s*(?:[–—~]|-(?!\d)|\bto\b|\buntil\b)\s*$", re.I)
 
-# Anchored tail matcher checked ONLY right after `m.end()` for same-date ranges like:
+# Anchored tail matcher checked right after `m.end()` for same-date ranges like:
 #   "2026/09/28 06:00 – 11:00 (UTC+8)"
 _SAME_DATE_TAIL_RE = re.compile(
     r"(?P<sep>\s*(?:[–—~]|-(?!\d)|\bto\b|\buntil\b)\s*)"
     r"(?P<hh>\d{1,2}):(?P<mm>\d{2})(?::(?P<ss>\d{2}))?(?:\s*(?P<ampm>[AaPp]\.?[Mm]\.?))?"
-    rf"\s*(?:\(\s*(?P<tzp>{_TZ_CORE})\s*\)|(?P<tzb>{_TZ_CORE}))",
+    rf"(?:\s*(?:\(\s*(?P<tzp>{_TZ_CORE})\s*\)|(?P<tzb>{_TZ_CORE})))?",
+    re.I,
+)
+
+# Catches non-clock unresolved range tails such as `– TBA`, `– TBD`, `– 2026/09/30`,
+# or `– After the Version 3.3 update` so the start half is never converted in isolation.
+_UNRESOLVED_RANGE_TAIL_RE = re.compile(
+    r"\s*(?:[–—~]|-(?!\d)|\bto\b|\buntil\b)\s*"
+    r"(?:\d{4}[./-]\d{1,2}[./-]\d{1,2}\b|TBA\b|TBD\b|permanently\b|indefinitely\b|further\s+notice\b|after\s+the\b)",
     re.I,
 )
 
@@ -118,12 +131,19 @@ _APPROX_WORDS_RE = re.compile(
 
 
 def _parse_tz(raw: str | None) -> timezone | None:
+    """Resolve an explicit timezone string into a fixed ``datetime.timezone``.
+
+    Bare ``UTC`` and ``GMT`` resolve directly to ``timezone.utc`` (zero offset).
+    Explicit offsets ``UTC±H[:MM]`` / ``GMT±H[:MM]`` and unambiguous fixed zone names
+    take precedence over ``server time`` (``UTC+8``). Ambiguous or malformed tokens
+    return ``None``.
+    """
     if not raw:
         return None
     cleaned = raw.strip().replace("−", "-")
     low = re.sub(r"\s+", " ", cleaned.lower())
-    if low == "server time":
-        return SERVER_TZ
+    if low in ("utc", "gmt"):
+        return timezone.utc
     m = re.fullmatch(r"(?:utc|gmt)\s*([+-])\s*(\d{1,2})(?::(\d{2}))?", low)
     if m:
         sign = 1 if m.group(1) == "+" else -1
@@ -131,10 +151,14 @@ def _parse_tz(raw: str | None) -> timezone | None:
         mins = int(m.group(3) or 0)
         if hours > 14 or mins > 59 or (hours == 14 and mins > 0):
             return None
-        return timezone(sign * timedelta(hours=hours, minutes=mins))
+        delta = sign * timedelta(hours=hours, minutes=mins)
+        return timezone.utc if delta == timedelta(0) else timezone(delta)
     upper = cleaned.upper()
     if upper in _NAMED_TZ_HOURS:
-        return timezone(timedelta(hours=_NAMED_TZ_HOURS[upper]))
+        hours_f = _NAMED_TZ_HOURS[upper]
+        return timezone.utc if hours_f == 0.0 else timezone(timedelta(hours=hours_f))
+    if low == "server time":
+        return SERVER_TZ
     return None
 
 
@@ -250,52 +274,67 @@ def _replace_prose_segment(segment: str, published_ts: int) -> str:
         s1, e1 = m1.span()
         gd1 = m1.groupdict()
 
-        # Check two-date range `<dt1> <sep> <dt2>` with adjacent candidate match `m2`.
+        # 1. Two-date range `<dt1> <sep> <dt2>`: both endpoints must resolve cleanly and
+        #    satisfy `dt2 >= dt1`, otherwise skip BOTH endpoints so an invalid or partially
+        #    qualified range is never half-converted.
         if idx + 1 < total:
             m2 = matches[idx + 1]
             s2, e2 = m2.span()
             between = segment[e1:s2]
-            if _RANGE_BETWEEN_RE.match(between) and not _is_approximate(segment, s1, segment[s1:e2]):
-                gd2 = m2.groupdict()
-                tz2 = _parse_tz(gd2.get("tzp") or gd2.get("tzb"))
+            if _RANGE_BETWEEN_RE.match(between):
+                if not _is_approximate(segment, s1, segment[s1:e2]):
+                    gd2 = m2.groupdict()
+                    tz2 = _parse_tz(gd2.get("tzp") or gd2.get("tzb"))
+                    tz1 = _parse_tz(gd1.get("tzp") or gd1.get("tzb")) or tz2
+                    d1 = _parse_date_parts(gd1)
+                    t1 = _parse_time_parts(gd1)
+                    d2 = _parse_date_parts(gd2)
+                    t2 = _parse_time_parts(gd2)
+                    if tz1 and tz2 and d1 and t1 and d2 and t2:
+                        dt1 = _build_dt(d1[0], d1[1], d1[2], t1, tz1, published_ts)
+                        if dt1 is not None:
+                            if d2[0] is None:
+                                dt2 = _build_dt(dt1.year, d2[1], d2[2], t2, tz2, published_ts)
+                                if dt2 is not None and dt2 < dt1:
+                                    dt2 = _build_dt(dt1.year + 1, d2[1], d2[2], t2, tz2, published_ts)
+                            else:
+                                dt2 = _build_dt(d2[0], d2[1], d2[2], t2, tz2, published_ts)
+                            if dt2 is not None and int(dt2.timestamp()) >= int(dt1.timestamp()):
+                                edits.append(
+                                    (s1, e2, f"<t:{int(dt1.timestamp())}:f>{between}<t:{int(dt2.timestamp())}:f>")
+                                )
+                idx += 2
+                continue
+
+        # 2. Same-date range `<dt1> <sep> <time2> [tz2]`: either both endpoints resolve cleanly
+        #    with `dt2 >= dt1` or neither endpoint converts.
+        tail = _SAME_DATE_TAIL_RE.match(segment, e1)
+        if tail:
+            if not _is_approximate(segment, s1, segment[s1:tail.end()]):
+                gdt = tail.groupdict()
+                tz2 = _parse_tz(gdt.get("tzp") or gdt.get("tzb"))
                 tz1 = _parse_tz(gd1.get("tzp") or gd1.get("tzb")) or tz2
                 d1 = _parse_date_parts(gd1)
                 t1 = _parse_time_parts(gd1)
-                d2 = _parse_date_parts(gd2)
-                t2 = _parse_time_parts(gd2)
-                if tz1 and tz2 and d1 and t1 and d2 and t2:
+                t2 = _parse_time_parts(gdt)
+                if tz1 and tz2 and d1 and t1 and t2:
                     dt1 = _build_dt(d1[0], d1[1], d1[2], t1, tz1, published_ts)
                     if dt1 is not None:
-                        if d2[0] is None:
-                            dt2 = _build_dt(dt1.year, d2[1], d2[2], t2, tz2, published_ts)
-                            if dt2 is not None and dt2 < dt1:
-                                dt2 = _build_dt(dt1.year + 1, d2[1], d2[2], t2, tz2, published_ts)
-                        else:
-                            dt2 = _build_dt(d2[0], d2[1], d2[2], t2, tz2, published_ts)
+                        dt2 = _build_dt(dt1.year, d1[1], d1[2], t2, tz2, published_ts)
                         if dt2 is not None and int(dt2.timestamp()) >= int(dt1.timestamp()):
-                            edits.append((s1, e2, f"<t:{int(dt1.timestamp())}:f>{between}<t:{int(dt2.timestamp())}:f>"))
-                            idx += 2
-                            continue
+                            edits.append(
+                                (s1, tail.end(), f"<t:{int(dt1.timestamp())}:f>{gdt['sep']}<t:{int(dt2.timestamp())}:f>")
+                            )
+            idx += 1
+            continue
 
-        # Check anchored same-date range `<dt1> <sep> <time2> <tz2>` right at `e1`.
-        tail = _SAME_DATE_TAIL_RE.match(segment, e1)
-        if tail and not _is_approximate(segment, s1, segment[s1:tail.end()]):
-            gdt = tail.groupdict()
-            tz2 = _parse_tz(gdt.get("tzp") or gdt.get("tzb"))
-            tz1 = _parse_tz(gd1.get("tzp") or gd1.get("tzb")) or tz2
-            d1 = _parse_date_parts(gd1)
-            t1 = _parse_time_parts(gd1)
-            t2 = _parse_time_parts(gdt)
-            if tz1 and tz2 and d1 and t1 and t2:
-                dt1 = _build_dt(d1[0], d1[1], d1[2], t1, tz1, published_ts)
-                if dt1 is not None:
-                    dt2 = _build_dt(dt1.year, d1[1], d1[2], t2, tz2, published_ts)
-                    if dt2 is not None and int(dt2.timestamp()) >= int(dt1.timestamp()):
-                        edits.append((s1, tail.end(), f"<t:{int(dt1.timestamp())}:f>{gdt['sep']}<t:{int(dt2.timestamp())}:f>"))
-                        idx += 1
-                        continue
+        # 3. Unresolved trailing range clause (`– TBA`, `– TBD`, `– 2026/09/30`, `– After ...`):
+        #    never convert the start timestamp in isolation.
+        if _UNRESOLVED_RANGE_TAIL_RE.match(segment, e1):
+            idx += 1
+            continue
 
-        # Check standalone datetime with explicit TZ or "server time".
+        # 4. Standalone datetime with an explicit supported TZ or "server time".
         tz1 = _parse_tz(gd1.get("tzp") or gd1.get("tzb"))
         if tz1 and not _is_approximate(segment, s1, m1.group(0)):
             d1 = _parse_date_parts(gd1)

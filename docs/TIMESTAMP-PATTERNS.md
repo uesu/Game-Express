@@ -258,17 +258,19 @@ Two strictly opt-in consumers build on these same rules without changing `gamexp
 or `gamexpress/schedule.py`:
 
 1. **`gamexpress/news_timestamps.py` (`NEWS_TIMESTAMPS=1`, default `0`):** single-pass render-only
-   conversion of exact date-time expressions inside normalized official-news prose. Explicit source
-   offsets (`UTC+8`, `UTC-4`, etc.) always win; `(server time)` / `server time` uses the approved
-   `UTC+8` fallback only inside rendered news bodies; yearless dates infer their year from
-   `item.published_ts` across Dec/Jan rollovers; existing `<t:…>`, URLs, code spans/blocks,
+   conversion of exact date-time expressions inside normalized official-news prose. Bare `UTC` / `GMT`
+   resolve to `+00:00`, explicit source offsets (`UTC+8`, `UTC-4`, etc.) always win, and `(server time)`
+   / `server time` uses the approved `UTC+8` fallback only inside rendered news bodies; yearless dates
+   infer their year from `item.published_ts` across Dec/Jan rollovers; malformed/ambiguous timezone
+   suffixes, invalid/inverted/half-qualified ranges, existing `<t:…>`, URLs, code spans/blocks,
    date-only phrases, `"After the Version X.Y update"`, approximate durations and TZ-less times
-   stay untouched. When disabled (`NEWS_TIMESTAMPS=0`), the scanner is bypassed completely.
+   stay completely untouched. When disabled (`NEWS_TIMESTAMPS=0`), the scanner is bypassed completely.
 2. **`gamexpress/maintenance.py` (`MAINTENANCE_ENABLED=1` + `MAINTENANCE_GAMES`, default off):**
    resolves `Pre-Load Started` and `Maintenance Started` timestamps with strict precedence
-   **official notice/tweet (`40 <= rank < 100`) > explicit `config/overrides.json` > documented
-   cadence prediction (`rank 9`)**. Official Chinese-holiday or shortened/extended cycle notices
-   automatically supersede both cadence estimates and stale overrides; games without a verified
-   cadence (`hna`, `ananta`) never synthesize predicted timestamps, and unknown maintenance end
-   times omit `End Time` rather than inventing one.
+   **official notice/tweet (`40 <= rank < 100`) > explicit `config/overrides.json` > persisted
+   first-observed launcher pre-download signal (`observed_preinstall_ts`, rendered with explicit
+   observation wording) > documented cadence prediction (`rank 9`)**. Official Chinese-holiday or
+   shortened/extended cycle notices automatically supersede observations, cadence estimates and
+   stale overrides; games without a verified cadence (`hna`, `ananta`) never synthesize predicted
+   timestamps, and unknown maintenance end times omit `End Time` rather than inventing one.
 

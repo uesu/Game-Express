@@ -516,6 +516,7 @@ def maintenance_payload(
     media_url: str | None = None,
     estimated: bool = False,
     estimate_source: str = "",
+    observed: bool = False,
     silent: bool = False,
 ) -> dict:
     """Build a Pre-Load Started or Maintenance Started Components V2 payload.
@@ -550,7 +551,9 @@ def maintenance_payload(
         )
     else:
         timing = f"※ **Date Time:** <t:{int(start_ts)}:f> {MAINT_GEAR_EMOJI}"
-    if estimated:
+    if observed:
+        timing += "\n-# Observed available in launcher — official start time not published"
+    elif estimated:
         source_note = estimate_source.strip() or "version cadence"
         timing += f"\n-# Estimated ({source_note}) — subject to official notice"
 

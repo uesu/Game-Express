@@ -77,7 +77,7 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 | `gamexpress/runner.py` | builds `Ctx` (settings, games, state, fetcher, webhook, X client), fail-over, `run_news`, `maintenance.run`, run summary |
 | `gamexpress/schedule.py` (the largest module by far) | the brain: picks the announcement, parses times, locks banners, speculates a cycle, builds/edits the schedule card |
 | `gamexpress/codeposter.py` | the code gate (families, validators, min-sources), posts/edits code cards |
-| `gamexpress/maintenance.py` | fourth feature (off by default): independent `Pre-Load Started` & `Maintenance Started` cards, official > override > cadence precedence, 4-tier version-verified launch media, Phase II lock, silent seed & late `PATCH` |
+| `gamexpress/maintenance.py` | fourth feature (off by default): independent `Pre-Load Started` & `Maintenance Started` cards, `official > override > observed > cadence` precedence, 4-tier version-verified launch media, corroborated signed URL renewal/fallback, silent seed & bounded late `PATCH` |
 | `gamexpress/news_timestamps.py` | single-pass `O(N)` render-only news timestamp converter (`NEWS_TIMESTAMPS`, off by default) |
 | `gamexpress/cards.py` | Components V2 payload builders (`schedule`, `codes`, `news`, `maintenance`) + `validate_payload` |
 | `gamexpress/discord.py` | webhook POST/PATCH, 429/5xx retries, `WEBHOOK_SPACING = 1.2 s` pacing |
@@ -461,35 +461,40 @@ All three additions are **disabled by default** and strictly opt-in via environm
 repository Variables:
 
 - **`NEWS_TIMESTAMPS=0` (default):** bypasses `gamexpress/news_timestamps.py` completely
-  (`0.30 µs` median). When `1`, converts exact TZ-qualified date-times and `server time`
-  (`UTC+8` fallback for news descriptions only) to `<t:EPOCH:…>` after text normalization
-  and before sizing/pagination, without mutating `Item`, raw HTML or `timeparse.py`.
+  (`0.17 µs` median, byte-identical output). When `1`, converts exact TZ-qualified date-times
+  (including bare `UTC`/`GMT` at `+00:00`, explicit `UTC±H[:MM]` / named offsets, and news-only
+  `server time` fallback at `UTC+8`) to `<t:EPOCH:…>` after text normalization and before
+  sizing/pagination, without backtracking malformed timezone tokens, partially converting
+  invalid/unresolved/inverted ranges, or mutating `Item`, raw HTML or `timeparse.py`.
 - **`MAINTENANCE_ENABLED=0` + `MAINTENANCE_GAMES=""` (default):** `gamexpress/maintenance.py`
   posts independent `Pre-Load Started` and `Maintenance Started` Components V2 cards to
   dedicated `DISCORD_WEBHOOK_MAINTENANCE_<GAME>` webhooks (with optional `PING_MAINTENANCE_<GAME>`
   / `PING_MAINTENANCE`), seeding settled milestones silently on first activation, enforcing
-  `official > override > cadence` precedence (no invented HNA cadence or unknown end time),
-  locking version-verified launch media across 4 priority tiers against Phase II swaps,
-  preserving signed Kuro `auth_key=` query parameters (redacted in `_summary_text`), and
-  silently upgrading late-arriving higher-tier media without re-pinging.
+  `official > override > persisted first-observed launcher signal (labelled observed) > cadence`
+  precedence (no invented HNA cadence or unknown end time), separating version/launch identity
+  lock from selected media tier across 4 priority tiers against Phase II swaps, supporting
+  corroborated same-asset signed URL renewal (`auth_key=` query intact, redacted in
+  `_summary_text`) or matching-artwork / gallery-omission fallback inside `LATE_MEDIA_EDIT_WINDOW_S`
+  (`MAX_LATE_MEDIA_ATTEMPTS = 3`), and keeping prior state intact if a `PATCH` edit fails.
 - **`NEWS_EXPAND_FULL=0` (default):** preserves the exact 1-message / `<= 7,000`-char max-2-page /
   labelled excerpt policy. When `1`, expands full articles across multiple independently
   validated pages up to `NEWS_EXPAND_MAX_PAGES = 20` (`NEWS_EXPAND_MAX_MEDIA = 120`), with
   explicitly labelled excerpt fallback if exceeded and `SendResult.ambiguous` holds on
-  indeterminate webhook `POST` outcomes.
+  indeterminate webhook `POST` outcomes (adding sequential preflight/webhook requests proportional
+  to media and page count).
 
-Measured local benchmark (`.venv/bin/python -m gamexpress benchmark --iterations 300`, CPython 3.11.2 x86_64):
+Measured local offline benchmark (`.venv/bin/python -m gamexpress benchmark --iterations 300`, CPython 3.11.2 x86_64; deterministic counts: `short = 1 msg / 1 media GET / 1 POST`, `long(off) = 1 msg / 1 media GET / 1 POST`, `long(on) = 4 msgs / 18 media GETs / 4 POSTs + 3.6s min pacing`, `disabled_output_equal = True`):
 
 | Case | Median (µs) | Mean (µs) | p95 (µs) |
 |---|---:|---:|---:|
-| `token_format_16_epochs` | 3.58 | 3.84 | 4.02 |
-| `human_strftime_16_epochs` | 57.06 | 58.94 | 88.33 |
-| `timestamp_scan_disabled_12346c` | 0.30 | 0.31 | 0.37 |
-| `timestamp_scan_enabled_short_341c` | 175.13 | 183.56 | 217.40 |
-| `timestamp_scan_enabled_long_12346c` | 3,812.36 | 3,845.13 | 3,965.61 |
-| `short_news_render_default_off` | 95.40 | 100.33 | 124.77 |
-| `short_news_render_timestamps_on` | 214.36 | 223.01 | 253.97 |
-| `long_news_render_expand_off_1msg_12348c` | 1,703.28 | 1,724.80 | 1,821.85 |
-| `long_news_render_expand_on_4pages_12348c` | 2,166.62 | 2,196.20 | 2,308.59 |
-| `long_news_render_both_on_4pages` | 6,306.85 | 6,358.58 | 6,640.36 |
+| `token_format_16_epochs` | 1.83 | 1.86 | 1.93 |
+| `human_strftime_16_epochs` | 31.60 | 32.60 | 35.83 |
+| `timestamp_scan_disabled_12346c` | 0.17 | 0.27 | 0.22 |
+| `timestamp_scan_enabled_short_341c` | 106.80 | 111.77 | 137.59 |
+| `timestamp_scan_enabled_long_12346c` | 3,943.97 | 4,004.54 | 4,353.43 |
+| `short_news_render_default_off` | 95.39 | 101.96 | 133.23 |
+| `short_news_render_timestamps_on` | 219.37 | 232.50 | 295.82 |
+| `long_news_render_expand_off_1msg_12348c` | 1,760.15 | 1,809.76 | 2,189.21 |
+| `long_news_render_expand_on_4pages_12348c` | 2,223.29 | 2,464.75 | 4,129.41 |
+| `long_news_render_both_on_4pages` | 6,377.80 | 6,387.09 | 6,488.66 |
 
