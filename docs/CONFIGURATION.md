@@ -265,7 +265,7 @@ A schedule/code-only selector does not count as toggling news off.
 | `NEWS_ENABLED` | `0` | Explicit news opt-in; independent of the existing schedule/code defaults |
 | `NEWS_GROUP_LONG_STRIPS` | `0` | Opt-in measured grouping; failure keeps article order |
 | `NEWS_TIMESTAMPS` | `0` | Opt-in render-time `<t:EPOCH:…>` conversion for exact TZ-qualified news dates/times |
-| `NEWS_EXPAND_FULL` | `0` | Opt-in multi-page full articles beyond 2 pages (bounded at `NEWS_EXPAND_MAX_PAGES = 20` and `NEWS_EXPAND_MAX_MEDIA = 120`) |
+| `NEWS_EXPAND_FULL` | `0` | Opt-in multi-page full articles beyond 2 pages (bounded at `NEWS_EXPAND_MAX_PAGES = 12`, `NEWS_EXPAND_MAX_CHARS = 120000`, `NEWS_EXPAND_MAX_MEDIA = 120`) |
 | `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | Canonical game keys; removing a game pauses its existing news state |
 
 Each run attempts all discovered eligible unposted articles in publication order,
@@ -420,8 +420,8 @@ characters and both payloads validate independently against `4,000` text charact
 `40` components / `1–10` gallery items.
 
 When `NEWS_EXPAND_FULL=1` is explicitly enabled, the 2-page / 7,000-character policy
-ceiling is lifted up to an explicit operational safety bound (`NEWS_EXPAND_MAX_PAGES = 20`,
-`NEWS_EXPAND_MAX_MEDIA = 120`):
+ceiling is lifted up to an explicit operational safety bound (`NEWS_EXPAND_MAX_PAGES = 12`,
+`NEWS_EXPAND_MAX_CHARS = 120000`, `NEWS_EXPAND_MAX_MEDIA = 120`):
 
 - Every emitted page still validates independently against Discord's limits (`4,000` text
   characters, `40` components, `1–10` media gallery items).
@@ -430,7 +430,8 @@ ceiling is lifted up to an explicit operational safety bound (`NEWS_EXPAND_MAX_P
   3-button controls (`Read Post`, `Citlali News`, `Donate`) are preserved across all pages.
 - Overlong paragraphs inside a block split only on safe newline/sentence/whitespace
   boundaries outside Markdown links, inline code and unbalanced `**` bold spans.
-- If an article exceeds `NEWS_EXPAND_MAX_PAGES = 20` or contains an indivisible single unit
+- If an article exceeds `NEWS_EXPAND_MAX_PAGES = 12` (`NEWS_EXPAND_MAX_CHARS = 120000`,
+  `NEWS_EXPAND_MAX_MEDIA = 120`) or contains an indivisible single unit
   exceeding single-message limits, rendering degrades cleanly to an explicitly labelled
   `Excerpt — …` single card rather than truncating silently or claiming to be full.
 - Confirmed per-page message IDs save after each send; official-news and maintenance-alert

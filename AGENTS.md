@@ -494,8 +494,9 @@ repository Variables:
 - **`NEWS_EXPAND_FULL=0` (default):** independent of `main`'s removed per-run article-count cap
   and independent of `NEWS_GROUP_LONG_STRIPS`; preserves the exact per-article 1-message /
   `<= 7,000`-char max-2-page / halved-word labelled excerpt policy. When `1`, expands full
-  articles across multiple independently validated pages up to `NEWS_EXPAND_MAX_PAGES = 20`
-  (`NEWS_EXPAND_MAX_MEDIA = 120`), with explicitly labelled excerpt fallback if exceeded and
+  articles across multiple independently validated pages up to `NEWS_EXPAND_MAX_PAGES = 12`
+  (`NEWS_EXPAND_MAX_CHARS = 120000`, `NEWS_EXPAND_MAX_MEDIA = 120`), with explicitly labelled
+  excerpt fallback if exceeded and
   `SendResult.ambiguous` holds on indeterminate webhook `POST` outcomes (adding media validation
   `GET`s, webhook `POST`s, and inter-page pacing proportional to media and page count).
 - **Shared `WebhookClient` recovery policy (`gamexpress/discord.py`):** Conservative

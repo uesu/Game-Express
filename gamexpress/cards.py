@@ -496,7 +496,8 @@ def mark_test(payload: dict, note: str = TEST_NOTE) -> dict:
 # Full-content news: each part independently satisfies existing Components V2 limits.
 NEWS_DONATE = "https://ko-fi.com/jieunlatte"
 NEWS_COMMUNITY = "https://discord.gg/HyrVP9wRXu"
-NEWS_EXPAND_MAX_PAGES = 20
+NEWS_EXPAND_MAX_PAGES = 12
+NEWS_EXPAND_MAX_CHARS = 120000
 NEWS_EXPAND_MAX_MEDIA = 120
 
 MAINT_HEADING_EMOJIS = "<a:starwardlove:1483082509439733893><a:starwardspark3:1483083423290490891>"
@@ -629,14 +630,18 @@ def news_payloads(
     *,
     timestamps: bool = False,
     expand_full: bool = False,
+    max_pages: int | None = None,
+    max_chars: int | None = None,
+    max_media: int | None = None,
 ) -> list[dict]:
     """Full article in one message, or paged according to the active policy switch.
 
     When `expand_full` is False (default): attempts 1 message, then at most 2 pages up to
     7,000 normalized text chars, otherwise 1 halved-word excerpt with 1 lead image.
     When `expand_full` is True: lifts the 2-page / 7,000-char policy ceiling up to the
-    explicit `NEWS_EXPAND_MAX_PAGES` / `NEWS_EXPAND_MAX_MEDIA` operational safety bounds,
-    preserving inline text/media order and falling back honestly if any bound is exceeded.
+    explicit `NEWS_EXPAND_MAX_PAGES` / `NEWS_EXPAND_MAX_CHARS` / `NEWS_EXPAND_MAX_MEDIA`
+    operational safety bounds, preserving inline text/media order and falling back honestly
+    if any bound is exceeded.
     """
     title = strip_invisible(item.title).replace("[", "(").replace("]", ")")
     if len(title) > 500 or not safe_url(item.url):
@@ -755,8 +760,11 @@ def news_payloads(
                       "Read Post opens the complete article and remaining media.")
 
     if expand_full:
+        eff_max_pages = max(1, int(NEWS_EXPAND_MAX_PAGES if max_pages is None else max_pages))
+        eff_max_chars = max(1, int(NEWS_EXPAND_MAX_CHARS if max_chars is None else max_chars))
+        eff_max_media = max(1, int(NEWS_EXPAND_MAX_MEDIA if max_media is None else max_media))
         distinct_media = set(body_media) | ({full_cover} if full_cover else set())
-        if len(distinct_media) > NEWS_EXPAND_MAX_MEDIA:
+        if text_length([header] + units) > eff_max_chars or len(distinct_media) > eff_max_media:
             excerpt_notice = (
                 "**Excerpt — this article exceeds the expanded delivery safety limit.** "
                 "Read Post opens the complete article and remaining media."
@@ -793,7 +801,7 @@ def news_payloads(
                     if not validate_payload(page_payload(trial, final=True)):
                         current, have_body = trial, True
                         continue
-                    if not have_body or len(pages) + 1 >= NEWS_EXPAND_MAX_PAGES:
+                    if not have_body or len(pages) + 1 >= eff_max_pages:
                         excerpt_notice = (
                             "**Excerpt — this article exceeds the expanded delivery safety limit.** "
                             "Read Post opens the complete article and remaining media."
@@ -812,7 +820,7 @@ def news_payloads(
                     if have_body:
                         pages.append(page_payload(current, final=True))
                         if (
-                            1 <= len(pages) <= NEWS_EXPAND_MAX_PAGES
+                            1 <= len(pages) <= eff_max_pages
                             and all(not validate_payload(page) for page in pages)
                         ):
                             return pages

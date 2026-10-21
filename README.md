@@ -173,7 +173,7 @@ Wangyue is excluded.
   article-count cap (`NEWS_MAX_POSTS_PER_RUN`) only allows processing all newly
   published articles per poll and does **not** remove the default-off 7,000 / 2-page
   per-article policy. Setting `NEWS_EXPAND_FULL=1` lifts that per-article ceiling
-  up to an explicit `20`-page / `120`-media safety bound (increasing media validation
+  up to an explicit `12`-page / `120,000`-char / `120`-media safety bound (increasing media validation
   `GET`s, message count, webhook `POST`s, and pacing proportionally).
 - **Independent feature eligibility:** schedule extraction/mirrors, codes, official
   news, and started alerts are independent — Special Program, broadcast, preload, and
@@ -395,7 +395,7 @@ editing YAML. The ones worth knowing:
 | `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | news subset, independent of schedule/codes |
 | `NEWS_GROUP_LONG_STRIPS` | `0` | optional measured grouping; off retains article order |
 | `NEWS_TIMESTAMPS` | `0` | optional `<t:EPOCH:…>` conversion in rendered news text |
-| `NEWS_EXPAND_FULL` | `0` | optional multi-page full articles (up to 20 pages / 120 media) |
+| `NEWS_EXPAND_FULL` | `0` | optional multi-page full articles (up to 12 pages / 120,000 chars / 120 media) |
 | `MAINTENANCE_ENABLED` | `0` | explicit opt-in for `Pre-Load Started` / `Maintenance Started` |
 | `MAINTENANCE_GAMES` | *(empty)* | explicit per-game list required to activate maintenance alerts |
 | `GAMES` / `ENABLE_GAMES` | all enabled / — | run a subset · switch prepared games on |

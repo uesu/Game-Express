@@ -314,7 +314,8 @@ By default (`NEWS_EXPAND_FULL=0`), if that fails, permit at most two actual mess
 when normalized source text plus title/byline once is `<= 7,000` characters and both
 payloads validate independently against 4,000 text characters / 40 components /
 1–10 gallery items. When `NEWS_EXPAND_FULL=1`, full articles expand across multiple
-validated pages up to `NEWS_EXPAND_MAX_PAGES = 20` (`NEWS_EXPAND_MAX_MEDIA = 120`),
+validated pages up to `NEWS_EXPAND_MAX_PAGES = 12` (`NEWS_EXPAND_MAX_CHARS = 120000`,
+`NEWS_EXPAND_MAX_MEDIA = 120`),
 degrading to a clearly labelled `Excerpt — …` single message only if the safety bound
 is exceeded or a single indivisible block cannot fit.
 

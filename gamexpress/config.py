@@ -408,6 +408,9 @@ class Settings:
     news_group_long_strips: bool = False
     news_timestamps: bool = False
     news_expand_full: bool = False
+    news_expand_max_pages: int = 12
+    news_expand_max_chars: int = 120000
+    news_expand_max_media: int = 120
     maintenance_enabled: bool = False
     maintenance_games: set[str] = field(default_factory=set)
 
@@ -619,6 +622,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         news_group_long_strips=_bool(env, "NEWS_GROUP_LONG_STRIPS", False),
         news_timestamps=_bool(env, "NEWS_TIMESTAMPS", False),
         news_expand_full=_bool(env, "NEWS_EXPAND_FULL", False),
+        news_expand_max_pages=max(1, _int(env, "NEWS_EXPAND_MAX_PAGES", 12)),
+        news_expand_max_chars=max(1, _int(env, "NEWS_EXPAND_MAX_CHARS", 120000)),
+        news_expand_max_media=max(1, _int(env, "NEWS_EXPAND_MAX_MEDIA", 120)),
         maintenance_enabled=maintenance_enabled,
         maintenance_games=_game_set_env(env, "MAINTENANCE_GAMES", aliases, default=()),
     )

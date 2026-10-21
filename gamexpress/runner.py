@@ -378,7 +378,7 @@ async def run_news(ctx: Ctx) -> None:
     Persist progress per part using the existing atomic state writer. Cross-process failures
     after Discord accepts but before state is saved remain an inherently ambiguous outcome.
     """
-    from .cards import NEWS_EXPAND_MAX_MEDIA, news_payloads
+    from .cards import news_payloads
     from .state import stable_hash
 
     if "news" not in ctx.settings.features or not ctx.active:
@@ -469,10 +469,13 @@ async def run_news(ctx: Ctx) -> None:
                     item,
                     timestamps=ctx.settings.news_timestamps,
                     expand_full=ctx.settings.news_expand_full,
+                    max_pages=ctx.settings.news_expand_max_pages,
+                    max_chars=ctx.settings.news_expand_max_chars,
+                    max_media=ctx.settings.news_expand_max_media,
                 )
                 from .media import group_news_media, news_media_available
 
-                media_cap = NEWS_EXPAND_MAX_MEDIA if ctx.settings.news_expand_full else 40
+                media_cap = ctx.settings.news_expand_max_media if ctx.settings.news_expand_full else 40
                 if not await news_media_available(ctx.fetcher, payloads, max_urls=media_cap):
                     # One fresh official full response can supply a corrected/renewed URL.
                     fresh = await source.news_article(ctx.fetcher, game, row)
@@ -484,6 +487,9 @@ async def run_news(ctx: Ctx) -> None:
                         item,
                         timestamps=ctx.settings.news_timestamps,
                         expand_full=ctx.settings.news_expand_full,
+                        max_pages=ctx.settings.news_expand_max_pages,
+                        max_chars=ctx.settings.news_expand_max_chars,
+                        max_media=ctx.settings.news_expand_max_media,
                     )
                     if not await news_media_available(ctx.fetcher, payloads, max_urls=media_cap):
                         raise ValueError("media unavailable after official refresh; held for retry, not posted")

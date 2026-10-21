@@ -9743,14 +9743,46 @@ def test_followup_3_complete_expanded_news_disabled_parity_strips_and_failure_ma
     ] == [cover_url]
     assert f"[Open original media]({yt_link})" in json.dumps(link_vid_pages)
 
-    # 8) Explicit 20-page / 120-media / single-unit safety bounds & honest labelled excerpt fallback:
+    # 8) Explicit 12-page / 120,000-char / 120-media / single-unit safety bounds & honest labelled excerpt fallback:
+    assert cards.NEWS_EXPAND_MAX_PAGES == 12
+    assert cards.NEWS_EXPAND_MAX_CHARS == 120000
+    assert cards.NEWS_EXPAND_MAX_MEDIA == 120
+    default_cfg = load_settings({})
+    assert default_cfg.news_expand_max_pages == 12
+    assert default_cfg.news_expand_max_chars == 120000
+    assert default_cfg.news_expand_max_media == 120
+    override_cfg = load_settings(
+        {"NEWS_EXPAND_MAX_PAGES": "9", "NEWS_EXPAND_MAX_CHARS": "90000", "NEWS_EXPAND_MAX_MEDIA": "80"}
+    )
+    assert override_cfg.news_expand_max_pages == 9
+    assert override_cfg.news_expand_max_chars == 90000
+    assert override_cfg.news_expand_max_media == 80
+
+    fit_12_pages = cards.news_payloads(
+        GAMES["zzz"],
+        _art(game="zzz", article_blocks=[{"kind": "text", "text": ("Page block " + ("word " * 760) + "\n\n") * 12}]),
+        expand_full=True,
+    )
+    assert len(fit_12_pages) == 12
+    assert all(cards.validate_payload(p) == [] for p in fit_12_pages)
+
     over_pages = cards.news_payloads(
         GAMES["zzz"],
-        _art(game="zzz", article_blocks=[{"kind": "text", "text": ("Page block " + ("word " * 680) + "\n\n") * 24}]),
+        _art(game="zzz", article_blocks=[{"kind": "text", "text": ("Page block " + ("word " * 760) + "\n\n") * 13}]),
         expand_full=True,
     )
     assert len(over_pages) == 1 and "**Excerpt — this article exceeds the expanded delivery safety limit.**" in json.dumps(
         over_pages, ensure_ascii=False
+    )
+
+    over_chars = cards.news_payloads(
+        GAMES["zzz"],
+        _art(game="zzz", article_blocks=[{"kind": "text", "text": ("Paragraph char bound check " + ("word " * 600) + "\n\n") * 40}]),
+        expand_full=True,
+        max_pages=60,
+    )
+    assert len(over_chars) == 1 and "**Excerpt — this article exceeds the expanded delivery safety limit.**" in json.dumps(
+        over_chars, ensure_ascii=False
     )
 
     over_media = cards.news_payloads(
@@ -11684,6 +11716,114 @@ asyncio.run(run())
             with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value={})):
                 asyncio.run(maint_mod.run(mctx_rerun))
             assert sess_maint_rerun.calls == []
+
+            # Provenance-honest verification of HoYoLAB 47066240, 46791577, and 46233468:
+            # - 47066240: complete body transcribed from official page-reader extraction
+            #   (explicitly NOT a raw HoYoLAB API JSON fixture; exact publication_ts omitted),
+            #   verifying <=7,000 normalized chars renders identically in 2 validated messages
+            #   (2,105 + 2,096 text chars) with NEWS_EXPAND_FULL off and on.
+            # - 46791577: exists locally ONLY as a trimmed/scoped schedule-extraction excerpt in
+            #   `hoyolab_genshin_list_update_details.json` — never misrepresented as a full capture.
+            # - 46233468: no full local capture exists in `tests/fixtures/` — zero fabricated full fixtures.
+            item_47066240 = Item(
+                source="hoyolab",
+                game="genshin",
+                id="47066240",
+                url="https://www.hoyolab.com/article/47066240",
+                title="Version 7.1 Share HoYoverse Top-Up Center Event: Win Primogems, Phase 2",
+                text="",
+                published_ts=None,
+                author="Diligent Hilichurls",
+                images=["https://upload-os-bbs.hoyolab.com/upload/2026/10/10/b94c862ac64f8fdc52995dca3785e0c4_7565450137320262844.jpg"],
+                article_blocks=[
+                    {
+                        "kind": "text",
+                        "text": (
+                            'Olah! Hello, Traveler~\n\n'
+                            'Bonus Rewards Are Here for the Version 7.1 HoYoverse Top-Up Center Sharing Event!\n\n'
+                            'Make a top-up at the Top-Up Center and you\'ll receive **Primogems ×300** if this is your '
+                            'first purchase since the release of Version "Luna VI"! And, there\'s also **an extra 8% '
+                            'Primogem bonus** waiting for you! Don\'t forget to share this good news with your fellow Travelers!\n\n'
+                            'Phase 2 of the Version 7.1 sharing event is now live! Share the **"Promotional Image + Link"** '
+                            'from the HoYoverse Top-Up Center in the current phase with other Travelers for a chance to win '
+                            'an extra Primogems ×120!\n\n'
+                            '### How to Participate\n\n'
+                            'Share the promotional image and link from the Top-Up Center in the current phase on platforms '
+                            'such as X, Facebook, WhatsApp, Discord, etc., keep the post public for the duration of the event, '
+                            'and leave a comment with a screenshot of your post in the comments section. Please note that the '
+                            'promotional image and link must be shared together!\n\n'
+                            '### To ensure a valid entry:\n\n'
+                            '1. Only posts shared on platforms outside HoYoLAB will count.\n\n'
+                            '2. Your shared post must be visible to someone other than yourself to count as a valid entry.\n\n'
+                            '3. Do not reuse screenshots from successful entries in previous events.\n\n'
+                            '4. Your screenshot must clearly show the time of sharing, which must fall within the event period.\n\n'
+                            '### Promotional Image (Save image to local storage):'
+                        ),
+                    },
+                    {
+                        "kind": "image",
+                        "url": "https://upload-os-bbs.hoyolab.com/upload/2026/10/10/519bc76d605dcc0ef676af5e94605b74_3853398692464654951.jpg?x-oss-process=image%2Fresize%2Cs_1000%2Fauto-orient%2C0%2Finterlace%2C1%2Fformat%2Cwebp%2Fquality%2Cq_70",
+                    },
+                    {
+                        "kind": "text",
+                        "text": (
+                            '### Link:\n\n'
+                            'https://hoyo.link/ovXxkF1hj\n\n'
+                            '### Event Rewards\n\n'
+                            'Gold Prize: 20 randomly selected participating Travelers who share on three or more platforms '
+                            'other than HoYoLAB will receive Primogems ×120 each.\n\n'
+                            'Silver Prize: 30 randomly selected participating Travelers who share on two or more platforms '
+                            'other than HoYoLAB will receive Primogems ×120 each.\n\n'
+                            'Standard Prize: 150 randomly selected participating Travelers will receive Primogems ×120 each.\n\n'
+                            'Guaranteed: All Travelers participating in this event will receive "Fatui Comment Decoration: The Jester" (permanent).'
+                        ),
+                    },
+                    {
+                        "kind": "image",
+                        "url": "https://upload-os-bbs.hoyolab.com/upload/2026/10/10/9c21bca8c67c40dee5b60b4da25d46dd_3316486111006063918.png?x-oss-process=image%2Fresize%2Cs_1000%2Fauto-orient%2C0%2Finterlace%2C1%2Fformat%2Cwebp%2Fquality%2Cq_70",
+                    },
+                    {
+                        "kind": "text",
+                        "text": (
+                            '### Event Duration\n\n'
+                            'October 13, 2026 – November 3, 2026 23:59:59 (UTC+8)\n\n'
+                            'Results: The list of winners will be updated in this event post after November 13 (UTC+8).\n\n'
+                            'P.S. Don\'t forget to share the latest promotional image from this phase. Yours truly will be checking!\n\n'
+                            '[Click to redeem more community decorations! Go to the web event to redeem >>>]'
+                            '(https://act.hoyolab.com/ys/event/bbs-event-20251029points/index.html?hyl_presentation_style=fullscreen&hyl_auth_required=true&utm_id=2&utm_source=h5&utm_medium=task&utm_campaign=QiuQiuRen)\n\n'
+                            'Redemption Method:\n\n'
+                            '① Enter the event page\n\n'
+                            '② Click the "Redeem" button to enter the Exchange Center and redeem rewards\n\n'
+                            '### Notes\n\n'
+                            '1. Please note the discount validity period in the HoYoverse Top-Up Center. Please refer to the event duration displayed there.\n\n'
+                            '2. Please enable Reward Notifications in advance, as we will notify you of the results via System Messages. '
+                            'If you do not enable notifications in advance and this affects the reward distribution process, the rewards will not be reissued. '
+                            'System notification settings:\n\n'
+                            'https://www.hoyolab.com/setting/notification\n\n'
+                            '3. Please fill in your Genshin Impact UID in advance via My Information > Information Management > Game Information Management > Genshin Impact. '
+                            'If your UID has not been filled in by the time the results are announced, you will be deemed to have forfeited your Primogems reward.\n\n'
+                            '4. The following situations will be considered invalid participation:\n\n'
+                            'a. The content posted violates Community Rules, or plagiarized, or misappropriated content from other authors.\n\n'
+                            'b. Publishing content unrelated to the theme of the event, content that contains any form of advertising, and that which seeks to spread malicious rumors or discredit the game and its characters.\n\n'
+                            'c. Replying to a comment on the post.\n\n'
+                            '5. Each HoYoLAB account can win only one prize per phase of the sharing event.\n\n'
+                            '6. By participating in this event, you agree that you are bound by the Terms of Service and Privacy Policy. We reserve the right to modify or terminate this event in accordance with applicable laws.'
+                        ),
+                    },
+                ],
+            )
+            p47066240_off = cards.news_payloads(GAMES["genshin"], item_47066240, expand_full=False)
+            p47066240_on = cards.news_payloads(GAMES["genshin"], item_47066240, expand_full=True)
+            assert p47066240_off == p47066240_on
+            assert len(p47066240_off) == 2
+            assert [cards.text_length(p["components"]) for p in p47066240_off] == [2105, 2096]
+            assert all(cards.validate_payload(p) == [] for p in p47066240_off)
+
+            scoped_46791577 = fx("hoyolab_genshin_list_update_details.json")["data"]["list"][0]["post"]
+            assert scoped_46791577["post_id"] == "46791577"
+            assert len(scoped_46791577["content"]) < 2000  # scoped excerpt fixture only, not complete article HTML
+            fx_dir = Path(__file__).resolve().parent / "fixtures"
+            assert not any("46233468" in p.name or "46791577" in p.name for p in fx_dir.iterdir())
 
 
 
