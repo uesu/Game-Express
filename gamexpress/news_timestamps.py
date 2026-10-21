@@ -76,16 +76,20 @@ _MONTH_PAT = (
     r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?"
 )
 
-# Greedily consume the full trailing TZ token so malformed forms such as `UTC+99`,
-# `UTC+123`, `UTC+8:5`, `UTC+foo`, or `(CST)` cannot backtrack to bare `UTC` and leave
-# trailing characters behind. `_parse_tz()` then accepts or rejects the whole token.
-_TZ_CORE = (
+# Greedily consume trailing TZ tokens so malformed/ambiguous forms such as `(UTC+99)`,
+# `(CST)`, `(local time)`, `UTC+123`, `UTC+8:5`, or `UTC+foo` cannot backtrack to `None`
+# or bare `UTC` and allow a trailing range endpoint to substitute its own timezone.
+# Bare range connectors `to` / `until` are excluded so omitted-first-zone ranges like
+# `2026/09/28 06:00 to 11:00 (UTC+8)` still keep `tzb` as `None`.
+_TZ_PAREN = r"[^()\n]{1,40}"
+_TZ_BARE = (
     r"(?:"
-    r"(?:UTC|GMT)(?:\s*[+-−]\s*\d+(?::\d+)?)?(?![A-Za-z0-9_+:-])"
-    r"|server\s+time(?![A-Za-z0-9_])"
-    r"|[A-Za-z]{2,5}(?:\s*[+-−]\s*\d+(?::\d+)?)?(?![A-Za-z0-9_+:-])"
+    r"(?:UTC|GMT)(?:\s*[+−-]\s*\d+(?::\d+)?)?[A-Za-z0-9_+:/.-]*"
+    r"|(?:server|local)\s+time(?![A-Za-z0-9_])"
+    r"|(?!(?:to|until)\b)[A-Za-z]{2,5}(?:\s*[+−-]\s*\d+(?::\d+)?)?(?:/[A-Za-z_]+)?(?![A-Za-z0-9_+:-])"
     r")"
 )
+_TZ_CLAUSE = rf"(?:\s*(?:\(\s*(?P<tzp>{_TZ_PAREN})\s*\)|(?P<tzb>{_TZ_BARE})))?"
 
 # Single-pass candidate matcher: runs ONCE per prose slice in strict O(N) time.
 _CANDIDATE_DT_RE = re.compile(
@@ -93,11 +97,11 @@ _CANDIDATE_DT_RE = re.compile(
     r"(?P<ymd>\d{4}[./-]\d{1,2}[./-]\d{1,2})"
     rf"|(?P<mdy>{_MONTH_PAT}\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,?\s+\d{{4}})?)"
     rf"|(?P<dmy>\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH_PAT}(?:,?\s+\d{{4}})?)"
-    r"|(?P<md>(?<!\d)\d{1,2}/\d{1,2}(?:/\d{4})?(?![/\d]))"
+    r"|(?P<md>(?<![/.\d-])\d{1,2}/\d{1,2}(?:/\d{4})?(?![/\d]))"
     r")"
     r"(?:\s*(?:,|\bat\b)\s*|\s+)"
     r"(?P<hh>\d{1,2}):(?P<mm>\d{2})(?::(?P<ss>\d{2}))?(?:\s*(?P<ampm>[AaPp]\.?[Mm]\.?))?"
-    rf"(?:\s*(?:\(\s*(?P<tzp>{_TZ_CORE})\s*\)|(?P<tzb>{_TZ_CORE})))?",
+    rf"{_TZ_CLAUSE}",
     re.I,
 )
 
@@ -108,7 +112,7 @@ _RANGE_BETWEEN_RE = re.compile(r"^\s*(?:[–—~]|-(?!\d)|\bto\b|\buntil\b)\s*$"
 _SAME_DATE_TAIL_RE = re.compile(
     r"(?P<sep>\s*(?:[–—~]|-(?!\d)|\bto\b|\buntil\b)\s*)"
     r"(?P<hh>\d{1,2}):(?P<mm>\d{2})(?::(?P<ss>\d{2}))?(?:\s*(?P<ampm>[AaPp]\.?[Mm]\.?))?"
-    rf"(?:\s*(?:\(\s*(?P<tzp>{_TZ_CORE})\s*\)|(?P<tzb>{_TZ_CORE})))?",
+    rf"{_TZ_CLAUSE}",
     re.I,
 )
 
@@ -258,6 +262,32 @@ def _is_approximate(segment: str, match_start: int, matched: str) -> bool:
     return bool(_APPROX_PREFIX_RE.search(prefix) or _APPROX_WORDS_RE.search(matched))
 
 
+def _resolve_range_tzs(
+    gd1: dict[str, str | None],
+    gd2: dict[str, str | None],
+) -> tuple[timezone, timezone] | None:
+    """Resolve endpoint timezones for a two-endpoint range without masking invalid zones.
+
+    * The second endpoint must carry an explicit supported timezone (`tz2`).
+    * When the first endpoint genuinely omits a timezone (`raw_tz1 is None`), it inherits
+      `tz2` as a shared trailing timezone.
+    * When the first endpoint explicitly specifies a timezone (`raw_tz1 is not None`),
+      `_parse_tz(raw_tz1)` must succeed on its own; any invalid or ambiguous explicit
+      first timezone (e.g. `(UTC+99)`, `(CST)`, `local time`) rejects the whole range.
+    """
+    raw_tz2 = gd2.get("tzp") or gd2.get("tzb")
+    tz2 = _parse_tz(raw_tz2)
+    if tz2 is None:
+        return None
+    raw_tz1 = gd1.get("tzp") or gd1.get("tzb")
+    if raw_tz1 is None:
+        return tz2, tz2
+    tz1 = _parse_tz(raw_tz1)
+    if tz1 is None:
+        return None
+    return tz1, tz2
+
+
 def _replace_prose_segment(segment: str, published_ts: int) -> str:
     """Single-pass O(N) scan across one unprotected prose slice."""
     if ":" not in segment:
@@ -284,13 +314,13 @@ def _replace_prose_segment(segment: str, published_ts: int) -> str:
             if _RANGE_BETWEEN_RE.match(between):
                 if not _is_approximate(segment, s1, segment[s1:e2]):
                     gd2 = m2.groupdict()
-                    tz2 = _parse_tz(gd2.get("tzp") or gd2.get("tzb"))
-                    tz1 = _parse_tz(gd1.get("tzp") or gd1.get("tzb")) or tz2
+                    tz_pair = _resolve_range_tzs(gd1, gd2)
                     d1 = _parse_date_parts(gd1)
                     t1 = _parse_time_parts(gd1)
                     d2 = _parse_date_parts(gd2)
                     t2 = _parse_time_parts(gd2)
-                    if tz1 and tz2 and d1 and t1 and d2 and t2:
+                    if tz_pair and d1 and t1 and d2 and t2:
+                        tz1, tz2 = tz_pair
                         dt1 = _build_dt(d1[0], d1[1], d1[2], t1, tz1, published_ts)
                         if dt1 is not None:
                             if d2[0] is None:
@@ -312,12 +342,12 @@ def _replace_prose_segment(segment: str, published_ts: int) -> str:
         if tail:
             if not _is_approximate(segment, s1, segment[s1:tail.end()]):
                 gdt = tail.groupdict()
-                tz2 = _parse_tz(gdt.get("tzp") or gdt.get("tzb"))
-                tz1 = _parse_tz(gd1.get("tzp") or gd1.get("tzb")) or tz2
+                tz_pair = _resolve_range_tzs(gd1, gdt)
                 d1 = _parse_date_parts(gd1)
                 t1 = _parse_time_parts(gd1)
                 t2 = _parse_time_parts(gdt)
-                if tz1 and tz2 and d1 and t1 and t2:
+                if tz_pair and d1 and t1 and t2:
+                    tz1, tz2 = tz_pair
                     dt1 = _build_dt(d1[0], d1[1], d1[2], t1, tz1, published_ts)
                     if dt1 is not None:
                         dt2 = _build_dt(dt1.year, d1[1], d1[2], t2, tz2, published_ts)

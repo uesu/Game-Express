@@ -10390,6 +10390,98 @@ def test_followup_5_independent_official_news_delivery_shared_mirror_and_histori
     assert "<t:1789214400:f>" in json.dumps(cards.news_payloads(GAMES["genshin"], real_46604275_item, timestamps=True))
 
 
+def test_followup_6_range_explicit_invalid_tz_rejected_vs_omitted_inherited():
+    """Verify `_resolve_range_tzs` across both same-date and two-date ranges:
+    1) Invalid or ambiguous explicit first-endpoint timezones (`(UTC+99)`, `(CST)`, etc.)
+       NEVER inherit `tz2` and NEVER convert either half — output stays byte-identical.
+    2) Invalid or ambiguous explicit second-endpoint timezones NEVER convert either half.
+    3) Genuinely omitted first-endpoint timezones cleanly inherit a valid trailing `tz2`
+       across `–`, `-`, `~`, `to`, and `until`.
+    4) Valid differing explicit offsets on both endpoints stay individually authoritative.
+    """
+    from gamexpress.news_timestamps import convert_news_timestamps
+
+    pub = 1790000000
+
+    # Exact required regression cases + parenthesized/bare cousins — ALL must stay byte-identical:
+    must_remain_verbatim = (
+        # Explicit invalid / ambiguous FIRST zone in same-date and two-date ranges:
+        "2026/09/28 06:00 (UTC+99) – 11:00 (UTC+8)",
+        "2026/09/28 06:00 (CST) – 11:00 (UTC+8)",
+        "2026/09/28 06:00 (UTC+99) – 2026/09/29 11:00 (UTC+8)",
+        "2026/09/28 06:00 (CST) – 2026/09/29 11:00 (UTC+8)",
+        "2026/09/28 06:00 (PT) – 11:00 (UTC+8)",
+        "2026/09/28 06:00 (IST) – 2026/09/29 11:00 (server time)",
+        "2026/09/28 06:00 (UTC+foo) – 2026/09/29 11:00 (UTC+8)",
+        "2026/09/28 06:00 (local time) – 2026/09/29 11:00 (UTC+8)",
+        "2026/09/28 06:00 UTC+99 – 11:00 UTC+8",
+        "2026/09/28 06:00 CST – 11:00 UTC+8",
+        "2026/09/28 06:00 UTC+99 – 2026/09/29 11:00 UTC+8",
+        "2026/09/28 06:00 CST – 2026/09/29 11:00 UTC+8",
+        "2026/09/28 06:00 local time – 2026/09/29 11:00 (UTC+8)",
+        # Explicit invalid / ambiguous SECOND zone (with valid first zone or omitted first zone):
+        "2026/09/28 06:00 (UTC+8) – 11:00 (UTC+99)",
+        "2026/09/28 06:00 (UTC+8) – 11:00 (CST)",
+        "2026/09/28 06:00 – 11:00 (UTC+99)",
+        "2026/09/28 06:00 – 11:00 (CST)",
+        "2026/09/28 06:00 (UTC+8) – 2026/09/29 11:00 (UTC+99)",
+        "2026/09/28 06:00 (UTC+8) – 2026/09/29 11:00 (CST)",
+        "2026/09/28 06:00 – 2026/09/29 11:00 (UTC+99)",
+        "2026/09/28 06:00 – 2026/09/29 11:00 (CST)",
+        # Chronologically inverted when distinct valid offsets are respected (`08:00 UTC > 15:00 UTC+8 == 07:00 UTC`):
+        "2026/09/28 08:00 (UTC) – 15:00 (UTC+8)",
+        "2026/09/28 08:00 (UTC) – 2026/09/28 15:00 (UTC+8)",
+    )
+    for sample in must_remain_verbatim:
+        out = convert_news_timestamps(sample, published_ts=pub, enabled=True)
+        assert out == sample and out.encode("utf-8") == sample.encode("utf-8"), (sample, out)
+        # Also verify end-to-end inside `cards.news_payloads(..., timestamps=True)` vs `timestamps=False`:
+        art = Item(
+            "hoyolab", "genshin", "tz-guard", "https://www.hoyolab.com/article/46604275",
+            "Maintenance & Event Notice", sample, pub,
+            article_blocks=[{"kind": "text", "text": sample}],
+        )
+        assert cards.news_payloads(GAMES["genshin"], art, timestamps=True) == cards.news_payloads(
+            GAMES["genshin"], art, timestamps=False
+        )
+
+    # Genuinely omitted first zone inherits valid trailing shared zone across all connectors:
+    assert (
+        convert_news_timestamps("2026/09/28 06:00 – 11:00 (UTC+8)", published_ts=pub, enabled=True)
+        == "<t:1790546400:f> – <t:1790564400:f>"
+    )
+    assert (
+        convert_news_timestamps("2026/09/28 06:00 to 11:00 (UTC+8)", published_ts=pub, enabled=True)
+        == "<t:1790546400:f> to <t:1790564400:f>"
+    )
+    assert (
+        convert_news_timestamps("2026/09/28 06:00 until 11:00 (UTC+8)", published_ts=pub, enabled=True)
+        == "<t:1790546400:f> until <t:1790564400:f>"
+    )
+    assert (
+        convert_news_timestamps("2026/09/28 06:00 – 2026/09/29 11:00 (UTC+8)", published_ts=pub, enabled=True)
+        == "<t:1790546400:f> – <t:1790650800:f>"
+    )
+    assert (
+        convert_news_timestamps("2026/09/28 06:00 to 2026/09/29 11:00 (UTC+8)", published_ts=pub, enabled=True)
+        == "<t:1790546400:f> to <t:1790650800:f>"
+    )
+
+    # Valid differing explicit offsets on BOTH endpoints remain individually authoritative:
+    assert (
+        convert_news_timestamps("2026/09/28 06:00 (UTC) – 15:00 (UTC+8)", published_ts=pub, enabled=True)
+        == "<t:1790575200:f> – <t:1790578800:f>"
+    )
+    assert (
+        convert_news_timestamps("2026/09/28 06:00 (UTC-4) – 19:00 (UTC+8)", published_ts=pub, enabled=True)
+        == "<t:1790589600:f> – <t:1790593200:f>"
+    )
+    assert (
+        convert_news_timestamps("2026/09/28 06:00 (UTC+8) – 2026/09/28 02:00 (UTC)", published_ts=pub, enabled=True)
+        == "<t:1790546400:f> – <t:1790560800:f>"
+    )
+
+
 
 
 if __name__ == "__main__":
