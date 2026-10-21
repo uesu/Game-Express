@@ -15,22 +15,23 @@ holds. After a live-workflow update, confirm a real monitor run starts/completes
 a successful dispatch or PR CI is not proof of live execution. A hold can still
 occur: this policy reduces unattended exposure, not the security gate itself.
 
-## Fast, exact incremental PR updates
+### Evidence-Driven Maintenance, Acceptance and Workspace Hygiene
 
-- Continue the specified existing PR; implement only the newest requested delta.
-- Use concise unified diffs: `-` removes old code, `+` adds replacement code.
-  Do not replay full historical patches or add unrelated cleanup/new files.
-- Reuse relevant prior evidence. Inspect affected code and run targeted checks;
-  do not repeat a full audit/benchmark unless drift, failures or risk justify it.
-- For routine PR handoffs, do not require per-file checksums or exact commit-head
-  matching. Use normal diff review, targeted checks and CI results/annotations;
-  investigate material drift or failures as needed. Preserve required security
-  verification; do not weaken existing checks merely to save time.
-- Let normal CI validate the resulting head. Inspect advisory findings too;
-  never hide/suppress failures or remove safeguards to save time.
-- Update existing AGENTS/README/docs/changelog/privacy/terms only where affected.
-- Write an accurate PR title/body; report head, changes, checks and blockers briefly.
-- No extra audit MD, production posting, state reset or merge without approval.
+Continue the specified existing PR with concise diffs and no extra standalone audit markdown files.
+
+- Establish the task, assigned branch, current PR/base/head and dirty work before editing. Preserve unrelated changes and authorization boundaries.
+- Inspect actual references, complete relevant diffs, shared helpers and affected callers. Distinguish observed facts, inference, raw captures, reconstructions, screenshots, author reports and independently executed evidence.
+- Implement the smallest complete generic correction. Preserve existing defaults, source wording/order/media and unrelated behavior. Avoid unrequested rewrites, cosmetic churn, global unescaping and broad new frameworks.
+- Test actual decisions with mocked external boundaries. Assert outgoing content/media/link slots, request counts, results and durable state where relevant. No vacuous checks, skipped critical assertions, permissive alternatives or weakened coverage.
+- Run focused tests followed by documented relevant suites and final-head CI. Record exact commands/results/revision. Distinguish required checks from advisory jobs, committed coverage from ad-hoc checks, and stored baselines from actual baseline execution.
+- Measure performance reproducibly when required. Separate CPU work from network/pacing costs. Do not promise zero overhead or live reliability.
+- Keep active developer documentation, examples, `AGENTS.md` and acceptance reports consistent with committed code, tests, defaults, bounds and limitations. Preserve provenance and historical evidence. Respect production documentation exclusions.
+- Return **READY TO MERGE**, **CHANGES REQUIRED** or **REVIEW BLOCKED** for each PR. Tie acceptance to the exact head and disclose author-session versus independent review. Fixed findings do not automatically establish complete review; acceptance is not deployment authorization or a zero-bug warranty.
+- Keep resolved findings closed absent contradictory evidence. Review incremental changes without unnecessarily restarting unrelated work. Do not manufacture blockers from optional nits or maintain an endless acceptance loop.
+- Reuse bounded task-scoped temporary artifacts. Avoid repeated clones, archives, generated previews and duplicated logs. Inspect capacity early and retain concise durable context with exact revisions, commands, results, blockers and next actions.
+- Clean only verified disposable task-owned artifacts after inspecting status, ownership and retention needs. Never remove the repository root, `.git`, dirty user work, tracked fixtures, source captures, state or durable handoffs/evidence. No broad destructive cleanup as a capacity workaround.
+- If a snapshot/storage/tool limit blocks execution, report whether commands ran. Do not repeat identical blocked calls or claim writes/deletions succeeded. Request platform intervention or use a compact handoff when safe cleanup is impossible. Never promise automatic cross-session memory or unlimited storage.
+- Separate editing, committing/pushing, PR updates, merging, deployment, workflow dispatch, live API writes, state resets and production switch changes. Obtain the required authorization for each.
 
 ## Operational summary output
 
@@ -47,7 +48,7 @@ behaviours are deliberate (and must not be "fixed"), how to verify a change, and
 already cost a broken run. `README.md` is the user-facing manual and `docs/` is its reference
 material; this file is the maintainer's mental model.
 
-Last updated **2026-10-15**.
+Last updated **2026-10-21**.
 
 ---
 
@@ -359,9 +360,12 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
   hold/retry without marking delivered. Never guess filenames, strip required URL
   queries, use screenshot substitutes, or claim this proves Discord playback.
   Do not invent engagement stats.
-- Keep link labels/destinations separate: one masked link for a descriptive label,
-  bare self-labelled URLs, and raw button/media URL fields. Never capture the next
-  section in a link; retain a leading newline when formatting Quill headings.
+- Keep link labels/destinations separate via `textutil.news_link()`: preserve balanced
+  depth-1 `[...]` spans unescaped inside `[label](url)`, emit unmatched/outer-nested
+  brackets outside linked spans as `\[` / `\]` (splitting across multiple link spans where
+  needed or falling back to escaped brackets plus bare `url` when no linkable text exists),
+  and keep bare self-labelled URLs and raw button/media URL fields unchanged. Never capture
+  the next section in a link; retain a leading newline when formatting Quill headings.
 - HTML bold conversion must balance nested/adjacent spans across media boundaries,
   not emit literal stray `**`. Pad both sides of decorative closing `✦` markers
   only when missing; retain source emphasis, not source HTML styling.
