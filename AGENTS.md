@@ -498,11 +498,23 @@ repository Variables:
   (`NEWS_EXPAND_MAX_MEDIA = 120`), with explicitly labelled excerpt fallback if exceeded and
   `SendResult.ambiguous` holds on indeterminate webhook `POST` outcomes (adding media validation
   `GET`s, webhook `POST`s, and inter-page pacing proportional to media and page count).
+- **Shared `WebhookClient` caller behavior (`gamexpress/discord.py`):** although
+  `gamexpress/schedule.py` and `gamexpress/codeposter.py` source files are unmodified, every
+  caller of `WebhookClient.send()` (`schedule.py` primary `POST`, `404` recovery repost, and
+  mirror `POST`; `codeposter.py` code-card `POST`; `runner.py` news `POST`; `maintenance.py`
+  started-alert `POST`; and `__main__.py` `test-card`/`check-webhooks`) intentionally shares
+  the 1-attempt stop on indeterminate in-flight `POST` errors (eliminating up to 4 blind in-run
+  duplicate `POST` replays per call while preserving definite pre-send retries, `429`/`5xx`
+  retries, explicit `4xx` handling, and idempotent `PATCH` retries). Because `schedule` and
+  `codes` state schemas are intentionally unchanged, unrecorded `schedule`/`codes` cards remain
+  retryable on the next scheduled run, whereas `news` and `maintenance` also persist cross-run
+  and peer-merged `"ambiguous"` holds.
 
 Run `.venv/bin/python -m gamexpress benchmark --iterations 300` (or add `--json`) on any clean
 revision to reproduce the exact SHA-stamped `median`/`mean`/`p95` offline CPU timings across all
 12 cases (`short=341c+1img`, `medium=4926c+1img <=7000`, `long=12348c+18imgs`), default-off
-parity checks (`output_equal=True`, `timestamp_parser_calls=0`, `extra_feature_http_or_webhook=0`),
+parity checks (`output_equal=True`, `main_1e071d8_sha256_equal=True`,
+`timestamp_parser_calls=0`, `extra_feature_http_or_webhook=0`),
 and mocked/derived protocol counts (`short(off)=1 msg / 1 media GET / 1 POST`,
 `medium<=7000(off)=2 msgs / 1 media GET / 2 POSTs (+1.2s min pacing)`,
 `long>7000(off)=1 excerpt msg / 1 media GET / 1 POST`,

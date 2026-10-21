@@ -8392,8 +8392,35 @@ def test_maintenance_payload_exact_v2_template_gallery_omission_and_no_tiktok():
     assert kids[2]["content"] == (
         "※ **Date Time:** <t:1792382400:f> ※ **Hour Time:** <t:1792382400:R> <a:gearfinal:1483076702551805983>"
     )
-    assert kids[4]["accessory"]["url"] == "https://discord.gg/HyrVP9wRXu"
-    assert kids[4]["accessory"]["emoji"] == {"id": "1483074533073223843", "name": "starwardyayy", "animated": True}
+    assert kids[3] == {
+        "type": 12,
+        "items": [
+            {
+                "media": {
+                    "url": "https://fastcdn.hoyoverse.com/static-resource-v2/2026/10/19/d9666bfb6df441d244dc24dfdfac5a58_8954332136235293402.webm"
+                }
+            }
+        ],
+    }
+    assert kids[4] == {
+        "type": 9,
+        "components": [
+            {
+                "type": 10,
+                "content": (
+                    "<a:starwardsleepywink:1483078175436050432> **Citlali News**\n"
+                    "-# Delivering news and official updates"
+                ),
+            }
+        ],
+        "accessory": {
+            "type": 2,
+            "style": 5,
+            "label": "Citlali News",
+            "url": "https://discord.gg/HyrVP9wRXu",
+            "emoji": {"id": "1483074533073223843", "name": "starwardyayy", "animated": True},
+        },
+    }
     assert all(c["type"] != 1 for c in kids)
     dumped = json.dumps(pre)
     assert "tiktok" not in dumped.lower() and "minilorax" not in dumped.lower()
@@ -8414,9 +8441,8 @@ def test_maintenance_payload_exact_v2_template_gallery_omission_and_no_tiktok():
     assert mk_kids[2]["content"] == (
         "※ **Date Time:** <t:1792533600:f> ※ **End Time:** <t:1792551600:t> <a:gearfinal:1483076702551805983>"
     )
-    assert mk_kids[4]["type"] == 9
-    assert mk_kids[4]["accessory"]["label"] == "Citlali News"
-    assert mk_kids[4]["accessory"]["url"] == "https://discord.gg/HyrVP9wRXu"
+    assert mk_kids[3] == kids[3]
+    assert mk_kids[4] == kids[4]
     assert all(c["type"] != 1 for c in mk_kids)
 
     # Maintenance with unknown end omits invented End Time; missing media omits type 12 gallery;
@@ -8588,7 +8614,12 @@ def test_maintenance_separate_dedup_silent_seed_late_edit_and_isolated_collectio
         assert len(ctx.webhook.sends) == 1 and len(ctx.webhook.edits) == 1
         assert ctx.webhook.edits[0][0] == "preload-msg-1"
         assert ctx.webhook.edits[0][1]["allowed_mentions"] == {"parse": []}
-        assert zzz_video in json.dumps(ctx.webhook.edits[0][1])
+        assert [
+            it["media"]["url"]
+            for c in ctx.webhook.edits[0][1]["components"][0]["components"]
+            if c["type"] == 12
+            for it in c["items"]
+        ] == [zzz_video]
 
         # Run 5 (Maintenance Started at 1792533660): independent from preload -> posts `Maintenance Started` once!
         ctx.now = 1792533660
@@ -8982,7 +9013,12 @@ def test_correction_1_launch_media_lock_vs_tier_upgrade_window_and_edit_failure(
         assert len(ctx.webhook.sends) == 0 and len(ctx.webhook.edits) == 1
         assert ctx.webhook.edits[0][0] == "preload-art-msg"
         assert ctx.webhook.edits[0][1]["allowed_mentions"] == {"parse": []}
-        assert zzz_vid in json.dumps(ctx.webhook.edits[0][1])
+        assert [
+            it["media"]["url"]
+            for c in ctx.webhook.edits[0][1]["components"][0]["components"]
+            if c["type"] == 12
+            for it in c["items"]
+        ] == [zzz_vid]
         assert posted_entry["media_tier"] == 1 and posted_entry["media_url"] == zzz_vid
 
         # 4) Phase II, different-version (`3.4`), and unverified media never replace the locked launch selection.
@@ -9090,7 +9126,12 @@ def test_correction_2_expiring_tier1_video_same_tier_renewal_and_safe_fallbacks(
         asyncio.run(maintenance.run(ctx))
         assert len(ctx.webhook.sends) == 0 and len(ctx.webhook.edits) == 1
         assert entry["media_tier"] == 1 and entry["media_url"] == vid_tok2
-        assert "auth_key=1790568000-0-0-tok2" in json.dumps(ctx.webhook.edits[0][1])
+        assert [
+            it["media"]["url"]
+            for c in ctx.webhook.edits[0][1]["components"][0]["components"]
+            if c["type"] == 12
+            for it in c["items"]
+        ] == [vid_tok2]
 
         # 3) When `vid_tok2` expires (`now > 1790568000`) and ONLY an uncorroborated/unrelated video is offered,
         #    unrelated video is NEVER substituted — card falls back to matching-version `art_37` (`tier 2`)!
@@ -9108,7 +9149,14 @@ def test_correction_2_expiring_tier1_video_same_tier_renewal_and_safe_fallbacks(
         ctx.webhook = ScriptedWebhook([SendResult(True, 200)], [])
         asyncio.run(maintenance.run(ctx))
         assert len(ctx.webhook.sends) == 0 and len(ctx.webhook.edits) == 1
-        assert unrelated_vid not in json.dumps(ctx.webhook.edits[0][1])
+        extracted_fallback_media = [
+            it["media"]["url"]
+            for c in ctx.webhook.edits[0][1]["components"][0]["components"]
+            if c["type"] == 12
+            for it in c["items"]
+        ]
+        assert extracted_fallback_media == [art_37]
+        assert unrelated_vid not in extracted_fallback_media
         assert entry["media_tier"] == 2 and entry["media_url"] == art_37
 
         # 4) When `art_37` also becomes unavailable and no valid media remains, omits gallery cleanly (`tier 4`)
@@ -10994,6 +11042,375 @@ def test_correction_6_ambiguous_post_no_replay_and_state_durability():
             ONLY="maintenance",
         )
         assert st_only_maint.features == {"maintenance"}
+
+
+def test_final_acceptance_baseline_parity_shared_callers_and_template():
+    """Verify:
+    1) Actual pre-PR `main` (`1e071d82eba82baa0a2977f33d6f8180d3677aaf`) payload & request parity
+       across real HoYoLAB fixtures, all 5 games x 3 pagination regimes, and production baselines
+       (cryptographic SHA-256 digests + live `git archive` cross-check when `1e071d8` is present).
+    2) End-to-end behavior of EVERY shared `WebhookClient` caller across the codebase:
+       - `schedule.run` (primary `POST`, `404` recovery `POST`, mirror `POST`, primary & mirror `PATCH`)
+       - `codeposter.run` (code card `POST`, `_mark_expired` `PATCH`)
+       - `runner.run_news` (multi-page `POST` + persistent ambiguity hold)
+       - `maintenance.run` (started-alert `POST` & silent `PATCH` + persistent ambiguity hold)
+       - `gamexpress.__main__.cmd_check_webhooks` / `cmd_test_card` (interactive CLI `POST`)
+       under normal `200`, `429` retry, `502` retry, definite pre-send `ClientConnectorError` retry,
+       explicit `400` rejection, `PATCH` retry, AND indeterminate `POST` timeout (`1` in-run `POST`
+       attempt instead of `5` blind replays, documenting and verifying exact caller state effects).
+    """
+    import hashlib
+    import io
+    import subprocess
+    from contextlib import redirect_stdout
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, patch
+
+    import aiohttp
+
+    from gamexpress import __main__ as cli_mod
+    from gamexpress import codeposter, runner, schedule
+    from gamexpress.discord import WebhookClient
+    from gamexpress.sources import hoyolab as hoyolab_mod
+
+    def _canon_sha256(obj) -> str:
+        raw = json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        return hashlib.sha256(raw).hexdigest()
+
+    # Exact canonical JSON SHA-256 digests generated directly by `main` (`1e071d82eba82baa0a2977f33d6f8180d3677aaf`).
+    MAIN_1E071D8_SHA256 = {
+        "fixture:hoyolab_genshin_46604275_full.json": (1, "a87d0dc74d042fb12d9f89490b67ade96546133168e0c5394eaf321480816598"),
+        "fixture:hoyolab_starrail_46814308_full.json": (1, "d0833d351eacad7c690c566948618a52f6f21e867b21cc9c0e0f44a78a4876b0"),
+        "fixture:hoyolab_zzz_46604530_full.json": (1, "c863e2ef50ba360b3400278278b3c3e44498fd31b4c951197a8a141837e27b76"),
+        "fixture:hoyolab_zzz_46863847_full.json": (1, "8245162cd633f95510ee9d2b6b7b0c1c07801d1247445432ec968ff1aebfb14d"),
+        "fit1:genshin": (1, "a101b39d74127d0aa21048c8bdc3d1f319473ebec9a0c344c3470482e614fffd"),
+        "fit2:genshin": (2, "e51aa14e026237d44a6539222f82bae18f3ff836c9813462904abee33b37c083"),
+        "over7k:genshin": (1, "c6d362d112bf97c5dc54575edd2a64aadbb12ab06d2ddd8abfb1db1741222646"),
+        "fit1:starrail": (1, "a101b39d74127d0aa21048c8bdc3d1f319473ebec9a0c344c3470482e614fffd"),
+        "fit2:starrail": (2, "e51aa14e026237d44a6539222f82bae18f3ff836c9813462904abee33b37c083"),
+        "over7k:starrail": (1, "c6d362d112bf97c5dc54575edd2a64aadbb12ab06d2ddd8abfb1db1741222646"),
+        "fit1:hna": (1, "a101b39d74127d0aa21048c8bdc3d1f319473ebec9a0c344c3470482e614fffd"),
+        "fit2:hna": (2, "e51aa14e026237d44a6539222f82bae18f3ff836c9813462904abee33b37c083"),
+        "over7k:hna": (1, "c6d362d112bf97c5dc54575edd2a64aadbb12ab06d2ddd8abfb1db1741222646"),
+        "fit1:zzz": (1, "a101b39d74127d0aa21048c8bdc3d1f319473ebec9a0c344c3470482e614fffd"),
+        "fit2:zzz": (2, "e51aa14e026237d44a6539222f82bae18f3ff836c9813462904abee33b37c083"),
+        "over7k:zzz": (1, "c6d362d112bf97c5dc54575edd2a64aadbb12ab06d2ddd8abfb1db1741222646"),
+        "fit1:wuwa": (1, "a101b39d74127d0aa21048c8bdc3d1f319473ebec9a0c344c3470482e614fffd"),
+        "fit2:wuwa": (2, "e51aa14e026237d44a6539222f82bae18f3ff836c9813462904abee33b37c083"),
+        "over7k:wuwa": (1, "c6d362d112bf97c5dc54575edd2a64aadbb12ab06d2ddd8abfb1db1741222646"),
+        "prod:zzz_436": (1, "1bae1ccb24aa17d136f564038cc0a4545c066be4315fcc85d84f48448eea1417"),
+        "prod:zzz_444": (1, "d2038dc109cd2f15c5df47e6da5e2887434914dd48f90dbec430e686b529b1de"),
+    }
+
+    real_fixtures = (
+        ("hoyolab_genshin_46604275_full.json", "genshin"),
+        ("hoyolab_starrail_46814308_full.json", "starrail"),
+        ("hoyolab_zzz_46604530_full.json", "zzz"),
+        ("hoyolab_zzz_46863847_full.json", "zzz"),
+    )
+    for fname, gkey in real_fixtures:
+        raw = fx(fname)
+        post = raw["data"]["post"]["post"]
+        item = asyncio.run(hoyolab_mod.news_article(NewsFetcher([raw]), GAMES[gkey], {"id": post["post_id"], "ts": post["created_at"]}))
+        out_abs = cards.news_payloads(GAMES[gkey], item)
+        out_fls = cards.news_payloads(GAMES[gkey], item, timestamps=False, expand_full=False)
+        exp_len, exp_sha = MAIN_1E071D8_SHA256[f"fixture:{fname}"]
+        assert len(out_abs) == exp_len
+        assert out_abs == out_fls
+        assert _canon_sha256(out_abs) == exp_sha, fname
+
+    for gkey in ("genshin", "starrail", "hna", "zzz", "wuwa"):
+        fit1 = Item(
+            "hoyolab", gkey, "3101", "https://www.hoyolab.com/article/3101",
+            "Short official notice", "", 1792549120,
+            article_blocks=[
+                {"kind": "text", "text": "Opens on October 25, 2026 and October 28, 2026 at 12:00 (UTC+8)."},
+                {"kind": "image", "url": "https://upload-os-bbs.hoyolab.com/upload/short.jpg"},
+            ],
+            author="Official",
+        )
+        fit2 = Item(
+            "hoyolab", gkey, "3102", "https://www.hoyolab.com/article/3102",
+            "Moderate two-page official notice", "", 1792549120,
+            article_blocks=[
+                {"kind": "text", "text": ("Event section alpha opens 2026/10/25 12:00 (UTC+8).\n\n" * 42)},
+                {"kind": "image", "url": "https://upload-os-bbs.hoyolab.com/upload/mid.jpg"},
+                {"kind": "text", "text": ("Event section beta closes 2026/11/05 03:59 (UTC+8).\n\n" * 42)},
+            ],
+            author="Official",
+        )
+        over7k = Item(
+            "hoyolab", gkey, "3103", "https://www.hoyolab.com/article/3103",
+            "Long official patch notes", "", 1792549120,
+            article_blocks=[
+                {"kind": "text", "text": ("Detailed patch adjustment entry on October 25, 2026.\n\n" * 200)},
+                {"kind": "image", "url": "https://upload-os-bbs.hoyolab.com/upload/inline1.jpg"},
+            ],
+            images=["https://upload-os-bbs.hoyolab.com/upload/cover.jpg"],
+            author="Official",
+        )
+        for tag, cand in (("fit1", fit1), ("fit2", fit2), ("over7k", over7k)):
+            out_a = cards.news_payloads(GAMES[gkey], cand)
+            out_f = cards.news_payloads(GAMES[gkey], cand, timestamps=False, expand_full=False)
+            exp_len, exp_sha = MAIN_1E071D8_SHA256[f"{tag}:{gkey}"]
+            assert len(out_a) == exp_len and out_a == out_f
+            assert _canon_sha256(out_a) == exp_sha, f"{tag}:{gkey}"
+
+    zzz_436 = Item(
+        "hoyolab", "zzz", "47150315", "https://www.hoyolab.com/article/47150315",
+        "Known Issues & Optimization Summary", "", 1792549120,
+        article_blocks=[
+            {"kind": "text", "text": (
+                "Dear Proxies,\nHere are the current known issues as of October 21, 2026:\n"
+                "1. Fixed an issue where Agent animations could clip during Chain Attacks.\n"
+                "2. Fixed an issue with Signal Search details text alignment.\n"
+                "3. Fixed an audio playback issue in Hollow Zero stages.\n"
+                "4. Adjusted controller navigation focus in the Event menu."
+            )},
+        ],
+        images=["https://upload-os-bbs.hoyolab.com/upload/2026/10/21/zzz_47150315_cover.jpg"],
+        author="Zenless Zone Zero",
+    )
+    tall_url = "https://upload-os-bbs.hoyolab.com/upload/2026/10/21/zzz_47150540_tall.jpg?x-oss-process=image/quality,q_90"
+    zzz_444 = Item(
+        "hoyolab", "zzz", "47150540", "https://www.hoyolab.com/article/47150540",
+        "Agent Mechanics Overview", "", 1792551604,
+        article_blocks=[
+            {"kind": "text", "text": "Dear Proxies,\nCheck out the full mechanics overview starting October 22, 2026!"},
+            {"kind": "image", "url": tall_url},
+        ],
+        images=["https://upload-os-bbs.hoyolab.com/upload/2026/10/21/zzz_47150540_cover.jpg"],
+        author="Zenless Zone Zero",
+    )
+    assert _canon_sha256(cards.news_payloads(GAMES["zzz"], zzz_436)) == MAIN_1E071D8_SHA256["prod:zzz_436"][1]
+    assert _canon_sha256(cards.news_payloads(GAMES["zzz"], zzz_444)) == MAIN_1E071D8_SHA256["prod:zzz_444"][1]
+
+    # When `main` (`1e071d82eba82baa0a2977f33d6f8180d3677aaf`) is reachable in `.git`, also execute
+    # `main`'s actual `gamexpress/cards.py` in a child interpreter to cross-verify digests directly.
+    base_rev = "1e071d82eba82baa0a2977f33d6f8180d3677aaf"
+    if subprocess.run(["git", "cat-file", "-e", f"{base_rev}^{{commit}}"], capture_output=True).returncode == 0:
+        with tempfile.TemporaryDirectory() as git_tmp:
+            subprocess.run(f"git archive {base_rev} | tar -x -C {git_tmp}", shell=True, check=True)
+            live_check = subprocess.check_output(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "import asyncio, hashlib, json, sys\n"
+                        "from pathlib import Path\n"
+                        "sys.path.insert(0, sys.argv[1])\n"
+                        "from gamexpress import cards\n"
+                        "from gamexpress.config import load_games\n"
+                        "from gamexpress.sources import hoyolab as h\n"
+                        "g = load_games()\n"
+                        "raw = json.loads((Path(sys.argv[1]) / 'tests/fixtures/hoyolab_zzz_46863847_full.json').read_text())\n"
+                        "p = raw['data']['post']['post']\n"
+                        "class _F:\n"
+                        "    async def get_json(self, *a, **k): return raw\n"
+                        "it = asyncio.run(h.news_article(_F(), g['zzz'], {'id': p['post_id'], 'ts': p['created_at']}))\n"
+                        "out = cards.news_payloads(g['zzz'], it)\n"
+                        "print(hashlib.sha256(json.dumps(out, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest())"
+                    ),
+                    git_tmp,
+                ],
+                text=True,
+            ).strip()
+            assert live_check == MAIN_1E071D8_SHA256["fixture:hoyolab_zzz_46863847_full.json"][1]
+
+    # --- Shared `WebhookClient` caller end-to-end verification across `schedule`, `codes`, and CLI ---
+    class _WireResp:
+        def __init__(self, status: int, body: str = "", headers: dict | None = None):
+            self.status = status
+            self._body = body
+            self.headers = headers or {}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def text(self) -> str:
+            return self._body
+
+    class _WireSession:
+        def __init__(self, steps: list):
+            self.steps = list(steps)
+            self.calls: list[tuple[str, str, dict]] = []
+
+        def request(self, method: str, url: str, json: dict, timeout=None):
+            self.calls.append((method, url, json))
+            nxt = self.steps.pop(0)
+            if isinstance(nxt, BaseException):
+                raise nxt
+            return nxt
+
+    with patch("gamexpress.discord.asyncio.sleep", new=AsyncMock()):
+        # 1) `schedule.run`: normal primary `POST` + mirror `POST`, silent `PATCH` edits, `404` repost,
+        #    AND intentional shared `1`-attempt stop on indeterminate `POST` timeout:
+        with tempfile.TemporaryDirectory() as td:
+            sess_ok = _WireSession([
+                _WireResp(200, '{"id": "sched-msg-1"}'),
+                _WireResp(200, '{"id": "mirror-msg-1"}'),
+            ])
+            ctx_s = _wuwa_ctx(
+                Path(td) / "state.json",
+                WebhookClient(sess_ok),
+                BOOTSTRAP_POST="1",
+                DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA=MIRROR,
+            )
+            ctx_s.webhook._next_slot = 0.0
+            asyncio.run(schedule.run(ctx_s))
+            assert [(m, "wait=true" in u) for m, u, _ in sess_ok.calls] == [
+                ("POST", True),
+                ("POST", True),
+            ]
+            rec_37 = ctx_s.state.schedule_records("wuwa")["3.7"]
+            assert rec_37["message_id"] == "sched-msg-1"
+            assert rec_37["mirror_message_id"] == "mirror-msg-1"
+
+            # Update maintenance details -> triggers silent `PATCH` on primary + mirror (retries transient error):
+            sess_patch = _WireSession([
+                asyncio.TimeoutError("transient PATCH timeout"),
+                _WireResp(200, '{"id": "sched-msg-1"}'),
+                _WireResp(200, '{"id": "mirror-msg-1"}'),
+            ])
+            ctx_s.webhook = WebhookClient(sess_patch)
+            ctx_s.webhook._next_slot = 0.0
+            ctx_s.items["wuwa"].append(
+                Item(
+                    "hoyolab", "wuwa", "ww-maint-37",
+                    "https://wutheringwaves.kurogames.com/en/main/news/detail/5570",
+                    "Version 3.7 Update Maintenance Notice",
+                    "Update Maintenance Time: 2026/09/30 06:00 to 2026/09/30 13:00 (UTC+8)\nCompensation: Astrite*300",
+                    ctx_s.now - 600,
+                )
+            )
+            asyncio.run(schedule.run(ctx_s))
+            assert [m for m, _, _ in sess_patch.calls] == ["PATCH", "PATCH", "PATCH"]
+
+            # Deleted primary card (`404` on `PATCH`) -> `POST` recovery stops after `1` attempt on timeout:
+            rec_37["payload_hash"] = "force-edit"
+            sess_404_amb = _WireSession([
+                _WireResp(404, '{"code": 10008, "message": "Unknown Message"}'),
+                asyncio.TimeoutError("repost timeout after write"),
+            ])
+            ctx_s.webhook = WebhookClient(sess_404_amb)
+            ctx_s.webhook._next_slot = 0.0
+            ctx_s.errors.clear()
+            asyncio.run(schedule.run(ctx_s))
+            assert [m for m, _, _ in sess_404_amb.calls] == ["PATCH", "POST"]
+            assert any("repost failed" in e for e in ctx_s.errors)
+
+            # Intentional shared behavior on indeterminate primary `POST` timeout in `schedule.run`:
+            # stops after `1` `POST` attempt in-run (never `5` blind replays), records error cleanly,
+            # and leaves unrecorded card eligible for next scheduled run (existing `schedule` state schema).
+            sess_s_amb = _WireSession([asyncio.TimeoutError("schedule post-write timeout")])
+            ctx_s_amb = _wuwa_ctx(Path(td) / "state_amb.json", WebhookClient(sess_s_amb), BOOTSTRAP_POST="1")
+            ctx_s_amb.webhook._next_slot = 0.0
+            asyncio.run(schedule.run(ctx_s_amb))
+            assert len(sess_s_amb.calls) == 1 and sess_s_amb.calls[0][0] == "POST"
+            assert any("post failed" in err for err in ctx_s_amb.errors)
+            assert "message_id" not in ctx_s_amb.state.schedule_records("wuwa").get("3.7", {})
+
+        # 2) `codeposter.run`: normal `429` retry -> `200` `POST` + `_mark_expired` `PATCH`, AND
+        #    intentional shared `1`-attempt stop on indeterminate `POST` timeout (`status == "pending"`):
+        with tempfile.TemporaryDirectory() as td:
+            ctx_c = make_ctx(Path(td) / "codes_amb.json", now=1790000000, DISCORD_WEBHOOK_CODES_GENSHIN=HOOK)
+            ctx_c.state.mark_bootstrapped("codes", "genshin")
+            official_code_item = Item(
+                "x", "genshin", "991", "https://x.com/GenshinImpact/status/991",
+                "Redemption Code: GENSHINGIFT", "Redemption Code: GENSHINGIFT", 1789999900,
+            )
+            ctx_c.items["genshin"] = [official_code_item]
+            sess_c_amb = _WireSession([aiohttp.ServerDisconnectedError("codes disconnect after write")])
+            ctx_c.webhook = WebhookClient(sess_c_amb)
+            ctx_c.webhook._next_slot = 0.0
+            with patch.object(codeposter, "prefetch", new=AsyncMock(return_value={})):
+                asyncio.run(codeposter.run(ctx_c))
+            assert len(sess_c_amb.calls) == 1 and sess_c_amb.calls[0][0] == "POST"
+            assert ctx_c.state.code_records("genshin")["GENSHINGIFT"]["status"] == "pending"
+            assert any("code post failed" in e for e in ctx_c.errors)
+
+            # Next run with `429` -> `200` succeeds once, and expiry triggers `PATCH` edit:
+            sess_c_ok = _WireSession([
+                _WireResp(429, '{"retry_after": 0.1}'),
+                _WireResp(200, '{"id": "code-msg-1"}'),
+                _WireResp(200, '{"id": "code-msg-1"}'),
+            ])
+            ctx_c.webhook = WebhookClient(sess_c_ok)
+            ctx_c.webhook._next_slot = 0.0
+            ctx_c.errors.clear()
+            with patch.object(codeposter, "prefetch", new=AsyncMock(return_value={})):
+                asyncio.run(codeposter.run(ctx_c))
+            assert ctx_c.state.code_records("genshin")["GENSHINGIFT"]["status"] == "posted"
+            assert ctx_c.state.code_records("genshin")["GENSHINGIFT"]["message_id"] == "code-msg-1"
+            expired_table = {
+                "fandom:genshin-impact/Promotional_Code": [
+                    CodeHit("GENSHINGIFT", "fandom:genshin-impact/Promotional_Code", expired=True)
+                ]
+            }
+            ctx_c.items["genshin"] = []
+            with patch.object(codeposter, "prefetch", new=AsyncMock(return_value=expired_table)):
+                asyncio.run(codeposter.run(ctx_c))
+            assert [m for m, _, _ in sess_c_ok.calls] == ["POST", "POST", "PATCH"]
+
+        # 3) CLI `check-webhooks` & `test-card` callers (`gamexpress/__main__.py`):
+        long_hook = (
+            "https://discord.com/api/webhooks/123456789012345678/"
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-abcd"
+        )
+        sess_cli = _WireSession([
+            asyncio.TimeoutError("cli check timeout"),
+            _WireResp(200, '{"id": "cli-ok-1"}'),
+            asyncio.TimeoutError("cli sample timeout"),
+            _WireResp(200, '{"id": "cli-sample-ok-1"}'),
+        ])
+        out_cli = io.StringIO()
+        with (
+            patch.object(cli_mod, "load_settings", return_value=settings(DISCORD_WEBHOOK_CODES_GENSHIN=long_hook)),
+            patch("aiohttp.ClientSession") as mock_cs,
+            redirect_stdout(out_cli),
+        ):
+            mock_cs.return_value.__aenter__ = AsyncMock(return_value=sess_cli)
+            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
+            rc_cli_fail = asyncio.run(cli_mod.cmd_check_webhooks(SimpleNamespace(kind="codes", game="genshin", dry_run=False)))
+            rc_cli_ok = asyncio.run(cli_mod.cmd_check_webhooks(SimpleNamespace(kind="codes", game="genshin", dry_run=False)))
+            tc_args = SimpleNamespace(kind="codes", game="genshin", dry_run=False, ping=False, unlaunched=False)
+            rc_smp_fail = asyncio.run(cli_mod.cmd_test_card(tc_args))
+            rc_smp_ok = asyncio.run(cli_mod.cmd_test_card(tc_args))
+        assert (rc_cli_fail, rc_cli_ok, rc_smp_fail, rc_smp_ok) == (1, 0, 1, 0)
+        assert [m for m, _, _ in sess_cli.calls] == ["POST", "POST", "POST", "POST"]
+
+        # 4) Default-off `runner.run_news` end-to-end wire request log + payload parity with `main` (`1e071d8`):
+        with tempfile.TemporaryDirectory() as td_n:
+            ctx_n = make_ctx(
+                Path(td_n) / "news_wire.json",
+                now=1792552000,
+                NEWS_ENABLED="1",
+                NEWS_GAMES="zzz",
+                DISCORD_WEBHOOK_NEWS_ZZZ=HOOK,
+            )
+            ctx_n.state.news_record("zzz").update(floor=1792550000, records={})
+            sess_n = _WireSession([_WireResp(200, '{"id": "news-wire-1"}')])
+            ctx_n.webhook = WebhookClient(sess_n)
+            ctx_n.webhook._next_slot = 0.0
+            verified_media_log: list[str] = []
+            ctx_n.fetcher = types.SimpleNamespace(
+                verify_media=lambda u: (verified_media_log.append(u), asyncio.sleep(0, result=True))[1]
+            )
+            with (
+                patch.object(hoyolab_mod, "discover_news", new=AsyncMock(return_value=[{"id": "47150540", "ts": 1792551604}])),
+                patch.object(hoyolab_mod, "news_article", new=AsyncMock(return_value=zzz_444)),
+            ):
+                asyncio.run(runner.run_news(ctx_n))
+            assert verified_media_log == [
+                "https://upload-os-bbs.hoyolab.com/upload/2026/10/21/zzz_47150540_cover.jpg",
+                tall_url,
+            ]
+            assert len(sess_n.calls) == 1
+            assert sess_n.calls[0][0] == "POST" and "wait=true" in sess_n.calls[0][1]
+            assert _canon_sha256([sess_n.calls[0][2]]) == MAIN_1E071D8_SHA256["prod:zzz_444"][1]
 
 
 
