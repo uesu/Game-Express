@@ -27,8 +27,8 @@ official site / launcher and by X respectively. The API is used rather than the 
 it returns the same posts as structured JSON, with no HTML or JavaScript to scrape.
 | HoYoLAB post (official) | `…/getPostFull?gids={gid}&post_id={id}` | full body (`content` HTML, or `structured_content` when `content == "en-us"`) + images | ✅ HSR 46814308 (quirk), GI 46604275 |
 | c3kay JSON-Feed (mirror, fallback) | `https://feeds.c3kay.de/{genshin,starrail,zenless}.json` | JSON Feed 1.1 with full `content_html`, refreshed every 30 min | ✅ |
-| Official X accounts | nitter RSS fleet `https://<instance>/<account>/rss` (21 entries, 20 live — `xcancel.com` is suspended; originally from News-Express round 13/14) | timeline (first 2 working instances merged) | fleet taken from News-Express |
-| Tweet details | `https://nitter.cf/<account>/status/{id}/rss` (then `xitter.cf`, when the account is known) → `https://api.fxtwitter.com/status/{id}` → `https://api.fixupx.com/status/{id}` → `https://api.vxtwitter.com/Twitter/status/{id}` | full text with expanded links, photos, exact timestamp; the winner is logged | ✅ all 4 reference tweets |
+| Official X accounts | nitter RSS fleet `https://<instance>/<account>/rss` (25 entries, 24 live — `xcancel.com` is suspended; originally from News-Express round 13/14) | timeline (first 2 working instances merged) | fleet taken from News-Express |
+| Tweet details | `https://nitter.cf/<account>/status/{id}/rss` (then `xitter.cf`, `teapawt.org`, `teapaw.org`, `teapawt.net`, when the account is known) → `https://api.fxtwitter.com/status/{id}` → `https://api.fixupx.com/status/{id}` → `https://api.vxtwitter.com/Twitter/status/{id}` | full text with expanded links, photos, exact timestamp; the winner is logged | ✅ all 4 reference tweets |
 | Kuro official site (WW) | `https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/json/G152/en/{ArticleMenu,MainMenu}.json` + `…/article/{id}.json` | official articles incl. *Featured Resonator/Weapon Convene* banner notices; times are UTC+8 | ✅ (English menus are homepage **subsets**, so X stays primary for WW) |
 | HoYoPlay launcher | `https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGameBranches?launcher_id=VYTpXlbWo8` | exact live version (`main.tag`) + pre-install availability (`pre_download`) | ✅ ZZZ `3.2.0` |
 | Kuro launcher (WW) | `https://prod-alicdn-gamestarter.kurogame.com/launcher/game/G153/50004_obOHXFrFanqsaIEOmuKroCcbZkQRBC7c/index.json` | live version (`default.version`) + `predownload` | structure from WW downloader configs |
@@ -73,10 +73,13 @@ every run), `xitter.cf` (the same machine as `nitter.cf`, an answerer across its
 IPv4-only, so it may lose a `NITTER_GRACE` race on a handle but never the quorum) and the
 token-gated `nitter.miningtcup.me` (6/6). That round's ranking rule, which every later rotation
 inherits: **no member that blocks GitHub Actions / Azure datacenter IPs sits above one that
-doesn't.** The fallbacks open with two zero-refusal TRIALs — `nitter.freedit.eu` (the only host
-answering all 8 union handles, the six game feeds plus the two News-Express accounts) and
-`nitter.gravitywell.xyz` (5/8, deterministic `User not found` gaps) — which cost nothing while
-the hot path is healthy and get their runner test on the first degraded day.
+doesn't.** Rotation #7 (2026-10-22) keeps all four runner-proven hosts in Batch 1 (`nitter.cf` and
+`xitter.cf` untouched at slots 1–2, `nitter.meowing.monster`, `nitter.miningtcup.me`) and seats four
+8/8 union-verified mirrors across Batch 2 (`teapawt.org` 493 ms, `teapaw.org` 548 ms, `teapawt.net`
+578 ms — official `.org`/`.net` sibling domains of `4cuck/teapawt` with explicit scraping permission
+and `/status/<id>/rss` feeds — plus `nitter.mie.foundation` from `shitter/shitter`'s working list as
+an independent `TRIAL`), followed by `nitter.freedit.eu` (8/8) and `nitter.gravitywell.xyz` (5/8,
+deterministic `User not found` gaps), all costing zero requests while the hot path is healthy.
 
 Being polite about it matters: these are volunteer-run mirrors and `status.d420.de` asks
 outright that they not be scraped. The design already keeps the cost low — the loop stops at
@@ -584,4 +587,3 @@ endpoints and existing caches only (never headless browsers or HTML scraping):
 |---|---|---|
 | GI / HSR / ZZZ / HNA | HoYoPlay `getAllGameBasicInfo` (`hyp-api.hoyoverse.com`) + existing HoYoLAB / X Special Program cache | (1) version-matched `.webm`/`.mp4` background clip, (2) version-matched `.webp`/image background, (3) Special Program key art, (4) omit gallery; version/launch lock separates selected tier so late launch video upgrades initial artwork inside `LATE_MEDIA_EDIT_WINDOW_S` while Phase II swaps remain blocked |
 | Wuthering Waves | Kuro launcher index + structured website/article JSON (`hw-media-cdn-mingchao.kurogame.com`, `akiwebsite`) + Special Program X/Kuro art | (1) version-matched `.mp4` clip keeping signed `?auth_key=…` query parameters intact; signed URLs expire and renew inside `LATE_MEDIA_EDIT_WINDOW_S` (`6 h` / `21,600 s`, `MAX_LATE_MEDIA_ATTEMPTS = 3` consecutive failed `PATCH` calls reset on `res.ok`, `MAX_LATE_EDITS = 6` total succeeded `PATCH` calls, per-run URL check deduplication) only when corroborating source metadata (`hash`/`md5`/`size`+`full_version`) binds the exact launch asset (never bare host/path alone), otherwise falling back to (2) matching-version artwork, (3) Special Program key art, or (4) cleanly omitting media without durable mirroring |
-

@@ -281,4 +281,3 @@ or `gamexpress/schedule.py`:
    shortened/extended cycle notices automatically supersede observations, cadence estimates and
    stale overrides; games without a verified cadence (`hna`, `ananta`) never synthesize predicted
    timestamps, and unknown maintenance end times omit `End Time` rather than inventing one.
-

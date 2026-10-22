@@ -305,7 +305,7 @@ webhooks. They are independent features, even if you choose the same destination
 | `DISCORD_WEBHOOK_CODES_WUWA` | Wuthering Waves codes |
 | `DISCORD_WEBHOOK_CODES_ANANTA` | ANANTA codes |
 | `NITTER_RSS_TOKEN` | *optional* — the same one as News-Express |
-| `BUMP_PAT` | *required only where the Python bump workflow is installed* — a repository-scoped PAT with **Contents, Pull requests and Workflows: read and write**, subject to token type and repository policy. See [docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md#one-time-setup-this-needs) |
+| `BUMP_PAT` | *required only where the Python bump workflow is installed* — a repository-scoped PAT with **Contents, Pull requests and Workflows: read and write**, subject to token type and repository policy. See [docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md#publication-credentials) |
 
 Create only destinations you intend to use; ANANTA is not a verified official-news adapter.
 Optional schedule mirror secrets are `DISCORD_WEBHOOK_SCHEDULE_MIRROR_<GAME>`.
@@ -516,8 +516,8 @@ Flags: `--dry-run --only --game --repost --kind --ping --out --unlaunched --verb
 | Data | Chain |
 |---|---|
 | HoYoverse news | official HoYoLAB API → c3kay JSON-Feed mirror |
-| X timelines | the built-in nitter fleet (21 entries, 20 live — `xcancel.com` is suspended and kept last as a dead entry; `NITTER_INSTANCES` overrides the list). The first **two** working mirrors are merged, so a stale-but-200 mirror can't hide a tweet |
-| Tweet details | nitter.cf → xitter.cf by id (when the account is known) → FxTwitter → fixupx → vxTwitter → the nitter text. A status mirror that fails twice in one run is skipped for the rest of it |
+| X timelines | the built-in nitter fleet (25 entries, 24 live — `xcancel.com` is suspended and kept last as a dead entry; `NITTER_INSTANCES` overrides the list). The first **two** working mirrors are merged, so a stale-but-200 mirror can't hide a tweet |
+| Tweet details | nitter.cf → xitter.cf → teapawt.org → teapaw.org → teapawt.net by id (when the account is known) → FxTwitter → fixupx → vxTwitter → the nitter text. A status mirror that fails twice in one run is skipped for the rest of it |
 | Codes | up to 8 sources per game (validators, APIs, wikis, official posts), fetched in parallel, behind the gate above |
 | Version / pre-install | HoYoPlay `getGameBranches` / Kuro launcher index |
 

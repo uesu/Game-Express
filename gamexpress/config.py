@@ -167,6 +167,22 @@ DEFAULT_COMMUNITY_BUTTONS = [
 # fresh (blocked 10-13 three days after 25 ok on 10-10), so it sits behind everyone
 # who has never refused. xcopy records its verdict beside kareem, demoted not
 # deleted. Fleet 19 -> 21; nothing deleted, as always.
+#
+# 2026-10-22 ROTATION #7 (teapawt TLD expansion + mie.foundation): all four new
+# candidates answered 8/8 union handles live with 100% top-tweet id parity against
+# nitter.cf/xitter.cf and zero refusals -- 4cuck/teapawt's three new official domains
+# teapawt.org (493 ms avg on d420, fastest listed), teapaw.org (548 ms) and
+# teapawt.net (578 ms), plus codeberg.org/shitter/shitter's working-list host
+# nitter.mie.foundation (rev a75ff9fa14). Every RSS link on teapawt.org, teapaw.org
+# and teapawt.net points back at xitter.cf -- they front the same runner-proven
+# teapawt origin behind independent .org/.net TLDs rather than Freenom .cf, with
+# explicit operator scraping permission and working /<account>/status/<id>/rss feeds.
+# Keeping all four runner-proven hosts in Batch 1 (nitter.cf, xitter.cf, meowing,
+# miningtcup) avoids extra parallel hits on the teapawt origin during normal runs
+# while avoiding un-runner-tested 403 risk; Batch 2 (slots 5-8) now opens with
+# teapawt.org -> teapaw.org -> teapawt.net -> nitter.mie.foundation (TRIAL), giving
+# instant .org/.net failover to a runner-proven origin plus an independent shitter
+# backend inside the first fallback wave. Fleet 21 -> 25; nothing deleted.
 DEFAULT_NITTER = [
     # ── hot path: probed on EVERY run (NITTER_BATCH = 4) — measured answerers only ──
     "https://nitter.cf",                # proven from the runners: 6/6 handles, every run
@@ -192,6 +208,26 @@ DEFAULT_NITTER = [
                                         # needs two).
     "https://nitter.miningtcup.me",     # token-gated — proven from the runners: 6/6 handles
     # ── fallbacks (batch 2+): zero requests while batch 1 gives two working feeds ──
+    "https://teapawt.org",              # rotation #7 (2026-10-22): NEW, head of batch 2.
+                                        # Official 4cuck/teapawt .org sibling domain of
+                                        # nitter.cf/xitter.cf (493 ms avg on d420, #1
+                                        # fastest, 100% uptime, explicit scraping
+                                        # permission, 8/8 union + /status/<id>/rss).
+                                        # Same runner-proven teapawt origin on an
+                                        # independent .org TLD: zero load while .cf
+                                        # answers, instant failover if .cf DNS degrades.
+    "https://teapaw.org",               # rotation #7 (2026-10-22): NEW. Official
+                                        # 4cuck/teapawt .org sibling (548 ms avg on d420,
+                                        # 100% uptime, 8/8 union + /status/<id>/rss).
+    "https://teapawt.net",              # rotation #7 (2026-10-22): NEW. Official
+                                        # 4cuck/teapawt .net sibling (578 ms avg on d420,
+                                        # 100% uptime, 8/8 union + /status/<id>/rss).
+    "https://nitter.mie.foundation",    # rotation #7 (2026-10-22): NEW, independent
+                                        # shitter/shitter working-list host (rev
+                                        # a75ff9fa14). 8/8 union handles verified with
+                                        # 100% top-id parity, zero refusals, native t.co
+                                        # expansion; rewrites YouTube links to
+                                        # piped.video (handled by youtube_id). TRIAL.
     "https://nitter.freedit.eu",        # rotation #6 (2026-10-15): NEW, head of the
                                         # fallbacks. The only host in existence with
                                         # full union coverage: 5/5 News-Express accounts

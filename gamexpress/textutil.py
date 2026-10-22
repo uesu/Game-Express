@@ -11,7 +11,8 @@ VERSION_RE = re.compile(r"\b(?:Version|Ver\.?|V)\s?(\d{1,2}\.\d{1,2})\b", re.I)
 _QUOTED_AFTER = r"\s*[\"“”「『]([^\"“”」』\n]{2,80})[\"“”」』]"
 URL_RE = re.compile(r"https?://[^\s<>\"'）)\]]+", re.I)
 YOUTUBE_ID_RE = re.compile(
-    r"(?:youtube\.com/(?:watch\?(?:[^\s]*&)?v=|live/|shorts/|embed/)|youtu\.be/)([A-Za-z0-9_-]{11})")
+    r"(?:youtube(?:-nocookie)?\.com/(?:watch\?(?:[^\s]*&)?v=|live/|shorts/|embed/)|"
+    r"youtu\.be/|piped\.video/(?:watch\?(?:[^\s]*&)?v=)?)([A-Za-z0-9_-]{11})")
 
 
 def _http_media_url(raw: str | None) -> str:

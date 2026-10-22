@@ -25,7 +25,7 @@ TWIMG = re.compile(r"^https?://(?:pbs\.twimg\.com|ton\.twimg\.com)/", re.I)
 NITTER_PIC = re.compile(r"/pic/(?:orig/)?(.+)$")
 YOUTUBE_IMG = re.compile(r"^https?://i\.ytimg\.com/vi/([^/]+)/", re.I)
 _MEDIA_PREFIXES = ("media/", "ext_twvideo_thumb/", "ext_tw_video_thumb/", "tweet_video_thumb/",
-                   "amplify_video_thumb/")
+                   "amplify_video_thumb/", "card_img/")
 
 
 def nitter_pic_to_twimg(url: str) -> str:
@@ -33,13 +33,15 @@ def nitter_pic_to_twimg(url: str) -> str:
     m = NITTER_PIC.search(url or "")
     if not m:
         return url
-    path = unquote(m.group(1)).split("?")[0]
+    raw = unquote(m.group(1))
+    path, _, query = raw.partition("?")
     if path.startswith(_MEDIA_PREFIXES):
-        return f"https://pbs.twimg.com/{path}"
+        keep = f"?{query}" if path.startswith("card_img/") and query else ""
+        return f"https://pbs.twimg.com/{path}{keep}"
     # nitter's RSS and status feeds carry the whole twimg address, not just the media path:
     # /pic/https%3A%2F%2Fpbs%2Etwimg%2Ecom%2Fmedia%2F<id>.jpg  (seen 2026-10-09 on nitter.cf)
     if path.startswith("https://pbs.twimg.com/"):
-        return path
+        return raw if path.startswith("https://pbs.twimg.com/card_img/") and query else path
     return url
 
 

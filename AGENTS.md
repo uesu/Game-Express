@@ -362,7 +362,7 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
   queries, use screenshot substitutes, or claim this proves Discord playback.
   Do not invent engagement stats.
 - Keep link labels/destinations separate via `textutil.news_link()`: preserve balanced
-  depth-1 `[...]` spans unescaped inside `[label](url)`, emit unmatched/outer-nested
+  depth-1 `[...]` spans unescaped inside `` `[label](url)` ``, emit unmatched/outer-nested
   brackets outside linked spans as `\[` / `\]` (splitting across multiple link spans where
   needed or falling back to escaped brackets plus bare `url` when no linkable text exists),
   and keep bare self-labelled URLs and raw button/media URL fields unchanged. Never capture
@@ -529,4 +529,3 @@ and mocked/derived protocol counts (`short(off)=1 msg / 1 media GET / 1 POST`,
 `medium<=7000(off)=2 msgs / 1 media GET / 2 POSTs (+1.2s min pacing)`,
 `long>7000(off)=1 excerpt msg / 1 media GET / 1 POST`,
 `long>7000(expand_full=1)=4 msgs / 18 media GETs / 4 POSTs (+3.6s min pacing)`).
-

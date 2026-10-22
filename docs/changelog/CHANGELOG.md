@@ -1,5 +1,10 @@
 # Changelog — current entries
 
+## 2026-10-22 — Rotation #7 (teapawt TLD expansion + mie.foundation) and live banner fixes (unreleased)
+
+- **Rotation #7 (`DEFAULT_NITTER` 21 → 25 entries, 24 live; nothing deleted):** live-verify all four newly added mirrors across all 8 union handles (`32/32` feeds on `2026-10-22`, `100%` top-tweet ID parity against `nitter.cf`/`xitter.cf`, zero refusals): `https://teapawt.org` (`493 ms` avg on `status.d420.net`, `100%` uptime), `https://teapaw.org` (`548 ms`, `100%`), and `https://teapawt.net` (`578 ms`, `100%`) from `4cuck/teapawt` (`README.md`, explicit scraping permission + single-tweet `/<account>/status/<id>/rss`), plus `https://nitter.mie.foundation` from `codeberg.org/shitter/shitter/wiki/Instances` (`rev a75ff9fa14`, independent `shitter` instance with native `t.co` expansion). Keep `nitter.cf` (slot 1), `xitter.cf` (slot 2), `nitter.meowing.monster` (slot 3), and `nitter.miningtcup.me` (slot 4) as the four runner-proven Batch 1 hosts; seat `teapawt.org`, `teapaw.org`, `teapawt.net`, and `nitter.mie.foundation` (`TRIAL`) across Batch 2 (`slots 5–8`); extend `STATUS_MIRRORS` across `.cf`/`.org`/`.net`; parse `piped.video` YouTube rewrites in `textutil.youtube_id()`; and preserve `card_img/` query parameters in `media.nitter_pic_to_twimg()`.
+- **Live upstream banner classification & self-healing fixes (`gamexpress/schedule.py`):** (1) add `channels?` to `DEFAULT_BANNER_RE` and scan both `item.title` and `item.text[:200]` in `classify()` so official ZZZ HoYoLAB notices (`47131668`, `"V3.3 Limited-Time Channels (Phase I)"`) are extracted at priority `50`; (2) recognize fullwidth/Unicode Roman numerals `Ⅰ`/`ⅰ` and `Ⅱ`/`ⅱ` in `PHASE1`/`PHASE2` for official Wuthering Waves Convene notices (`5546`, `5668`, `@Wuthering_Waves` X posts); and (3) self-clear stale `b_phase*_conflict` flags when re-reading an official post agrees via `_same_names()`, and allow `apply_banner_feed` / `apply_gacha_wiki` to fill an empty `phase*_4` slot left `TBA` by a single-post extraction count miss without loosening genuine two-post `"official sources disagree"` locks.
+
 ## 2026-10-21 — Optional news timestamps, pre-load/maintenance started cards, and expanded full articles (unreleased)
 
 - **Addition 1 — `NEWS_TIMESTAMPS` (default `0`):** add single-pass `O(N)` render-only conversion (`gamexpress/news_timestamps.py`) of exact TZ-qualified date-times (including bare `UTC`/`GMT` at `+00:00`, explicit offsets, and news `server time` `UTC+8` fallback) into Discord `<t:EPOCH:f>` tags across `genshin`, `starrail`, `hna`, `zzz`, and `wuwa`, with exact `±180`-day yearless resolution around `published_ts`, conservative Dec/Jan rollover without repairing inverted ranges, and strict protection against partial conversion of invalid/ambiguous explicit endpoint zones, invalid/inverted/half-qualified ranges, URLs, code spans/blocks, existing `<t:…>` tags, date-only phrases, and `timeparse.py` schedule extraction. Disabled mode bypasses scanning completely (`0` parser calls, byte-identical output).
@@ -62,7 +67,7 @@
 - Consolidate detailed official-news setup, paging, source-preserving formatting,
   measured-grouping bounds and safe verification in
   [CONFIGURATION.md](../CONFIGURATION.md#official-news-explicit-opt-in-default-off).
-  Update [the docs index](../README.md#official-news--third-feature-off-by-default).
+  Update [the docs index](../README.md#official-news--milestone-alerts--off-by-default).
   Remove repeated current-policy appendices from the README and the bottom of
   this changelog; retain dated historical entries unchanged.
 - Record the documentation placement/link-check rule in AGENTS.md. This follow-up

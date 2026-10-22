@@ -60,7 +60,7 @@ NOT_PROGRAM_TITLE = re.compile(
     r"(?:notice|details)|merchandise|recap|replay|vod|survey|questionnaire|thank\s+you|"
     r"collaboration|insider\s+channel|combat\s+intro|character\s+demo)\b", re.I)
 DEFAULT_BANNER_RE = (r"event\s+wish|event\s+warp|signal\s+search|exclusive\s+channel|featured\s+resonator|"
-                     r"resonator\s+convene|character\s+event|limited[-\s]time\s+(?:character|agent)")
+                     r"resonator\s+convene|character\s+event|limited[-\s]time\s+(?:character|agent|channels?)")
 
 # --------------------------------------------------------------------- X-first announcement test
 # X is the PRIMARY schedule source, so this test has to be tight. One positive requirement does
@@ -114,8 +114,8 @@ FIVE_RE = re.compile(r"(?:5[-\s]?star|5\s?★|★\s?5|S[-\s]?Rank)\s+(?:limited[
                      r"(?:character|resonator|agent)s?", re.I)
 FOUR_RE = re.compile(r"(?:4[-\s]?star|4\s?★|★\s?4|A[-\s]?Rank)\s+(?:character|resonator|agent)s?", re.I)
 QUOTED = re.compile(r"[\"“「『]([^\"”」』\n]{2,40})[\"”」』]")
-PHASE1 = re.compile(r"phase\s*(?:I|1)\b(?!I)|first\s+(?:half|phase)|1st\s+(?:half|phase)", re.I)
-PHASE2 = re.compile(r"phase\s*(?:II|2)\b|second\s+(?:half|phase)|2nd\s+(?:half|phase)", re.I)
+PHASE1 = re.compile(r"phase\s*(?:[IⅠⅰ]|1)\b(?![IⅠⅰ])|first\s+(?:half|phase)|1st\s+(?:half|phase)", re.I)
+PHASE2 = re.compile(r"phase\s*(?:II|[Ⅱⅱ]|2)\b|second\s+(?:half|phase)|2nd\s+(?:half|phase)", re.I)
 
 # HoYoverse notices name CHARACTERS bare and put WEAPONS in quotes:
 #     the limited 5-star character Pearl (Elation: Ice) and the limited 5-star Light Cone
@@ -130,8 +130,9 @@ PHASE2 = re.compile(r"phase\s*(?:II|2)\b|second\s+(?:half|phase)|2nd\s+(?:half|p
 # guard that was supposed to cut the weapon clause off did not fire at all.
 TIER_STOP = re.compile(
     r"\b(?:light\s+cones?|weapons?|w-engines?|as\s+well\s+as|will\s+(?:be|return|receive)|"
-    r"and\s+the\s+limited|drop[-\s]rates?|receives?|significantly|(?:have|has)\s+(?:significantly\s+)?boosted)\b",
-    re.I)                       # \"Sanhua receive boosted\" (WuWa), \"Nicole have significantly boosted\" (ZZZ)
+    r"and\s+the\s+limited|drop[-\s]rates?|receives?|significantly|"
+    r"(?:is|are|have|has)\s+(?:significantly\s+|now\s+)?(?:boosted|available))\b",
+    re.I)                       # "Sanhua receive boosted" (WuWa), "Phoenix (...)is significantly boosted" / "Nicole have significantly boosted" (ZZZ)
 NAME_SPLIT = re.compile(r",\s*(?:and\s+)?|\s+and\s+|\s*;\s*")
 # A star-tier phrase is often followed by an article before the name ("5-star character \"Pearl\"",
 # "…and the 4-star characters …"), and truncating at the NEXT tier leaves a dangling "the". Those
@@ -320,7 +321,7 @@ def classify(game: Game, item: Item) -> str | None:
             and not extract_codes_from_text(lead):      # a codes post is not an announcement
         return "program"
     banner_rx = "|".join([DEFAULT_BANNER_RE] + game.banner_patterns)
-    if re.search(banner_rx, item.title or item.text[:200], re.I):
+    if re.search(banner_rx, f"{item.title or ''}\n{item.text[:200]}", re.I):
         return "banner"
     if MAINT_RE.search(lead):
         return "maintenance"
@@ -1075,7 +1076,10 @@ def _fill_phase(data: dict, prov: dict, banners: dict, key: str, group: str, val
         return False
     owner = prov.get(f"b_{key}", [0])[0]
     if not have:
-        if owner <= PRIORITY["bannerfeed"]:
+        tba_reason = prov.get(f"b_{key}_tba")
+        if owner <= PRIORITY["bannerfeed"] or (
+            owner < PRIORITY["override"] and tba_reason and tba_reason != "official sources disagree"
+        ):
             banners[key] = value
             prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
             prov[f"b_{key}_by"] = [group]
@@ -1274,7 +1278,12 @@ def apply_gacha_wiki(game: Game, data: dict, prov: dict, wiki: dict | None, now:
                 continue                        # the wiki is silent about a feed value: keep the feed's
             changed = True
             continue
-        if not value or owner > PRIORITY["gachawiki"]:
+        if not value or (
+            owner > PRIORITY["gachawiki"]
+            and not (owner < PRIORITY["override"]
+                     and prov.get(f"b_{key}_tba")
+                     and prov.get(f"b_{key}_tba") != "official sources disagree")
+        ):
             continue
         banners[key] = value
         prov[f"b_{key}"] = [PRIORITY["gachawiki"], now]
@@ -1597,13 +1606,15 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                 same5 = prov.get(f"b_{key5}") == [PRIORITY.get(src, 10), ts]
                 if five and _official_owned(prov, key5) and not same5:
                     # Final. A different 5★ from a later official post is logged once, not applied.
-                    if _names(banners.get(key5)) != _names(five):
+                    if not _same_names(banners.get(key5), five):
                         conflict = ", ".join(five)
                         if prov.get(f"b_{key5}_conflict") != conflict and notes is not None:
                             notes.append(f"⚠️ {game.short} {version} phase {phase}: a later notice names "
                                          f"{conflict}, the locked official name is kept. Correct it via "
                                          "config/overrides.json if the notice is right.")
                         prov[f"b_{key5}_conflict"] = conflict
+                    else:
+                        prov.pop(f"b_{key5}_conflict", None)
                 elif five and (same5 or _official_may_write(prov, key5)):
                     if _names(banners.get(key5)) != _names(five):
                         prov[f"b_{key5}_by"] = ["official"]           # a new name from the notice

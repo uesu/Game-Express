@@ -3810,7 +3810,7 @@ def test_the_documented_nitter_fleet_size_matches_the_code():
     configured = len(DEFAULT_NITTER)
     suspended = [u for u in DEFAULT_NITTER if "xcancel" in u]      # kept last, cannot answer
     live = configured - len(suspended)
-    assert (configured, live) == (21, 20)
+    assert (configured, live) == (25, 24)
 
     if not _check_fleet_documentation(ROOT, configured, live):
         print("    INFO: fleet documentation check not applicable: all three docs absent; code fleet assertion still checked")
@@ -4093,7 +4093,7 @@ def test_when_nitter_is_silent_fxtwitter_still_answers():
     f = _NitterThenFx(nitter_body=None, fx=_fx_body())
     c = tw.XClient(f, settings())
     t = asyncio.run(c.tweet(NIT_ID, "ZZZ_EN"))
-    assert f.calls == ["nitter", "nitter", "fxtwitter"]                 # nitter.cf, then xitter.cf
+    assert f.calls == ["nitter"] * len(tw.STATUS_MIRRORS) + ["fxtwitter"]
     assert t["text"] == "fxtwitter's text" and c.source_used == {"fxtwitter": 1}
 
 
@@ -5414,6 +5414,14 @@ NITTER_SERVES_REAL_RSS = (
                           # hand-read that day, nitter.cf parity on top tweet ids; on the
                           # shitter fork's working list. TRIAL until a runner probe says
                           # otherwise.
+    "https://teapawt.org",          # rotation #7 (2026-10-22): 8/8 union handles + /status/rss,
+                                    # 493 ms avg on d420, 4cuck/teapawt .org sibling
+    "https://teapaw.org",           # rotation #7 (2026-10-22): 8/8 union handles + /status/rss,
+                                    # 548 ms avg on d420, 4cuck/teapawt .org sibling
+    "https://teapawt.net",          # rotation #7 (2026-10-22): 8/8 union handles + /status/rss,
+                                    # 578 ms avg on d420, 4cuck/teapawt .net sibling
+    "https://nitter.mie.foundation", # rotation #7 (2026-10-22): 8/8 union handles, top-id parity,
+                                    # zero refusals, native t.co expansion (shitter list). TRIAL.
     "https://nitter.freedit.eu",   # rotation #6 (2026-10-15): 8/8 union handles across
                                    # two days -- 5/5 News-Express accounts (2026-10-14)
                                    # plus GenshinImpact, honkaistarrail and ZZZ_EN this
@@ -5539,11 +5547,13 @@ def test_rotation_6_runner_proven_hot_path_xcopy_verdict_demotes_it():
     assert "https://xcopy.uk" not in hot, "the trial's verdict: 403 to the runners, 24/24"
     assert DEFAULT_NITTER.index("https://xcopy.uk") > DEFAULT_NITTER.index("https://nitter.kareem.one"), \
         "demoted into the runner-refused tier, beside its own signature"
-    assert DEFAULT_NITTER[4] == "https://nitter.freedit.eu", "8/8 union handles -- the fallback head"
-    assert DEFAULT_NITTER[5] == "https://nitter.gravitywell.xyz", "5/8 union, deterministic gaps"
+    assert DEFAULT_NITTER.index("https://nitter.freedit.eu") < DEFAULT_NITTER.index("https://nitter.gravitywell.xyz"), \
+        "8/8 union handles seats ahead of 5/8 deterministic gaps"
+    assert DEFAULT_NITTER.index("https://nitter.gravitywell.xyz") < DEFAULT_NITTER.index("https://tw.eir-nya.gay"), \
+        "zero-refusal union trials seat ahead of measured non-deliveries"
     assert DEFAULT_NITTER.index("https://tw.eir-nya.gay") < DEFAULT_NITTER.index("https://shitter.thepixora.com"), \
         "no-block (slow, empty) seats above flapping-403 by this round's rule"
-    assert len(DEFAULT_NITTER) == 21 and "https://xcancel.com" in DEFAULT_NITTER
+    assert len(DEFAULT_NITTER) >= 21 and "https://xcancel.com" in DEFAULT_NITTER
     for kept in ("https://nitter.cf", "https://xitter.cf", "https://xcopy.uk",
                  "https://nitter.meowing.monster", "https://nitter.miningtcup.me",
                  "https://shitter.thepixora.com", "https://tw.eir-nya.gay",
@@ -12901,6 +12911,194 @@ def test_fandom_code_parser_ignores_non_wikitable_templates_like_terminology_inf
     assert "TERMINOLOGYINFOBOX" not in hits
     assert hits["WUWAGIFT"].expired is False
     assert hits["OLDWUWACODE"].expired is True
+
+
+def test_rotation_7_teapawt_tld_expansion_and_mie_foundation():
+    """Rotation #7 (2026-10-22): slots 1-4 remain runner-proven (nitter.cf & xitter.cf untouched,
+    meowing.monster, miningtcup.me); Batch 2 (slots 5-8) seats teapawt.org, teapaw.org, teapawt.net
+    (.org/.net TLD failover on 4cuck/teapawt) + independent nitter.mie.foundation (8/8 union TRIAL);
+    and STATUS_MIRRORS fails over from dead .cf domains onto teapawt.org without external API calls."""
+    from gamexpress.config import DEFAULT_NITTER
+    from gamexpress.sources import twitter as tw
+
+    assert len(DEFAULT_NITTER) == 25
+    assert DEFAULT_NITTER[:4] == [
+        "https://nitter.cf",
+        "https://xitter.cf",
+        "https://nitter.meowing.monster",
+        "https://nitter.miningtcup.me",
+    ]
+    assert DEFAULT_NITTER[4:8] == [
+        "https://teapawt.org",
+        "https://teapaw.org",
+        "https://teapawt.net",
+        "https://nitter.mie.foundation",
+    ]
+    assert tw.STATUS_MIRRORS == (
+        "https://nitter.cf",
+        "https://xitter.cf",
+        "https://teapawt.org",
+        "https://teapaw.org",
+        "https://teapawt.net",
+    )
+    for host in DEFAULT_NITTER[4:8]:
+        assert host in NITTER_SERVES_REAL_RSS, host
+
+    status_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>GenshinImpact</title>
+<item>
+  <title>Version 7.2 Special Program Preview</title>
+  <description><![CDATA[<p>Version 7.2 Special Program premieres on 10/23/2026 at 08:00 AM (UTC-4)!</p>
+  <img src="https://teapawt.org/pic/https%3A%2F%2Fpbs.twimg.com%2Fmedia%2FHVFT48EXYAA351X.jpg" />]]></description>
+  <pubDate>Wed, 21 Oct 2026 04:00:01 GMT</pubDate>
+  <link>https://xitter.cf/GenshinImpact/status/2112755760107081755#m</link>
+</item></channel></rss>"""
+
+    calls: list[str] = []
+
+    class CfDownFetcher:
+        async def get_text(self, url, **_kw):
+            calls.append(url)
+            if ".cf/" in url:
+                return None
+            if url == "https://teapawt.org/GenshinImpact/status/2112755760107081755/rss":
+                return status_xml
+            return None
+
+        async def get_json(self, url, **_kw):
+            calls.append(url)
+            raise AssertionError("FxTwitter should not be called when teapawt.org resolves cleanly")
+
+    client = tw.XClient(CfDownFetcher(), settings())
+    hit = asyncio.run(client.tweet("2112755760107081755", account="GenshinImpact"))
+    assert hit is not None
+    assert hit["id"] == "2112755760107081755"
+    assert hit["photos"] == ["https://pbs.twimg.com/media/HVFT48EXYAA351X.jpg"]
+    assert client.source_used == {"nitter": 1}
+    assert calls == [
+        "https://nitter.cf/GenshinImpact/status/2112755760107081755/rss",
+        "https://xitter.cf/GenshinImpact/status/2112755760107081755/rss",
+        "https://teapawt.org/GenshinImpact/status/2112755760107081755/rss",
+    ]
+
+
+def test_nitter_piped_youtube_and_card_img_rewrites():
+    """nitter.mie.foundation and nitter.freedit.eu rewrite YouTube links to piped.video, and X link
+    cards carry extensionless card_img/...?format=jpg URLs that must retain their format query."""
+    from gamexpress.media import nitter_pic_to_twimg
+    from gamexpress.textutil import youtube_id, youtube_video_url
+
+    assert youtube_id("https://piped.video/7W82J_Q-W3o") == "7W82J_Q-W3o"
+    assert youtube_id("https://piped.video/watch?v=nMa_e5ChL6w&t=10") == "nMa_e5ChL6w"
+    assert (
+        youtube_video_url(["https://piped.video/7W82J_Q-W3o"], "")
+        == "https://www.youtube.com/watch?v=7W82J_Q-W3o"
+    )
+    assert (
+        nitter_pic_to_twimg(
+            "https://nitter.mie.foundation/pic/card_img%2F2112394137521569792%2FZTTalx-c%3Fformat%3Djpg%26name%3D800x419"
+        )
+        == "https://pbs.twimg.com/card_img/2112394137521569792/ZTTalx-c?format=jpg&name=800x419"
+    )
+    assert (
+        nitter_pic_to_twimg(
+            "https://teapawt.org/pic/https%3A%2F%2Fpbs.twimg.com%2Fcard_img%2F2112755753614585857%2FD_9x_X2Z%3Fformat%3Djpg%26name%3Dorig"
+        )
+        == "https://pbs.twimg.com/card_img/2112755753614585857/D_9x_X2Z?format=jpg&name=orig"
+    )
+
+
+def test_live_oct_2026_banner_notices_and_self_healing():
+    """Verify real Oct 2026 live upstream notices: ZZZ HoYoLAB 47131668 ('Limited-Time Channels' +
+    self-healing 'Phoenixis, Velinais' conflict + Manato/Seth surname-first lock), Kuro 5546/5668
+    Unicode Roman numerals 'Phase \u2160'/'Phase \u2161', and incomplete single-post TBA recovery."""
+    zzz_hyl = Item(
+        "hoyolab",
+        "zzz",
+        "47131668",
+        "https://www.hoyolab.com/article/47131668",
+        "V3.3 Limited-Time Channels (Phase I)",
+        (
+            "Dear Proxies,\n"
+            "The Agent and W-Engine Signal Search Event period is as follows: "
+            "After the Version 3.3 Update – 2026/11/11 11:59 (server time).\n"
+            "During the event, the reception rate for the limited S-Rank Agent "
+            "Phoenix (Fire - Anomaly)is significantly boosted!\n"
+            "During the event, the reception rate for the limited S-Rank W-Engine "
+            "Plume of Rebirth (Anomaly)is significantly boosted!\n"
+            "During the event, the reception rate for the limited S-Rank Agent "
+            "Velina (Wind - Anomaly)is significantly boosted!"
+        ),
+        1792389600,
+    )
+    ex_zzz = schedule.extract(GAMES["zzz"], zzz_hyl)
+    assert ex_zzz is not None and ex_zzz.kind == "banner"
+    assert ex_zzz.fields["banner_five"] == ["Phoenix", "Velina"]
+    assert ex_zzz.fields["banner_phase"] == 1
+
+    zzz_rec = {
+        "data": {
+            "version": "3.3",
+            "banners": {
+                "phase1": ["Phoenix", "Velina"],
+                "phase1_4": ["Komano Manato", "Seth Lowell"],
+                "banners_settled": ["phase1"],
+            },
+            "banners_settled": ["phase1"],
+        },
+        "prov": {
+            "b_phase1": [40, 1791546366],
+            "b_phase1_by": ["official"],
+            "b_phase1_conflict": "Phoenixis, Velinais",
+            "b_phase1_4": [6, 1792575028],
+            "b_phase1_4_by": ["wiki"],
+        },
+    }
+    merged_zzz = schedule.merge(GAMES["zzz"], "3.3", [ex_zzz], zzz_rec, {}, {}, 1792633227, [])
+    assert "b_phase1_conflict" not in zzz_rec["prov"]
+    schedule.apply_banner_feed(
+        merged_zzz, zzz_rec["prov"], {}, 1792633227, calendar={"phase1_4": ["Seth", "Manato"]}
+    )
+    assert "phase1_4" in schedule.banner_settled(merged_zzz)
+
+    kuro_p1 = Item(
+        "kuro",
+        "wuwa",
+        "5546",
+        "https://wutheringwaves.kurogames.com/en/main/news/detail/5546",
+        "[Version 3.7 Featured Resonator/Weapon Convene: Phase \u2160]",
+        "During the event, 5-Star Resonator: Chisa, 4-Star Resonators: Buling, Taoqi, and Youhu receive boosted drop rates!",
+        1790651700,
+    )
+    kuro_p2 = Item(
+        "kuro",
+        "wuwa",
+        "5668",
+        "https://wutheringwaves.kurogames.com/en/main/news/detail/5668",
+        "[Version 3.7 Featured Resonator/Weapon Convene: Phase \u2161]",
+        "During the event, 5-Star Resonator: Lucilla, 4-Star Resonators: Lumi, Danjin, and Chixia receive boosted drop rates!",
+        1792552500,
+    )
+    assert schedule.extract(GAMES["wuwa"], kuro_p1).fields["banner_phase"] == 1
+    assert schedule.extract(GAMES["wuwa"], kuro_p2).fields["banner_phase"] == 2
+
+    wuwa_rec = {
+        "data": {"version": "3.7", "banners": {"phase1": ["Hiyuki", "Aemeath", "Iuno"], "phase1_4": []}},
+        "prov": {"b_phase1": [50, 1790599919], "b_phase1_4": [50, 1790599919], "b_phase1_4_tba": "2 name(s) found, 3 expected"},
+    }
+    schedule.apply_gacha_wiki(
+        GAMES["wuwa"], wuwa_rec["data"], wuwa_rec["prov"], {"phase1_4": ["Buling", "Taoqi", "Youhu"]}, 1792633227
+    )
+    assert wuwa_rec["data"]["banners"]["phase1_4"] == ["Buling", "Taoqi", "Youhu"]
+
+    disagree_rec = {
+        "data": {"version": "3.7", "banners": {"phase1_4": []}},
+        "prov": {"b_phase1_4": [50, 1790599919], "b_phase1_4_tba": "official sources disagree"},
+    }
+    schedule.apply_gacha_wiki(
+        GAMES["wuwa"], disagree_rec["data"], disagree_rec["prov"], {"phase1_4": ["Buling", "Taoqi", "Youhu"]}, 1792633227
+    )
+    assert disagree_rec["data"]["banners"]["phase1_4"] == []
 
 
 if __name__ == "__main__":

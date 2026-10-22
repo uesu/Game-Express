@@ -287,7 +287,7 @@ to push a file under that directory — so a brand-new repo gets a weekly red ru
 `refusing to allow a GitHub App to create or update workflow … without workflows permission`,
 even though every test passed. One PAT can cover all your repositories, but **the secret itself
 must be created separately in each one**. Full permission list and reasoning:
-[`PYTHON_VERSION.md`](PYTHON_VERSION.md#one-time-setup-this-needs).
+[`PYTHON_VERSION.md`](PYTHON_VERSION.md#publication-credentials).
 
 **The six `_MIRROR_` secrets are what makes each game's schedule card also land in that game's
 own news channel**, while `#schedule` keeps receiving everything. Omit them in prod and you get
