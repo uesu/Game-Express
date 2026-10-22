@@ -174,13 +174,15 @@ _REMOVED_BODY_MARKERS = frozenset({
 def format_reddit_feed_query(raw_token: str) -> str:
     """Normalize `REDDIT_FEED_TOKEN` into an encoded `feed=...` (+ optional `&user=...`) query.
 
-    Accepts any private RSS link/token copied from `old.reddit.com`, `www.reddit.com`, or
-    `reddit.com` (including invisible copy-paste chars, wrapping quotes/backticks/parentheses,
-    Markdown `[url](url)` links, `.env` `REDDIT_FEED_TOKEN=...` lines, scheme-less host URLs,
-    either query parameter order, or HTML `&amp;` entities):
+    Accepts any private `.rss` or `.json` feed link/token copied from `old.reddit.com/prefs/feeds/`
+    or `www.reddit.com/prefs/feeds/` (including invisible copy-paste chars, wrapping quotes/backticks/
+    parentheses, Markdown `[url](url)` links, `.env` `REDDIT_FEED_TOKEN=...` lines, scheme-less host
+    URLs, either query parameter order, or HTML `&amp;` entities):
       * `https://old.reddit.com/.rss?feed=<40-hex>&user=<username>`
       * `https://www.reddit.com/.rss?feed=<40-hex>&user=<username>`
-      * `https://reddit.com/.rss?feed=<40-hex>&user=<username>`
+      * `https://old.reddit.com/.json?feed=<40-hex>&user=<username>`
+      * `https://www.reddit.com/.json?feed=<40-hex>&user=<username>`
+      * `https://reddit.com/.rss?feed=<40-hex>&user=<username>` / `/.json?feed=<40-hex>&user=<username>`
       * `https://old.reddit.com/?feed=<40-hex>&user=<username>`
       * `<40-hex>&user=<username>` (the exact value used by `News-Express`)
       * `?feed=<40-hex>&user=<username>` or `feed=<40-hex>&user=<username>`
@@ -552,6 +554,154 @@ def parse_reddit_rss(xml_text: str) -> list[dict]:
     return [posts[pid] for pid in order]
 
 
+def parse_reddit_json(payload: object) -> list[dict]:
+    """Parse native Reddit `.json` responses (`/.json?feed=...`, `/r/<sub>/new.json`,
+    `/user/<account>/submitted.json`, and `[post_listing, comment_listing]` thread `.json`)."""
+    top_listing: dict | None = None
+    comment_listing: dict | None = None
+    if isinstance(payload, list) and payload:
+        if isinstance(payload[0], dict):
+            top_listing = payload[0]
+        if len(payload) > 1 and isinstance(payload[1], dict):
+            comment_listing = payload[1]
+    elif isinstance(payload, dict):
+        top_listing = payload
+    if not isinstance(top_listing, dict):
+        return []
+
+    children = ((top_listing.get("data") or {}).get("children") or []) if isinstance(top_listing.get("data"), dict) else []
+    posts: dict[str, dict] = {}
+    order: list[str] = []
+
+    for child in children:
+        if not isinstance(child, dict):
+            continue
+        raw = child.get("data")
+        if not isinstance(raw, dict):
+            continue
+        if child.get("kind") not in (None, "t3"):
+            continue
+        post_id = str(raw.get("id") or "").strip().lower()
+        subreddit = str(raw.get("subreddit") or "").strip()
+        if not post_id or not subreddit:
+            continue
+        source_data = raw
+        cross = raw.get("crosspost_parent_list")
+        if isinstance(cross, list) and cross and isinstance(cross[0], dict):
+            source_data = cross[0]
+
+        removed_cat = raw.get("removed_by_category")
+        raw_body = clean_text(html.unescape(str(raw.get("selftext") or "")))
+        if removed_cat or raw_body.strip().lower() in _REMOVED_BODY_MARKERS:
+            raw_body = ""
+
+        images: list[str] = []
+        videos: list[str] = []
+
+        # 1. Full multi-image gallery in exact `gallery_data` page order
+        gal_items = ((source_data.get("gallery_data") or {}).get("items") or []) if isinstance(source_data.get("gallery_data"), dict) else []
+        media_meta = source_data.get("media_metadata") if isinstance(source_data.get("media_metadata"), dict) else {}
+        for gi in gal_items:
+            if not isinstance(gi, dict):
+                continue
+            mid = str(gi.get("media_id") or "")
+            meta_entry = media_meta.get(mid) if isinstance(media_meta, dict) else None
+            if not isinstance(meta_entry, dict) or meta_entry.get("status") not in (None, "valid"):
+                continue
+            best_s = meta_entry.get("s") if isinstance(meta_entry.get("s"), dict) else {}
+            img_u = html.unescape(str(best_s.get("gif") or best_s.get("u") or "")).strip()
+            if img_u.startswith(("http://", "https://")):
+                images.append(img_u)
+
+        # 2. Direct `i.redd.it` / `preview.redd.it` link or preview source
+        dest_url = html.unescape(str(source_data.get("url_overridden_by_dest") or source_data.get("url") or "")).strip()
+        if re.search(r"https?://(?:i\.redd\.it|preview\.redd\.it)/", dest_url, re.I):
+            images.append(dest_url)
+        preview_imgs = ((source_data.get("preview") or {}).get("images") or []) if isinstance(source_data.get("preview"), dict) else []
+        for pimg in preview_imgs:
+            if not isinstance(pimg, dict):
+                continue
+            src_u = html.unescape(str(((pimg.get("source") or {}).get("url")) or "")).strip()
+            if src_u.startswith(("http://", "https://")):
+                images.append(src_u)
+
+        # 3. Native `reddit_video` fallback stream
+        sec_media = source_data.get("secure_media") or source_data.get("media")
+        if isinstance(sec_media, dict) and isinstance(sec_media.get("reddit_video"), dict):
+            fb_u = html.unescape(str(sec_media["reddit_video"].get("fallback_url") or "")).strip()
+            if fb_u.startswith(("http://", "https://")):
+                videos.append(fb_u)
+
+        perm = str(raw.get("permalink") or "").strip()
+        m_link = POST_LINK_RE.search(perm)
+        slug_part = m_link.group(3) or "" if m_link else ""
+        ext_links = [
+            u for u in ([dest_url] + find_urls(raw_body))
+            if u
+            and u.startswith(("http://", "https://"))
+            and not POST_LINK_RE.search(u)
+            and not _REDDIT_NAV_LINK_RE.match(u)
+            and u not in images
+        ]
+        author = str(raw.get("author") or "").strip().lstrip("/").removeprefix("u/").strip()
+        posts[post_id] = {
+            "id": post_id,
+            "subreddit": subreddit,
+            "author": author,
+            "distinguished": str(raw.get("distinguished") or ""),
+            "flair": clean_text(html.unescape(str(raw.get("link_flair_text") or ""))),
+            "title": clean_text(html.unescape(str(raw.get("title") or ""))),
+            "text": raw_body,
+            "url": canonical_post_url(subreddit, post_id, slug_part),
+            "ts": int(float(raw.get("created_utc") or 0)),
+            "images": dedupe(images),
+            "videos": dedupe(videos),
+            "links": dedupe(ext_links),
+            "stickied": bool(raw.get("stickied")),
+            "comments": [],
+        }
+        order.append(post_id)
+
+    if comment_listing and order:
+        p = posts[order[0]]
+        c_children = ((comment_listing.get("data") or {}).get("children") or []) if isinstance(comment_listing.get("data"), dict) else []
+        for c_node in c_children:
+            if not isinstance(c_node, dict) or c_node.get("kind") != "t1":
+                continue
+            cdata = c_node.get("data")
+            if not isinstance(cdata, dict):
+                continue
+            cbody = clean_text(html.unescape(str(cdata.get("body") or "")))
+            if not cbody or cbody.strip().lower() in _REMOVED_BODY_MARKERS:
+                continue
+            cauthor = str(cdata.get("author") or "").strip().lstrip("/").removeprefix("u/").strip()
+            cid = str(cdata.get("id") or "").strip()
+            p["comments"].append({"id": cid, "author": cauthor, "text": cbody})
+            if cauthor and p["author"] and cauthor.lower() == p["author"].lower():
+                p["text"] = f"{p['text']}\n\n{cbody}".strip() if p["text"] else cbody
+                p["links"] = dedupe(
+                    p["links"]
+                    + [
+                        u for u in find_urls(cbody)
+                        if u.startswith(("http://", "https://"))
+                        and not POST_LINK_RE.search(u)
+                        and not _REDDIT_NAV_LINK_RE.match(u)
+                    ]
+                )
+    return [posts[pid] for pid in order]
+
+
+def _parse_official_feed_body(body: str) -> list[dict]:
+    """Parse either Atom XML (`.rss`) or native JSON (`.json`) from first-party Reddit."""
+    stripped = body.lstrip()
+    if stripped.startswith(("{", "[")):
+        try:
+            return parse_reddit_json(json.loads(stripped))
+        except json.JSONDecodeError:
+            return []
+    return parse_reddit_rss(body)
+
+
 # ------------------------------------------------ rich-embed proxy & component-embed parsers
 def _extract_meta_tags(html_text: str) -> dict[str, list[str]]:
     tags: dict[str, list[str]] = {}
@@ -711,6 +861,7 @@ class RedditClient:
         self._subreddit_cache: dict[str, list[dict] | None] = {}
         self._user_cache: dict[str, list[dict] | None] = {}
         self._post_cache: dict[str, dict | None] = {}
+        self._json_feed_blocked: bool = False
         self.reachable: set[str] = set()
 
     async def _get_text(self, url: str, **kwargs) -> str | None:
@@ -732,7 +883,7 @@ class RedditClient:
             if for_post_detail and inst in REDDIT_LISTING_ONLY:
                 continue
             out.append(inst)
-        if kind == "sub" and format_reddit_feed_query(self.settings.reddit_token):
+        if format_reddit_feed_query(self.settings.reddit_token):
             official = [inst for inst in out if inst in OFFICIAL_RSS_HOSTS]
             if official:
                 out = official + [inst for inst in out if inst not in OFFICIAL_RSS_HOSTS]
@@ -750,7 +901,7 @@ class RedditClient:
             )
             if not body or is_challenge_or_error_page(body):
                 return None
-            return await asyncio.to_thread(parse_reddit_rss, body)
+            return await asyncio.to_thread(_parse_official_feed_body, body)
 
         if inst in EDDRIT_HOSTS:
             if kind != "sub":
@@ -813,14 +964,33 @@ class RedditClient:
         merged: dict[str, dict] = {}
         working = 0
         fleet = self._eligible_instances(for_post_detail=False, kind=kind)
+        feed_q = format_reddit_feed_query(self.settings.reddit_token)
         # Sequential single-request fast path when `REDDIT_FEED_TOKEN` is configured: try each
         # configured first-party Reddit origin (`www.reddit.com` -> `old.reddit.com` -> `reddit.com`)
         # before fanning out to any public Redlib mirror (`1` request on healthy runs).
-        if kind == "sub" and format_reddit_feed_query(self.settings.reddit_token):
+        if feed_q:
+            tried_official: list[str] = []
             while fleet and fleet[0] in OFFICIAL_RSS_HOSTS:
-                direct = await self._fetch_listing_on(fleet.pop(0), kind, target)
+                inst = fleet.pop(0)
+                tried_official.append(inst)
+                direct = await self._fetch_listing_on(inst, kind, target)
                 if direct is not None:
                     return sorted(direct, key=lambda x: x.get("ts") or 0, reverse=True)
+            if tried_official and not self._json_feed_blocked:
+                j_base = tried_official[0]
+                j_url = (
+                    f"{j_base}/r/{target}/new.json?limit=25&raw_json=1&{feed_q}"
+                    if kind == "sub"
+                    else f"{j_base}/user/{target}/submitted.json?limit=25&raw_json=1&{feed_q}"
+                )
+                j_data = await self._get_json(
+                    j_url, source="reddit", headers={"User-Agent": BROWSER_UA}, retries=0, timeout=REDDIT_TIMEOUT
+                )
+                parsed_json = parse_reddit_json(j_data) if j_data is not None else []
+                if parsed_json:
+                    return sorted(parsed_json, key=lambda x: x.get("ts") or 0, reverse=True)
+                if j_data is None:
+                    self._json_feed_blocked = True
         for i in range(0, len(fleet), REDDIT_BATCH):
             if working >= REDDIT_WORKING:
                 break
@@ -945,12 +1115,16 @@ class RedditClient:
 
         feed_q = format_reddit_feed_query(self.settings.reddit_token)
         best: dict | None = None
-        for inst in self._eligible_instances(for_post_detail=True):
+        elig = self._eligible_instances(for_post_detail=True)
+        tried_official_post: list[str] = []
+        json_post_checked = False
+        for inst in elig:
             if inst in EDDRIT_HOSTS:
                 continue
             if inst in OFFICIAL_RSS_HOSTS:
                 if not feed_q:
                     continue
+                tried_official_post.append(inst)
                 tail = f"/{slug_part.strip('/')}" if slug_part.strip("/") else ""
                 rss_body = await self._get_text(
                     f"{inst}/r/{subreddit}/comments/{post_id}{tail}/.rss?{feed_q}",
@@ -961,11 +1135,26 @@ class RedditClient:
                 )
                 if not rss_body or is_challenge_or_error_page(rss_body):
                     continue
-                parsed_rss = await asyncio.to_thread(parse_reddit_rss, rss_body)
+                parsed_rss = await asyncio.to_thread(_parse_official_feed_body, rss_body)
                 if parsed_rss:
                     best = parsed_rss[0]
                     break
                 continue
+            if tried_official_post and not json_post_checked and not self._json_feed_blocked:
+                json_post_checked = True
+                j_thread = await self._get_json(
+                    f"{tried_official_post[0]}/r/{subreddit}/comments/{post_id}.json?limit=25&raw_json=1&{feed_q}",
+                    source="reddit",
+                    headers={"User-Agent": BROWSER_UA},
+                    retries=0,
+                    timeout=REDDIT_TIMEOUT,
+                )
+                parsed_thread = parse_reddit_json(j_thread) if j_thread is not None else []
+                if parsed_thread:
+                    best = parsed_thread[0]
+                    break
+                if j_thread is None:
+                    self._json_feed_blocked = True
             token_q = f"?token={quote(self.settings.nitter_token)}" if inst in TOKEN_GATED_REDDIT else ""
             tail = f"/{slug_part.strip('/')}" if slug_part.strip("/") else ""
             body = await self._get_text(
@@ -981,6 +1170,20 @@ class RedditClient:
             if parsed_list:
                 best = parsed_list[0]
                 break
+
+        if best is None and tried_official_post and not json_post_checked and not self._json_feed_blocked:
+            j_thread = await self._get_json(
+                f"{tried_official_post[0]}/r/{subreddit}/comments/{post_id}.json?limit=25&raw_json=1&{feed_q}",
+                source="reddit",
+                headers={"User-Agent": BROWSER_UA},
+                retries=0,
+                timeout=REDDIT_TIMEOUT,
+            )
+            parsed_thread = parse_reddit_json(j_thread) if j_thread is not None else []
+            if parsed_thread:
+                best = parsed_thread[0]
+            elif j_thread is None:
+                self._json_feed_blocked = True
 
         unmuxed_fallback: dict | None = None
         need_proxy = (

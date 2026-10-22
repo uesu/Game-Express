@@ -14195,5 +14195,219 @@ def test_adversarial_real_reddit_atom_footer_summary_redaction_gallery_and_token
     assert '"deltandy.me"' in Path("gamexpress/http.py").read_text(encoding="utf-8")
 
 
+def test_reddit_json_feed_compatibility_user_fastpath_and_live_webhook_redaction():
+    """Pins `.json?feed=` compatibility (both `REDDIT_FEED_TOKEN` input & `.json` wire payload
+    parsing + circuit-broken fallback), `kind='user'` 1-request fast path on default `DEFAULT_REDDIT`,
+    and live `WebhookClient._request()` webhook path-token redaction:
+    1. `format_reddit_feed_query()` + `gamexpress validate` accept `https://old.reddit.com/.json?feed=...`,
+       `https://www.reddit.com/.json?feed=...`, `https://reddit.com/.json?feed=...`, `/r/<sub>/.json?feed=...`,
+       and `/user/<account>/submitted.json?feed=...` identically to `.rss?feed=...`.
+    2. `parse_reddit_json()` parses both Reddit `Listing` JSON (`/.json?feed=...`, `/r/<sub>/new.json`,
+       `/user/<acc>/submitted.json`) and `[post_listing, comment_listing]` single-post thread JSON
+       (`/r/<sub>/comments/<id>.json?limit=25&raw_json=1&feed=...`), extracting multi-image galleries
+       (`gallery_data` + `media_metadata`) in page order and merging OP `t1_` comments; `RedditClient`
+       keeps `.rss?feed=...` primary (`0` extra requests when `.rss` works) and falls back cleanly to
+       `.json?limit=25&raw_json=1&feed=...` with a 1-strike per-run circuit breaker when `.rss` fails.
+    3. Bug #26: On default `DEFAULT_REDDIT` (`REDDIT_INSTANCES` unset) with `REDDIT_FEED_TOKEN` set,
+       `rc.user('genshinimpact')` (`kind='user'`) hoists `[0] https://www.reddit.com` ->
+       `[1] https://old.reddit.com` and completes in a single 1-request fast path instead of fanning
+       out to 3 public Redlib HTML mirrors first.
+    4. Bug #27: `WebhookClient._request()` strips `/webhooks/<id>/<token>` across live exception logs
+       and `SendResult.error` so secret webhook path tokens inside `GE_SECRETS_JSON` can never leak into
+       logs or `state/state.json`."""
+    import aiohttp
+
+    from gamexpress import schedule
+    from gamexpress.config import load_settings
+    from gamexpress.discord import WebhookClient
+    from gamexpress.sources.reddit import RedditClient, format_reddit_feed_query, parse_reddit_json
+
+    dummy = "0123456789abcdef0123456789abcdef01234567"
+    expected = f"feed={dummy}&user=example_user"
+
+    # 1. `.json?feed=` URL variants normalize identically to `feed=<key>&user=<user>`
+    for json_link in (
+        f"https://old.reddit.com/.json?feed={dummy}&user=example_user",
+        f"https://www.reddit.com/.json?feed={dummy}&user=example_user",
+        f"https://reddit.com/.json?feed={dummy}&user=example_user",
+        f"https://old.reddit.com/.json?user=example_user&feed={dummy}",
+        f"https://www.reddit.com/.json?user=example_user&feed={dummy}",
+        f"https://www.reddit.com/r/Genshin_Impact/new.json?feed={dummy}&user=example_user",
+        f"https://old.reddit.com/user/genshinimpact/submitted.json?feed={dummy}&user=example_user",
+        f"old.reddit.com/.json?feed={dummy}&user=example_user",
+        f"www.reddit.com/.json?feed={dummy}&user=example_user",
+    ):
+        assert format_reddit_feed_query(json_link) == expected, f"failed on {json_link!r}"
+
+    # 2. Bug #26: `rc.user(...)` on DEFAULT `DEFAULT_REDDIT` hoists `www.reddit.com` to slot 0 (`1` call!)
+    user_calls: list[str] = []
+    min_atom = """<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom"><entry>
+      <id>t3_1fastuser</id>
+      <title>Version 7.3 Special Program Preview</title>
+      <link href="https://www.reddit.com/r/Genshin_Impact/comments/1fastuser/version_73/"/>
+      <author><name>/u/genshinimpact</name></author>
+      <updated>2026-10-22T07:00:00+00:00</updated>
+      <content type="html">&lt;div class="md"&gt;&lt;p&gt;Premieres on 2026-11-20 at 08:00 (UTC-4)!&lt;/p&gt;&lt;/div&gt;</content>
+    </entry></feed>"""
+
+    class _DefaultFleetUserFetcher:
+        async def get_text(self, url, **kw):
+            user_calls.append(url)
+            if url == f"https://www.reddit.com/user/genshinimpact/submitted.rss?{expected}":
+                return min_atom
+            return None
+
+        async def get_json(self, url, **kw):
+            return None
+
+    rc_user = RedditClient(
+        _DefaultFleetUserFetcher(),
+        load_settings({"REDDIT_FEED_TOKEN": f"https://www.reddit.com/.json?feed={dummy}&user=example_user"}),
+    )
+    assert rc_user._eligible_instances(kind="user")[:2] == ["https://www.reddit.com", "https://old.reddit.com"]
+    u_entries = asyncio.run(rc_user.user("genshinimpact"))
+    assert u_entries and u_entries[0]["id"] == "1fastuser"
+    assert user_calls == [f"https://www.reddit.com/user/genshinimpact/submitted.rss?{expected}"]
+
+    # 3. `parse_reddit_json()` + zero-waste `.json?limit=25&raw_json=1&{feed_q}` fallback + circuit breaker
+    listing_json = {
+        "kind": "Listing",
+        "data": {
+            "children": [
+                {
+                    "kind": "t3",
+                    "data": {
+                        "id": "1jsongal",
+                        "subreddit": "Genshin_Impact",
+                        "author": "genshinimpact",
+                        "title": "Version 7.3 Special Program Preview",
+                        "selftext": "",
+                        "permalink": "/r/Genshin_Impact/comments/1jsongal/version_73_special_program_preview/",
+                        "created_utc": 1792652400,
+                        "is_gallery": True,
+                        "gallery_data": {"items": [{"media_id": "g1"}, {"media_id": "g2"}]},
+                        "media_metadata": {
+                            "g1": {"status": "valid", "s": {"u": "https://preview.redd.it/g1.jpg?width=1920&amp;auto=webp"}},
+                            "g2": {"status": "valid", "s": {"u": "https://preview.redd.it/g2.jpg?width=1920&amp;auto=webp"}},
+                        },
+                    },
+                }
+            ]
+        },
+    }
+    thread_json = [
+        listing_json,
+        {
+            "kind": "Listing",
+            "data": {
+                "children": [
+                    {
+                        "kind": "t1",
+                        "data": {
+                            "id": "c_op_json",
+                            "author": "genshinimpact",
+                            "body": "The special program for Genshin Impact's new version will premiere on 2026-11-20 at 08:00 (UTC-4)!\nhttps://www.youtube.com/@GenshinImpact",
+                        },
+                    },
+                    {
+                        "kind": "t1",
+                        "data": {
+                            "id": "c_fan_json",
+                            "author": "random_traveler",
+                            "body": "Can't wait for 2026-12-25 at 00:00 (UTC-4)!",
+                        },
+                    },
+                ]
+            },
+        },
+    ]
+    parsed_thread = parse_reddit_json(thread_json)
+    assert len(parsed_thread) == 1
+    assert parsed_thread[0]["images"] == [
+        "https://preview.redd.it/g1.jpg?width=1920&auto=webp",
+        "https://preview.redd.it/g2.jpg?width=1920&auto=webp",
+    ]
+    assert "2026-11-20 at 08:00 (UTC-4)" in parsed_thread[0]["text"]
+    assert "2026-12-25" not in parsed_thread[0]["text"]
+
+    json_calls: list[str] = []
+
+    class _JsonFallbackFetcher:
+        async def get_text(self, url, **kw):
+            return None
+
+        async def get_json(self, url, **kw):
+            json_calls.append(url)
+            if "/user/genshinimpact/submitted.json?" in url:
+                return listing_json
+            if "/r/Genshin_Impact/comments/1jsongal.json?" in url:
+                return thread_json
+            return None
+
+    rc_json_fb = RedditClient(
+        _JsonFallbackFetcher(),
+        load_settings({
+            "REDDIT_FEED_TOKEN": f"https://old.reddit.com/.json?feed={dummy}&user=example_user",
+            "REDDIT_INSTANCES": "https://old.reddit.com,https://www.reddit.com",
+            "REDDIT_PROXIES": "",
+        }),
+    )
+    fb_items = asyncio.run(rc_json_fb.items(GAMES["genshin"], schedule.wants(GAMES["genshin"]), 0))
+    assert len(fb_items) == 1
+    assert len(fb_items[0].images) == 2
+    ext_fb = schedule.extract(GAMES["genshin"], fb_items[0])
+    assert ext_fb is not None and ext_fb.version == "7.3" and ext_fb.fields["program_ts"] == 1795176000
+
+    # Circuit breaker: if `.json` ALSO fails (403 on cloud runner IP), `_json_feed_blocked` trips on the
+    # very first failure so subsequent calls in the same run make `0` `.json` requests!
+    blocked_json_calls: list[str] = []
+
+    class _BlockedJsonFetcher:
+        async def get_text(self, url, **kw):
+            return None
+
+        async def get_json(self, url, **kw):
+            blocked_json_calls.append(url)
+            return None
+
+    rc_blocked = RedditClient(
+        _BlockedJsonFetcher(),
+        load_settings({
+            "REDDIT_FEED_TOKEN": f"https://www.reddit.com/.json?feed={dummy}&user=example_user",
+            "REDDIT_INSTANCES": "https://www.reddit.com,https://old.reddit.com",
+        }),
+    )
+    assert asyncio.run(rc_blocked.subreddit("Genshin_Impact")) is None
+    assert asyncio.run(rc_blocked.subreddit("HonkaiStarRail")) is None
+    assert len(blocked_json_calls) == 1
+
+    # 4. Bug #27: Live `WebhookClient._request()` never leaks `/webhooks/<id>/<token>` in `SendResult.error`
+    secret_tok = "SuperSecretWebhookTokenValue_XYZ987654321"
+    hook_url = f"https://discord.com/api/webhooks/123456789012345678/{secret_tok}"
+
+    class _ExplodingSession:
+        def request(self, method, url, **kw):
+            class _Ctx:
+                async def __aenter__(self):
+                    raise aiohttp.ClientPayloadError(f"broken pipe writing to {url}")
+
+                async def __aexit__(self, *args):
+                    return False
+
+            return _Ctx()
+
+    wc = WebhookClient(_ExplodingSession(), dry_run=False)
+    res_amb = asyncio.run(
+        wc.send(
+            hook_url,
+            {"flags": 32768, "components": [{"type": 17, "components": [{"type": 10, "content": "hi"}]}]},
+            stop_on_ambiguous=True,
+        )
+    )
+    assert res_amb.ambiguous is True
+    assert secret_tok not in (res_amb.error or "")
+
+
 if __name__ == "__main__":
     sys.exit(main())

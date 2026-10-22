@@ -51,6 +51,11 @@ def _split(url: str) -> tuple[str, dict]:
     return base, keep
 
 
+def _redact_webhook(value: object) -> str:
+    """Redact `/webhooks/<id>/<token>` path secrets in logs and persisted error strings."""
+    return re.sub(r"/webhooks/[^/\s?#]+/[^\s/?#)'\"]+", "/webhooks/…", str(value))
+
+
 def _is_non_retryable_pre_send_error(exc: BaseException) -> bool:
     """True when URL validation fails locally before opening any network connection."""
     return isinstance(exc, (aiohttp.InvalidURL, aiohttp.NonHttpUrlClientError)) and not isinstance(
@@ -111,7 +116,7 @@ class WebhookClient:
             # The fingerprint, never the URL: it is enough to tell two destinations apart (which
             # is what the fan-out tests assert) and it cannot be turned back into a secret.
             self.sent.append({"method": method, "payload": payload, "fp": webhook_fingerprint(url)})
-            log.info("DRY RUN %s %s\n%s", method, re.sub(r"/webhooks/\d+/[\w-]+", "/webhooks/…", url),
+            log.info("DRY RUN %s %s\n%s", method, _redact_webhook(url),
                      json.dumps(payload, ensure_ascii=False)[:1500])
             return SendResult(True, 200, message_id="dry-run")
         await self._pace()
@@ -124,17 +129,18 @@ class WebhookClient:
                     try:
                         body = await r.text()
                     except (aiohttp.ClientError, asyncio.TimeoutError, UnicodeDecodeError) as e:
+                        safe_err = _redact_webhook(e)
                         if stop_on_ambiguous and method == "POST" and (status == 0 or 200 <= status < 400):
                             log.warning(
                                 "Discord POST response body read failed after HTTP %s (%s)"
                                 " — holding as ambiguous without retry",
                                 status,
-                                e,
+                                safe_err,
                             )
                             return SendResult(
                                 False,
                                 status,
-                                error=f"response body read failed after HTTP {status}: {e}",
+                                error=f"response body read failed after HTTP {status}: {safe_err}",
                                 ambiguous=True,
                             )
                         if isinstance(e, UnicodeDecodeError):
@@ -170,23 +176,24 @@ class WebhookClient:
                         await asyncio.sleep(delay)
                         delay *= 2
                         continue
-                    return SendResult(False, status, error=body[:500])
+                    return SendResult(False, status, error=_redact_webhook(body)[:500])
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                safe_err = _redact_webhook(e)
                 if stop_on_ambiguous:
                     if _is_non_retryable_pre_send_error(e):
-                        return SendResult(False, 0, error=str(e), ambiguous=False)
+                        return SendResult(False, 0, error=safe_err, ambiguous=False)
                     if method == "POST" and not _is_definite_pre_send_error(e):
                         log.warning(
                             "Discord POST outcome indeterminate (%s) — holding as ambiguous without retry",
-                            e,
+                            safe_err,
                         )
                         return SendResult(
                             False,
                             0,
-                            error=f"indeterminate POST outcome: {e}",
+                            error=f"indeterminate POST outcome: {safe_err}",
                             ambiguous=True,
                         )
-                log.warning("Discord request error %s — retry %d", e, attempt + 1)
+                log.warning("Discord request error %s — retry %d", safe_err, attempt + 1)
                 await asyncio.sleep(delay)
                 delay *= 2
         return SendResult(False, 0, error="gave up after retries")

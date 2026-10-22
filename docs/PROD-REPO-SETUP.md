@@ -277,7 +277,7 @@ Webhooks).
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_HNA` | **set on dev** | |
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ANANTA` | **set on dev** | |
 | `NITTER_RSS_TOKEN` | optional | same single token as News-Express — automatically unlocks **both** `nitter.miningtcup.me` (X) and `redlib.miningtcup.me` (Reddit/Redlib). No separate secret name is needed for `miningtcup` |
-| `REDDIT_FEED_TOKEN` | optional | from `old.reddit.com/prefs/feeds/`: paste `<40-char-key>&user=<your_username>` (everything after `?feed=`, exact same format as News-Express; `?feed=…` or the full `https://old.reddit.com/.rss?feed=…&user=…` URL also normalizes automatically) |
+| `REDDIT_FEED_TOKEN` | optional | from `old.reddit.com/prefs/feeds/`: paste `<40-char-key>&user=<your_username>` (everything after `?feed=`, exact same format as News-Express; `?feed=…` or any full `.rss?feed=…` / `.json?feed=…` link on `old.reddit.com` / `www.reddit.com` / `reddit.com` also normalizes automatically) |
 | `DISCORD_WEBHOOK_MAINTENANCE_<GAME>` | optional | dedicated webhook per game when `MAINTENANCE_ENABLED=1` (`GENSHIN`, `STARRAIL`, `ZZZ`, `WUWA`, `HNA`, `ANANTA`) |
 | `BUMP_PAT` | yes, if you keep `python_version_bump.yml` | a PAT with **Workflows: read and write**. Without it the weekly bump validates fine and then fails on the push — see below |
 | `DISCORD_WEBHOOK_CODES` | optional | catch-all for games without their own channel |
