@@ -51,7 +51,7 @@ from ..config import DEFAULT_REDDIT_ARCHIVE, Game, Settings
 from ..http import Fetcher
 from ..models import CodeHit, Item
 from ..textutil import clean_text, dedupe, find_urls, find_versions, html_to_text
-from .codes import extract_codes_from_text
+from .codes import extract_codes_from_text, sanitize
 
 log = logging.getLogger("gamexpress.reddit")
 
@@ -97,6 +97,15 @@ _CHALLENGE_MARKERS = (
     "502 bad gateway",
 )
 _OFFICIAL_FLAIR_RE = re.compile(r"\bofficial\b", re.I)
+# Official publisher mod-bot accounts whose `/user/<name>` overview page is empty on Reddit/Redlib,
+# so they are matched on `/r/<sub>` without wasting requests polling `/user/<name>`.
+SUBREDDIT_OFFICIAL_AUTHORS: dict[str, frozenset[str]] = {
+    "wutheringwaves": frozenset({"wutheringwavesmod"}),
+}
+_HOYO_REDEEM_LINK_RE = re.compile(
+    r"https?://(?:genshin|hsr|zenless)\.hoyoverse\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?(?:gift|redemption)/?\?(?:[^#\s]*&)?code=([A-Za-z0-9]{5,20})\b",
+    re.I,
+)
 _COMPONENT_SCRIPT_RE = re.compile(
     r'<script[^>]*\bid=["\']discord:component-embed["\'][^>]*>(.*?)</script>',
     re.I | re.S,
@@ -149,13 +158,14 @@ def canonical_post_url(subreddit: str, post_id: str, slug_part: str = "") -> str
 def format_reddit_feed_query(raw_token: str) -> str:
     """Normalize `REDDIT_FEED_TOKEN` into an encoded `feed=...` (+ optional `&user=...`) query.
 
-    Accepts any form copied from `old.reddit.com/prefs/feeds/`:
-      * `<40-hex>&user=<username>` (the exact value used by `News-Express`)
-      * `<40-hex>`
-      * `?feed=<40-hex>&user=<username>` or `feed=<40-hex>&user=<username>`
+    Accepts any form copied from `old.reddit.com/prefs/feeds/` (including wrapping quotes or
+    HTML `&amp;` entities):
       * `https://old.reddit.com/.rss?feed=<40-hex>&user=<username>`
+      * `<40-hex>&user=<username>` (the exact value used by `News-Express`)
+      * `?feed=<40-hex>&user=<username>` or `feed=<40-hex>&user=<username>`
+      * `<40-hex>`
     """
-    tok = (raw_token or "").strip()
+    tok = html.unescape((raw_token or "").strip()).strip("\"'").strip()
     if not tok:
         return ""
     if tok.lower().startswith(("http://", "https://")):
@@ -170,6 +180,14 @@ def format_reddit_feed_query(raw_token: str) -> str:
     if not pairs or not any(k.lower() == "feed" for k, _ in pairs):
         return ""
     return urlencode(pairs)
+
+
+def _is_official_subreddit_post(game: Game, entry: dict) -> bool:
+    official_set = {a.lower() for a in game.reddit_official}
+    sub = (entry.get("subreddit") or "").lower()
+    official_set |= SUBREDDIT_OFFICIAL_AUTHORS.get(sub, frozenset())
+    author = (entry.get("author") or "").lower()
+    return bool((author and author in official_set) or _OFFICIAL_FLAIR_RE.search(entry.get("flair") or ""))
 
 
 def _parse_created_ts(raw: str | None) -> int:
@@ -421,7 +439,7 @@ def parse_reddit_rss(xml_text: str) -> list[dict]:
             e.get("summary") or e.get("description") or ""
         )
         text, links, imgs = html_to_text(html_body)
-        text = re.sub(r"\s*submitted by\s+/u/\S+\s*\[link\]\s*\[comments\]\s*$", "", text, flags=re.I).strip()
+        text = re.sub(r"\s*(?:submitted by\s+/?u/\S+\s*)?\[link\]\s*\[comments\]\s*$", "", text, flags=re.I).strip()
         images: list[str] = []
         for u in links + imgs:
             cu = redlib_media_to_reddit(u)
@@ -636,7 +654,7 @@ class RedditClient:
             if for_post_detail and inst in REDDIT_LISTING_ONLY:
                 continue
             out.append(inst)
-        if kind == "sub" and self.settings.reddit_token and "https://www.reddit.com" in out:
+        if kind == "sub" and format_reddit_feed_query(self.settings.reddit_token) and "https://www.reddit.com" in out:
             out.remove("https://www.reddit.com")
             out.insert(0, "https://www.reddit.com")
         return out
@@ -644,13 +662,10 @@ class RedditClient:
     async def _fetch_listing_on(self, inst: str, kind: str, target: str) -> list[dict] | None:
         """Fetch one subreddit (`kind='sub'`) or user (`kind='user'`) listing from `inst`."""
         if inst in OFFICIAL_RSS_HOSTS:
-            if kind == "sub":
-                url = f"{inst}/r/{target}/new.rss"
-                feed_q = format_reddit_feed_query(self.settings.reddit_token)
-                if inst == "https://www.reddit.com" and feed_q:
-                    url = f"{url}?{feed_q}"
-            else:
-                url = f"{inst}/user/{target}/submitted.rss"
+            feed_q = format_reddit_feed_query(self.settings.reddit_token)
+            url = f"{inst}/r/{target}/new.rss" if kind == "sub" else f"{inst}/user/{target}/submitted.rss"
+            if feed_q:
+                url = f"{url}?{feed_q}"
             body = await self._get_text(
                 url, source="reddit", headers={"User-Agent": BROWSER_UA}, retries=0, timeout=REDDIT_TIMEOUT
             )
@@ -722,7 +737,12 @@ class RedditClient:
         # Single-request fast path when `REDDIT_FEED_TOKEN` is configured: Reddit's own first-party
         # authenticated `/r/<sub>/new.rss?feed=...` feed needs only 1 HTTP request and avoids hitting
         # any public Redlib mirror unless the official RSS call fails.
-        if kind == "sub" and self.settings.reddit_token and fleet and fleet[0] == "https://www.reddit.com":
+        if (
+            kind == "sub"
+            and format_reddit_feed_query(self.settings.reddit_token)
+            and fleet
+            and fleet[0] == "https://www.reddit.com"
+        ):
             direct = await self._fetch_listing_on("https://www.reddit.com", kind, target)
             if direct is not None:
                 return sorted(direct, key=lambda x: x.get("ts") or 0, reverse=True)
@@ -956,19 +976,29 @@ class RedditClient:
         return best
 
     async def items(self, game: Game, want: Callable[[str], bool], since_ts: int) -> list[Item]:
-        """Official publisher posts from `game.reddit_official` matching `want` since `since_ts`."""
-        if not self.settings.reddit_enabled or not game.reddit_official:
+        """Official publisher posts matching `want` since `since_ts`."""
+        if not self.settings.reddit_enabled or (not game.reddit_official and not game.subreddits):
             return []
         allowed_subs = {s.lower() for s in game.subreddits}
-        allowed_authors = {a.lower() for a in game.reddit_official}
-        feeds = await asyncio.gather(*(self.user(acc) for acc in game.reddit_official))
+        if game.reddit_official:
+            allowed_authors = {a.lower() for a in game.reddit_official}
+            feeds = await asyncio.gather(*(self.user(acc) for acc in game.reddit_official))
+            from_sub_fallback = False
+        else:
+            allowed_authors = set()
+            feeds = await asyncio.gather(*(self.subreddit(sub) for sub in game.subreddits))
+            from_sub_fallback = True
         out: list[Item] = []
         seen: set[str] = set()
+        resolved_budget = 2
         for entries in feeds:
             for e in entries or []:
                 if e["id"] in seen:
                     continue
-                if e.get("author") and e["author"].lower() not in allowed_authors:
+                if from_sub_fallback:
+                    if not _is_official_subreddit_post(game, e):
+                        continue
+                elif e.get("author") and e["author"].lower() not in allowed_authors:
                     continue
                 if allowed_subs and e.get("subreddit", "").lower() not in allowed_subs:
                     continue
@@ -977,6 +1007,16 @@ class RedditClient:
                 combined = f"{e.get('title') or ''}\n{e.get('text') or ''}".strip()
                 if not want(combined):
                     continue
+                text_body = e.get("text") or ""
+                images = list(e.get("images") or [])
+                links = list(e.get("links") or [])
+                if not text_body.strip() and resolved_budget > 0 and e.get("subreddit") and e.get("id"):
+                    resolved_budget -= 1
+                    detail = await self.resolve_post(e["subreddit"], e["id"])
+                    if detail:
+                        text_body = detail.get("text") or text_body
+                        images = dedupe(list(detail.get("images") or []) + images)
+                        links = dedupe(list(detail.get("links") or []) + links)
                 seen.add(e["id"])
                 out.append(Item(
                     source="reddit",
@@ -984,10 +1024,10 @@ class RedditClient:
                     id=e["id"],
                     url=e["url"],
                     title=e.get("title") or "",
-                    text=e.get("text") or "",
+                    text=text_body,
                     published_ts=int(e.get("ts") or 0),
-                    images=list(e.get("images") or []),
-                    links=list(e.get("links") or []),
+                    images=images,
+                    links=links,
                     author=e.get("author") or "",
                 ))
         return out
@@ -1001,10 +1041,9 @@ class RedditClient:
         candidates: list[dict] = []
         for acc in game.reddit_official:
             candidates.extend(await self.user(acc) or [])
-        official_set = {a.lower() for a in game.reddit_official}
         for sub in game.subreddits:
             for e in await self.subreddit(sub) or []:
-                if e.get("author", "").lower() in official_set or _OFFICIAL_FLAIR_RE.search(e.get("flair") or ""):
+                if _is_official_subreddit_post(game, e):
                     candidates.append(e)
 
         found: dict | None = None
@@ -1071,7 +1110,14 @@ class RedditClient:
         seen: set[str] = set()
         for e in entries:
             blob = f"{e.get('title') or ''}\n{e.get('text') or ''}"
-            for code in extract_codes_from_text(blob):
+            found_codes = list(extract_codes_from_text(blob))
+            for link in e.get("links") or []:
+                m = _HOYO_REDEEM_LINK_RE.match(str(link or "").strip())
+                if m:
+                    clean_code = sanitize(m.group(1))
+                    if clean_code:
+                        found_codes.append(clean_code)
+            for code in found_codes:
                 if code not in seen:
                     seen.add(code)
                     hits.append(CodeHit(code, "reddit", None))

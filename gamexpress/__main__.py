@@ -291,15 +291,18 @@ def cmd_speculate(args) -> int:
 
 
 def cmd_validate(_args) -> int:
+    from .sources.reddit import format_reddit_feed_query
+
     settings = load_settings()
     games = load_games()
+    feed_q = format_reddit_feed_query(settings.reddit_token)
     print(f"Game-Express {build_id()} | features={sorted(settings.features) or 'NONE'} | "
           f"instance={settings.instance_name} ({settings.instance_role}) | dry_run={settings.dry_run}")
     print(f"peer_state_url={'set' if settings.peer_state_url else '—'} | X={'on' if settings.x_enabled else 'off'} "
           f"| nitter instances={len(settings.nitter_instances)} | token={'set' if settings.nitter_token else '—'}")
     print(f"Reddit={'on' if settings.reddit_enabled else 'off'} "
           f"| reddit instances={len(settings.reddit_instances)} | proxies={len(settings.reddit_proxies)} "
-          f"| feed_token={'set' if settings.reddit_token else '—'}")
+          f"| feed_token={'set' if feed_q else ('invalid' if settings.reddit_token else '—')}")
     print(f"news={'on' if 'news' in settings.features else 'off'} | news games={','.join(sorted(settings.news_games))} "
           f"| article count cap=none "
           f"| timestamps={'on' if settings.news_timestamps else 'off'} "
@@ -341,6 +344,10 @@ def cmd_validate(_args) -> int:
               f"code_sources={','.join(g.codes.get('sources', [])) or '—'} "
               f"4★/phase={g.four_star_count or 'count not set (set four_star_count at launch)'}")
     valid_bools = {"1", "true", "yes", "on", "y", "0", "false", "no", "off", "n"}
+    if settings.reddit_token and not feed_q:
+        print("  ! REDDIT_FEED_TOKEN has no usable 'feed=...' key "
+              "(expected https://old.reddit.com/.rss?feed=<40-char-key>&user=<username> or <40-char-key>&user=<username>)")
+        ok = False
     for name in (
         "REDDIT_ENABLED",
         "NEWS_ENABLED",

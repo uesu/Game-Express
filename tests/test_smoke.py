@@ -13738,5 +13738,139 @@ def test_reddit_zero_waste_schedule_failover_single_request_feed_token_and_share
             assert reddit_spy.await_count == 1
 
 
+def test_final_edge_case_audit_reddit_token_variants_wuwa_rss_op_comment_and_redeem_links():
+    """Pins five real edge-case bugs caught during final pre-merge audit (`2026-10-22`):
+    1. `format_reddit_feed_query` + `cmd_validate`: unescapes `&amp;user=...`, strips wrapping `.env`
+       quotes (`"https://old.reddit.com/.rss?..."`), refuses to promote unauthenticated `www.reddit.com`
+       on malformed non-feed URLs (`https://old.reddit.com/prefs/feeds/`), and flags invalid tokens in
+       `gamexpress validate`.
+    2. Official RSS token coverage: attaches `?{feed_q}` on BOTH `www.reddit.com` AND `old.reddit.com`
+       (both `/r/<sub>/new.rss` and `/user/<account>/submitted.rss`) when `REDDIT_FEED_TOKEN` is valid.
+    3. `wuwa` (`official: []`, `r/WutheringWaves`): both `RedditClient.items()` and `program_post()`
+       recognize `u/WutheringWavesMod` even on `www.reddit.com` Atom RSS where post `flair` is `""`.
+    4. `RedditClient.items()`: resolves up to 2 empty-body official image announcements via
+       `/r/<sub>/comments/<id>/` so `schedule.extract()` gets OP's pinned comment timestamps + key art.
+    5. `RedditClient.community_codes()`: extracts codes from hyperlinked official `hoyoverse.com`
+       gift/redemption URLs while generating `0` false positives on YouTube/X/Discord/Imgur links."""
+    import io
+    from contextlib import redirect_stdout
+    from unittest.mock import patch
+
+    from gamexpress import __main__ as cli_main
+    from gamexpress import schedule
+    from gamexpress.config import load_settings
+    from gamexpress.sources.reddit import RedditClient, format_reddit_feed_query
+
+    dummy_key = "0123456789abcdef0123456789abcdef01234567"
+    expected_q = f"feed={dummy_key}&user=example_user"
+
+    # 1. HTML `&amp;` entity + `.env` single/double quotes + malformed prefs URL guard
+    assert format_reddit_feed_query(f"https://old.reddit.com/.rss?feed={dummy_key}&amp;user=example_user") == expected_q
+    assert format_reddit_feed_query(f'"{dummy_key}&amp;user=example_user"') == expected_q
+    assert format_reddit_feed_query(f"'https://old.reddit.com/.rss?feed={dummy_key}&user=example_user'") == expected_q
+    assert format_reddit_feed_query("https://old.reddit.com/prefs/feeds/") == ""
+
+    bad_st = load_settings({"REDDIT_FEED_TOKEN": "https://old.reddit.com/prefs/feeds/"})
+    bad_rc = RedditClient(None, bad_st)
+    assert bad_rc._eligible_instances(kind="sub")[0] != "https://www.reddit.com"
+
+    buf_bad = io.StringIO()
+    with patch.object(cli_main, "load_settings", return_value=bad_st), redirect_stdout(buf_bad):
+        rc_exit_bad = cli_main.cmd_validate(None)
+    assert rc_exit_bad == 1 and "REDDIT_FEED_TOKEN" in buf_bad.getvalue()
+
+    good_st = load_settings({"REDDIT_FEED_TOKEN": f"https://old.reddit.com/.rss?feed={dummy_key}&user=example_user"})
+    buf_good = io.StringIO()
+    with patch.object(cli_main, "load_settings", return_value=good_st), redirect_stdout(buf_good):
+        rc_exit_good = cli_main.cmd_validate(None)
+    assert rc_exit_good == 0 and "feed_token=set" in buf_good.getvalue()
+
+    # 2 + 3 + 4: `wuwa` image announcement on `www.reddit.com/r/WutheringWaves/new.rss?feed=...`
+    # (where Atom RSS has `flair=""` and `text=""`) falls back cleanly when `www.reddit.com` 503s to
+    # authenticated `old.reddit.com`, resolves OP's pinned comment on Redlib, and feeds BOTH
+    # `RedditClient.items()` AND `RedditClient.program_post()`!
+    wuwa_rss = """<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom"><entry>
+      <id>t3_1xc7b4o</id>
+      <title>Wuthering Waves Version 3.8 Special Broadcast Preview</title>
+      <link href="https://www.reddit.com/r/WutheringWaves/comments/1xc7b4o/wuwa_38_broadcast/"/>
+      <author><name>/u/WutheringWavesMod</name></author>
+      <category term="WutheringWaves" label="r/WutheringWaves"/>
+      <updated>2026-10-22T04:00:00+00:00</updated>
+      <content type="html">&lt;table&gt;&lt;tr&gt;&lt;td&gt;&lt;a href="https://i.redd.it/wuwa38art.jpg"&gt;[link]&lt;/a&gt; &lt;a href="https://www.reddit.com/r/WutheringWaves/comments/1xc7b4o/wuwa_38_broadcast/"&gt;[comments]&lt;/a&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</content>
+    </entry></feed>"""
+
+    wuwa_thread_html = """<!DOCTYPE html><html><head><title>WW 3.8 - Redlib</title></head><body>
+      <div class="post" id="1xc7b4o">
+        <a class="post_subreddit" href="/r/WutheringWaves">r/WutheringWaves</a>
+        <a class="post_author" href="/user/WutheringWavesMod">u/WutheringWavesMod</a>
+        <span class="created" title="Oct 22 2026, 04:00:00 UTC">1h ago</span>
+        <h1 class="post_title"><a href="/r/WutheringWaves/comments/1xc7b4o/wuwa_38_broadcast/">
+          Wuthering Waves Version 3.8 Special Broadcast Preview</a></h1>
+        <div class="post_media_content">
+          <a class="post_media_image" href="/img/wuwa38art.jpg"><img src="/preview/pre/wuwa38art.jpg"/></a>
+        </div>
+      </div>
+      <div class="comment" id="c_wuwa_op">
+        <a class="comment_author op" href="/user/WutheringWavesMod">u/WutheringWavesMod</a>
+        <div class="comment_body"><p>Wuthering Waves Version 3.8 Special Broadcast will air on 2026-11-13 at 19:00 (UTC+8)! Watch at <a href="https://www.youtube.com/watch?v=wuwa38live1">YouTube</a>.</p></div>
+      </div>
+    </body></html>"""
+
+    seen_urls: list[str] = []
+
+    class _WuwaAuditFetcher:
+        async def get_text(self, url, **kw):
+            seen_urls.append(url)
+            if url == f"https://old.reddit.com/r/WutheringWaves/new.rss?{expected_q}":
+                return wuwa_rss
+            if "/r/WutheringWaves/comments/1xc7b4o/" in url:
+                return wuwa_thread_html
+            return None
+
+        async def get_json(self, url, **kw):
+            return None
+
+    wuwa_st = load_settings({
+        "REDDIT_FEED_TOKEN": f"https://old.reddit.com/.rss?feed={dummy_key}&amp;user=example_user",
+        "REDDIT_INSTANCES": "https://www.reddit.com,https://old.reddit.com,https://snoo.habedieeh.re",
+    })
+    rc_wuwa = RedditClient(_WuwaAuditFetcher(), wuwa_st)
+    items = asyncio.run(rc_wuwa.items(GAMES["wuwa"], schedule.wants(GAMES["wuwa"]), 0))
+    assert len(items) == 1
+    assert items[0].id == "1xc7b4o"
+    extracted = schedule.extract(GAMES["wuwa"], items[0])
+    assert extracted is not None and extracted.version == "3.8" and extracted.fields["program_ts"] == 1794567600
+    prog = asyncio.run(rc_wuwa.program_post(GAMES["wuwa"], "3.8"))
+    assert prog is not None and prog.id == "1xc7b4o" and "2026-11-13" in prog.text
+    assert f"https://old.reddit.com/r/WutheringWaves/new.rss?{expected_q}" in seen_urls
+
+    # 5: Hyperlinked official `hoyoverse.com` gift links yield codes with `0` false positives on noise URLs
+    hyperlink_rss = """<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom"><entry>
+      <id>t3_1xlinks</id><title>7.2 Stream Direct Redemption Links!</title>
+      <link href="https://www.reddit.com/r/Genshin_Impact/comments/1xlinks/links/"/>
+      <author><name>/u/helper</name></author><updated>2026-10-22T04:00:00+00:00</updated>
+      <content type="html">&lt;div class="md"&gt;
+        &lt;p&gt;&lt;a href="https://genshin.hoyoverse.com/en/gift?code=GENSHIN72GIFT1"&gt;Code 1 — Click Here&lt;/a&gt;&lt;/p&gt;
+        &lt;p&gt;&lt;a href="https://hsr.hoyoverse.com/gift?code=STARRAIL47GIFT"&gt;Code 2 — Click Here&lt;/a&gt;&lt;/p&gt;
+        &lt;p&gt;&lt;a href="https://zenless.hoyoverse.com/redemption?code=ZENLESS34GIFT"&gt;Code 3 — Click Here&lt;/a&gt;&lt;/p&gt;
+        &lt;p&gt;&lt;a href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"&gt;Stream Link&lt;/a&gt;&lt;/p&gt;
+        &lt;p&gt;&lt;a href="https://discord.gg/HyrVP9wRXu"&gt;Community&lt;/a&gt;&lt;/p&gt;
+      &lt;/div&gt;</content>
+    </entry></feed>"""
+
+    class _LinkCodeFetcher:
+        async def get_text(self, url, **kw):
+            return hyperlink_rss
+
+        async def get_json(self, url, **kw):
+            return None
+
+    rc_links = RedditClient(_LinkCodeFetcher(), good_st)
+    link_hits = asyncio.run(rc_links.community_codes("Genshin_Impact"))
+    assert [h.code for h in (link_hits or [])] == ["GENSHIN72GIFT1", "STARRAIL47GIFT", "ZENLESS34GIFT"]
+
+
 if __name__ == "__main__":
     sys.exit(main())
