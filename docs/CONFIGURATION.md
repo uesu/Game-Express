@@ -525,7 +525,7 @@ plus a dedicated per-game webhook secret for each opted-in game:
 | Setting | Kind | Default | Meaning |
 |---|---|---|---|
 | `MAINTENANCE_ENABLED` | Variable | `0` | Master switch; disabled unless explicitly truthy (and overridden by `ENABLED_FEATURES=none/off/standby/0`) |
-| `MAINTENANCE_GAMES` | Variable | *(empty)* | Required explicit per-game opt-in list (e.g. `genshin,starrail,zzz,wuwa,hna`); empty activates nothing |
+| `MAINTENANCE_GAMES` | Variable | *(empty)* | Required explicit per-game opt-in list (e.g. `all` or `genshin,starrail,zzz,wuwa,hna,ananta`); empty activates nothing |
 | `DISCORD_WEBHOOK_MAINTENANCE_<GAME>` | Secret | *(unset)* | Dedicated per-game channel webhook (`GENSHIN`, `STARRAIL`, `HNA`, `ZZZ`, `WUWA`, `ANANTA` + aliases); no generic/catch-all/mirror/`FORCE_WEBHOOK` fallback |
 | `PING_MAINTENANCE_<GAME>` / `PING_MAINTENANCE` | Variable | `none` | Optional per-game or feature role ping inside the headline block (`<@&ROLE>`); silent by default |
 
@@ -538,13 +538,13 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
 - **Silent baseline on first enable:** on first activation (or re-enable after pause),
   already-passed milestones and live/settled versions are marked `seeded` silently
   without posting historical announcements.
-- **Strict precedence:** official notices/tweets (`rank 40–50`) → explicit
+- **Strict precedence:** official notices/tweets/Reddit (`rank 38–50`) → explicit
   `config/overrides.json` entries → persisted first-observed launcher pre-download
   availability (`observed_preinstall_ts`, retained across polls/restarts and rendered
   with explicit observation wording rather than claiming a published start time) →
   documented cadence predictions (`rank 9`, clearly marked estimated). Holiday-shifted
   official notices always override cadence predictions, observations and stale overrides;
-  HNA never invents an unverified cadence, and unknown `maint_end_ts` omits `End Time`
+  HNA and ANANTA never invent an unverified cadence, and unknown `maint_end_ts` omits `End Time`
   rather than guessing.
 - **Components V2 card & 4-tier media priority:** single container (`flags: 32768`)
   with `[SHORT - VERSION] Pre-Load Started` / `Maintenance Started`, optional role

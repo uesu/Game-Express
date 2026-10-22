@@ -326,7 +326,7 @@ You may choose any channel names. For only GI/WuWa, use their two dedicated secr
 | `NEWS_EXPAND_FULL` | default `0` | `1` renders full long official articles across multiple Components V2 pages instead of a single excerpt card |
 | `NEWS_GROUP_LONG_STRIPS` | default `0` | preserve your chosen setting; no rollout implied |
 | `MAINTENANCE_ENABLED` | default `0` | `1` enables Pre-Load Started / Maintenance Started alerts for games listed in `MAINTENANCE_GAMES` |
-| `MAINTENANCE_GAMES` | default unset (none) | explicit game keys for maintenance alerts, e.g. `genshin,starrail,zzz,wuwa` |
+| `MAINTENANCE_GAMES` | default unset (none) | explicit game keys for maintenance alerts, e.g. `all` or `genshin,starrail,zzz,wuwa,hna,ananta` |
 | `AUTO_MERGE_DEPENDABOT` | **do not copy** | dev-only, there is no Dependabot in prod |
 | `AUTO_MERGE_PYTHON_BUMP` | not needed | legacy/ignored in all instances |
 
