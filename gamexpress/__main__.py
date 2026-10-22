@@ -346,7 +346,8 @@ def cmd_validate(_args) -> int:
     valid_bools = {"1", "true", "yes", "on", "y", "0", "false", "no", "off", "n"}
     if settings.reddit_token and not feed_q:
         print("  ! REDDIT_FEED_TOKEN has no usable 'feed=...' key "
-              "(expected https://old.reddit.com/.rss?feed=<40-char-key>&user=<username> or <40-char-key>&user=<username>)")
+              "(expected https://old.reddit.com/.rss?feed=<40-char-key>&user=<username>, "
+              "https://www.reddit.com/.rss?feed=<40-char-key>&user=<username>, or <40-char-key>&user=<username>)")
         ok = False
     for name in (
         "REDDIT_ENABLED",

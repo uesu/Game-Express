@@ -75,7 +75,8 @@ async def _gather_game(ctx: Ctx, g: Game, since: int) -> None:
                                  kuro.fetch_items(probe, g, want, since),
                                  ctx.x.items(g, want, since))
     items: list[Item] = [it for part in parts for it in part]
-    x_ok = any(a.lower() in ctx.x.reachable for a in g.x_accounts)
+    x_reachable = getattr(ctx.x, "reachable", ())
+    x_ok = any(a.lower() in x_reachable for a in g.x_accounts)
     has_primary_api = bool(g.hoyolab_gid or g.kuro_news)
     primary_ok = (not has_primary_api) or probe.ok > 0
     # True failover backup: when primary APIs + X both answered, skip `/user/<official>` requests

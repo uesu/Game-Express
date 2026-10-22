@@ -13872,5 +13872,212 @@ def test_final_edge_case_audit_reddit_token_variants_wuwa_rss_op_comment_and_red
     assert [h.code for h in (link_hits or [])] == ["GENSHIN72GIFT1", "STARRAIL47GIFT", "ZENLESS34GIFT"]
 
 
+def test_old_and_www_reddit_feed_urls_dual_origin_failover_post_rss_op_comment_and_maint_zero_waste():
+    """Proves full parity & edge-case coverage across `old.reddit.com`, `www.reddit.com`, and `reddit.com`:
+    1. `format_reddit_feed_query()` normalizes all first-party URL/wrapper forms identically:
+       `https://old.reddit.com/.rss?feed=...&user=...`, `https://www.reddit.com/.rss?feed=...&user=...`,
+       `https://reddit.com/.rss?feed=...&user=...`, `https://old.reddit.com/?feed=...&user=...`,
+       `https://www.reddit.com/?feed=...&user=...`, Markdown `[url](url)` pastes, `(url)` / `<url>`,
+       and scheme-less `old.reddit.com/...` / `www.reddit.com/...` / `reddit.com/...`, while rejecting
+       empty `feed=` links (`[https://www.reddit.com/.rss?feed=](https://www.reddit.com/.rss?feed=)`)
+       and unreplaced `<token>` placeholders as `""`.
+    2. With `REDDIT_FEED_TOKEN` set, `[0] https://www.reddit.com` and `[1] https://old.reddit.com`
+       form a 2-origin authenticated RSS fast path before touching any third-party Redlib host, and
+       bare `https://reddit.com` is recognized in `OFFICIAL_RSS_HOSTS`.
+    3. `parse_reddit_rss()` + `resolve_post()` merge OP's own `t1_` comment from per-post
+       `/r/<sub>/comments/<id>/.rss?feed=...&user=...` on `www.reddit.com` / `old.reddit.com` when
+       Redlib mirrors are down, and strip `[removed]` / `[deleted]` tombstones on Arctic Shift.
+    4. `maintenance._ensure_inputs_for_games()` makes `0` Reddit calls when primary APIs + X succeed,
+       and fails over to `ctx.reddit.items()` automatically when X drops."""
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import maintenance, schedule
+    from gamexpress.config import load_settings
+    from gamexpress.sources import hoyolab
+    from gamexpress.sources.reddit import RedditClient, format_reddit_feed_query, parse_reddit_rss
+
+    dummy_key = "0123456789abcdef0123456789abcdef01234567"
+    expected_q = f"feed={dummy_key}&user=example_user"
+
+    # 1. All `old.reddit.com` / `www.reddit.com` / `reddit.com` / wrapper forms -> identical query
+    for valid_input in (
+        f"https://old.reddit.com/.rss?feed={dummy_key}&user=example_user",
+        f"https://www.reddit.com/.rss?feed={dummy_key}&user=example_user",
+        f"https://reddit.com/.rss?feed={dummy_key}&user=example_user",
+        f"https://old.reddit.com/?feed={dummy_key}&user=example_user",
+        f"https://www.reddit.com/?feed={dummy_key}&user=example_user",
+        f"https://reddit.com/?feed={dummy_key}&user=example_user",
+        f"[https://www.reddit.com/.rss?feed={dummy_key}&user=example_user]"
+        f"(https://www.reddit.com/.rss?feed={dummy_key}&user=example_user)",
+        f"(https://old.reddit.com/.rss?feed={dummy_key}&user=example_user)",
+        f"<https://www.reddit.com/.rss?feed={dummy_key}&user=example_user>",
+        f"old.reddit.com/.rss?feed={dummy_key}&user=example_user",
+        f"www.reddit.com/.rss?feed={dummy_key}&user=example_user",
+        f"reddit.com/.rss?feed={dummy_key}&user=example_user",
+    ):
+        assert format_reddit_feed_query(valid_input) == expected_q, f"failed on {valid_input!r}"
+
+    # Truncated empty `feed=` links & literal `<token>` placeholders must reject cleanly as `""`
+    for invalid_input in (
+        "https://www.reddit.com/.rss?feed=",
+        "https://old.reddit.com/?feed=",
+        "[https://www.reddit.com/.rss?feed=](https://www.reddit.com/.rss?feed=)",
+        "https://old.reddit.com/.rss?feed=<token>&user=example_user",
+        "<40-char-key>&user=<username>",
+    ):
+        assert format_reddit_feed_query(invalid_input) == "", f"should reject {invalid_input!r}"
+
+    # 2. `[0] www.reddit.com -> [1] old.reddit.com` sequential fast path before Redlib mirrors
+    st_dual = load_settings({
+        "REDDIT_FEED_TOKEN": f"https://www.reddit.com/.rss?feed={dummy_key}&user=example_user",
+    })
+    fast_calls: list[str] = []
+    sample_sub_rss = """<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom"><entry>
+      <id>t3_1dual</id><title>Redemption Code: DUALREDDIT99</title>
+      <link href="https://old.reddit.com/r/Genshin_Impact/comments/1dual/code/"/>
+      <author><name>/u/genshinimpact</name></author><updated>2026-10-22T05:00:00+00:00</updated>
+      <content type="html">&lt;p&gt;Redemption Code: DUALREDDIT99&lt;/p&gt;</content>
+    </entry></feed>"""
+
+    class _DualOriginFailoverFetcher:
+        async def get_text(self, url, **kw):
+            fast_calls.append(url)
+            # Simulate `www.reddit.com` transient 503 -> immediate 1-request failover to `old.reddit.com`
+            # with zero third-party Redlib mirrors touched!
+            if url == f"https://old.reddit.com/r/Genshin_Impact/new.rss?{expected_q}":
+                return sample_sub_rss
+            return None
+
+        async def get_json(self, url, **kw):
+            return None
+
+    rc_dual = RedditClient(_DualOriginFailoverFetcher(), st_dual)
+    assert rc_dual._eligible_instances(kind="sub")[:2] == ["https://www.reddit.com", "https://old.reddit.com"]
+    dual_hits = asyncio.run(rc_dual.community_codes("Genshin_Impact"))
+    assert [h.code for h in (dual_hits or [])] == ["DUALREDDIT99"]
+    assert fast_calls == [
+        f"https://www.reddit.com/r/Genshin_Impact/new.rss?{expected_q}",
+        f"https://old.reddit.com/r/Genshin_Impact/new.rss?{expected_q}",
+    ]
+
+    # Bare `https://reddit.com` custom instance also works natively on the 1-request RSS fast path
+    bare_calls: list[str] = []
+
+    class _BareRedditFetcher:
+        async def get_text(self, url, **kw):
+            bare_calls.append(url)
+            if url == f"https://reddit.com/r/Genshin_Impact/new.rss?{expected_q}":
+                return sample_sub_rss
+            return None
+
+        async def get_json(self, url, **kw):
+            return None
+
+    rc_bare = RedditClient(
+        _BareRedditFetcher(),
+        load_settings({
+            "REDDIT_FEED_TOKEN": f"https://reddit.com/.rss?feed={dummy_key}&user=example_user",
+            "REDDIT_INSTANCES": "https://reddit.com,https://redlib.catsarch.com",
+        }),
+    )
+    assert [h.code for h in (asyncio.run(rc_bare.community_codes("Genshin_Impact")) or [])] == ["DUALREDDIT99"]
+    assert bare_calls == [f"https://reddit.com/r/Genshin_Impact/new.rss?{expected_q}"]
+
+    # 3. Per-post `.rss?feed=...` OP comment merging on `www.reddit.com` / `old.reddit.com` when Redlib is down
+    post_rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <entry>
+        <id>t3_1postrss</id>
+        <title>Version 7.3 Special Program Preview</title>
+        <link href="https://www.reddit.com/r/Genshin_Impact/comments/1postrss/v73_program/"/>
+        <author><name>/u/genshinimpact</name></author>
+        <updated>2026-10-22T05:30:00+00:00</updated>
+        <content type="html">&lt;a href="https://i.redd.it/gi73keyart.jpg"&gt;[link]&lt;/a&gt; &lt;a href="https://www.reddit.com/r/Genshin_Impact/comments/1postrss/v73_program/"&gt;[comments]&lt;/a&gt;</content>
+      </entry>
+      <entry>
+        <id>t1_m9opcmt</id>
+        <title>/u/genshinimpact on Version 7.3 Special Program Preview</title>
+        <link href="https://www.reddit.com/r/Genshin_Impact/comments/1postrss/v73_program/m9opcmt/"/>
+        <author><name>/u/genshinimpact</name></author>
+        <updated>2026-10-22T05:31:00+00:00</updated>
+        <content type="html">&lt;div class="md"&gt;&lt;p&gt;The special program for Genshin Impact's new version will premiere on 2026-11-20 at 08:00 (UTC-4) on our official &lt;a href="https://www.twitch.tv/genshinimpactofficial"&gt;Twitch&lt;/a&gt; channel!&lt;/p&gt;&lt;/div&gt;</content>
+      </entry>
+      <entry>
+        <id>t1_m9random</id>
+        <title>/u/random_traveler on Version 7.3 Special Program Preview</title>
+        <link href="https://www.reddit.com/r/Genshin_Impact/comments/1postrss/v73_program/m9random/"/>
+        <author><name>/u/random_traveler</name></author>
+        <updated>2026-10-22T05:32:00+00:00</updated>
+        <content type="html">&lt;div class="md"&gt;&lt;p&gt;Random comment must NOT merge into OP post text.&lt;/p&gt;&lt;/div&gt;</content>
+      </entry>
+    </feed>"""
+
+    parsed_thread = parse_reddit_rss(post_rss_xml)
+    assert len(parsed_thread) == 1
+    assert "2026-11-20 at 08:00 (UTC-4)" in parsed_thread[0]["text"]
+    assert "Random comment" not in parsed_thread[0]["text"]
+    assert "https://www.twitch.tv/genshinimpactofficial" in parsed_thread[0]["links"]
+
+    class _AllRedlibDownPostRssFetcher:
+        async def get_text(self, url, **kw):
+            if url == f"https://old.reddit.com/r/Genshin_Impact/comments/1postrss/.rss?{expected_q}":
+                return post_rss_xml
+            return None
+
+        async def get_json(self, url, **kw):
+            if "arctic-shift" in url:
+                return {"data": [{"subreddit": "Genshin_Impact", "author": "[deleted]", "title": "", "selftext": "[removed]"}]}
+            return None
+
+    rc_post_rss = RedditClient(
+        _AllRedlibDownPostRssFetcher(),
+        load_settings({
+            "REDDIT_FEED_TOKEN": f"https://www.reddit.com/.rss?feed={dummy_key}&user=example_user",
+            "REDDIT_INSTANCES": "https://snoo.habedieeh.re,https://www.reddit.com,https://old.reddit.com",
+            "REDDIT_PROXIES": "https://www.vxreddit.com",
+        }),
+    )
+    resolved_post = asyncio.run(rc_post_rss.resolve_post("Genshin_Impact", "1postrss"))
+    assert resolved_post is not None and "2026-11-20 at 08:00 (UTC-4)" in resolved_post["text"]
+    sched_ext = schedule.extract(
+        GAMES["genshin"],
+        Item(
+            source="reddit",
+            game="genshin",
+            id=resolved_post["id"],
+            url=resolved_post["url"],
+            title=resolved_post["title"],
+            text=resolved_post["text"],
+            published_ts=resolved_post["ts"],
+            images=resolved_post["images"],
+            links=resolved_post["links"],
+            author=resolved_post["author"],
+        ),
+    )
+    assert sched_ext is not None and sched_ext.version == "7.3" and sched_ext.fields["program_ts"] == 1795176000
+    assert asyncio.run(rc_post_rss.resolve_post("Genshin_Impact", "1deadremoved")) is None
+
+    # 4. Maintenance standalone `_ensure_inputs_for_games` obeys zero-waste Reddit failover
+    with tempfile.TemporaryDirectory() as directory:
+        ctx_m = make_ctx(Path(directory) / "state.json", now=1792650000)
+        ctx_m.versions["genshin"] = {"live": "7.2", "pre": None}
+        reddit_m_spy = AsyncMock(return_value=[])
+        ctx_m.reddit = types.SimpleNamespace(items=reddit_m_spy, reachable=set())
+        ctx_m.x = types.SimpleNamespace(items=AsyncMock(return_value=[]), reachable={"genshinimpact"}, avatars={})
+
+        async def _ok_hoyo(probe, game, want, since):
+            probe.ok += 1
+            return []
+
+        with patch.object(hoyolab, "fetch_items", side_effect=_ok_hoyo):
+            asyncio.run(maintenance._ensure_inputs_for_games(ctx_m, [GAMES["genshin"]]))
+            assert reddit_m_spy.await_count == 0
+            ctx_m.items.clear()
+            ctx_m.x.reachable = set()
+            asyncio.run(maintenance._ensure_inputs_for_games(ctx_m, [GAMES["genshin"]]))
+            assert reddit_m_spy.await_count == 1
+
+
 if __name__ == "__main__":
     sys.exit(main())

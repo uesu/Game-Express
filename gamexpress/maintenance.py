@@ -721,13 +721,20 @@ async def _ensure_inputs_for_games(ctx, target_games: list[Game]) -> None:
         async def _collect_one(g: Game) -> None:
             want = schedule.wants(g)
             probe = Probe(ctx.fetcher)
+            x_client = getattr(ctx, "x", None)
             parts = await asyncio.gather(
                 hoyolab.fetch_items(probe, g, want, since),
                 kuro.fetch_items(probe, g, want, since),
-                ctx.x.items(g, want, since) if getattr(ctx, "x", None) is not None else asyncio.sleep(0, result=[]),
-                ctx.reddit.items(g, want, since) if getattr(ctx, "reddit", None) is not None else asyncio.sleep(0, result=[]),
+                x_client.items(g, want, since) if x_client is not None else asyncio.sleep(0, result=[]),
             )
-            ctx.items[g.key] = [it for part in parts for it in part]
+            items = [it for part in parts for it in part]
+            x_reachable = getattr(x_client, "reachable", None) if x_client is not None else ()
+            x_ok = True if x_reachable is None else any(a.lower() in x_reachable for a in g.x_accounts)
+            has_primary_api = bool(g.hoyolab_gid or g.kuro_news)
+            primary_ok = (not has_primary_api) or probe.ok > 0
+            if getattr(ctx, "reddit", None) is not None and ctx.settings.reddit_enabled and (not x_ok or not primary_ok):
+                items.extend(await ctx.reddit.items(g, want, since))
+            ctx.items[g.key] = items
 
         await asyncio.gather(*(_collect_one(g) for g in missing_item_games))
 

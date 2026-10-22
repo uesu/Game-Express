@@ -63,7 +63,7 @@ PROXY_BOT_UA = "Discordbot/2.0 (+https://discordapp.com)"
 BROWSER_UA = "Mozilla/5.0 (compatible; Game-Express/1.0)"
 
 TOKEN_GATED_REDDIT = frozenset({"https://redlib.miningtcup.me"})
-OFFICIAL_RSS_HOSTS = frozenset({"https://www.reddit.com", "https://old.reddit.com"})
+OFFICIAL_RSS_HOSTS = frozenset({"https://www.reddit.com", "https://old.reddit.com", "https://reddit.com"})
 EDDRIT_HOSTS = frozenset({"https://eddrit.com"})
 # Pre-#592 Redlib instances: `/r/<sub>/new` and `/user/<name>` render cleanly, while single-post
 # `/comments/<id>/` fails JSON deserialization upstream. Keep them at the tail for listings and
@@ -155,31 +155,57 @@ def canonical_post_url(subreddit: str, post_id: str, slug_part: str = "") -> str
     return f"https://www.reddit.com/r/{subreddit}/comments/{post_id}/{tail}"
 
 
+_MD_LINK_TARGET_RE = re.compile(r"^\[[^\]]*\]\(([^)\s]+)\)$")
+_SAFE_FEED_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{4,128}$")
+_SAFE_FEED_USER_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+
+
 def format_reddit_feed_query(raw_token: str) -> str:
     """Normalize `REDDIT_FEED_TOKEN` into an encoded `feed=...` (+ optional `&user=...`) query.
 
-    Accepts any form copied from `old.reddit.com/prefs/feeds/` (including wrapping quotes or
-    HTML `&amp;` entities):
+    Accepts any private RSS link/token copied from `old.reddit.com`, `www.reddit.com`, or
+    `reddit.com` (including wrapping quotes, parentheses/brackets, Markdown `[url](url)` links,
+    scheme-less host URLs, or HTML `&amp;` entities):
       * `https://old.reddit.com/.rss?feed=<40-hex>&user=<username>`
+      * `https://www.reddit.com/.rss?feed=<40-hex>&user=<username>`
+      * `https://reddit.com/.rss?feed=<40-hex>&user=<username>`
+      * `https://old.reddit.com/?feed=<40-hex>&user=<username>`
       * `<40-hex>&user=<username>` (the exact value used by `News-Express`)
       * `?feed=<40-hex>&user=<username>` or `feed=<40-hex>&user=<username>`
       * `<40-hex>`
     """
-    tok = html.unescape((raw_token or "").strip()).strip("\"'").strip()
+    tok = html.unescape((raw_token or "").strip())
+    m_md = _MD_LINK_TARGET_RE.match(tok)
+    if m_md:
+        tok = m_md.group(1).strip()
+    tok = tok.strip("\"'()<>[]").strip()
     if not tok:
         return ""
-    if tok.lower().startswith(("http://", "https://")):
+    if "://" in tok:
         q = urlsplit(tok).query
     elif tok.startswith("?"):
         q = tok[1:]
+    elif "?" in tok and not tok.lower().startswith("feed="):
+        q = tok.split("?", 1)[1]
     elif tok.lower().startswith("feed="):
         q = tok
     else:
         q = f"feed={tok}"
-    pairs = [(k, v) for k, v in parse_qsl(q, keep_blank_values=False) if k.lower() in ("feed", "user")]
-    if not pairs or not any(k.lower() == "feed" for k, _ in pairs):
-        return ""
-    return urlencode(pairs)
+    pairs: list[tuple[str, str]] = []
+    has_feed = False
+    for k, v in parse_qsl(q, keep_blank_values=False):
+        kl = k.lower()
+        val = v.strip()
+        if kl == "feed":
+            if not _SAFE_FEED_TOKEN_RE.match(val):
+                return ""
+            pairs.append(("feed", val))
+            has_feed = True
+        elif kl == "user":
+            if not _SAFE_FEED_USER_RE.match(val):
+                return ""
+            pairs.append(("user", val))
+    return urlencode(pairs) if has_feed else ""
 
 
 def _is_official_subreddit_post(game: Game, entry: dict) -> bool:
@@ -415,31 +441,58 @@ def parse_redlib_html(body: str, base_origin: str = "https://snoo.habedieeh.re")
 
 
 def parse_reddit_rss(xml_text: str) -> list[dict]:
-    """Parse Atom/RSS from `www.reddit.com`, `old.reddit.com`, `redlib.miningtcup.me`, or `eddrit.com`."""
+    """Parse Atom/RSS from `www.reddit.com`, `old.reddit.com`, `reddit.com`, `redlib.miningtcup.me`, or `eddrit.com`.
+
+    On per-post `/r/<sub>/comments/<id>/.rss` feeds, subsequent `t1_<comment_id>` entries are
+    attached under `comments` and any same-author OP comment is merged into the post's `text`,
+    `links`, and `images` just like `parse_redlib_html`.
+    """
     if is_challenge_or_error_page(xml_text):
         return []
     feed = feedparser.parse(xml_text)
-    out: list[dict] = []
-    seen: set[str] = set()
+    posts: dict[str, dict] = {}
+    order: list[str] = []
     for e in feed.entries:
         link = str(e.get("link") or "")
         pm = POST_LINK_RE.search(link)
         raw_id = str(e.get("id") or "")
+        is_comment_entry = raw_id.startswith("t1_")
         post_id = (pm.group(2) if pm else re.sub(r"^t3_", "", raw_id)).strip().lower()
         subreddit = (pm.group(1) if pm else str((e.get("tags") or [{}])[0].get("term") or "")).strip().lstrip("r/")
         slug_part = (pm.group(3) if pm and pm.group(3) else "").strip()
-        if not post_id or not subreddit or post_id in seen:
+        if not post_id or not subreddit:
             continue
-        seen.add(post_id)
         author = str(e.get("author") or "").strip().lstrip("/").removeprefix("u/").strip()
-        parsed_time = e.get("published_parsed") or e.get("updated_parsed")
-        ts = int(timegm(parsed_time)) if parsed_time else 0
         content_blocks = e.get("content") or []
         html_body = (content_blocks[0].get("value") if content_blocks and isinstance(content_blocks[0], dict) else "") or (
             e.get("summary") or e.get("description") or ""
         )
         text, links, imgs = html_to_text(html_body)
         text = re.sub(r"\s*(?:submitted by\s+/?u/\S+\s*)?\[link\]\s*\[comments\]\s*$", "", text, flags=re.I).strip()
+
+        if is_comment_entry or post_id in posts:
+            if post_id in posts and text:
+                p = posts[post_id]
+                cid = re.sub(r"^t1_", "", raw_id).strip()
+                p["comments"].append({"id": cid, "author": author, "text": text})
+                if author and p["author"] and author.lower() == p["author"].lower():
+                    p["text"] = f"{p['text']}\n\n{text}".strip() if p["text"] else text
+                    p["links"] = dedupe(
+                        p["links"]
+                        + [
+                            u for u in links
+                            if u.startswith(("http://", "https://"))
+                            and not POST_LINK_RE.search(u)
+                            and "reddit.com/user/" not in u
+                        ]
+                    )
+                    p["images"] = dedupe(
+                        p["images"] + [redlib_media_to_reddit(i) for i in imgs if redlib_media_to_reddit(i)]
+                    )
+            continue
+
+        parsed_time = e.get("published_parsed") or e.get("updated_parsed")
+        ts = int(timegm(parsed_time)) if parsed_time else 0
         images: list[str] = []
         for u in links + imgs:
             cu = redlib_media_to_reddit(u)
@@ -455,7 +508,7 @@ def parse_reddit_rss(xml_text: str) -> list[dict]:
             and "reddit.com/user/" not in u
             and u not in images
         ]
-        out.append({
+        posts[post_id] = {
             "id": post_id,
             "subreddit": subreddit,
             "author": author,
@@ -470,8 +523,9 @@ def parse_reddit_rss(xml_text: str) -> list[dict]:
             "links": dedupe(ext_links),
             "stickied": False,
             "comments": [],
-        })
-    return out
+        }
+        order.append(post_id)
+    return [posts[pid] for pid in order]
 
 
 # ------------------------------------------------ rich-embed proxy & component-embed parsers
@@ -654,9 +708,10 @@ class RedditClient:
             if for_post_detail and inst in REDDIT_LISTING_ONLY:
                 continue
             out.append(inst)
-        if kind == "sub" and format_reddit_feed_query(self.settings.reddit_token) and "https://www.reddit.com" in out:
-            out.remove("https://www.reddit.com")
-            out.insert(0, "https://www.reddit.com")
+        if kind == "sub" and format_reddit_feed_query(self.settings.reddit_token):
+            official = [inst for inst in out if inst in OFFICIAL_RSS_HOSTS]
+            if official:
+                out = official + [inst for inst in out if inst not in OFFICIAL_RSS_HOSTS]
         return out
 
     async def _fetch_listing_on(self, inst: str, kind: str, target: str) -> list[dict] | None:
@@ -734,19 +789,14 @@ class RedditClient:
         merged: dict[str, dict] = {}
         working = 0
         fleet = self._eligible_instances(for_post_detail=False, kind=kind)
-        # Single-request fast path when `REDDIT_FEED_TOKEN` is configured: Reddit's own first-party
-        # authenticated `/r/<sub>/new.rss?feed=...` feed needs only 1 HTTP request and avoids hitting
-        # any public Redlib mirror unless the official RSS call fails.
-        if (
-            kind == "sub"
-            and format_reddit_feed_query(self.settings.reddit_token)
-            and fleet
-            and fleet[0] == "https://www.reddit.com"
-        ):
-            direct = await self._fetch_listing_on("https://www.reddit.com", kind, target)
-            if direct is not None:
-                return sorted(direct, key=lambda x: x.get("ts") or 0, reverse=True)
-            fleet = fleet[1:]
+        # Sequential single-request fast path when `REDDIT_FEED_TOKEN` is configured: try each
+        # configured first-party Reddit origin (`www.reddit.com` -> `old.reddit.com` -> `reddit.com`)
+        # before fanning out to any public Redlib mirror (`1` request on healthy runs).
+        if kind == "sub" and format_reddit_feed_query(self.settings.reddit_token):
+            while fleet and fleet[0] in OFFICIAL_RSS_HOSTS:
+                direct = await self._fetch_listing_on(fleet.pop(0), kind, target)
+                if direct is not None:
+                    return sorted(direct, key=lambda x: x.get("ts") or 0, reverse=True)
         for i in range(0, len(fleet), REDDIT_BATCH):
             if working >= REDDIT_WORKING:
                 break
@@ -869,9 +919,28 @@ class RedditClient:
         if cache_key in self._post_cache:
             return self._post_cache[cache_key]
 
+        feed_q = format_reddit_feed_query(self.settings.reddit_token)
         best: dict | None = None
         for inst in self._eligible_instances(for_post_detail=True):
-            if inst in OFFICIAL_RSS_HOSTS or inst in EDDRIT_HOSTS:
+            if inst in EDDRIT_HOSTS:
+                continue
+            if inst in OFFICIAL_RSS_HOSTS:
+                if not feed_q:
+                    continue
+                tail = f"/{slug_part.strip('/')}" if slug_part.strip("/") else ""
+                rss_body = await self._get_text(
+                    f"{inst}/r/{subreddit}/comments/{post_id}{tail}/.rss?{feed_q}",
+                    source="reddit",
+                    headers={"User-Agent": BROWSER_UA},
+                    retries=0,
+                    timeout=REDDIT_TIMEOUT,
+                )
+                if not rss_body or is_challenge_or_error_page(rss_body):
+                    continue
+                parsed_rss = await asyncio.to_thread(parse_reddit_rss, rss_body)
+                if parsed_rss:
+                    best = parsed_rss[0]
+                    break
                 continue
             token_q = f"?token={quote(self.settings.nitter_token)}" if inst in TOKEN_GATED_REDDIT else ""
             tail = f"/{slug_part.strip('/')}" if slug_part.strip("/") else ""
@@ -890,7 +959,11 @@ class RedditClient:
                 break
 
         unmuxed_fallback: dict | None = None
-        need_proxy = best is None or (best.get("videos") and any(UNMUXED_REDDIT_VIDEO_RE.match(v) for v in best["videos"]))
+        need_proxy = (
+            best is None
+            or (best.get("videos") and any(UNMUXED_REDDIT_VIDEO_RE.match(v) for v in best["videos"]))
+            or (not best.get("videos") and any("v.redd.it/" in u.lower() for u in (best.get("links") or [])))
+        )
         if need_proxy:
             for proxy_base in self.settings.reddit_proxies:
                 if not proxy_base:
@@ -952,25 +1025,34 @@ class RedditClient:
             rows = (arc or {}).get("data") if isinstance(arc, dict) else None
             if isinstance(rows, list) and rows and isinstance(rows[0], dict):
                 row = rows[0]
-                selftext = clean_text(str(row.get("selftext") or ""))
+                raw_selftext = clean_text(str(row.get("selftext") or ""))
+                is_removed = raw_selftext.strip().lower() in (
+                    "[removed]",
+                    "[deleted]",
+                    "[ removed by reddit ]",
+                    "[ removed by moderator ]",
+                )
+                selftext = "" if is_removed else raw_selftext
+                title_clean = clean_text(str(row.get("title") or ""))
                 ext_url = str(row.get("url") or "").strip()
                 imgs = [ext_url] if re.search(r"https?://(?:i\.redd\.it|preview\.redd\.it)/", ext_url, re.I) else []
-                best = {
-                    "id": post_id.lower(),
-                    "subreddit": str(row.get("subreddit") or subreddit),
-                    "author": str(row.get("author") or ""),
-                    "distinguished": str(row.get("distinguished") or ""),
-                    "flair": str(row.get("link_flair_text") or ""),
-                    "title": clean_text(str(row.get("title") or "")),
-                    "text": selftext,
-                    "url": canonical_post_url(subreddit, post_id, slug_part),
-                    "ts": int(row.get("created_utc") or 0),
-                    "images": imgs,
-                    "videos": [],
-                    "links": find_urls(selftext),
-                    "stickied": False,
-                    "comments": [],
-                }
+                if not (is_removed and not title_clean and not imgs):
+                    best = {
+                        "id": post_id.lower(),
+                        "subreddit": str(row.get("subreddit") or subreddit),
+                        "author": str(row.get("author") or ""),
+                        "distinguished": str(row.get("distinguished") or ""),
+                        "flair": str(row.get("link_flair_text") or ""),
+                        "title": title_clean,
+                        "text": selftext,
+                        "url": canonical_post_url(subreddit, post_id, slug_part),
+                        "ts": int(row.get("created_utc") or 0),
+                        "images": imgs,
+                        "videos": [],
+                        "links": find_urls(selftext),
+                        "stickied": False,
+                        "comments": [],
+                    }
 
         self._post_cache[cache_key] = best
         return best
