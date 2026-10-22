@@ -26,11 +26,11 @@ MAX_PARALLEL = 12          # polite global cap on simultaneous requests (all gam
 MAX_BYTES = 8 * 1024 * 1024
 """Hard cap on one response body (8 MiB).
 
-Almost everything this monitor reads belongs to a third party nobody here controls: 16
-community nitter mirrors, wikis, code APIs. A hostile or simply broken host can answer with
-an endless stream, and `resp.text()` would buffer all of it until the runner runs out of
-memory or the job hits its timeout. Reading a bounded number of bytes turns that into one
-ordinary source failure instead. The largest real body seen in production is ~1.3 MB.
+Almost everything this monitor reads belongs to a third party nobody here controls: community
+nitter and Redlib mirrors, rich-embed proxies, wikis, and code APIs. A hostile or broken host
+can answer with an endless stream, and `resp.text()` would buffer all of it until the runner
+runs out of memory or the job hits its timeout. Reading a bounded number of bytes turns that
+into one ordinary source failure instead. The largest real body seen in production is ~1.3 MB.
 """
 CHUNK_BYTES = 64 * 1024
 """Read size per iteration while streaming a body (see get_text)."""

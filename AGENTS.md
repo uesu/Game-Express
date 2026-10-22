@@ -61,8 +61,11 @@ official sources, decides whether anything is new, posts **Discord Components V2
 **webhooks**, commits its state, and exits. A run takes ~25 s end to end (~5–6 s of that is the
 Python).
 
-Two features, independent: **`schedule`** (version/Special-Program cards) and **`codes`**
-(redemption-code cards). Six games: `genshin`, `starrail`, `zzz`, `wuwa`, `hna`, `ananta`.
+Four independent features: **`schedule`** (version/Special-Program cards) and **`codes`**
+(redemption-code cards) on by default, plus explicit opt-in **`news`** (`NEWS_ENABLED=1`, full
+official articles for five games) and **`maintenance`** (`MAINTENANCE_ENABLED=1` +
+`MAINTENANCE_GAMES`, independent `Pre-Load Started` and `Maintenance Started` cards). Six games:
+`genshin`, `starrail`, `zzz`, `wuwa`, `hna`, `ananta`.
 
 **There is no Discord bot and there must not be one.** A bot existed long ago; it was removed in
 v1.7.0, the last hosting artefact (`.dockerignore`) went in PR #20, and the legal docs were
@@ -76,7 +79,7 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 | Path | Role |
 |---|---|
 | `gamexpress/__main__.py` | CLI: `run`, `test-card`, `check-webhooks`, `preview`, `speculate`, `validate`, `benchmark` |
-| `gamexpress/runner.py` | builds `Ctx` (settings, games, state, fetcher, webhook, X client), fail-over, `run_news`, `maintenance.run`, run summary |
+| `gamexpress/runner.py` | builds `Ctx` (settings, games, state, fetcher, webhook, X client, Reddit client), fail-over, `run_news`, `maintenance.run`, run summary |
 | `gamexpress/schedule.py` (the largest module by far) | the brain: picks the announcement, parses times, locks banners, speculates a cycle, builds/edits the schedule card |
 | `gamexpress/codeposter.py` | the code gate (families, validators, min-sources), posts/edits code cards |
 | `gamexpress/maintenance.py` | fourth feature (off by default): independent `Pre-Load Started` & `Maintenance Started` cards, `official > override > observed > cadence` precedence, 4-tier version-verified launch media, corroborated signed URL renewal/fallback, silent seed & bounded late `PATCH` |
@@ -86,7 +89,7 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 | `gamexpress/http.py` | shared `aiohttp` fetcher, `MAX_PARALLEL = 12`, per-source health counters |
 | `gamexpress/state.py` | `state/state.json` (`SCHEMA = 1`): posted keys, message ids, bootstrap flags, heartbeat |
 | `gamexpress/config.py` | `Settings` (env) + `Game` (games.json) + `game_is_on` / `active_games` |
-| `gamexpress/sources/*` | one module per upstream: `twitter` (nitter fleet + FxEmbed), `hoyolab`, `kuro`, `codes`, `launcher`, `bannerfeed`, `calendarfeed`, `gachawiki`, `banner_search`, `countdown`, `newspage` |
+| `gamexpress/sources/*` | one module per upstream: `twitter` (nitter fleet + FxEmbed), `reddit` (Redlib fleet + `reddit.com` feed token + rich-embed proxies), `hoyolab`, `kuro`, `codes`, `launcher`, `bannerfeed`, `calendarfeed`, `gachawiki`, `banner_search`, `countdown`, `newspage` |
 | `gamexpress/{models,media,textutil,timeparse,samples,preview_html}.py` | the `Item` / `CodeHit` dataclasses, image URL normalisation, HTML→text, date/time parsing, sample cards, local preview |
 | `config/games.json` | per-game config (see §4) · `config/overrides.json` human corrections · `config/program_announcements.json` discovered tweet ids |
 | `tests/test_smoke.py` | the main suite: every test offline — no network, no secrets |
@@ -161,8 +164,8 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    the `test` job is a required check.
 12. **No new runtime dependencies** without a very good reason. The whole app runs on `aiohttp`,
    `feedparser`, `python-dotenv`.
-13. **Never commit secrets.** Webhooks and the nitter token are repository secrets; the state file
-   stores only a 12-char non-reversible webhook fingerprint.
+13. **Never commit secrets.** Webhooks, `NITTER_RSS_TOKEN` and `REDDIT_FEED_TOKEN` are repository
+   secrets; the state file stores only a 12-char non-reversible webhook fingerprint.
 14. **No LICENSE file is wanted** — this is a personal-use repository (owner's decision,
     2026-10-03). Do not add one "for completeness".
 15. **A posted Special Program card keeps its announcement.** The first post that gives an air time

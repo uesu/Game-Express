@@ -15,9 +15,9 @@ allowed to do**.
 
 | # | What could go wrong | Realistic? | Handled by |
 |---|---|---|---|
-| T1 | A community source (nitter mirror, wiki, code API) is taken over and feeds the bot a hostile payload | Yes — 24 nitter mirrors are run by strangers, and mirrors change hands | §2 |
+| T1 | A community source (nitter mirror, Redlib mirror, Reddit proxy, wiki, code API) is taken over and feeds the bot a hostile payload | Yes — 24 nitter mirrors, 17 Reddit/Redlib entries and 3 proxies include community-operated hosts | §2 |
 | T2 | A source floods the bot with hundreds of fake "codes" | Yes — a parser change upstream is enough | §3 |
-| T3 | A webhook URL or `NITTER_RSS_TOKEN` leaks into a public log | Yes, logs are public on a public repo | §4 |
+| T3 | A webhook URL, `NITTER_RSS_TOKEN`, or `REDDIT_FEED_TOKEN` leaks into a public log or summary | Yes, logs are public on a public repo | §4 |
 | T4 | A compromised GitHub Action steals the Discord webhooks or pushes to the repo | Rare but real (supply chain) | §5 |
 | T5 | A run dies mid-way and corrupts state → duplicate or lost posts | Yes, runners get killed | §6 |
 | T6 | A dependency ships a known CVE | Yes | §5 |
@@ -75,11 +75,15 @@ run reports it as an error. Test: `test_a_source_dumping_hundreds_of_codes_canno
 
 ## 4. Secrets (T3)
 
-* Webhook URLs never reach the log: dry-run output rewrites them to `/webhooks/…`, and state
-  stores only `webhook_fingerprint()` — a short, non-reversible id, never the URL.
-* Source logging prints `url.split("?")[0]`, so the token in a token-gated nitter mirror's query
-  string cannot be printed; `runner._summary_text()` also scrubs signed query parameters including
-  `auth_key=` before writing job summaries or workflow annotations.
+* Webhook URLs never reach the log or run summary: both dry-run output and live error/hold
+  diagnostics (`discord._redact_webhook`, `runner._summary_text`) rewrite `/webhooks/<id>/<token>`
+  across all Discord webhook hosts (`discord.com`, `discordapp.com`, `canary.discord.com`,
+  `ptb.discord.com`) to `/webhooks/…`, and state stores only `webhook_fingerprint()` — a short,
+  non-reversible id, never the URL.
+* Source logging prints `url.split("?")[0]` and scrubs sensitive query keys (`token=`, `feed=`,
+  `user=`, `auth_key=`, `key=`, `api_key=`, `access_token=`, `Bearer`), so neither
+  `NITTER_RSS_TOKEN`, `REDDIT_FEED_TOKEN` (including the account username parameter), nor signed
+  Kuro media `auth_key=` parameters can leak into logs, job summaries, or workflow annotations.
 * Official-news and maintenance-alert `POST` calls pass `stop_on_ambiguous=True` so HTTP `200`/`204`
   responses without a parseable `message_id` or indeterminate post-dispatch timeouts/disconnects stop
   after 1 attempt with `SendResult.ambiguous = True`, holding news (ordinary and expanded) and

@@ -1,6 +1,6 @@
 """Settings (environment) + per-game config (config/games.json).
 
-Secrets (GitHub → Settings → Secrets):   webhook URLs, NITTER_RSS_TOKEN
+Secrets (GitHub → Settings → Secrets):   webhook URLs, NITTER_RSS_TOKEN, REDDIT_FEED_TOKEN
 Variables (GitHub → Settings → Variables): everything else — ping roles, emojis,
 feature switches, instance role. Nothing in a variable is sensitive, so they are
 visible/editable in one click (the "easy, intuitive" switches).
@@ -8,6 +8,7 @@ visible/editable in one click (the "easy, intuitive" switches).
 
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
@@ -367,7 +368,7 @@ def parse_emoji(value: str | None) -> dict | None:
     """'a:name:123' | 'name:123' | '<a:name:123>' | '<:name:123>' | unicode | '' / 'none'."""
     if value is None:
         return None
-    v = value.strip()
+    v = html.unescape(value).strip()
     if not v or v.lower() in ("none", "off", "0", "false"):
         return None
     # The animated marker needs its own colon ('a:name:id'). A plain 'name:id' whose name
@@ -414,7 +415,7 @@ class Ping:
 
 def parse_ping(value: str) -> Ping | None:
     """None = inherit (unset); Ping() = explicit no-ping ('none'/'off')."""
-    v = (value or "").strip()
+    v = html.unescape(value or "").strip()
     if v == "":
         return None
     if v.lower() in ("none", "off", "no", "false", "0", "-"):

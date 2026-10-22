@@ -116,9 +116,9 @@ SAFE_URL_MAX = 1024
 def safe_url(url: str | None) -> str | None:
     """A URL that is safe to put on a card, or None if it cannot be trusted.
 
-    Most URLs on a card are scraped from somebody else's server - 16 community nitter mirrors,
-    wikis, code APIs - so any of them can turn hostile the day a mirror changes hands. Two
-    things go wrong if the string is used as-is:
+    Most URLs on a card are scraped from somebody else's server - community nitter and Redlib
+    mirrors, rich-embed proxies, wikis, code APIs - so any of them can turn hostile the day a
+    mirror changes hands. Two things go wrong if the string is used as-is:
 
       * a non-http scheme ("javascript:", "data:") in a link button makes Discord reject the
         whole message, so one poisoned field silently kills a real announcement;

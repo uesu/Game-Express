@@ -14409,5 +14409,176 @@ def test_reddit_json_feed_compatibility_user_fastpath_and_live_webhook_redaction
     assert secret_tok not in (res_amb.error or "")
 
 
+def test_final_pre_merge_edge_cases_and_repo_doc_consistency():
+    """Verify final pre-merge edge cases (#28-#34), full 21-secret/5-var routing, and repo docs."""
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from gamexpress import config, http
+    from gamexpress.__main__ import cmd_validate
+    from gamexpress.sources import reddit
+
+    # 1. Edge cases #28 & #29: HTML-escaped `<@&ROLE>` and `<:name:id>` / `<a:name:id>` values
+    p_plain = config.parse_ping("<@&123456789012345678>")
+    p_escaped = config.parse_ping("&lt;@&amp;123456789012345678&gt;")
+    assert p_plain == p_escaped and p_escaped.roles == ["123456789012345678"]
+
+    e_static = config.parse_emoji("&lt;:ananta1:1558340472525693018&gt;")
+    e_anim = config.parse_emoji("&lt;a:starward11:1439878792653832253&gt;")
+    assert e_static == {"id": "1558340472525693018", "name": "ananta1"}
+    assert e_anim == {"id": "1439878792653832253", "name": "starward11", "animated": True}
+
+    # 2. Edge cases #30 & #31: `crosspost_parent_list` body/removed inheritance & `_safe_epoch_ts`
+    xp_rows = reddit.parse_reddit_json({
+        "data": {
+            "children": [
+                {
+                    "kind": "t3",
+                    "data": {
+                        "id": "xp101",
+                        "subreddit": "Genshin_Impact",
+                        "author": "genshinimpact",
+                        "title": "Version 7.2 Special Program Announcement",
+                        "selftext": "",
+                        "permalink": "/r/Genshin_Impact/comments/xp101/version_72_special_program/",
+                        "created_utc": "1791545400.0",
+                        "crosspost_parent_list": [{
+                            "selftext": "Premieres October 23 at 20:00 (UTC+8). Redemption Code: GENSHINXP72",
+                            "images": [],
+                        }],
+                    },
+                },
+                {
+                    "kind": "t3",
+                    "data": {
+                        "id": "xp_bad_ts",
+                        "subreddit": "Genshin_Impact",
+                        "author": "genshinimpact",
+                        "title": "Removed Crosspost",
+                        "selftext": "",
+                        "permalink": "/r/Genshin_Impact/comments/xp_bad_ts/removed_crosspost/",
+                        "created_utc": "not-a-timestamp",
+                        "crosspost_parent_list": [{
+                            "selftext": "Hidden parent text",
+                            "removed_by_category": "moderator",
+                        }],
+                    },
+                },
+            ]
+        }
+    })
+    assert len(xp_rows) == 2
+    assert "GENSHINXP72" in xp_rows[0]["text"] and xp_rows[0]["ts"] == 1791545400
+    assert xp_rows[1]["text"] == "" and xp_rows[1]["ts"] == 0
+    assert reddit._safe_epoch_ts("nan") == 0 and reddit._safe_epoch_ts("inf") == 0
+    assert reddit.BROWSER_UA == http.BROWSER_UA and "/1.0" not in reddit.BROWSER_UA
+
+    # 3. Edge cases #32, #33, #34: `u_<official>` profile posts, empty-body OP-comment resolution,
+    #    and proxy-resolved `program_post()` preserving listing `ts` + `author`
+    gi = GAMES["genshin"]
+
+    class _MockRedditFetcher:
+        async def get_text(self, url, **kw):
+            if "/user/genshinimpact/submitted.rss" in url:
+                return (
+                    '<?xml version="1.0" encoding="UTF-8"?>'
+                    '<feed xmlns="http://www.w3.org/2005/Atom">'
+                    "<entry><id>t3_prof99</id>"
+                    "<author><name>/u/genshinimpact</name></author>"
+                    "<title>Version 7.2 Key Art</title>"
+                    '<link href="https://www.reddit.com/r/u_genshinimpact/comments/prof99/version_72_key_art/"/>'
+                    "<updated>2026-10-21T12:00:00+00:00</updated>"
+                    "<content type=\"html\">&lt;a href=\"https://i.redd.it/keyart72.jpg\"&gt;[link]&lt;/a&gt;</content>"
+                    "</entry>"
+                    "<entry><id>t3_prog88</id>"
+                    "<author><name>/u/genshinimpact</name></author>"
+                    "<title>Version 7.2 Special Program Announcement</title>"
+                    '<link href="https://www.reddit.com/r/Genshin_Impact/comments/prog88/version_72_special_program_announcement/"/>'
+                    "<updated>2026-10-21T11:00:00+00:00</updated>"
+                    "<content type=\"html\">&lt;a href=\"https://i.redd.it/prog88.jpg\"&gt;[link]&lt;/a&gt;</content>"
+                    "</entry>"
+                    "</feed>"
+                )
+            if "/r/u_genshinimpact/comments/prof99" in url and "/.rss" in url:
+                return (
+                    '<?xml version="1.0" encoding="UTF-8"?>'
+                    '<feed xmlns="http://www.w3.org/2005/Atom">'
+                    "<entry><id>t3_prof99</id><author><name>/u/genshinimpact</name></author>"
+                    "<title>Version 7.2 Key Art</title>"
+                    '<link href="https://www.reddit.com/r/u_genshinimpact/comments/prof99/version_72_key_art/"/>'
+                    "<updated>2026-10-21T12:00:00+00:00</updated><content type=\"html\"></content></entry>"
+                    "<entry><id>t1_c99</id><author><name>/u/genshinimpact</name></author>"
+                    "<title>Comment</title>"
+                    '<link href="https://www.reddit.com/r/u_genshinimpact/comments/prof99/version_72_key_art/c99/"/>'
+                    "<updated>2026-10-21T12:01:00+00:00</updated>"
+                    "<content type=\"html\">&lt;div class=\"md\"&gt;&lt;p&gt;Redemption Code: PROFILECODE72&lt;/p&gt;&lt;/div&gt;</content></entry>"
+                    "</feed>"
+                )
+            if "vxreddit.com/r/Genshin_Impact/comments/prog88" in url:
+                return (
+                    '<html><head>'
+                    '<meta property="og:title" content="Version 7.2 Special Program Announcement"/>'
+                    '<meta property="og:description" content="The special program for Genshin Impact\'s new version will premiere on the official Twitch and YouTube channels on October 23, 2026 at 08:00 AM (UTC-4)!"/>'
+                    '<meta property="og:image" content="https://i.redd.it/prog88_hd.jpg"/>'
+                    '</head><body>' + ("x" * 160) + '</body></html>'
+                )
+            return None
+
+        async def get_json(self, url, **kw):
+            return None
+
+    rc_full = reddit.RedditClient(
+        _MockRedditFetcher(),
+        config.load_settings({
+            "REDDIT_FEED_TOKEN": "0123456789abcdef0123456789abcdef01234567&user=example_user",
+            "REDDIT_INSTANCES": "https://www.reddit.com",
+            "REDDIT_PROXIES": "https://www.vxreddit.com",
+        }),
+    )
+    code_items = asyncio.run(rc_full.items(gi, lambda s: "redemption code" in s.lower(), 1792000000))
+    assert len(code_items) == 1 and "PROFILECODE72" in code_items[0].text
+    prog_item = asyncio.run(rc_full.program_post(gi, "7.2"))
+    assert prog_item is not None and prog_item.published_ts > 0 and prog_item.author == "genshinimpact"
+
+    # 4. Full 21-secret + 5-variable configuration validation (`validate` exit 0)
+    full_env = {
+        "BUMP_PAT": "ghp_placeholder",
+        "NITTER_RSS_TOKEN": "tok_placeholder",
+        "REDDIT_FEED_TOKEN": "0123456789abcdef0123456789abcdef01234567&user=example_user",
+        "DISCORD_WEBHOOK_SCHEDULE": "https://discord.com/api/webhooks/100000000000000000/sched_tok",
+        "AUTO_MERGE_DEPENDABOT": "yes",
+        "NEWS_ENABLED": "1",
+        "NEWS_GAMES": "genshin,starrail,zzz,wuwa,hna",
+        "NEWS_GROUP_LONG_STRIPS": "1",
+        "PING_SCHEDULE": "<@&123456789012345678>",
+    }
+    for idx_g, gname in enumerate(("ANANTA", "GENSHIN", "HNA", "STARRAIL", "WUWA", "ZZZ"), 1):
+        full_env[f"DISCORD_WEBHOOK_CODES_{gname}"] = f"https://discord.com/api/webhooks/1000000000000000{idx_g:02d}/c_tok"
+    for idx_n, gname in enumerate(("GENSHIN", "HNA", "STARRAIL", "WUWA", "ZZZ"), 11):
+        full_env[f"DISCORD_WEBHOOK_NEWS_{gname}"] = f"https://discord.com/api/webhooks/1000000000000000{idx_n:02d}/n_tok"
+    for idx_m, gname in enumerate(("ANANTA", "GI", "HNA", "HSR", "WUWA", "ZZZ"), 21):
+        full_env[f"DISCORD_WEBHOOK_SCHEDULE_MIRROR_{gname}"] = f"https://discord.com/api/webhooks/1000000000000000{idx_m:02d}/m_tok"
+    assert len(full_env) == 26
+    with patch.dict(os.environ, full_env, clear=True):
+        assert cmd_validate(SimpleNamespace()) == 0
+
+    # 5. Repository-wide documentation & credit hygiene when docs are present (skipped cleanly in docs-free prod)
+    readme_p = ROOT / "README.md"
+    if readme_p.is_file():
+        readme_t = readme_p.read_text(encoding="utf-8")
+        credits_t = (ROOT / "docs" / "CREDITS.md").read_text(encoding="utf-8")
+        sources_t = (ROOT / "docs" / "SOURCES.md").read_text(encoding="utf-8")
+        security_t = (ROOT / "docs" / "SECURITY.md").read_text(encoding="utf-8")
+        privacy_t = (ROOT / "PRIVACY_POLICY.md").read_text(encoding="utf-8")
+        terms_t = (ROOT / "TERMS_OF_SERVICE.md").read_text(encoding="utf-8")
+        assert "https://arena.ai/company/about" in readme_t and "https://x.com/arena?lang=en" in readme_t
+        assert "https://arena.ai/company/about" in credits_t and "https://x.com/arena?lang=en" in credits_t
+        assert f"{len(config.DEFAULT_REDDIT)} entries" in readme_t
+        assert f"{len(config.DEFAULT_REDDIT_PROXIES)} proxies" in readme_t
+        assert f"{len(config.DEFAULT_REDDIT)} Reddit/Redlib entries" in security_t
+        assert "arknights" not in sources_t.lower()
+        assert "October 22, 2026" in privacy_t and "October 22, 2026" in terms_t
+
+
 if __name__ == "__main__":
     sys.exit(main())

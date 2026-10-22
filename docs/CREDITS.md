@@ -25,14 +25,16 @@ What each endpoint actually serves, and why it was chosen or rejected, is in
 - [DuolaD/HoYo_Versioncatcher](https://github.com/DuolaD/HoYo_Versioncatcher)
 - [RSSHub](https://github.com/DIYgod/RSSHub) (Kuro endpoints)
 - [wuthering.gg](https://wuthering.gg/codes)
-- The **Fandom wikis** read directly for redemption codes — [Genshin Impact](https://genshin-impact.fandom.com/), [Honkai: Star Rail](https://honkai-star-rail.fandom.com/), [Zenless Zone Zero](https://zenless-zone-zero.fandom.com/) and [Wuthering Waves](https://wutheringwaves.fandom.com/) — and their editors. Wiki text is CC BY-SA 3.0.
-- [nitter](https://github.com/zedeus/nitter) (and forks / instances: [git.kareem.one/shaquille/nitter](https://git.kareem.one/shaquille/nitter), [tw.eir-nya.gay](https://tw.eir-nya.gay/), [Cynosphere/nitter](https://gitlab.com/Cynosphere/nitter)), xcancel (*service suspended — kept here as thanks, no longer in the fleet*) and **every operator who keeps a public instance online** — they are the reason an announcement is seen minutes after it is tweeted
+- The **Fandom wikis** read directly for redemption codes — [Genshin Impact](https://genshin-impact.fandom.com/), [Honkai: Star Rail](https://honkai-star-rail.fandom.com/), [Zenless Zone Zero](https://zenless-zone-zero.fandom.com/), [Wuthering Waves](https://wutheringwaves.fandom.com/), [Honkai: Nexus Anima](https://honkai-nexus-anima.fandom.com/) and [ANANTA](https://ananta.fandom.com/) — and their editors. Wiki text is CC BY-SA 3.0.
+- [nitter](https://github.com/zedeus/nitter) (and active forks / instances including [4cuck/teapawt](https://github.com/4cuck/teapawt), [shitter](https://codeberg.org/shitter/shitter), [git.kareem.one/shaquille/nitter](https://git.kareem.one/shaquille/nitter), [tw.eir-nya.gay](https://tw.eir-nya.gay/), [Cynosphere/nitter](https://gitlab.com/Cynosphere/nitter)), xcancel (*service suspended — kept last in `DEFAULT_NITTER` as a dead historical entry, never deleted*) and **every operator who keeps a public instance online** — they are the reason an announcement is seen minutes after it is tweeted
 - [FxTwitter / FixTweet](https://github.com/FixTweet/FxTwitter) (the fallback that resolves a tweet when no nitter mirror answers; fixupx and vxTwitter follow it)
+- [redlib](https://github.com/redlib-org/redlib) and **every public Redlib operator**, plus [vxReddit](https://www.vxreddit.com), [EmbedEZ](https://embedez.com) and [Arctic Shift](https://arctic-shift.photon-reddit.com) — the Reddit backup and community-witness chain across all six games
 
 ---
 
 ## Built with
 
+- **[Arena AI](https://arena.ai/company/about)** ([@arena on X](https://x.com/arena?lang=en)) — AI engineering, deep verification, live upstream auditing, and regression testing that helped make these Game-Express capabilities possible
 - [aiohttp](https://github.com/aio-libs/aiohttp), [feedparser](https://github.com/kurtmckee/feedparser), [python-dotenv](https://github.com/theskumar/python-dotenv) — the entire runtime dependency list
 - [astral-sh/uv](https://github.com/astral-sh/uv) and [ruff](https://github.com/astral-sh/ruff) (installs and linting), [zizmor](https://github.com/zizmorcore/zizmor) and [rhysd/actionlint](https://github.com/rhysd/actionlint) (workflow auditing), [pypa/gh-action-pip-audit](https://github.com/pypa/gh-action-pip-audit) (CVE checks), [peter-evans/create-pull-request](https://github.com/peter-evans/create-pull-request)
 - Discord's [Components V2](https://discord.com/developers/docs/components/reference) and [cron-job.org](https://cron-job.org/) (the external scheduler)

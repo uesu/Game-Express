@@ -246,12 +246,12 @@ Full setup and safeguards: **[docs/CONFIGURATION.md → Pre-load & maintenance s
 
 | Game | Status | Schedule sources | Code sources |
 |---|---|---|---|
-| Genshin Impact | ✅ on | HoYoLAB API (gid 2) → c3kay mirror · X `@GenshinImpact` · HoYoPlay launcher | HoYoLAB livestream module · official posts · seria + Hum-Bao (both redeem-validated) · Open Gacha Codes · ennead · fandom · PromoGacha |
-| Honkai: Star Rail | ✅ on | HoYoLAB API (gid 6) → c3kay · X `@honkaistarrail` · HoYoPlay | same set |
-| Zenless Zone Zero | ✅ on | HoYoLAB API (gid 8) → c3kay · X `@ZZZ_EN` · HoYoPlay | same set |
-| Wuthering Waves | ✅ on | X `@Wuthering_Waves` · Kuro official site · Kuro launcher | official X posts · wuthering.gg (active/expired) · Open Gacha Codes · fandom · PromoGacha |
-| Honkai: Nexus Anima | ✅ on · ⏳ not released yet | HoYoLAB API (gid 9) · X `@HonkaiNA` | HoYoLAB livestream module (gid 9) · X |
-| ANANTA (NetEase) | ✅ on · ⏳ releases 2027‑01‑15 | X `@Ananta_EN` | X |
+| Genshin Impact | ✅ on | HoYoLAB API (gid 2) → c3kay mirror · X `@GenshinImpact` · HoYoPlay launcher · Reddit `u/genshinimpact` backup | HoYoLAB livestream module · official posts · seria + Hum-Bao (both redeem-validated) · Open Gacha Codes · ennead · fandom · PromoGacha · `r/Genshin_Impact` witness |
+| Honkai: Star Rail | ✅ on | HoYoLAB API (gid 6) → c3kay · X `@honkaistarrail` · HoYoPlay · Reddit `u/HonkaiStarRail` backup | same set (`r/HonkaiStarRail` witness) |
+| Zenless Zone Zero | ✅ on | HoYoLAB API (gid 8) → c3kay · X `@ZZZ_EN` · HoYoPlay · Reddit `u/ZZZ_Official` backup | same set (`r/ZZZ_Official` witness) |
+| Wuthering Waves | ✅ on | X `@Wuthering_Waves` · Kuro official site · Kuro launcher · `r/WutheringWaves` official-flair backup | official X/Reddit posts · wuthering.gg (active/expired) · Open Gacha Codes · fandom · PromoGacha · `r/WutheringWaves` witness |
+| Honkai: Nexus Anima | ✅ on · ⏳ not released yet | HoYoLAB API (gid 9) · X `@HonkaiNA` · Reddit `u/HonkaiNexusAnima` backup | HoYoLAB livestream module (gid 9) · fandom · `r/HonkaiNexusAnima` witness · official X/Reddit |
+| ANANTA (NetEase) | ✅ on · ⏳ releases 2027‑01‑15 | X `@Ananta_EN` · Reddit `u/AnantaOfficial` backup | fandom · `r/AnantaOfficial` witness · official X/Reddit |
 
 **All six are monitored**, including the two that are not out yet, so a pre-release Special
 Program is caught the moment it is announced. Enabling a game is never retroactive: its **first
@@ -526,7 +526,8 @@ Flags: `--dry-run --only --game --repost --kind --ping --out --unlaunched --verb
 | HoYoverse news | official HoYoLAB API → c3kay JSON-Feed mirror |
 | X timelines | the built-in nitter fleet (25 entries, 24 live — `xcancel.com` is suspended and kept last as a dead entry; `NITTER_INSTANCES` overrides the list). The first **two** working mirrors are merged, so a stale-but-200 mirror can't hide a tweet |
 | Tweet details | nitter.cf → xitter.cf → teapawt.org → teapaw.org → teapawt.net by id (when the account is known) → FxTwitter → fixupx → vxTwitter → the nitter text. A status mirror that fails twice in one run is skipped for the rest of it |
-| Codes | up to 8 sources per game (validators, APIs, wikis, official posts), fetched in parallel, behind the gate above |
+| Reddit backup & code witness | built-in Reddit/Redlib fleet (17 entries across healthy Redlib dual-path mirrors + partial/runner-gated tail, plus 3 proxies `vxreddit.com` → `embedez.com` → `embeddit.deltandy.me` and `arctic-shift.photon-reddit.com` archive; optional `REDDIT_FEED_TOKEN` drives `[0] www.reddit.com` → `[1] old.reddit.com` 1-request RSS fast path + `.json` fallback; `REDDIT_ENABLED=0` disables all Reddit HTTP calls) |
+| Codes | up to 10 sources per game (validators, APIs, wikis, community witnesses, official posts), fetched in parallel, behind the gate above |
 | Version / pre-install | HoYoPlay `getGameBranches` / Kuro launcher index |
 
 A dead source is logged, shown in the job summary, and skipped. Everything is fetched in parallel
@@ -641,8 +642,11 @@ Historical records are preserved in
   [Open Gacha Codes](https://github.com/torikushiii/OpenGachaCodes),
   [Hum-Bao/hoyoverse-codes](https://github.com/Hum-Bao/hoyoverse-codes),
   [PromoGacha](https://github.com/gripcrip-blip/codehub), the Fandom wikis and their editors,
-  [nitter](https://github.com/zedeus/nitter) and every operator who keeps a public instance
-  online, and [FxTwitter](https://github.com/FixTweet/FxTwitter). The full list, with licences
-  and the community databases: **[docs/CREDITS.md](docs/CREDITS.md)**.
+  [nitter](https://github.com/zedeus/nitter) and [redlib](https://github.com/redlib-org/redlib)
+  and every operator who keeps a public instance online, and
+  [FxTwitter](https://github.com/FixTweet/FxTwitter). The full list, with licences and the
+  community databases: **[docs/CREDITS.md](docs/CREDITS.md)**.
+- **Special thanks:** **[Arena AI](https://arena.ai/company/about)** ([@arena on X](https://x.com/arena?lang=en))
+  for making these engineering additions, upstream audits, and reliability upgrades possible.
 - **Sibling project:** [News-Express](https://github.com/uesu/News-Express) — same design,
   different beat.

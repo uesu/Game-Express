@@ -275,8 +275,10 @@ without a fixed article-count cap or ten-attempt game cap. A failed article rema
 retryable and does not prevent other eligible articles from being attempted. This
 is not unlimited crawling or guaranteed same-run delivery: source pagination,
 48-hour freshness/future holds, silent baselines, state capacity, media validation,
-partial-delivery safeguards, Discord retries and job timeouts remain. Maximum
-two messages per article is unchanged.
+partial-delivery safeguards, Discord retries and job timeouts remain. By default
+(`NEWS_EXPAND_FULL=0`), the maximum two messages / 7,000-character policy per article
+remains intact; setting `NEWS_EXPAND_FULL=1` lifts that ceiling up to an explicit
+12-page / 120,000-character / 120-media cap before excerpt fallback.
 
 Migration: `NEWS_MAX_POSTS_PER_RUN` is retired and ignored. Remove a leftover
 repository variable or local environment entry; it cannot enable a cap.
@@ -338,9 +340,8 @@ documented below; no upload/proxy service is added.
 A first valid discovery silently baselines at the run's time: no historical
 flood. Later discoveries admit publication times after that floor within 48 hours.
 Failed full-body fetches are retried while eligible; successful later articles do
-not advance over those holes. A rotating attempt cursor prevents repeated full-body
-failures from monopolising the per-game request budget; it is not a delivery
-checkpoint or publication floor. Confirmed message sends save progress atomically
+not advance over those holes, and all discovered eligible articles are attempted in
+publication order on each run. Confirmed message sends save progress atomically
 in the existing `state/state.json`; retries resume after confirmed message IDs,
 including legacy partial articles that age outside the discovery window. Legacy
 partial signatures that differ under this layout are held for manual review, not
@@ -377,10 +378,10 @@ Dedicated secret names distinguish routing purposes, not mandatory channel names
 
 HoYoLAB's Official **Info**, **Events**, and **Notices** are all read; this is not
 an Info-only feed. Ordinary service/payment notices, official giveaways, character
-introductions and event details remain news. A mention of a version number alone
-does not make an event a schedule announcement. The schedule exclusion applies
-to identified version-maintenance/preinstall and special-program announcement
-titles, not every article under Notices or every occurrence of "maintenance".
+introductions, event details, Special Program previews, and preload/maintenance notices
+all remain eligible for full official-article delivery on `DISCORD_WEBHOOK_NEWS_<GAME>`,
+independent of schedule extraction or schedule mirrors. Existing legacy state records
+already marked `"status": "posted"` stay completed without historical backfill.
 Event start/end dates and "In Progress"/"Already Ended" badges are not new
 publication times: existing old events are not reposted when enabled.
 

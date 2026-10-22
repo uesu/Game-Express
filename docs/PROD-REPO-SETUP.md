@@ -116,7 +116,8 @@ gamexpress/                      the whole package, including sources/ (no fixed
   http.py  maintenance.py  media.py  models.py  news_timestamps.py  preview_html.py
   runner.py  samples.py  schedule.py  state.py  textutil.py  timeparse.py
   sources/__init__.py  banner_search.py  bannerfeed.py  calendarfeed.py  codes.py
-          countdown.py  gachawiki.py  hoyolab.py  kuro.py  launcher.py  newspage.py  twitter.py
+          countdown.py  gachawiki.py  hoyolab.py  kuro.py  launcher.py  newspage.py
+          reddit.py  twitter.py
 config/games.json                game definitions, X accounts, code sources
 config/overrides.json            manual corrections
 config/program_announcements.json  discovered tweet ids — the workflow commits to this
@@ -545,6 +546,8 @@ the cards prod posted.
 Each run attempts all discovered eligible unposted articles; there is no fixed per-run
 article count or ten-attempt game cap. Source pagination, freshness/future checks,
 state capacity, dedup/partial progress, media holds and job timeouts remain. No state
-reset or route change is needed. The maximum two messages per article is unchanged.
+reset or route change is needed. By default (`NEWS_EXPAND_FULL=0`), the maximum two
+messages per article is unchanged; setting `NEWS_EXPAND_FULL=1` lifts that ceiling up to
+12 pages / 120,000 characters / 120 media before excerpt fallback.
 The retired `NEWS_MAX_POSTS_PER_RUN` variable is ignored; remove it from repository
 variables/local environment if present. It is not an active throttle switch.

@@ -39,16 +39,18 @@ import asyncio
 import html
 import json
 import logging
+import math
 import re
 from calendar import timegm
 from collections.abc import Callable
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 import feedparser
 
 from ..config import DEFAULT_REDDIT_ARCHIVE, Game, Settings
-from ..http import Fetcher
+from ..http import BROWSER_UA, Fetcher
 from ..models import CodeHit, Item
 from ..textutil import clean_text, dedupe, find_urls, find_versions, html_to_text, strip_invisible
 from .codes import extract_codes_from_text, sanitize
@@ -60,7 +62,6 @@ REDDIT_WORKING = 2
 REDDIT_GRACE = 1.5
 REDDIT_TIMEOUT = 10
 PROXY_BOT_UA = "Discordbot/2.0 (+https://discordapp.com)"
-BROWSER_UA = "Mozilla/5.0 (compatible; Game-Express/1.0)"
 
 TOKEN_GATED_REDDIT = frozenset({"https://redlib.miningtcup.me"})
 OFFICIAL_RSS_HOSTS = frozenset({"https://www.reddit.com", "https://old.reddit.com", "https://reddit.com"})
@@ -109,11 +110,6 @@ _HOYO_REDEEM_LINK_RE = re.compile(
 _COMPONENT_SCRIPT_RE = re.compile(
     r'<script[^>]*\bid=["\']discord:component-embed["\'][^>]*>(.*?)</script>',
     re.I | re.S,
-)
-_META_TAG_RE = re.compile(
-    r'<meta\b[^>]*?(?:property|name)=["\']([^"\']+)["\'][^>]*?\bcontent=["\']([^"\']*)["\']'
-    r'|<meta\b[^>]*?\bcontent=["\']([^"\']*)["\'][^>]*?(?:property|name)=["\']([^"\']+)["\']',
-    re.I,
 )
 
 
@@ -233,6 +229,14 @@ def _is_official_subreddit_post(game: Game, entry: dict) -> bool:
     official_set |= SUBREDDIT_OFFICIAL_AUTHORS.get(sub, frozenset())
     author = (entry.get("author") or "").lower()
     return bool((author and author in official_set) or _OFFICIAL_FLAIR_RE.search(entry.get("flair") or ""))
+
+
+def _safe_epoch_ts(raw_val: object) -> int:
+    try:
+        f = float(raw_val or 0)
+    except (TypeError, ValueError):
+        return 0
+    return int(f) if math.isfinite(f) and f > 0 else 0
 
 
 def _parse_created_ts(raw: str | None) -> int:
@@ -488,7 +492,7 @@ def parse_reddit_rss(xml_text: str) -> list[dict]:
         )
         text, links, imgs = html_to_text(html_body)
         text = re.sub(
-            r"\s*(?:submitted by\s+/?u/\S+(?:\s+to\s+/?r/\S+)?\s*)?\[link\]\s*\[comments\]\s*$",
+            r"\s*(?:submitted by\s+/?u/\S+(?:\s+to\s+/?r/\S+)?\s*)?(?:\[link\]\s*)?(?:\[comments\]\s*)?$",
             "",
             text,
             flags=re.I,
@@ -590,8 +594,8 @@ def parse_reddit_json(payload: object) -> list[dict]:
         if isinstance(cross, list) and cross and isinstance(cross[0], dict):
             source_data = cross[0]
 
-        removed_cat = raw.get("removed_by_category")
-        raw_body = clean_text(html.unescape(str(raw.get("selftext") or "")))
+        removed_cat = raw.get("removed_by_category") or source_data.get("removed_by_category")
+        raw_body = clean_text(html.unescape(str(raw.get("selftext") or source_data.get("selftext") or "")))
         if removed_cat or raw_body.strip().lower() in _REMOVED_BODY_MARKERS:
             raw_body = ""
 
@@ -653,7 +657,7 @@ def parse_reddit_json(payload: object) -> list[dict]:
             "title": clean_text(html.unescape(str(raw.get("title") or ""))),
             "text": raw_body,
             "url": canonical_post_url(subreddit, post_id, slug_part),
-            "ts": int(float(raw.get("created_utc") or 0)),
+            "ts": _safe_epoch_ts(raw.get("created_utc")),
             "images": dedupe(images),
             "videos": dedupe(videos),
             "links": dedupe(ext_links),
@@ -703,14 +707,27 @@ def _parse_official_feed_body(body: str) -> list[dict]:
 
 
 # ------------------------------------------------ rich-embed proxy & component-embed parsers
-def _extract_meta_tags(html_text: str) -> dict[str, list[str]]:
-    tags: dict[str, list[str]] = {}
-    for m in _META_TAG_RE.finditer(html_text or ""):
-        key = (m.group(1) or m.group(4) or "").strip().lower()
-        val = html.unescape(m.group(2) if m.group(1) else (m.group(3) or "")).strip()
+class _MetaTagParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.tags: dict[str, list[str]] = {}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "meta":
+            return
+        attr_map = {k.lower(): (v or "") for k, v in attrs if k}
+        key = (attr_map.get("property") or attr_map.get("name") or "").strip().lower()
+        val = (attr_map.get("content") or "").strip()
         if key and val:
-            tags.setdefault(key, []).append(val)
-    return tags
+            self.tags.setdefault(key, []).append(val)
+
+
+def _extract_meta_tags(html_text: str) -> dict[str, list[str]]:
+    if not html_text or "<meta" not in html_text.lower():
+        return {}
+    parser = _MetaTagParser()
+    parser.feed(html_text)
+    return parser.tags
 
 
 def parse_embeddit_status(data: dict) -> dict | None:
@@ -1277,7 +1294,7 @@ class RedditClient:
                         "title": title_clean,
                         "text": selftext,
                         "url": canonical_post_url(subreddit, post_id, slug_part),
-                        "ts": int(row.get("created_utc") or 0),
+                        "ts": _safe_epoch_ts(row.get("created_utc")),
                         "images": imgs,
                         "videos": [],
                         "links": find_urls(selftext),
@@ -1292,7 +1309,7 @@ class RedditClient:
         """Official publisher posts matching `want` since `since_ts`."""
         if not self.settings.reddit_enabled or (not game.reddit_official and not game.subreddits):
             return []
-        allowed_subs = {s.lower() for s in game.subreddits}
+        allowed_subs = {s.lower() for s in game.subreddits} | {f"u_{a.lower()}" for a in game.reddit_official}
         if game.reddit_official:
             allowed_authors = {a.lower() for a in game.reddit_official}
             feeds = await asyncio.gather(*(self.user(acc) for acc in game.reddit_official))
@@ -1317,12 +1334,22 @@ class RedditClient:
                     continue
                 if e.get("ts") and e["ts"] < since_ts:
                     continue
-                combined = f"{e.get('title') or ''}\n{e.get('text') or ''}".strip()
-                if not want(combined):
-                    continue
                 text_body = e.get("text") or ""
                 images = list(e.get("images") or [])
                 links = list(e.get("links") or [])
+                combined = f"{e.get('title') or ''}\n{text_body}".strip()
+                matched = want(combined)
+                if not matched and not text_body.strip() and resolved_budget > 0 and e.get("subreddit") and e.get("id"):
+                    resolved_budget -= 1
+                    detail = await self.resolve_post(e["subreddit"], e["id"])
+                    if detail:
+                        text_body = detail.get("text") or text_body
+                        images = dedupe(list(detail.get("images") or []) + images)
+                        links = dedupe(list(detail.get("links") or []) + links)
+                        combined = f"{detail.get('title') or e.get('title') or ''}\n{text_body}".strip()
+                        matched = want(combined)
+                if not matched:
+                    continue
                 if not text_body.strip() and resolved_budget > 0 and e.get("subreddit") and e.get("id"):
                     resolved_budget -= 1
                     detail = await self.resolve_post(e["subreddit"], e["id"])
@@ -1389,16 +1416,26 @@ class RedditClient:
                 detail = await self.resolve_post(e["subreddit"], e["id"])
                 if not detail:
                     continue
-                title = detail.get("title") or e.get("title") or ""
-                body = detail.get("text") or ""
+                merged_detail = {
+                    **e,
+                    **detail,
+                    "title": detail.get("title") or e.get("title") or "",
+                    "author": detail.get("author") or e.get("author") or "",
+                    "url": detail.get("url") or e.get("url") or "",
+                    "ts": detail.get("ts") or e.get("ts") or 0,
+                    "images": dedupe(list(detail.get("images") or []) + list(e.get("images") or [])),
+                    "links": dedupe(list(detail.get("links") or []) + list(e.get("links") or [])),
+                }
+                title = merged_detail["title"]
+                body = merged_detail.get("text") or ""
                 if not schedule.is_program_announcement(game, body, title=title):
                     continue
                 full_text = f"{title}\n{body}"
                 mentioned = find_versions(full_text)
                 if version and mentioned and version not in mentioned and version not in full_text:
                     continue
-                if found is None or (detail.get("ts") or 0) < (found.get("ts") or 0):
-                    found = detail
+                if found is None or (merged_detail.get("ts") or 0) < (found.get("ts") or 0):
+                    found = merged_detail
         if found is None:
             return None
         return Item(
