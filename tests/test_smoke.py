@@ -13653,5 +13653,81 @@ def test_extra_audit_reddit_parser_op_comment_program_and_empty_official_reachab
     assert item.images == ["https://i.redd.it/w2qz30mdokth1.png"]
 
 
+def test_reddit_zero_waste_schedule_failover_single_request_feed_token_and_shared_miningtcup_secret():
+    """Proves:
+    1. When X + primary HoYoLAB/Kuro API succeed on a game, `_gather_game` makes `0` Reddit user calls;
+       the instant X fails on that game, `_gather_game` automatically fails over to `ctx.reddit.items()`.
+    2. `GE_SECRETS_JSON` passes both `REDDIT_FEED_TOKEN` and `NITTER_RSS_TOKEN` automatically with zero
+       workflow edits: `NITTER_RSS_TOKEN` unlocks both `nitter.miningtcup.me` and `redlib.miningtcup.me`,
+       while `REDDIT_FEED_TOKEN` runs a single 1-request `www.reddit.com/r/<sub>/new.rss?feed=...` fast path."""
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import runner
+    from gamexpress.config import load_settings
+    from gamexpress.sources import hoyolab
+    from gamexpress.sources.reddit import RedditClient
+
+    # 1. `GE_SECRETS_JSON` auto-wiring + 1-request `REDDIT_FEED_TOKEN` fast path
+    st_tokens = load_settings({
+        "GE_SECRETS_JSON": json.dumps({
+            "NITTER_RSS_TOKEN": "shared_miningtcup_tok",
+            "REDDIT_FEED_TOKEN": "priv_reddit_feed_tok",
+        })
+    })
+    assert st_tokens.nitter_token == "shared_miningtcup_tok"
+    assert st_tokens.reddit_token == "priv_reddit_feed_tok"
+
+    feed_calls: list[str] = []
+    rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom"><entry>
+      <id>t3_1fast</id><title>Redemption Code: GENSHINFAST72</title>
+      <link href="https://www.reddit.com/r/Genshin_Impact/comments/1fast/code/"/>
+      <author><name>/u/genshinimpact</name></author><updated>2026-10-22T01:00:00+00:00</updated>
+      <content type="html">&lt;p&gt;Redemption Code: GENSHINFAST72&lt;/p&gt;</content>
+    </entry></feed>"""
+
+    class _TokenFastFetcher:
+        async def get_text(self, url, **kw):
+            feed_calls.append(url)
+            if url == "https://www.reddit.com/r/Genshin_Impact/new.rss?feed=priv_reddit_feed_tok":
+                return rss_xml
+            return None
+
+        async def get_json(self, url, **kw):
+            return None
+
+    rc_tok = RedditClient(_TokenFastFetcher(), st_tokens)
+    assert "https://redlib.miningtcup.me" in rc_tok._eligible_instances(kind="user")
+    hits = asyncio.run(rc_tok.community_codes("Genshin_Impact"))
+    assert [h.code for h in (hits or [])] == ["GENSHINFAST72"]
+    # Strictly 1 single HTTP call to official `www.reddit.com` — 0 Redlib mirrors touched!
+    assert feed_calls == ["https://www.reddit.com/r/Genshin_Impact/new.rss?feed=priv_reddit_feed_tok"]
+
+    # 2. `_gather_game`: 0 Reddit `/user/` calls when healthy, automatic same-run failover when X drops
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "state.json"
+        ctx = make_ctx(path, now=1792650000)
+        reddit_spy = AsyncMock(return_value=[])
+        ctx.reddit = types.SimpleNamespace(items=reddit_spy, reachable=set())
+        ctx.x = types.SimpleNamespace(
+            items=AsyncMock(return_value=[]),
+            reachable={"genshinimpact"},
+            avatars={},
+        )
+
+        async def _healthy_hoyo(probe, game, want, since):
+            probe.ok += 1
+            return []
+
+        with patch.object(hoyolab, "fetch_items", side_effect=_healthy_hoyo):
+            asyncio.run(runner._gather_game(ctx, GAMES["genshin"], 0))
+            assert reddit_spy.await_count == 0
+
+            # Now simulate X unreachable on `GenshinImpact` -> automatic failover in the same run!
+            ctx.x.reachable = set()
+            asyncio.run(runner._gather_game(ctx, GAMES["genshin"], 0))
+            assert reddit_spy.await_count == 1
+
+
 if __name__ == "__main__":
     sys.exit(main())

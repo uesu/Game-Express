@@ -297,6 +297,9 @@ def cmd_validate(_args) -> int:
           f"instance={settings.instance_name} ({settings.instance_role}) | dry_run={settings.dry_run}")
     print(f"peer_state_url={'set' if settings.peer_state_url else '—'} | X={'on' if settings.x_enabled else 'off'} "
           f"| nitter instances={len(settings.nitter_instances)} | token={'set' if settings.nitter_token else '—'}")
+    print(f"Reddit={'on' if settings.reddit_enabled else 'off'} "
+          f"| reddit instances={len(settings.reddit_instances)} | proxies={len(settings.reddit_proxies)} "
+          f"| feed_token={'set' if settings.reddit_token else '—'}")
     print(f"news={'on' if 'news' in settings.features else 'off'} | news games={','.join(sorted(settings.news_games))} "
           f"| article count cap=none "
           f"| timestamps={'on' if settings.news_timestamps else 'off'} "

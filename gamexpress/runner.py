@@ -71,23 +71,24 @@ async def gather_versions(ctx: Ctx) -> None:
 async def _gather_game(ctx: Ctx, g: Game, since: int) -> None:
     want = schedule.wants(g)
     probe = Probe(ctx.fetcher)              # counts THIS game's answers while games run in parallel
-    reddit_task = (ctx.reddit.items(g, want, since)
-                   if getattr(ctx, "reddit", None) is not None else asyncio.sleep(0, result=[]))
     parts = await asyncio.gather(hoyolab.fetch_items(probe, g, want, since),
                                  kuro.fetch_items(probe, g, want, since),
-                                 ctx.x.items(g, want, since),
-                                 reddit_task)
+                                 ctx.x.items(g, want, since))
     items: list[Item] = [it for part in parts for it in part]
+    x_ok = any(a.lower() in ctx.x.reachable for a in g.x_accounts)
+    has_primary_api = bool(g.hoyolab_gid or g.kuro_news)
+    primary_ok = (not has_primary_api) or probe.ok > 0
+    # True failover backup: when primary APIs + X both answered, skip `/user/<official>` requests
+    # (`0` extra schedule HTTP requests on healthy runs); fail over automatically in the same run
+    # whenever X or a primary official feed could not be reached.
+    if getattr(ctx, "reddit", None) is not None and ctx.settings.reddit_enabled and (not x_ok or not primary_ok):
+        items.extend(await ctx.reddit.items(g, want, since))
     ctx.items[g.key] = items
     reddit_ok = getattr(ctx, "reddit", None) is not None and (
         any(f"u/{a.lower()}" in ctx.reddit.reachable for a in g.reddit_official)
         or any(f"r/{s.lower()}" in ctx.reddit.reachable for s in g.subreddits)
     )
-    ctx.reachable[g.key] = (
-        probe.ok > 0
-        or any(a.lower() in ctx.x.reachable for a in g.x_accounts)
-        or reddit_ok
-    )
+    ctx.reachable[g.key] = probe.ok > 0 or x_ok or reddit_ok
     icons = ctx.state.data.setdefault("icons", {})
     fresh = next((ctx.x.avatars[a.lower()] for a in g.x_accounts if a.lower() in ctx.x.avatars), None)
     if fresh and icons.get(g.key) != fresh:

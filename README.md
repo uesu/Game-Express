@@ -304,7 +304,8 @@ webhooks. They are independent features, even if you choose the same destination
 | `DISCORD_WEBHOOK_CODES_ZZZ` | Zenless Zone Zero codes |
 | `DISCORD_WEBHOOK_CODES_WUWA` | Wuthering Waves codes |
 | `DISCORD_WEBHOOK_CODES_ANANTA` | ANANTA codes |
-| `NITTER_RSS_TOKEN` | *optional* — the same one as News-Express |
+| `NITTER_RSS_TOKEN` | *optional* — the same token as News-Express; unlocks **both** `nitter.miningtcup.me` (X) and `redlib.miningtcup.me` (Reddit/Redlib) |
+| `REDDIT_FEED_TOKEN` | *optional* — your private Reddit RSS `?feed=…` token from `reddit.com/prefs/feeds/` (same as News-Express); enables the 1-request official `www.reddit.com` RSS fast path |
 | `BUMP_PAT` | *required only where the Python bump workflow is installed* — a repository-scoped PAT with **Contents, Pull requests and Workflows: read and write**, subject to token type and repository policy. See [docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md#publication-credentials) |
 
 Create only destinations you intend to use; ANANTA is not a verified official-news adapter.
@@ -324,10 +325,17 @@ The same URL may be used for several secrets, for example one codes channel for 
 *… → Variables.* `PING_ROLE_ID` = your role ID — **leave it unset for no ping**, or set
 `NO_PING=1`. The Youtube and Twitch emojis already default to the animated ones.
 Leave `ENABLED_FEATURES` unset for the usual `schedule,codes` production defaults.
+Reddit backup (`REDDIT_ENABLED=1` by default) backs up `schedule` automatically when X or
+primary APIs degrade and adds an unverified 2nd-witness family (`reddit:<Subreddit>`) for
+`codes`; set `REDDIT_ENABLED=0` to turn all Reddit fetching off with zero HTTP calls.
 Official news remains off unless `NEWS_ENABLED=1`; `NEWS_GAMES` selects games,
-`NEWS_GROUP_LONG_STRIPS=0` keeps article-order galleries. Each run attempts all discovered,
+`NEWS_TIMESTAMPS=0` / `NEWS_EXPAND_FULL=0` / `NEWS_GROUP_LONG_STRIPS=0` keep default
+rendering unless switched to `1`. Each run attempts all discovered,
 eligible unposted articles in publication order, with no fixed article-count cap. For only GI and WuWa news, use `NEWS_GAMES=genshin,wuwa`
 and their two dedicated secrets; this does not restrict schedule/codes.
+Pre-load/maintenance started cards remain off unless `MAINTENANCE_ENABLED=1` and
+`MAINTENANCE_GAMES` names the target game keys alongside dedicated
+`DISCORD_WEBHOOK_MAINTENANCE_<GAME>` secrets.
 Canonical news keys: `genshin`, `starrail`, `hna`, `zzz`, `wuwa`.
 See [full setup and switches](docs/CONFIGURATION.md#official-news-explicit-opt-in-default-off).
 

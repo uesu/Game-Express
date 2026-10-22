@@ -2,11 +2,12 @@
 
 Three distinct jobs, each matched to the route shape upstream actually serves:
   * official posts (`game.reddit_official`, e.g. `u/genshinimpact`, `u/HonkaiStarRail`,
-    `u/ZZZ_Official`, `u/WutheringWaves`) — feed `schedule` and `codes` as first-party items
-    (`source="reddit"`, `PRIORITY["reddit"] = 50`). When an official publisher posts an image
-    thread and places the broadcast air time or links in its own follow-up comment under the
-    same post id (observed live on `u/genshinimpact` `1xbd2nm`, 2026-10-21), that same-author
-    comment body is merged onto the post automatically.
+    `u/ZZZ_Official`, `u/HonkaiNexusAnima`, `u/AnantaOfficial`) — feed `schedule` and `codes` as
+    first-party backup items (`source="reddit"`, `PRIORITY["reddit"] = 38`, `LOCK_RANK["reddit"] = 1`),
+    invoked automatically when X or a primary official feed degrades (`0` extra user-feed requests on
+    healthy runs). When an official publisher posts an image thread and places the broadcast air time
+    or links in its own follow-up comment under the same post id (observed live on `u/genshinimpact`
+    `1xbd2nm`, 2026-10-21), that same-author comment body is merged onto the post automatically.
   * community code corroboration (`reddit:<Subreddit>` in `game.codes["sources"]`) — extracts
     explicit redemption-code mentions from recent subreddit posts as unverified
     `CodeHit(code, "reddit", None)`. Because `family("reddit") == "reddit"`, a community post
@@ -54,7 +55,7 @@ from .codes import extract_codes_from_text
 
 log = logging.getLogger("gamexpress.reddit")
 
-REDDIT_BATCH = 4
+REDDIT_BATCH = 3
 REDDIT_WORKING = 2
 REDDIT_GRACE = 1.5
 REDDIT_TIMEOUT = 10
@@ -691,6 +692,14 @@ class RedditClient:
         merged: dict[str, dict] = {}
         working = 0
         fleet = self._eligible_instances(for_post_detail=False, kind=kind)
+        # Single-request fast path when `REDDIT_FEED_TOKEN` is configured: Reddit's own first-party
+        # authenticated `/r/<sub>/new.rss?feed=...` feed needs only 1 HTTP request and avoids hitting
+        # any public Redlib mirror unless the official RSS call fails.
+        if kind == "sub" and self.settings.reddit_token and fleet and fleet[0] == "https://www.reddit.com":
+            direct = await self._fetch_listing_on("https://www.reddit.com", kind, target)
+            if direct is not None:
+                return sorted(direct, key=lambda x: x.get("ts") or 0, reverse=True)
+            fleet = fleet[1:]
         for i in range(0, len(fleet), REDDIT_BATCH):
             if working >= REDDIT_WORKING:
                 break

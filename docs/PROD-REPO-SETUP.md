@@ -276,7 +276,9 @@ Webhooks).
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_WUWA` | **set on dev** | |
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_HNA` | **set on dev** | |
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ANANTA` | **set on dev** | |
-| `NITTER_RSS_TOKEN` | optional | only unlocks `nitter.miningtcup.me`. Useful, not required: the 2026-10-06 audit had 8 mirrors answering and the fleet merges the first **two** of them, so the token adds a proven answerer rather than supplying one you cannot do without. Single-tweet lookups by id do not need it: they go to `nitter.cf` and then `xitter.cf`, with no token |
+| `NITTER_RSS_TOKEN` | optional | same single token as News-Express — automatically unlocks **both** `nitter.miningtcup.me` (X) and `redlib.miningtcup.me` (Reddit/Redlib). No separate secret name is needed for `miningtcup` |
+| `REDDIT_FEED_TOKEN` | optional | private Reddit RSS `?feed=…` token from `reddit.com/prefs/feeds/` (same as News-Express). Activates the 1-request official `www.reddit.com/r/<sub>/new.rss?feed=…` fast path instead of querying multiple Redlib mirrors |
+| `DISCORD_WEBHOOK_MAINTENANCE_<GAME>` | optional | dedicated webhook per game when `MAINTENANCE_ENABLED=1` (`GENSHIN`, `STARRAIL`, `ZZZ`, `WUWA`, `HNA`, `ANANTA`) |
 | `BUMP_PAT` | yes, if you keep `python_version_bump.yml` | a PAT with **Workflows: read and write**. Without it the weekly bump validates fine and then fails on the push — see below |
 | `DISCORD_WEBHOOK_CODES` | optional | catch-all for games without their own channel |
 | `DISCORD_WEBHOOK_URL` | optional | global catch-all |
@@ -316,9 +318,14 @@ You may choose any channel names. For only GI/WuWa, use their two dedicated secr
 |---|---|---|
 | `PING_SCHEDULE` | `<@&…>` | dev currently pings a real role. Copy the same value to keep behaviour identical, or set `none` for a silent prod |
 | `ENABLED_FEATURES` | preserve intended selection, or unset | default `schedule,codes`; never `none` on the live instance |
+| `REDDIT_ENABLED` | default `1` (on) | automatic failover backup on `schedule` (`0` user-feed requests when X + primary APIs succeed) + unverified 2nd-witness family on `codes`; set `0` for `0` Reddit HTTP calls |
 | `NEWS_ENABLED` | preserve intended opt-in; default `0` | `1` explicitly enables news unless globally off |
 | `NEWS_GAMES` | default `genshin,starrail,zzz,wuwa,hna` | independent news subset |
+| `NEWS_TIMESTAMPS` | default `0` | `1` converts unambiguous official body timestamps into Discord `<t:…>` tokens |
+| `NEWS_EXPAND_FULL` | default `0` | `1` renders full long official articles across multiple Components V2 pages instead of a single excerpt card |
 | `NEWS_GROUP_LONG_STRIPS` | default `0` | preserve your chosen setting; no rollout implied |
+| `MAINTENANCE_ENABLED` | default `0` | `1` enables Pre-Load Started / Maintenance Started alerts for games listed in `MAINTENANCE_GAMES` |
+| `MAINTENANCE_GAMES` | default unset (none) | explicit game keys for maintenance alerts, e.g. `genshin,starrail,zzz,wuwa` |
 | `AUTO_MERGE_DEPENDABOT` | **do not copy** | dev-only, there is no Dependabot in prod |
 | `AUTO_MERGE_PYTHON_BUMP` | not needed | legacy/ignored in all instances |
 
