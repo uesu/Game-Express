@@ -27,8 +27,8 @@ official site / launcher and by X respectively. The API is used rather than the 
 it returns the same posts as structured JSON, with no HTML or JavaScript to scrape.
 | HoYoLAB post (official) | `…/getPostFull?gids={gid}&post_id={id}` | full body (`content` HTML, or `structured_content` when `content == "en-us"`) + images | ✅ HSR 46814308 (quirk), GI 46604275 |
 | c3kay JSON-Feed (mirror, fallback) | `https://feeds.c3kay.de/{genshin,starrail,zenless}.json` | JSON Feed 1.1 with full `content_html`, refreshed every 30 min | ✅ |
-| Official X accounts | nitter RSS fleet `https://<instance>/<account>/rss` (21 entries, 20 live — `xcancel.com` is suspended; originally from News-Express round 13/14) | timeline (first 2 working instances merged) | fleet taken from News-Express |
-| Tweet details | `https://nitter.cf/<account>/status/{id}/rss` (then `xitter.cf`, when the account is known) → `https://api.fxtwitter.com/status/{id}` → `https://api.fixupx.com/status/{id}` → `https://api.vxtwitter.com/Twitter/status/{id}` | full text with expanded links, photos, exact timestamp; the winner is logged | ✅ all 4 reference tweets |
+| Official X accounts | nitter RSS fleet `https://<instance>/<account>/rss` (27 entries, 26 live — `xcancel.com` is suspended; originally from News-Express round 13/14) | timeline (first 2 working instances merged) | fleet taken from News-Express |
+| Tweet details | `https://nitter.cf/<account>/status/{id}/rss` (then `xitter.cf`, `teapawt.org`, `teapaw.org`, `teapawt.net`, `xitter.gq`, `nitter.gq`, when the account is known) → `https://api.fxtwitter.com/status/{id}` → `https://api.fixupx.com/status/{id}` → `https://api.vxtwitter.com/Twitter/status/{id}` | full text with expanded links, photos, exact timestamp; the winner is logged | ✅ all 4 reference tweets |
 | Kuro official site (WW) | `https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/json/G152/en/{ArticleMenu,MainMenu}.json` + `…/article/{id}.json` | official articles incl. *Featured Resonator/Weapon Convene* banner notices; times are UTC+8 | ✅ (English menus are homepage **subsets**, so X stays primary for WW) |
 | HoYoPlay launcher | `https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGameBranches?launcher_id=VYTpXlbWo8` | exact live version (`main.tag`) + pre-install availability (`pre_download`) | ✅ ZZZ `3.2.0` |
 | Kuro launcher (WW) | `https://prod-alicdn-gamestarter.kurogame.com/launcher/game/G153/50004_obOHXFrFanqsaIEOmuKroCcbZkQRBC7c/index.json` | live version (`default.version`) + `predownload` | structure from WW downloader configs |
@@ -73,14 +73,18 @@ every run), `xitter.cf` (the same machine as `nitter.cf`, an answerer across its
 IPv4-only, so it may lose a `NITTER_GRACE` race on a handle but never the quorum) and the
 token-gated `nitter.miningtcup.me` (6/6). That round's ranking rule, which every later rotation
 inherits: **no member that blocks GitHub Actions / Azure datacenter IPs sits above one that
-doesn't.** The fallbacks open with two zero-refusal TRIALs — `nitter.freedit.eu` (the only host
-answering all 8 union handles, the six game feeds plus the two News-Express accounts) and
-`nitter.gravitywell.xyz` (5/8, deterministic `User not found` gaps) — which cost nothing while
-the hot path is healthy and get their runner test on the first degraded day.
+doesn't.** Rotation #7 (2026-10-22) keeps all four runner-proven hosts in Batch 1 (`nitter.cf` and
+`xitter.cf` untouched at slots 1–2, `nitter.meowing.monster`, `nitter.miningtcup.me`), seats four
+8/8 union-verified mirrors across Batch 2 (`teapawt.org` 426 ms, `teapaw.org` 488 ms, `teapawt.net`
+462 ms — official `.org`/`.net` sibling domains of `4cuck/teapawt` with explicit scraping permission
+and `/status/<id>/rss` feeds — plus `nitter.mie.foundation` from `shitter/shitter`'s working list as
+an independent `TRIAL`), and seats `xitter.gq` (450 ms) and `nitter.gq` (455 ms) from `status.d420.net`
+at the head of Batch 3 ahead of `nitter.freedit.eu` (8/8) and `nitter.gravitywell.xyz` (5/8,
+deterministic `User not found` gaps), all costing zero requests while the hot path is healthy.
 
 Being polite about it matters: these are volunteer-run mirrors and `status.d420.de` asks
 outright that they not be scraped. The design already keeps the cost low — the loop stops at
-the first two answers, so a healthy run spends 2 requests per handle, not 16.
+the first two answers, so a healthy run spends 2 requests per handle, not 27.
 
 A mirror that stops answering is **demoted, never deleted**. `x.n0g.xyz` returned HTTP 404 then
 429 on every handle in three consecutive live runs, so it sits at the very end of the fleet as a
@@ -92,7 +96,7 @@ simply be blocking GitHub's runners while answering fine from a VPS — `nitter.
 24/24 fetches across four Azure regions, runs #2662–#2665, the trial verdict of 2026-10-15).
 
 Single tweets are read **from nitter.cf first** when the account is known: `XClient.tweet()` asks the
-nitter status feed (`nitter.cf`, then `xitter.cf`, the same backend) for that post. FxTwitter is asked
+nitter status feed (`nitter.cf`, `xitter.cf`, `teapawt.org`, `teapaw.org`, `teapawt.net`, `xitter.gq`, `nitter.gq`) for that post. FxTwitter is asked
 only when nitter cannot answer, or when the post carries a `t.co` link that nitter leaves unexpanded (the
 YouTube link is read from the expanded URL). The chain after that is **fxtwitter → fixupx → vxtwitter**,
 and the nitter text is the last resort. A status mirror that fails `STATUS_FAIL_LIMIT` (2) times in one run
@@ -106,15 +110,16 @@ service answered.
 
 | Source | Endpoint | Trust | Status |
 |---|---|---|---|
-| HoYoLAB livestream module (official) | `…/community/painter/wapi/circle/channel/guide/material?game_id={2,6,8}` → `data.modules[].exchange_group.bonuses[].exchange_code` | **official**: posts immediately | ✅ (empty outside livestreams, as expected) |
+| HoYoLAB livestream module (official) | `…/community/painter/wapi/circle/channel/guide/material?game_id={2,6,8,9}` → `data.modules[].exchange_group.bonuses[].exchange_code` | **official**: posts immediately | ✅ (empty outside livestreams, as expected) |
 | hoyo-codes.seria.moe | `https://hoyo-codes.seria.moe/codes?game={genshin,hkrpg,nap}` | **redeem-validator** (`status: OK` = works, `NOT_OK` = counted as an *expired* flag) | ✅ 9 GI codes, all OK (2026-09-25) |
 | Hum-Bao/hoyoverse-codes *(v1.1)* | `https://raw.githubusercontent.com/Hum-Bao/hoyoverse-codes/main/{GENSHIN,HSR,ZZZ}.txt` → jsDelivr mirror | **redeem-validator**: a daily job redeems every code on a US account and keeps only working ones | ✅ updated daily (~20:18 UTC) |
 | Open Gacha Codes *(v1.1)* | `https://api.ennead.cc/codes/{genshin,starrail,zenless,wuwa}` | community (**confirming only**: noisy, includes glued-together and stale codes, which are filtered) | ✅ incl. Wuthering Waves |
 | api.ennead.cc (legacy) | `https://api.ennead.cc/mihoyo/{genshin,starrail,zenless}/codes` (`active` → active, `inactive` → *expired* flag) | community, **same backend as Open Gacha Codes = counted as one source** | ✅ |
 | wuthering.gg *(v1.1)* | `https://wuthering.gg/codes` (HTML table: code · COPY/Expired · rewards · date) | community (WW), provides **expired** flags | ✅ (only WUTHERINGGIFT active on 2026-09-25) |
-| Fandom wikis (MediaWiki API) | `https://{wiki}.fandom.com/api.php?action=query&prop=revisions&titles={page}&rvprop=content&rvslots=main&format=json` | community. Expired rows and **passed *valid until* dates** give an *expired* flag; a passed date beats every other source *(v1.1.1)* | ✅ **all four pages re-checked live 2026-09-27** — GI `Promotional_Code` (pageid 10893, revid 2183997, 2026-09-25T12:05:33Z, 4 891 B) · HSR `Redemption_Code` (2451, 470121, 2026-09-20T11:51:48Z, 44 109 B) · ZZZ `Redemption_Code` (15440, 184104, 2026-09-13T06:30:28Z, 3 357 B) · WW `Redemption_Code` (2513, 143093, 2026-09-19T12:03:08Z, 15 082 B). GI's live `Active Codes` section is now a fixture — 11 codes, none duplicated, the CN-only `YuanShen` row dropped, `VesnaOnPatrol` normalised to upper case |
+| Fandom wikis (MediaWiki API, all 6 games) | `https://{wiki}.fandom.com/api.php?action=query&prop=revisions&titles={page}&rvprop=content&rvslots=main&format=json` | community. Expired rows and **passed *valid until* dates** give an *expired* flag; a passed date beats every other source *(v1.1.1)*; cited `<ref>…</ref>`, `{{Code\|…}}`/`{{Copy\|…}}` templates, and multi-line VisualEditor cells parse cleanly | ✅ **all six wikis configured** — GI `Promotional_Code` · HSR `Redemption_Code` · ZZZ `Redemption_Code` · WW `Redemption_Code` · HNA `Redemption_Code` · ANANTA `Redemption_Code`. GI's live `Active Codes` section is pinned as a fixture (11 codes, CN-only `YuanShen` dropped, `VesnaOnPatrol` normalised to upper case) |
 | PromoGacha data | `https://raw.githubusercontent.com/gripcrip-blip/codehub/main/data/codes.json` → jsDelivr mirror | **aggregator**: every entry says where it was copied from (`hoyo-codes` = seria, `Fandom Wiki` = fandom, `Open Gacha Codes` / `api.ennead.cc` = ennead), and entries are never removed. It counts as that upstream — never as an extra independent source — and stale copies are ignored *(v1.1.1)* | ✅ |
-| Official posts | X / HoYoLAB text that explicitly lists "Redemption Codes" | **official**: posts immediately | extraction tested on real tweets (no false positives) |
+| Reddit community listings (`reddit:<Subreddit>`) | `/r/{Genshin_Impact,HonkaiStarRail,ZZZ_Official,WutheringWaves,HonkaiNexusAnima,AnantaOfficial}/new` via `REDDIT_FEED_TOKEN` (`www.reddit.com` → `old.reddit.com`) or `DEFAULT_REDDIT` | **community witness** (`SOURCE_FAMILY["reddit"] = "reddit"`): never posts alone; corroborates pending codes alongside an independent second family (`CODES_MIN_SOURCES = 2`) | ✅ all 6 subreddits live-verified (`2026-10-22`) |
+| Official posts | X / HoYoLAB / official Reddit text that explicitly lists "Redemption Codes" | **official**: posts immediately | extraction tested on real tweets & OP comments (no false positives) |
 
 ### How one code stays one code (v1.20.0)
 
@@ -150,6 +155,14 @@ never asked. `runner.find_program` now runs X first; everything below it is a ba
 | 3 | **HoYoLAB** news list | official text + timestamps, paged back past the lookback window | its image list is often a small article cover, not the key art |
 | 4 | **Official news page** | archives every announcement | image can be a page rendition; Kuro's page is a JS build |
 | 5 | **Feed mirror** (WW) | RSS/Atom mirror of Kuro's news list | last resort for the one site the scraper cannot read |
+| 6 | **Reddit official backup** *(v2.1)* | Redlib dual-path HTML (`/user/<account>` + `/r/<sub>/new` + `/r/<sub>/comments/<id>/`) + JSON/HTML proxy chain | clean backup when X / HoYoLAB / official site miss; upgrades automatically once X returns |
+
+**Reddit / Redlib fleet & trust separation (`gamexpress/sources/reddit.py` + `gamexpress/config.py`, `2026-10-22`):**
+
+- **Active healthy tier (`7` hosts — Batch 1 + dual-path backups, zero unauthenticated `403` waste on GitHub Actions):** `https://redlib.catsarch.com`, `https://redlib.privacyredirect.com`, `https://snoo.habedieeh.re` (Redlib `v3.0.0`, full listing + single-post + `1080p` CMAF), token-gated `https://redlib.miningtcup.me` (`NITTER_RSS_TOKEN`), `https://redlib.tiekoetter.com`, `https://redlib-1.privadency.com`, and `https://redlib-2.privadency.com`.
+- **Fallback tail (`10` partial / runner-gated / degraded hosts — placed strictly last so healthy runs make `0` tail requests):** pre-`#592` listing-only instances (`https://red.artemislena.eu`, `https://rl.awy.one`, `https://redlib.freedit.eu`, `https://redlib.utilibre.org`), `https://www.reddit.com` (promoted to slot `0` with `?feed=` when `REDDIT_FEED_TOKEN` is set; unauthenticated Actions IPs otherwise receive `403`), `https://old.reddit.com`, and degraded legacy mirrors (`https://eddrit.com`, `https://redlib.privadency.com`, `https://safereddit.com`, `https://redlib.nadeko.net`).
+- **Verified publisher accounts vs community subreddits (`config/games.json`):** `genshin` (`u/genshinimpact`, `r/Genshin_Impact`), `starrail` (`u/HonkaiStarRail`, `r/HonkaiStarRail`), `zzz` (`u/ZZZ_Official`, `r/ZZZ_Official`), `wuwa` (`official: []`, `r/WutheringWaves` — `u/WutheringWaves` on live Reddit is an unrelated 2022 squatter account and is never trusted as `verified=True`), `hna` (`u/HonkaiNexusAnima`, `r/HonkaiNexusAnima`), and `ananta` (`u/AnantaOfficial`, `r/AnantaOfficial`). Community `reddit:<sub>` code hits are unverified (`SOURCE_FAMILY["reddit"] = "reddit"`) and require independent second-family corroboration (`CODES_MIN_SOURCES = 2`).
+- **Single-post JSON/HTML proxy chain (`DEFAULT_REDDIT_PROXIES`):** `https://www.vxreddit.com` → `https://embedez.com` → `https://embeddit.deltandy.me` (supporting both Mastodon-style JSON/OpenGraph metadata and v2 `<script id="discord:component-embed" type="application/json">` HTML embeds, preferring muxed video+audio streams over un-muxed `v.redd.it` video streams), with `https://arctic-shift.photon-reddit.com` as last-resort archive lookup.
 
 **Lookup order and the lock.** `runner.find_program` asks X first (the seed, then the X timeline), then
 HoYoLAB, then the official news page, then the feed mirror. The card's lock follows
@@ -207,10 +220,6 @@ links one specific livestream video — HSR 4.6 and WW 3.7 carried `youtube.com/
 `Watch` button for that video is added. Genshin 7.1 and ZZZ 3.3 announced their programmes
 without a link in the post, so their cards have no third button; nothing is missing. The card's
 title always links the announcement post itself, never the stream.
-
-**Not used:** Reddit (`reddit.com/r/<official sub>/…/search.json`) was considered as an image
-fallback. It is skipped for now — the official pages already serve the key art at full size, and a
-subreddit preview image is a re-upload, so it would be the first non-official pixel on a card.
 
 ## Countdown / timer sites (v1.2.0 — estimates only)
 
@@ -389,21 +398,27 @@ page fetcher, and so were the ennead calendars. The production reachability of t
 | genshin.dev | character/game data API, not schedules or codes |
 | gachabase.net · nanoka.cc · sr.yatta.moe · lunaris.moe · ambr.top | databases, listed in [CREDITS.md](CREDITS.md#community-databases--resources). No public schedule/banner API was verified, so **banner names come from official notices or `config/overrides.json`** |
 
+## Reddit & Redlib fleet (2026-10-22)
+
+`sources/reddit.py` integrates Reddit and Redlib across all six configured games (`r/Genshin_Impact` / verified `u/genshinimpact`, `r/HonkaiStarRail` / verified `u/HonkaiStarRail`, `r/ZZZ_Official` / verified `u/ZZZ_Official`, `r/WutheringWaves` with `official: []` because live `u/WutheringWaves` is an unrelated 2022 squatter account, `r/HonkaiNexusAnima` / verified `u/HonkaiNexusAnima`, and `r/AnantaOfficial` / verified `u/AnantaOfficial`) under strict role separation and zero-waste request discipline:
+
+- **Official publisher accounts (`game.reddit_official`)** act purely as a failover backup for `schedule` and `codes` (`PRIORITY["reddit"] = 38`, `LOCK_RANK["reddit"] = 1`): when X and primary APIs (`HoYoLAB`/`Kuro`) succeed on a game, `_gather_game()` makes **`0` `/user/<official>` HTTP requests**; if either degrades, it fails over in the same run automatically, merges same-author comments under image posts, rewrites `/img/` / `/preview/` / `/vid/` paths back to permanent `redd.it` URLs, and upgrades back to X as soon as X recovers.
+- **Community subreddit listings (`reddit:<Subreddit>` in `codes.sources`)** emit unverified `CodeHit(code, "reddit", None)` witnesses (`family("reddit") == "reddit"`). A single unverified community post never passes `CODES_MIN_SOURCES = 2` alone (`status = "pending"`), while providing a fast second independent witness alongside `fandom`, `seria`, `humbao`, `ennead`/`ogc`, or `wuthering.gg` (including pre-launch `hna` and `ananta`). When `REDDIT_FEED_TOKEN` is set in Secrets, both `/r/<sub>/new.rss` and `/user/<acct>/submitted.rss` use a **1-request direct `[0] www.reddit.com` → `[1] old.reddit.com` fast path** plus circuit-broken `.json` fallback (`0` Redlib mirror hits unless first-party Reddit fails).
+- **Ordered `DEFAULT_REDDIT` fleet (`17` entries, `REDDIT_BATCH = 3`, stopping at `REDDIT_WORKING = 2` answers):**
+  1. Active healthy dual-path tier (`[0..6]`, verified `200 OK` on `/r/<sub>/new`, `/user/<acct>`, `/search`, and `/comments/<id>/` with zero unauthenticated `403`s on GitHub Actions IPs): `https://redlib.catsarch.com`, `https://redlib.privacyredirect.com`, `https://snoo.habedieeh.re`, token-gated `https://redlib.miningtcup.me` (`NITTER_RSS_TOKEN`), `https://redlib.tiekoetter.com`, `https://redlib-1.privadency.com`, `https://redlib-2.privadency.com`.
+  2. Partial-working, runner-gated & legacy fallback tail (`[7..16]`, placed strictly last — zero requests while healthy hosts answer; pre-`#592` listing-only hosts skipped on `/comments/` lookups): `https://red.artemislena.eu`, `https://rl.awy.one`, `https://redlib.freedit.eu`, `https://redlib.utilibre.org`, `https://www.reddit.com` (promoted to slot `0` 1-request fast path when `REDDIT_FEED_TOKEN` is set), `https://old.reddit.com`, `https://eddrit.com`, `https://redlib.privadency.com`, `https://safereddit.com`, `https://redlib.nadeko.net`.
+  3. Newly discovered candidates that were runner-refused (`403`), challenge-walled, JS-interstitial (`Still trying to load your page…`), `502` / empty-body broken, duplicate `302` aliases, spoofs, honeypots, or non-JSON SPA viewers were excluded completely and are never added to `DEFAULT_REDDIT`.
+- **`DEFAULT_REDDIT_PROXIES` (`Discordbot/2.0` rich-embed chain):** `https://www.vxreddit.com` (muxed video+audio primary) -> `https://embedez.com` (`proxy.embedez.com` 1080p audio-muxed fallback) -> `https://embeddit.deltandy.me` (supports both live v1 Mastodon `/api/v1/statuses/<id>` JSON and the still-unfinished v2 `<script id="discord:component-embed" type="application/json">` format, keeping raw un-muxed `v.redd.it` fallback video behind `vxreddit` and `embedez`), with `https://arctic-shift.photon-reddit.com` retained only as a last-resort JSON archive fallback.
+
 ## Games not yet released
 
 - **Honkai: Nexus Anima**:
-  - **Status:** no release date as of 2026-09. Two closed betas have run, including the
-    *Evolution Test* on Jul 9–27, 2026.
-  - **Configured now:** HoYoLAB gid 9, X `@HonkaiNA`, and the HoYoLAB livestream-code module
-    (`hoyolab:9`), all with `enabled: false`.
-  - **Switching it on:** use `ENABLE_GAMES=hna`.
-  - **At launch:** add the HoYoPlay `game_id`, YouTube/Twitch, and seria / Open Gacha Codes
-    once they support it.
+  - **Status:** pre-release (`enabled: true, released: false` since `2026-10-02` so pre-launch Special Programs are caught immediately). Two closed betas have run, including the *Evolution Test* on Jul 9–27, 2026.
+  - **Configured now:** HoYoLAB gid 9, X `@HonkaiNA`, official Reddit `u/HonkaiNexusAnima`, HoYoLAB livestream-code module (`hoyolab:9`), Fandom `honkai-nexus-anima/Redemption_Code`, `reddit:HonkaiNexusAnima` community witness, and HoYoLAB official news (`NEWS_GAMES` slot `hna`).
+  - **At launch:** flip `released` to `true`, set `four_star_count`, and add HoYoPlay `game_id`, YouTube/Twitch, and seria / Open Gacha Codes once they support it.
 - **ANANTA** (NetEase):
-  - **Status:** global launch **2027‑01‑15** on PS5 / PC / iOS / Android, announced at gamescom
-    ONL 2026. X `@Ananta_EN` is configured.
-  - **Switching it on:** it turns on by itself on that date (`auto_enable_on`), or earlier with
-    `ENABLE_GAMES=ananta`.
+  - **Status:** global launch **2027‑01‑15** on PS5 / PC / iOS / Android, announced at gamescom ONL 2026 (`enabled: true, released: false`, with `auto_enable_on: "2027-01-15"` retained as a safety net).
+  - **Configured now:** X `@Ananta_EN`, official Reddit `u/AnantaOfficial`, Fandom `ananta/Redemption_Code`, and `reddit:AnantaOfficial` community witness.
   - **Banners:** it has no gacha character unlocking, so the card hides banners.
 
 
@@ -423,7 +438,8 @@ full `article/{id}.json`. This matches RSSHub's current English adapter. The
 index is a **current homepage subset**, not a guaranteed complete historical
 archive; unlisted official articles cannot be discovered by this adapter. The
 optional schedule/banner mirrors are not silently promoted to news authority.
-Publication time uses the official index's UTC+8 `createTime`.
+Publication time uses the official index's UTC+8 `startTime`, falling back to
+`createTime` only when `startTime` is absent or empty.
 
 Full HTML/Quill blocks retain text/media order and heading/list readability.
 First try one full message. Multiple containers share the message-wide 4,000
@@ -529,9 +545,9 @@ the final message, including one-message/multi-container articles. Keep Part 1/2
 and Part 2/2 for containers in one message, Page 1/Page 2 for separate messages.
 Compact consecutive square (■) entries like numbered lists. HTML list items
 containing nested paragraphs must keep '- ' attached to their first visible text;
-fix parser block boundaries, not source-specific wording. Source HTML/API/mirror
-responses and media URLs remain untouched. A historical maintenance notice remains
-schedule-routed: a length allowance does not make it eligible for news/backfill.
+the policy. Source HTML/API/mirror responses and media URLs remain untouched.
+Schedule classification/mirrors never suppress eligible official news articles, while
+existing `"status": "posted"` records and `floor` watermarks prevent historical backfill.
 The one integrated HTML contains the main previews and complete browser-only
 long-strip laboratory; optional backend grouping is implemented below.
 
@@ -572,3 +588,15 @@ review rather than replaying already confirmed pages. Do not toggle layout modes
 mid-partial delivery without reviewing that hold. No state reset or old-post edits.
 Discord controls thumbnail cropping; neither header measurements, HTML previews
 nor passing offline tests prove live media decoding/readability or delivery.
+
+
+## Structured launch media for Pre-Load & Maintenance Started (2026-10-21)
+
+When `MAINTENANCE_ENABLED=1` and a game is explicitly listed in `MAINTENANCE_GAMES`,
+`gamexpress/maintenance.py` resolves optional launch media from structured official
+endpoints and existing caches only (never headless browsers or HTML scraping):
+
+| Game(s) | Structured source | Priority assets & safeguards |
+|---|---|---|
+| GI / HSR / ZZZ / HNA | HoYoPlay `getAllGameBasicInfo` (`hyp-api.hoyoverse.com`) + existing HoYoLAB / X Special Program cache | (1) version-matched `.webm`/`.mp4` background clip, (2) version-matched `.webp`/image background, (3) Special Program key art, (4) omit gallery; version/launch lock separates selected tier so late launch video upgrades initial artwork inside `LATE_MEDIA_EDIT_WINDOW_S` while Phase II swaps remain blocked |
+| Wuthering Waves | Kuro launcher index + structured website/article JSON (`hw-media-cdn-mingchao.kurogame.com`, `akiwebsite`) + Special Program X/Kuro art | (1) version-matched `.mp4` clip keeping signed `?auth_key=…` query parameters intact; signed URLs expire and renew inside `LATE_MEDIA_EDIT_WINDOW_S` (`6 h` / `21,600 s`, `MAX_LATE_MEDIA_ATTEMPTS = 3` consecutive failed `PATCH` calls reset on `res.ok`, `MAX_LATE_EDITS = 6` total succeeded `PATCH` calls, per-run URL check deduplication) only when corroborating source metadata (`hash`/`md5`/`size`+`full_version`) binds the exact launch asset (never bare host/path alone), otherwise falling back to (2) matching-version artwork, (3) Special Program key art, or (4) cleanly omitting media without durable mirroring |

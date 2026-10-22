@@ -30,7 +30,8 @@ Sensitive — *Settings → Secrets and variables → Actions → **Secrets***.
 | `DISCORD_WEBHOOK_URL` | optional catch-all fallback |
 | `DISCORD_WEBHOOK_SCHEDULE_<GAME>` | optional per-game schedule channel, e.g. `DISCORD_WEBHOOK_SCHEDULE_WUWA` |
 | `DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME>` | optional — **copies** the card to a second channel as well, e.g. `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ZZZ` (see *Fan-out* below) |
-| `NITTER_RSS_TOKEN` | optional — the e-mailed token for the one token-gated nitter mirror, `https://nitter.miningtcup.me/` (the same secret News-Express uses). Empty only skips that mirror |
+| `NITTER_RSS_TOKEN` | optional — the e-mailed token for the token-gated nitter and redlib mirrors (`https://nitter.miningtcup.me/`, `https://redlib.miningtcup.me` — the same secret News-Express uses). Empty only skips those mirrors |
+| `REDDIT_FEED_TOKEN` | optional — private RSS / JSON feed link or token from `old.reddit.com/prefs/feeds/`: accepts `https://old.reddit.com/.rss?feed=<40-char-key>&user=<your_username>`, `https://www.reddit.com/.rss?feed=<40-char-key>&user=<your_username>`, `https://old.reddit.com/.json?feed=<40-char-key>&user=<your_username>`, `https://www.reddit.com/.json?feed=<40-char-key>&user=<your_username>`, `https://reddit.com/.rss?feed=…`, `https://old.reddit.com/?feed=…`, or `<40-char-key>&user=<your_username>` interchangeably (same format as News-Express; drives `[0] www.reddit.com` → `[1] old.reddit.com` authenticated RSS failover + circuit-broken `.json` fallback) |
 
 **Webhook routing**, most specific first:
 
@@ -126,6 +127,7 @@ being dropped. A codes drop split across several messages mentions the role on *
 | `GAMES` | all enabled | allow-list, e.g. `genshin,starrail` |
 | `ENABLE_GAMES` | — | switch prepared games on, e.g. `hna` or `hna,ananta` |
 | `X_ENABLED` / `NITTER_INSTANCES` | on / built-in fleet | X monitoring on/off, or a custom nitter list |
+| `REDDIT_ENABLED` / `REDDIT_INSTANCES` / `REDDIT_PROXIES` | on / built-in fleets | official Reddit + community code corroboration on/off, custom Reddit/Redlib frontend list, or custom `Discordbot/2.0` rich-embed proxy chain |
 | `LOOKBACK_HOURS` | 72 | how far back official posts are considered |
 
 ### Accuracy and estimates
@@ -264,6 +266,8 @@ A schedule/code-only selector does not count as toggling news off.
 |---|---|---|
 | `NEWS_ENABLED` | `0` | Explicit news opt-in; independent of the existing schedule/code defaults |
 | `NEWS_GROUP_LONG_STRIPS` | `0` | Opt-in measured grouping; failure keeps article order |
+| `NEWS_TIMESTAMPS` | `0` | Opt-in render-time `<t:EPOCH:…>` conversion for exact TZ-qualified news dates/times |
+| `NEWS_EXPAND_FULL` | `0` | Opt-in multi-page full articles beyond 2 pages (bounded at `NEWS_EXPAND_MAX_PAGES = 12`, `NEWS_EXPAND_MAX_CHARS = 120000`, `NEWS_EXPAND_MAX_MEDIA = 120`) |
 | `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | Canonical game keys; removing a game pauses its existing news state |
 
 Each run attempts all discovered eligible unposted articles in publication order,
@@ -271,8 +275,10 @@ without a fixed article-count cap or ten-attempt game cap. A failed article rema
 retryable and does not prevent other eligible articles from being attempted. This
 is not unlimited crawling or guaranteed same-run delivery: source pagination,
 48-hour freshness/future holds, silent baselines, state capacity, media validation,
-partial-delivery safeguards, Discord retries and job timeouts remain. Maximum
-two messages per article is unchanged.
+partial-delivery safeguards, Discord retries and job timeouts remain. By default
+(`NEWS_EXPAND_FULL=0`), the maximum two messages / 7,000-character policy per article
+remains intact; setting `NEWS_EXPAND_FULL=1` lifts that ceiling up to an explicit
+12-page / 120,000-character / 120-media cap before excerpt fallback.
 
 Migration: `NEWS_MAX_POSTS_PER_RUN` is retired and ignored. Remove a leftover
 repository variable or local environment entry; it cannot enable a cap.
@@ -294,12 +300,21 @@ held for operator review, not silently reposted. The existing workflow already
 imports repository variables/secrets via its JSON blobs: no workflow edit,
 scheduler change, new token, dependency or state file is required.
 
-Version-maintenance/preinstall and special-program announcement titles stay in
-the existing schedule pipeline and are excluded from news. General news is sent
-only to the dedicated channels. Codes and configured schedule/code mirrors keep
-their existing routing and behavior; the news adapter does not extract codes or
-add a second mirror. News cards are silent, with Read Post, Citlali News and Donate.
-ANANTA remains an inactive source slot (no verified adapter); Wangyue is excluded.
+Official news delivery is strictly independent of schedule extraction, schedule
+mirrors (`DISCORD_WEBHOOK_SCHEDULE_MIRROR_<GAME>`), redemption codes, and started
+announcements (`MAINTENANCE_ENABLED`): Special Program / broadcast previews and
+preload / maintenance notices remain eligible for full official-article delivery on
+`DISCORD_WEBHOOK_NEWS_<GAME>` even when also consumed by schedule or when a user
+intentionally points a schedule mirror at the same channel. Previously persisted
+legacy records marked `{"status": "posted", "excluded": "schedule"}` stay completed
+in place so rollout never triggers a historical repost flood without explicit
+authorization, and `prune_news` advances `floor` before evicting aged records.
+Removing the retired per-run article-count cap (`NEWS_MAX_POSTS_PER_RUN`) applies
+only to how many eligible articles a run processes — when `NEWS_EXPAND_FULL` is
+absent or `0`, the per-article **7,000-character / maximum-two-page policy and
+labelled-excerpt fallback** remain completely intact. News cards are silent, with
+Read Post, Citlali News and Donate. ANANTA remains an inactive source slot (no
+verified adapter); Wangyue is excluded.
 
 News defaults to article-order layout; optional measured grouping is described
 below. Follow the full-content paging/excerpt rules below: limits are shared by
@@ -325,9 +340,8 @@ documented below; no upload/proxy service is added.
 A first valid discovery silently baselines at the run's time: no historical
 flood. Later discoveries admit publication times after that floor within 48 hours.
 Failed full-body fetches are retried while eligible; successful later articles do
-not advance over those holes. A rotating attempt cursor prevents repeated full-body
-failures from monopolising the per-game request budget; it is not a delivery
-checkpoint or publication floor. Confirmed message sends save progress atomically
+not advance over those holes, and all discovered eligible articles are attempted in
+publication order on each run. Confirmed message sends save progress atomically
 in the existing `state/state.json`; retries resume after confirmed message IDs,
 including legacy partial articles that age outside the discovery window. Legacy
 partial signatures that differ under this layout are held for manual review, not
@@ -364,34 +378,70 @@ Dedicated secret names distinguish routing purposes, not mandatory channel names
 
 HoYoLAB's Official **Info**, **Events**, and **Notices** are all read; this is not
 an Info-only feed. Ordinary service/payment notices, official giveaways, character
-introductions and event details remain news. A mention of a version number alone
-does not make an event a schedule announcement. The schedule exclusion applies
-to identified version-maintenance/preinstall and special-program announcement
-titles, not every article under Notices or every occurrence of "maintenance".
+introductions, event details, Special Program previews, and preload/maintenance notices
+all remain eligible for full official-article delivery on `DISCORD_WEBHOOK_NEWS_<GAME>`,
+independent of schedule extraction or schedule mirrors. Existing legacy state records
+already marked `"status": "posted"` stay completed without historical backfill.
 Event start/end dates and "In Progress"/"Already Ended" badges are not new
 publication times: existing old events are not reposted when enabled.
 
 
+### Optional news-description timestamps (default off)
+
+`NEWS_TIMESTAMPS=0` (default) bypasses the timestamp scanner completely (`0` parser
+invocations), leaving rendered text byte-identical and making zero network calls.
+
+Setting `NEWS_TIMESTAMPS=1` enables render-only conversion (`gamexpress/news_timestamps.py`)
+after source-text normalization and immediately before pagination/sizing across the five
+supported news games (`genshin`, `starrail`, `hna`, `zzz`, `wuwa`):
+
+- **Timezone rules:** bare `UTC` and `GMT` resolve to `+00:00`, explicit source offsets
+  (`UTC+8`, `UTC-4`, `(UTC+05:30)`, supported unambiguous abbreviations, etc.) always win,
+  and `server time` uses the approved `UTC+8` fallback for news descriptions only
+  (`gamexpress/timeparse.py` for schedule extraction remains untouched). Malformed or
+  ambiguous timezone suffixes (`UTC+99`, `(CST)`, etc.) never partially match bare `UTC`,
+  and timezone-less times stay untouched unless a shared trailing timezone qualifies both
+  ends of a valid non-inverted range.
+- **Missing years & rollover:** explicit years in source text are always authoritative.
+  Yearless dates require `item.published_ts > 0` and resolve strictly to the unique
+  calendar year within `±180` days (`YEARLESS_MAX_DELTA_DAYS = 180`) of `item.published_ts`
+  — keeping recent past dates in `pub.year` (e.g. June 1 on an October 21 post stays in
+  the same year), supporting genuine Dec ↔ Jan rollovers within `±180` days, leaving
+  yearless dates outside `±180` days or missing `published_ts` untouched, and never
+  repairing inverted yearless ranges by adding a year.
+- **Safety exclusions:** existing `<t:…>` tokens, URLs, inline backticks, fenced code
+  blocks, date-only phrases, `"After the Version X.Y update"` clauses, approximate durations
+  and invalid, inverted or half-qualified ranges are left completely untouched without
+  converting half of a range. Source `Item` fields and raw HTML/captures are never mutated.
+
 ### Full-content paging and overflow
 
 Keep fitting full articles unchanged in one message (possibly multiple containers).
-If that fails, permit at most two actual messages when normalized source text plus
-title/byline once is <=7,000 characters and both payloads validate independently
-against 4,000 text characters / 40 components / 1–10 gallery items. The 7,000
-ceiling is fixed policy, not a Discord limit and not a new environment variable.
-Preserve complete wording and source media order. Prefer source block boundaries;
-use safe paragraph boundaries only for larger text blocks. Never split a link or
-unbalanced bold span. If packing fails, use the existing one-container excerpt
-with at most one lead image; never publish a partial full-article proposal.
-Paged messages: title/byline and lead only once at the start, then Page 1 / Page 2
-labels and dividers; three custom-emoji buttons only at the end of the final
-message. One-message articles also put buttons in the final container. Articles
-above the ceiling or unpageable within two messages keep the approved half-fitting
-word excerpt. Never truncate fitting full articles or modify official API HTML.
-Retain confirmed per-message progress, no-repost handling, media preflight and
-refresh/holds. No new scheduler or delivery-state reset. Historical incomplete
-captures are not full-source length evidence. Pagination is tested across all
-five game keys with synthetic boundary inputs, not five live integrations.
+By default (`NEWS_EXPAND_FULL=0`), if one message fails, at most two actual messages
+are permitted when normalized source text plus title/byline once is `<= 7,000`
+characters and both payloads validate independently against `4,000` text characters /
+`40` components / `1–10` gallery items.
+
+When `NEWS_EXPAND_FULL=1` is explicitly enabled, the 2-page / 7,000-character policy
+ceiling is lifted up to an explicit operational safety bound (`NEWS_EXPAND_MAX_PAGES = 12`,
+`NEWS_EXPAND_MAX_CHARS = 120000`, `NEWS_EXPAND_MAX_MEDIA = 120`):
+
+- Every emitted page still validates independently against Discord's limits (`4,000` text
+  characters, `40` components, `1–10` media gallery items).
+- Source text and media order, unique-cover deduplication, native MP4/WebM cover suppression,
+  link-only video covers, `Page N` headers, non-repeated title/byline and final-container-only
+  3-button controls (`Read Post`, `Citlali News`, `Donate`) are preserved across all pages.
+- Overlong paragraphs inside a block split only on safe newline/sentence/whitespace
+  boundaries outside Markdown links, inline code and unbalanced `**` bold spans.
+- If an article exceeds `NEWS_EXPAND_MAX_PAGES = 12` (`NEWS_EXPAND_MAX_CHARS = 120000`,
+  `NEWS_EXPAND_MAX_MEDIA = 120`) or contains an indivisible single unit
+  exceeding single-message limits, rendering degrades cleanly to an explicitly labelled
+  `Excerpt — …` single card rather than truncating silently or claiming to be full.
+- Confirmed per-page message IDs save after each send; official-news and maintenance-alert
+  `POST`s pass `stop_on_ambiguous=True` so if a webhook `POST` returns HTTP `2xx` without a
+  parseable `message_id` or fails after dispatch ambiguously, it stops after 1 attempt, marks
+  `ambiguous = True`, and holds rather than blindly re-posting duplicates (existing `schedule`
+  and `codes` callers retain baseline `stop_on_ambiguous=False` retries).
 
 
 ### Source-preserving formatting
@@ -448,7 +498,10 @@ nor passing offline tests prove live media decoding/readability or delivery.
 ### Source coverage and safe verification
 
 HoYoLAB discovery/full-body adapters cover GI (gid 2), HSR (6), HNA (9) and
-ZZZ (8), including Official Info, Events and Notices. WuWa discovery is limited
+ZZZ (8), including Official Info, Events and Notices. Descriptive HTML/Quill news
+anchor labels with square brackets serialize cleanly via `news_link()` without
+visible escape backslashes while keeping bare/self-labelled URLs and non-link
+bracketed headings unchanged. WuWa discovery is limited
 to the current official English index; it is not historical archive discovery.
 A manually trimmed capture cannot establish a complete article's length or prove
 current direct official-host ingestion. Historical maintenance examples remain
@@ -461,6 +514,53 @@ Discord media access, codecs, delivery or thumbnail readability. Keep news off
 until the operator explicitly approves opt-in. Review partial-delivery holds;
 never reset delivery state merely to test. No new scheduler, tokens or upload
 service are needed. Keep each installation's state and secrets independent.
+
+## Pre-load & maintenance started (explicit per-game opt-in; default off)
+
+`MAINTENANCE_ENABLED=0` (default) makes zero extra requests and adds no maintenance
+entries to `state/state.json`. Activating the fourth feature requires **both**
+`MAINTENANCE_ENABLED=1` **and** an explicit non-empty `MAINTENANCE_GAMES` list,
+plus a dedicated per-game webhook secret for each opted-in game:
+
+| Setting | Kind | Default | Meaning |
+|---|---|---|---|
+| `MAINTENANCE_ENABLED` | Variable | `0` | Master switch; disabled unless explicitly truthy (and overridden by `ENABLED_FEATURES=none/off/standby/0`) |
+| `MAINTENANCE_GAMES` | Variable | *(empty)* | Required explicit per-game opt-in list (e.g. `genshin,starrail,zzz,wuwa,hna`); empty activates nothing |
+| `DISCORD_WEBHOOK_MAINTENANCE_<GAME>` | Secret | *(unset)* | Dedicated per-game channel webhook (`GENSHIN`, `STARRAIL`, `HNA`, `ZZZ`, `WUWA`, `ANANTA` + aliases); no generic/catch-all/mirror/`FORCE_WEBHOOK` fallback |
+| `PING_MAINTENANCE_<GAME>` / `PING_MAINTENANCE` | Variable | `none` | Optional per-game or feature role ping inside the headline block (`<@&ROLE>`); silent by default |
+
+Behavior and safety invariants (`gamexpress/maintenance.py`):
+
+- **Independent milestones & separate state:** posts `Pre-Load Started` and
+  `Maintenance Started` independently per `(game, version)` on the existing 5-minute
+  poll cycle. `state["maintenance"][game]` tracks `preload` and `maintenance`
+  separately from `schedule`, `codes` and `news`, and merges across fail-over peers.
+- **Silent baseline on first enable:** on first activation (or re-enable after pause),
+  already-passed milestones and live/settled versions are marked `seeded` silently
+  without posting historical announcements.
+- **Strict precedence:** official notices/tweets (`rank 40–50`) → explicit
+  `config/overrides.json` entries → persisted first-observed launcher pre-download
+  availability (`observed_preinstall_ts`, retained across polls/restarts and rendered
+  with explicit observation wording rather than claiming a published start time) →
+  documented cadence predictions (`rank 9`, clearly marked estimated). Holiday-shifted
+  official notices always override cadence predictions, observations and stale overrides;
+  HNA never invents an unverified cadence, and unknown `maint_end_ts` omits `End Time`
+  rather than guessing.
+- **Components V2 card & 4-tier media priority:** single container (`flags: 32768`)
+  with `[SHORT - VERSION] Pre-Load Started` / `Maintenance Started`, optional role
+  mention, `Date Time` (`<t:…:f>`) + `Hour Time` (`<t:…:R>`) or `End Time` (`<t:…:t>`),
+  optional version-verified gallery ((1) matching-version launch video `.webm`/`.mp4`,
+  (2) matching-version launcher artwork/WebP, (3) matching-version Special Program art,
+  (4) omitted cleanly), and the Citlali News section footer. Launch version identity is
+  separated from selected tier so prompt initial artwork posts can silently `PATCH` to
+  matching-version launch video inside `LATE_MEDIA_EDIT_WINDOW_S` (`6 h` / `21,600 s`) while
+  rejecting Phase II swaps. Signed Kuro `?auth_key=…` URLs keep query parameters intact and expire.
+- **Exact post-delivery refresh & retry bounds (`gamexpress/maintenance.py`):**
+  - *Time window:* strictly `0 <= now - posted_at <= LATE_MEDIA_EDIT_WINDOW_S` (`6 * 3600 = 21,600 s` / `6 h` from `posted_at`); polls after `6 h` perform `0` health checks, `0` candidate lookups, and `0` `PATCH` edits.
+  - *Failed-edit limit (`MAX_LATE_MEDIA_ATTEMPTS = 3`):* counts only failed `ctx.webhook.edit(...)` calls (`not res.ok`), tracked in `entry["edit_attempts"]`; read-only checks do not increment it, and reaching `3` stops further checks/edits for that milestone.
+  - *Counter reset:* only a succeeding `ctx.webhook.edit(...)` (`res.ok is True`) resets `entry["edit_attempts"] = 0` and commits the staged state.
+  - *Check cadence:* evaluated at most once per scheduled `maintenance.run(ctx)` execution (existing 5-minute poll schedule — no in-run loops), memoized per run (`verified_cache`) so each distinct URL is checked at most once per poll (`0` HTTP checks on already-expired `auth_key=` timestamps), and skipping `hoyoplay_basic_info` completely when `cur_tier == 1` is healthy and no authoritative timestamp upgrade applies.
+  - *Separate succeeded-edit cap (`MAX_LATE_EDITS = 6`):* tracked monotonically in `entry["edit_count"]` (never reset), capping total succeeded silent `PATCH` edits per posted milestone across upgrades, renewals, and fallbacks.
 
 ## Discord webhook versus bot delivery
 

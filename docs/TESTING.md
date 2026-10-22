@@ -310,23 +310,24 @@ separate from offline test success. No production posts were made during impleme
 ## Current official-news paging policy (supersedes earlier one-message-only wording)
 
 Keep fitting full articles unchanged in one message (possibly multiple containers).
-If that fails, permit at most two actual messages when normalized source text plus
-title/byline once is <=7,000 characters and both payloads validate independently
-against 4,000 text characters / 40 components / 1–10 gallery items. The 7,000
-ceiling is fixed policy, not a Discord limit and not a new environment variable.
-Preserve complete wording and source media order. Prefer source block boundaries;
-use safe paragraph boundaries only for larger text blocks. Never split a link or
-unbalanced bold span. If packing fails, use the existing one-container excerpt
-with at most one lead image; never publish a partial full-article proposal.
-Paged messages: title/byline and lead only once at the start, then Page 1 / Page 2
-labels and dividers; three custom-emoji buttons only at the end of the final
-message. One-message articles also put buttons in the final container. Articles
-above the ceiling or unpageable within two messages keep the approved half-fitting
-word excerpt. Never truncate fitting full articles or modify official API HTML.
-Retain confirmed per-message progress, no-repost handling, media preflight and
-refresh/holds. No new scheduler or delivery-state reset. Historical incomplete
-captures are not full-source length evidence. Pagination is tested across all
-five game keys with synthetic boundary inputs, not five live integrations.
+By default (`NEWS_EXPAND_FULL=0`), if that fails, permit at most two actual messages
+when normalized source text plus title/byline once is `<= 7,000` characters and both
+payloads validate independently against 4,000 text characters / 40 components /
+1–10 gallery items. When `NEWS_EXPAND_FULL=1`, full articles expand across multiple
+validated pages up to `NEWS_EXPAND_MAX_PAGES = 12` (`NEWS_EXPAND_MAX_CHARS = 120000`,
+`NEWS_EXPAND_MAX_MEDIA = 120`),
+degrading to a clearly labelled `Excerpt — …` single message only if the safety bound
+is exceeded or a single indivisible block cannot fit.
+
+### Reproducible offline benchmark (`python -m gamexpress benchmark`)
+
+Run `.venv/bin/python -m gamexpress benchmark --iterations 300` (add `--json` for
+machine-readable output) to inspect exact git revision + clean-tree provenance,
+Python/platform details, fixture sizes (`short=341c`, `medium=4,926c` 2-page `<=7,000`
+policy, `long=12,348c` + `18` media), default-off parity & timestamp-parser bypass
+checks, separated derived/mocked protocol counts vs measured local CPU timings
+(`median`/`mean`/`p95` µs), and higher expanded-mode media/webhook/pacing costs.
+
 
 
 ### Latest layout corrections: 7,000 eligibility / final-container controls
@@ -342,8 +343,9 @@ and Part 2/2 for containers in one message, Page 1/Page 2 for separate messages.
 Compact consecutive square (■) entries like numbered lists. HTML list items
 containing nested paragraphs must keep '- ' attached to their first visible text;
 fix parser block boundaries, not source-specific wording. Source HTML/API/mirror
-responses and media URLs remain untouched. A historical maintenance notice remains
-schedule-routed: a length allowance does not make it eligible for news/backfill.
+responses and media URLs remain untouched. Schedule extraction/mirrors never suppress
+eligible official news articles, while existing `"status": "posted"` state records and
+`floor` watermarks prevent historical backfill without state resets.
 The one integrated HTML contains the main previews and complete browser-only
 long-strip laboratory; optional backend grouping is implemented below.
 
@@ -386,6 +388,19 @@ the original layout. Do not repack pages or modify titles, Part/Page labels,
 final-container buttons, full-content eligibility or the one-lead overflow excerpt.
 The existing partial-delivery signature guard holds changed layouts for manual
 review rather than replaying already confirmed pages. Do not toggle layout modes
-mid-partial delivery without reviewing that hold. No state reset or old-post edits.
+mid-partial delivery without reviewing that hold. Conservative stop-and-hold recovery
+is explicitly enabled for official news and maintenance alerts. Existing schedule/code
+retry behavior remains at the pre-PR baseline (`stop_on_ambiguous=False` by default
+across `schedule`, `codes`, and CLI `WebhookClient.send()` callers). Specifically,
+for `runner.run_news` (`stop_on_ambiguous=True`) and `maintenance.run` (`stop_on_ambiguous=True`),
+indeterminate webhook `POST` outcomes (response timeouts after dispatch, post-connect
+socket resets, `2xx` response-body read errors, or `2xx` responses lacking `"id"`) return
+`ambiguous=True` immediately after 1 attempt without blind retry
+(`test_correction_6_ambiguous_post_no_replay_and_state_durability` and
+`test_final_acceptance_baseline_parity_shared_callers_and_template`), preserving
+confirmed `messages` IDs in `state.json` and holding across restarts and peer merges
+while keeping definite pre-send connection errors, `429` rate-limit backoff, explicit
+`4xx` rejections, and idempotent `PATCH` edits intact.
+No state reset or old-post edits.
 Discord controls thumbnail cropping; neither header measurements, HTML previews
 nor passing offline tests prove live media decoding/readability or delivery.

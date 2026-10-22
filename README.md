@@ -3,7 +3,8 @@
 # 🎮 Game-Express
 
 **Version-schedule announcements and redemption codes for six gacha games, plus optional
-official news for five — posted to Discord as Components V2 cards, with no server or bot token.**
+official news and pre-load/maintenance alerts — posted to Discord as Components V2 cards,
+with no server or bot token.**
 
 [![CI](https://github.com/uesu/Game-Express/actions/workflows/ci.yml/badge.svg)](https://github.com/uesu/Game-Express/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.14.8-3776AB?logo=python&logoColor=white&labelColor=2b2d31)](docs/PYTHON_VERSION.md)
@@ -20,8 +21,10 @@ official news for five — posted to Discord as Components V2 cards, with no ser
 Game-Express watches the official channels of **Genshin Impact**, **Honkai: Star Rail**,
 **Zenless Zone Zero**, **Wuthering Waves**, **Honkai: Nexus Anima** and **ANANTA**. When a
 Special Program is announced or a new redemption code appears, it posts one card — and then
-keeps that card correct by editing it silently as official information arrives. An independent,
-off-by-default official-news feature can also post new articles from five supported games.
+keeps that card correct by editing it silently as official information arrives. Independent,
+off-by-default features can also post full official news articles for five supported games
+(with optional Discord `<t:…>` timestamps and expanded multi-page rendering) and live
+**Pre-Load Started** / **Maintenance Started** alerts per game.
 
 It runs entirely on **GitHub Actions** (free and unlimited on public repos), triggered every
 5 minutes by **[cron-job.org](https://cron-job.org)**. There is nothing to deploy: merging to
@@ -108,7 +111,7 @@ existed stay out of the channel.
   |---|---|---|
   | maintenance start / end | community countdown sites | `COUNTDOWN_ESTIMATES=0` |
   | pre-install | that game's **median observed lead** in hours, learned from real notices | — |
-  | the announcement's own link + key art | the X post first, then the paged-back HoYoLAB list, then the official news page, then the news-feed mirror | `PROGRAM_MEDIA=0` |
+  | the announcement's own link + key art | the X post first, then the paged-back HoYoLAB list, then the official news page, then the news-feed mirror, then official Reddit | `PROGRAM_MEDIA=0` |
 
   Details: **[docs/ACCURACY.md → Filling the gaps](docs/ACCURACY.md#filling-the-gaps-before-the-official-notice)**.
   Once the card is posted, its link, key art and air time are locked to the announcement that opened
@@ -157,12 +160,29 @@ same run share a card.
 
 Full retrievable official articles for **Genshin Impact, Honkai: Star Rail, Honkai:
 Nexus Anima, Zenless Zone Zero and Wuthering Waves**, sent to explicitly configured
-news webhooks. Existing schedule/code behavior stays independent; ANANTA news is
-inactive and Wangyue is excluded.
+news webhooks. Conservative stop-and-hold recovery is explicitly enabled for official
+news and maintenance alerts. Existing schedule/code retry behavior remains at the
+pre-PR baseline (`stop_on_ambiguous=False` by default); ANANTA news is inactive and
+Wangyue is excluded.
 
-- **Source-order content:** one full message when it fits; eligible moderate
-  overflow may use at most two validated pages. Longer/unpageable articles use a
-  labelled excerpt with at most one lead image and Read Post for the full source.
+- **Source-order content & independent policies:** one full message when it fits;
+  by default (`NEWS_EXPAND_FULL=0`), the **7,000-character / maximum-two-page
+  per-article policy** remains intact (1 message when fitting → up to 2 validated
+  pages within 7,000 normalized chars → 1 labelled excerpt message with at most one
+  lead image and Read Post for the full source). Removing the retired per-run
+  article-count cap (`NEWS_MAX_POSTS_PER_RUN`) only allows processing all newly
+  published articles per poll and does **not** remove the default-off 7,000 / 2-page
+  per-article policy. Setting `NEWS_EXPAND_FULL=1` lifts that per-article ceiling
+  up to an explicit `12`-page / `120,000`-char / `120`-media safety bound (increasing media validation
+  `GET`s, message count, webhook `POST`s, and pacing proportionally).
+- **Independent feature eligibility:** schedule extraction/mirrors, codes, official
+  news, and started alerts are independent — Special Program, broadcast, preload, and
+  maintenance notices remain eligible for official news delivery when `NEWS_ENABLED=1`,
+  while legacy `status: "posted"` state entries remain deduplicated without backfill.
+- **Optional native timestamps (`NEWS_TIMESTAMPS=1`, off by default):** converts
+  exact timezone-qualified dates/times in rendered news bodies (plus `server time`
+  on `UTC+8`) into Discord `<t:EPOCH:…>` tags without touching source payloads,
+  URLs, inline/fenced code, date-only phrases or schedule extraction.
 - **Controls at the end:** all three custom-emoji buttons occur only in the final
   container of the final message. Part labels identify containers; Page labels
   identify separate messages.
@@ -175,9 +195,50 @@ inactive and Wangyue is excluded.
 
 Use the **[official-news setup and full instructions](docs/CONFIGURATION.md#official-news-explicit-opt-in-default-off)**
 for all variables, per-game secrets, selecting two games, paging/excerpt rules,
-measured grouping, retries and safe verification. See also the
+optional timestamp conversion, expanded articles, measured grouping, retries and safe verification. See also the
 **[source limits](docs/SOURCES.md#optional-full-content-news-adapter-2026-10-18)**
 and **[offline/live-check distinction](docs/TESTING.md#official-news-offline-coverage-and-read-only-checks)**.
+
+---
+
+### 4 · Pre-load & maintenance started (optional; off by default)
+
+Two independent milestone alerts per version — **`Pre-Load Started`** and
+**`Maintenance Started`** — for explicitly enabled games, using the existing
+5-minute scheduler and dedicated per-game webhooks (`DISCORD_WEBHOOK_MAINTENANCE_<GAME>`).
+Works standalone or alongside schedule, codes and news without modifying existing cards.
+
+```
+┌─────────────────────────────────────────────────────────────
+│ ## [ZZZ - 3.3] Pre-Load Started <a:starwardlove:…><a:starwardspark3:…>
+│ <@&ROLE>                                                       ← optional per-game ping
+│ ─────────────
+│ ※ **Date Time:** <t:1792382400:f> ※ **Hour Time:** <t:1792382400:R> <a:gearfinal:…>
+│ [ version-verified launch video / artwork (optional) ]
+│ <a:starwardsleepywink:…> **Citlali News**          [ <a:starwardyayy:…> ]
+│ -# Delivering news and official updates
+└─────────────────────────────────────────────────────────────
+```
+
+- **Separate milestones & silent baseline:** enabling seeds already-passed
+  milestones silently and tracks `preload` and `maintenance` separately in
+  `state/state.json`, so first activation never reposts settled versions and
+  `Pre-Load Started` never suppresses `Maintenance Started` (which renders
+  `※ **Date Time:** <t:START:f> ※ **End Time:** <t:END:t>` when `end_ts` is known,
+  or omits `End Time` cleanly when unknown).
+- **Source precedence:** official notices/tweets → explicit `config/overrides.json` →
+  persisted first-observed launcher pre-download signal (explicitly marked observed,
+  never moving `now`) → documented cadence predictions (clearly marked estimated; no
+  invented HNA cadence or fabricated end time when unknown).
+- **Version-verified launch media:** prefers (1) matching-version launch video,
+  (2) matching-version launch artwork/WebP, (3) matching-version official X/Twitter
+  or HoYoLAB program artwork, or (4) cleanly omits media — locking launch identity
+  against Phase II swaps while allowing bounded silent `PATCH` upgrades
+  (`tier 2/3/4 → tier 1`), corroborated same-asset signed URL renewal (`auth_key=`
+  query intact), or fallback to matching-version artwork / omitted media inside
+  `LATE_MEDIA_EDIT_WINDOW_S`.
+
+Full setup and safeguards: **[docs/CONFIGURATION.md → Pre-load & maintenance started](docs/CONFIGURATION.md#pre-load--maintenance-started-explicit-per-game-opt-in-default-off)**.
 
 ---
 
@@ -185,12 +246,12 @@ and **[offline/live-check distinction](docs/TESTING.md#official-news-offline-cov
 
 | Game | Status | Schedule sources | Code sources |
 |---|---|---|---|
-| Genshin Impact | ✅ on | HoYoLAB API (gid 2) → c3kay mirror · X `@GenshinImpact` · HoYoPlay launcher | HoYoLAB livestream module · official posts · seria + Hum-Bao (both redeem-validated) · Open Gacha Codes · ennead · fandom · PromoGacha |
-| Honkai: Star Rail | ✅ on | HoYoLAB API (gid 6) → c3kay · X `@honkaistarrail` · HoYoPlay | same set |
-| Zenless Zone Zero | ✅ on | HoYoLAB API (gid 8) → c3kay · X `@ZZZ_EN` · HoYoPlay | same set |
-| Wuthering Waves | ✅ on | X `@Wuthering_Waves` · Kuro official site · Kuro launcher | official X posts · wuthering.gg (active/expired) · Open Gacha Codes · fandom · PromoGacha |
-| Honkai: Nexus Anima | ✅ on · ⏳ not released yet | HoYoLAB API (gid 9) · X `@HonkaiNA` | HoYoLAB livestream module (gid 9) · X |
-| ANANTA (NetEase) | ✅ on · ⏳ releases 2027‑01‑15 | X `@Ananta_EN` | X |
+| Genshin Impact | ✅ on | HoYoLAB API (gid 2) → c3kay mirror · X `@GenshinImpact` · HoYoPlay launcher · Reddit `u/genshinimpact` backup | HoYoLAB livestream module · official posts · seria + Hum-Bao (both redeem-validated) · Open Gacha Codes · ennead · fandom · PromoGacha · `r/Genshin_Impact` witness |
+| Honkai: Star Rail | ✅ on | HoYoLAB API (gid 6) → c3kay · X `@honkaistarrail` · HoYoPlay · Reddit `u/HonkaiStarRail` backup | same set (`r/HonkaiStarRail` witness) |
+| Zenless Zone Zero | ✅ on | HoYoLAB API (gid 8) → c3kay · X `@ZZZ_EN` · HoYoPlay · Reddit `u/ZZZ_Official` backup | same set (`r/ZZZ_Official` witness) |
+| Wuthering Waves | ✅ on | X `@Wuthering_Waves` · Kuro official site · Kuro launcher · `r/WutheringWaves` official-flair backup | official X/Reddit posts · wuthering.gg (active/expired) · Open Gacha Codes · fandom · PromoGacha · `r/WutheringWaves` witness |
+| Honkai: Nexus Anima | ✅ on · ⏳ not released yet | HoYoLAB API (gid 9) · X `@HonkaiNA` · Reddit `u/HonkaiNexusAnima` backup | HoYoLAB livestream module (gid 9) · fandom · `r/HonkaiNexusAnima` witness · official X/Reddit |
+| ANANTA (NetEase) | ✅ on · ⏳ releases 2027‑01‑15 | X `@Ananta_EN` · Reddit `u/AnantaOfficial` backup | fandom · `r/AnantaOfficial` witness · official X/Reddit |
 
 **All six are monitored**, including the two that are not out yet, so a pre-release Special
 Program is caught the moment it is announced. Enabling a game is never retroactive: its **first
@@ -243,15 +304,18 @@ webhooks. They are independent features, even if you choose the same destination
 | `DISCORD_WEBHOOK_CODES_ZZZ` | Zenless Zone Zero codes |
 | `DISCORD_WEBHOOK_CODES_WUWA` | Wuthering Waves codes |
 | `DISCORD_WEBHOOK_CODES_ANANTA` | ANANTA codes |
-| `NITTER_RSS_TOKEN` | *optional* — the same one as News-Express |
-| `BUMP_PAT` | *required only where the Python bump workflow is installed* — a repository-scoped PAT with **Contents, Pull requests and Workflows: read and write**, subject to token type and repository policy. See [docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md#one-time-setup-this-needs) |
+| `NITTER_RSS_TOKEN` | *optional* — the same token as News-Express; unlocks **both** `nitter.miningtcup.me` (X) and `redlib.miningtcup.me` (Reddit/Redlib) |
+| `REDDIT_FEED_TOKEN` | *optional* — from `old.reddit.com/prefs/feeds/`: paste `<40-char-key>&user=<your_username>` or any full `.rss?feed=…` / `.json?feed=…` link on `old.reddit.com`, `www.reddit.com`, or `reddit.com` (same as News-Express; drives `[0] www.reddit.com` → `[1] old.reddit.com` fast path + `.json` fallback) |
+| `BUMP_PAT` | *required only where the Python bump workflow is installed* — a repository-scoped PAT with **Contents, Pull requests and Workflows: read and write**, subject to token type and repository policy. See [docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md#publication-credentials) |
 
 Create only destinations you intend to use; ANANTA is not a verified official-news adapter.
 Optional schedule mirror secrets are `DISCORD_WEBHOOK_SCHEDULE_MIRROR_<GAME>`.
 For news, use dedicated secrets `DISCORD_WEBHOOK_NEWS_GENSHIN`,
 `DISCORD_WEBHOOK_NEWS_STARRAIL`, `DISCORD_WEBHOOK_NEWS_HNA`,
 `DISCORD_WEBHOOK_NEWS_ZZZ`, and `DISCORD_WEBHOOK_NEWS_WUWA`.
-News never uses the generic webhook, FORCE_WEBHOOK or mirror fallback.
+For pre-load/maintenance started cards, use dedicated secrets
+`DISCORD_WEBHOOK_MAINTENANCE_<GAME>`. Neither feature uses the generic webhook,
+`FORCE_WEBHOOK` or mirror fallback.
 See [the full secret reference](docs/CONFIGURATION.md).
 
 The same URL may be used for several secrets, for example one codes channel for every game.
@@ -261,10 +325,17 @@ The same URL may be used for several secrets, for example one codes channel for 
 *… → Variables.* `PING_ROLE_ID` = your role ID — **leave it unset for no ping**, or set
 `NO_PING=1`. The Youtube and Twitch emojis already default to the animated ones.
 Leave `ENABLED_FEATURES` unset for the usual `schedule,codes` production defaults.
+Reddit backup (`REDDIT_ENABLED=1` by default) backs up `schedule` automatically when X or
+primary APIs degrade and adds an unverified 2nd-witness family (`reddit:<Subreddit>`) for
+`codes`; set `REDDIT_ENABLED=0` to turn all Reddit fetching off with zero HTTP calls.
 Official news remains off unless `NEWS_ENABLED=1`; `NEWS_GAMES` selects games,
-`NEWS_GROUP_LONG_STRIPS=0` keeps article-order galleries. Each run attempts all discovered,
+`NEWS_TIMESTAMPS=0` / `NEWS_EXPAND_FULL=0` / `NEWS_GROUP_LONG_STRIPS=0` keep default
+rendering unless switched to `1`. Each run attempts all discovered,
 eligible unposted articles in publication order, with no fixed article-count cap. For only GI and WuWa news, use `NEWS_GAMES=genshin,wuwa`
 and their two dedicated secrets; this does not restrict schedule/codes.
+Pre-load/maintenance started cards remain off unless `MAINTENANCE_ENABLED=1` and
+`MAINTENANCE_GAMES` names the target game keys alongside dedicated
+`DISCORD_WEBHOOK_MAINTENANCE_<GAME>` secrets.
 Canonical news keys: `genshin`, `starrail`, `hna`, `zzz`, `wuwa`.
 See [full setup and switches](docs/CONFIGURATION.md#official-news-explicit-opt-in-default-off).
 
@@ -331,6 +402,10 @@ editing YAML. The ones worth knowing:
 | `NEWS_ENABLED` | `0` | explicit opt-in; adds news unless globally disabled |
 | `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | news subset, independent of schedule/codes |
 | `NEWS_GROUP_LONG_STRIPS` | `0` | optional measured grouping; off retains article order |
+| `NEWS_TIMESTAMPS` | `0` | optional `<t:EPOCH:…>` conversion in rendered news text |
+| `NEWS_EXPAND_FULL` | `0` | optional multi-page full articles (up to 12 pages / 120,000 chars / 120 media) |
+| `MAINTENANCE_ENABLED` | `0` | explicit opt-in for `Pre-Load Started` / `Maintenance Started` |
+| `MAINTENANCE_GAMES` | *(empty)* | explicit per-game list required to activate maintenance alerts |
 | `GAMES` / `ENABLE_GAMES` | all enabled / — | run a subset · switch prepared games on |
 | `LOOKBACK_HOURS` | 72 | how far back official posts are considered |
 | `CODES_MIN_SOURCES` | 2 | independent sources needed for an unverified code |
@@ -436,6 +511,7 @@ For local runs and debugging: `python -m gamexpress <command>`
 | `check-webhooks [--kind …] [--game …]` | one "connected" card per unique webhook (no ping) |
 | `test-card [--kind …] [--game …] [--ping] [--unlaunched]` | post the sample cards, labelled 🧪 TEST. `--unlaunched` keeps only the games with `"released": false` |
 | `speculate [--game …] [--verbose] [--now <unix>]` | read-only: what the bot would predict for each game's next version, the confidence, and the real dates it is anchored on |
+| `benchmark [--iterations N] [--json]` | offline microbenchmark for timestamp formatting/scanning and short vs multi-page news rendering |
 
 Flags: `--dry-run --only --game --repost --kind --ping --out --unlaunched --verbose --now`.
 
@@ -448,9 +524,10 @@ Flags: `--dry-run --only --game --repost --kind --ping --out --unlaunched --verb
 | Data | Chain |
 |---|---|
 | HoYoverse news | official HoYoLAB API → c3kay JSON-Feed mirror |
-| X timelines | the built-in nitter fleet (21 entries, 20 live — `xcancel.com` is suspended and kept last as a dead entry; `NITTER_INSTANCES` overrides the list). The first **two** working mirrors are merged, so a stale-but-200 mirror can't hide a tweet |
-| Tweet details | nitter.cf → xitter.cf by id (when the account is known) → FxTwitter → fixupx → vxTwitter → the nitter text. A status mirror that fails twice in one run is skipped for the rest of it |
-| Codes | up to 8 sources per game (validators, APIs, wikis, official posts), fetched in parallel, behind the gate above |
+| X timelines | the built-in nitter fleet (27 entries, 26 live — `xcancel.com` is suspended and kept last as a dead entry; `NITTER_INSTANCES` overrides the list). The first **two** working mirrors are merged, so a stale-but-200 mirror can't hide a tweet |
+| Tweet details | nitter.cf → xitter.cf → teapawt.org → teapaw.org → teapawt.net → xitter.gq → nitter.gq by id (when the account is known) → FxTwitter → fixupx → vxTwitter → the nitter text. A status mirror that fails twice in one run is skipped for the rest of it |
+| Reddit backup & code witness | built-in Reddit/Redlib fleet (17 entries across healthy Redlib dual-path mirrors + partial/runner-gated tail, plus 3 proxies `vxreddit.com` → `embedez.com` → `embeddit.deltandy.me` and `arctic-shift.photon-reddit.com` archive; optional `REDDIT_FEED_TOKEN` drives `[0] www.reddit.com` → `[1] old.reddit.com` 1-request RSS fast path + `.json` fallback; `REDDIT_ENABLED=0` disables all Reddit HTTP calls) |
+| Codes | up to 10 sources per game (validators, APIs, wikis, community witnesses, official posts), fetched in parallel, behind the gate above |
 | Version / pre-install | HoYoPlay `getGameBranches` / Kuro launcher index |
 
 A dead source is logged, shown in the job summary, and skipped. Everything is fetched in parallel
@@ -565,8 +642,11 @@ Historical records are preserved in
   [Open Gacha Codes](https://github.com/torikushiii/OpenGachaCodes),
   [Hum-Bao/hoyoverse-codes](https://github.com/Hum-Bao/hoyoverse-codes),
   [PromoGacha](https://github.com/gripcrip-blip/codehub), the Fandom wikis and their editors,
-  [nitter](https://github.com/zedeus/nitter) and every operator who keeps a public instance
-  online, and [FxTwitter](https://github.com/FixTweet/FxTwitter). The full list, with licences
-  and the community databases: **[docs/CREDITS.md](docs/CREDITS.md)**.
+  [nitter](https://github.com/zedeus/nitter) and [redlib](https://github.com/redlib-org/redlib)
+  and every operator who keeps a public instance online, and
+  [FxTwitter](https://github.com/FixTweet/FxTwitter). The full list, with licences and the
+  community databases: **[docs/CREDITS.md](docs/CREDITS.md)**.
+- **Special thanks:** **[Arena AI](https://arena.ai/company/about)** ([@arena on X](https://x.com/arena?lang=en))
+  for making these engineering additions, upstream audits, and reliability upgrades possible.
 - **Sibling project:** [News-Express](https://github.com/uesu/News-Express) — same design,
   different beat.

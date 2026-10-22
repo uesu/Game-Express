@@ -15,22 +15,24 @@ holds. After a live-workflow update, confirm a real monitor run starts/completes
 a successful dispatch or PR CI is not proof of live execution. A hold can still
 occur: this policy reduces unattended exposure, not the security gate itself.
 
-## Fast, exact incremental PR updates
+### Evidence-Driven Maintenance, Acceptance and Workspace Hygiene
 
-- Continue the specified existing PR; implement only the newest requested delta.
-- Use concise unified diffs: `-` removes old code, `+` adds replacement code.
-  Do not replay full historical patches or add unrelated cleanup/new files.
-- Reuse relevant prior evidence. Inspect affected code and run targeted checks;
-  do not repeat a full audit/benchmark unless drift, failures or risk justify it.
-- For routine PR handoffs, do not require per-file checksums or exact commit-head
-  matching. Use normal diff review, targeted checks and CI results/annotations;
-  investigate material drift or failures as needed. Preserve required security
-  verification; do not weaken existing checks merely to save time.
-- Let normal CI validate the resulting head. Inspect advisory findings too;
-  never hide/suppress failures or remove safeguards to save time.
-- Update existing AGENTS/README/docs/changelog/privacy/terms only where affected.
-- Write an accurate PR title/body; report head, changes, checks and blockers briefly.
-- No extra audit MD, production posting, state reset or merge without approval.
+Continue the specified existing PR with concise diffs and no extra standalone audit markdown files.
+
+- Establish the task, assigned branch, current PR/base/head and dirty work before editing. Preserve unrelated changes and authorization boundaries.
+- Inspect actual references, complete relevant diffs, shared helpers and affected callers. Distinguish observed facts, inference, raw captures, reconstructions, screenshots, author reports and independently executed evidence.
+- Implement the smallest complete generic correction. Preserve existing defaults, source wording/order/media and unrelated behavior. Avoid unrequested rewrites, cosmetic churn, global unescaping and broad new frameworks.
+- Test actual decisions with mocked external boundaries. Assert outgoing content/media/link slots, request counts, results and durable state where relevant. No vacuous checks, skipped critical assertions, permissive alternatives or weakened coverage.
+- Run focused tests followed by documented relevant suites and final-head CI. Record exact commands/results/revision. Distinguish required checks from advisory jobs, committed coverage from ad-hoc checks, and stored baselines from actual baseline execution.
+- Measure performance reproducibly when required. Separate CPU work from network/pacing costs. Do not promise zero overhead or live reliability.
+- Keep active developer documentation, examples, `AGENTS.md` and acceptance reports consistent with committed code, tests, defaults, bounds and limitations. Preserve provenance and historical evidence. Respect production documentation exclusions.
+- Return **READY TO MERGE**, **CHANGES REQUIRED** or **REVIEW BLOCKED** for each PR. Tie acceptance to the exact head and disclose author-session versus independent review. Fixed findings do not automatically establish complete review; acceptance is not deployment authorization or a zero-bug warranty.
+- Keep resolved findings closed absent contradictory evidence. Review incremental changes without unnecessarily restarting unrelated work. Do not manufacture blockers from optional nits or maintain an endless acceptance loop.
+- Reuse bounded task-scoped temporary artifacts. Avoid repeated clones, archives, generated previews and duplicated logs. Inspect capacity early and retain concise durable context with exact revisions, commands, results, blockers and next actions.
+- Clean only verified disposable task-owned artifacts after inspecting status, ownership and retention needs. Never remove the repository root, `.git`, dirty user work, tracked fixtures, source captures, state or durable handoffs/evidence. No broad destructive cleanup as a capacity workaround.
+- If a snapshot/storage/tool limit blocks execution, report whether commands ran. Do not repeat identical blocked calls or claim writes/deletions succeeded. Request platform intervention or use a compact handoff when safe cleanup is impossible. Never promise automatic cross-session memory or unlimited storage.
+- Separate editing, committing/pushing, PR updates, merging, deployment, workflow dispatch, live API writes, state resets and production switch changes. Obtain the required authorization for each.
+- Update the PR title, PR body, and benchmarks **only** when those specific items actually changed; if nothing changed, keep them as-is so full prior details remain completely visible. Always publish session comments, verification results, and findings directly in the PR thread as well so every change preserves complete details for future reference.
 
 ## Operational summary output
 
@@ -47,7 +49,7 @@ behaviours are deliberate (and must not be "fixed"), how to verify a change, and
 already cost a broken run. `README.md` is the user-facing manual and `docs/` is its reference
 material; this file is the maintainer's mental model.
 
-Last updated **2026-10-15**.
+Last updated **2026-10-22**.
 
 ---
 
@@ -59,8 +61,11 @@ official sources, decides whether anything is new, posts **Discord Components V2
 **webhooks**, commits its state, and exits. A run takes ~25 s end to end (~5–6 s of that is the
 Python).
 
-Two features, independent: **`schedule`** (version/Special-Program cards) and **`codes`**
-(redemption-code cards). Six games: `genshin`, `starrail`, `zzz`, `wuwa`, `hna`, `ananta`.
+Four independent features: **`schedule`** (version/Special-Program cards) and **`codes`**
+(redemption-code cards) on by default, plus explicit opt-in **`news`** (`NEWS_ENABLED=1`, full
+official articles for five games) and **`maintenance`** (`MAINTENANCE_ENABLED=1` +
+`MAINTENANCE_GAMES`, independent `Pre-Load Started` and `Maintenance Started` cards). Six games:
+`genshin`, `starrail`, `zzz`, `wuwa`, `hna`, `ananta`.
 
 **There is no Discord bot and there must not be one.** A bot existed long ago; it was removed in
 v1.7.0, the last hosting artefact (`.dockerignore`) went in PR #20, and the legal docs were
@@ -73,16 +78,18 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 
 | Path | Role |
 |---|---|
-| `gamexpress/__main__.py` | CLI: `run`, `test-card`, `check-webhooks`, `preview`, `speculate`, `validate` |
-| `gamexpress/runner.py` | builds `Ctx` (settings, games, state, fetcher, webhook, X client), fail-over, run summary |
+| `gamexpress/__main__.py` | CLI: `run`, `test-card`, `check-webhooks`, `preview`, `speculate`, `validate`, `benchmark` |
+| `gamexpress/runner.py` | builds `Ctx` (settings, games, state, fetcher, webhook, X client, Reddit client), fail-over, `run_news`, `maintenance.run`, run summary |
 | `gamexpress/schedule.py` (the largest module by far) | the brain: picks the announcement, parses times, locks banners, speculates a cycle, builds/edits the schedule card |
 | `gamexpress/codeposter.py` | the code gate (families, validators, min-sources), posts/edits code cards |
-| `gamexpress/cards.py` | Components V2 payload builders + `validate_payload` (`CODES_PER_CARD = 10`) |
+| `gamexpress/maintenance.py` | fourth feature (off by default): independent `Pre-Load Started` & `Maintenance Started` cards, `official > override > observed > cadence` precedence, 4-tier version-verified launch media, corroborated signed URL renewal/fallback, silent seed & bounded late `PATCH` |
+| `gamexpress/news_timestamps.py` | single-pass `O(N)` render-only news timestamp converter (`NEWS_TIMESTAMPS`, off by default) |
+| `gamexpress/cards.py` | Components V2 payload builders (`schedule`, `codes`, `news`, `maintenance`) + `validate_payload` |
 | `gamexpress/discord.py` | webhook POST/PATCH, 429/5xx retries, `WEBHOOK_SPACING = 1.2 s` pacing |
 | `gamexpress/http.py` | shared `aiohttp` fetcher, `MAX_PARALLEL = 12`, per-source health counters |
 | `gamexpress/state.py` | `state/state.json` (`SCHEMA = 1`): posted keys, message ids, bootstrap flags, heartbeat |
 | `gamexpress/config.py` | `Settings` (env) + `Game` (games.json) + `game_is_on` / `active_games` |
-| `gamexpress/sources/*` | one module per upstream: `twitter` (nitter fleet + FxEmbed), `hoyolab`, `kuro`, `codes`, `launcher`, `bannerfeed`, `calendarfeed`, `gachawiki`, `banner_search`, `countdown`, `newspage` |
+| `gamexpress/sources/*` | one module per upstream: `twitter` (nitter fleet + FxEmbed), `reddit` (Redlib fleet + `reddit.com` feed token + rich-embed proxies), `hoyolab`, `kuro`, `codes`, `launcher`, `bannerfeed`, `calendarfeed`, `gachawiki`, `banner_search`, `countdown`, `newspage` |
 | `gamexpress/{models,media,textutil,timeparse,samples,preview_html}.py` | the `Item` / `CodeHit` dataclasses, image URL normalisation, HTML→text, date/time parsing, sample cards, local preview |
 | `config/games.json` | per-game config (see §4) · `config/overrides.json` human corrections · `config/program_announcements.json` discovered tweet ids |
 | `tests/test_smoke.py` | the main suite: every test offline — no network, no secrets |
@@ -157,8 +164,8 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    the `test` job is a required check.
 12. **No new runtime dependencies** without a very good reason. The whole app runs on `aiohttp`,
    `feedparser`, `python-dotenv`.
-13. **Never commit secrets.** Webhooks and the nitter token are repository secrets; the state file
-   stores only a 12-char non-reversible webhook fingerprint.
+13. **Never commit secrets.** Webhooks, `NITTER_RSS_TOKEN` and `REDDIT_FEED_TOKEN` are repository
+   secrets; the state file stores only a 12-char non-reversible webhook fingerprint.
 14. **No LICENSE file is wanted** — this is a personal-use repository (owner's decision,
     2026-10-03). Do not add one "for completeness".
 15. **A posted Special Program card keeps its announcement.** The first post that gives an air time
@@ -334,8 +341,15 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
   the newest delta in existing files, with the existing smoke/CI gates.
 - `NEWS_ENABLED` defaults off; feature selection alone cannot enable news and
   global disable wins. Five dedicated destinations, no catch-all/force/mirror fallback.
-- Schedule/version-program announcements stay schedule-only; codes and existing
-  mirrors keep their routing. No Wangyue; ANANTA has no verified news adapter.
+- Official news, schedule, schedule mirrors, codes, and preload/maintenance started
+  alerts are strictly independent features: Special Program previews, broadcasts,
+  pre-installation notices, and version maintenance notices remain eligible for
+  official news delivery under normal news validation/deduplication rules even when
+  consumed by schedule, mirrored to `DISCORD_WEBHOOK_SCHEDULE_MIRROR_<GAME>`, or
+  used by `maintenance`. Existing legacy `state["news"]` records carrying
+  `{"status": "posted", "excluded": "schedule"}` stay completed in place so
+  historical articles are never mass-reposted on rollout without explicit operator
+  authorization. No Wangyue; ANANTA has no verified news adapter.
 - Never substitute a list preview for a failed full fetch. Use one message when
   full text/media fits; otherwise <=7,000 normalized chars may use at most two
   independently validated pages. Unpageable/longer articles use one labelled
@@ -350,9 +364,12 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
   hold/retry without marking delivered. Never guess filenames, strip required URL
   queries, use screenshot substitutes, or claim this proves Discord playback.
   Do not invent engagement stats.
-- Keep link labels/destinations separate: one masked link for a descriptive label,
-  bare self-labelled URLs, and raw button/media URL fields. Never capture the next
-  section in a link; retain a leading newline when formatting Quill headings.
+- Keep link labels/destinations separate via `textutil.news_link()`: preserve balanced
+  depth-1 `[...]` spans unescaped inside `` `[label](url)` ``, emit unmatched/outer-nested
+  brackets outside linked spans as `\[` / `\]` (splitting across multiple link spans where
+  needed or falling back to escaped brackets plus bare `url` when no linkable text exists),
+  and keep bare self-labelled URLs and raw button/media URL fields unchanged. Never capture
+  the next section in a link; retain a leading newline when formatting Quill headings.
 - HTML bold conversion must balance nested/adjacent spans across media boundaries,
   not emit literal stray `**`. Pad both sides of decorative closing `✦` markers
   only when missing; retain source emphasis, not source HTML styling.
@@ -451,3 +468,67 @@ review rather than replaying already confirmed pages. Do not toggle layout modes
 mid-partial delivery without reviewing that hold. No state reset or old-post edits.
 Discord controls thumbnail cropping; neither header measurements, HTML previews
 nor passing offline tests prove live media decoding/readability or delivery.
+
+
+## Optional news timestamps, pre-load/maintenance alerts & expanded full articles (2026-10-21)
+
+All three additions are **disabled by default** and strictly opt-in via environment /
+repository Variables:
+
+- **`NEWS_TIMESTAMPS=0` (default):** bypasses `gamexpress/news_timestamps.py` completely
+  (`0` parser calls, `0` extra HTTP requests, byte-identical output). When `1`, converts
+  exact TZ-qualified date-times (including bare `UTC`/`GMT` at `+00:00`, explicit
+  `UTC±H[:MM]` / named offsets, and news-only `server time` fallback at `UTC+8`) to
+  `<t:EPOCH:f>` after text normalization and before sizing/pagination. Explicit years are
+  always authoritative; yearless dates require `published_ts > 0` and resolve strictly
+  within an exact `±180`-day window (`YEARLESS_MAX_DELTA_DAYS = 180`) around `published_ts`
+  (keeping recent past dates in `pub.year`, supporting genuine Dec ↔ Jan rollovers within
+  `±180` days, leaving ambiguous dates outside `±180` days untouched, and never adding a
+  year to inverted ranges). In two-endpoint ranges, `_resolve_range_tzs` inherits a valid
+  trailing zone only when the first endpoint omits its timezone and rejects the entire range
+  verbatim if either endpoint carries an invalid or ambiguous explicit zone, without mutating
+  `Item`, raw HTML, or `timeparse.py`.
+- **`MAINTENANCE_ENABLED=0` + `MAINTENANCE_GAMES=""` (default):** `gamexpress/maintenance.py`
+  posts independent `Pre-Load Started` and `Maintenance Started` Components V2 cards to
+  dedicated `DISCORD_WEBHOOK_MAINTENANCE_<GAME>` webhooks (with optional `PING_MAINTENANCE_<GAME>`
+  / `PING_MAINTENANCE`), seeding settled milestones silently on first activation, enforcing
+  `official > override > persisted first-observed launcher signal (labelled observed) > cadence`
+  precedence (no invented HNA cadence or unknown end time), separating version/launch identity
+  lock from selected media tier across 4 priority tiers against Phase II swaps, and bounding
+  post-delivery media checks/edits strictly to `0 <= now - posted_at <= LATE_MEDIA_EDIT_WINDOW_S`
+  (`6 h` / `21,600 s`, once per scheduled poll with per-run `verified_cache` URL deduplication),
+  `MAX_LATE_MEDIA_ATTEMPTS = 3` consecutive failed `PATCH` calls (`edit_attempts`, reset to `0` on
+  `res.ok`), and `MAX_LATE_EDITS = 6` total succeeded `PATCH` edits (`edit_count`, monotonic).
+- **`NEWS_EXPAND_FULL=0` (default):** independent of `main`'s removed per-run article-count cap
+  and independent of `NEWS_GROUP_LONG_STRIPS`; preserves the exact per-article 1-message /
+  `<= 7,000`-char max-2-page / halved-word labelled excerpt policy. When `1`, expands full
+  articles across multiple independently validated pages up to `NEWS_EXPAND_MAX_PAGES = 12`
+  (`NEWS_EXPAND_MAX_CHARS = 120000`, `NEWS_EXPAND_MAX_MEDIA = 120`), with explicitly labelled
+  excerpt fallback if exceeded and
+  `SendResult.ambiguous` holds on indeterminate webhook `POST` outcomes (adding media validation
+  `GET`s, webhook `POST`s, and inter-page pacing proportional to media and page count).
+- **Shared `WebhookClient` recovery policy (`gamexpress/discord.py`):** Conservative
+  stop-and-hold recovery is explicitly enabled for official news and maintenance alerts.
+  Existing schedule/code retry behavior remains at the pre-PR baseline. Specifically,
+  `runner.py:run_news` (ordinary single-card, `<=7,000` 2-page, excerpt, and
+  `NEWS_EXPAND_FULL=1` multi-page articles) and `maintenance.py:run` (`Pre-Load Started` /
+  `Maintenance Started` alerts) pass `stop_on_ambiguous=True` explicitly, stopping blind
+  replay after 1 `POST` attempt and returning `SendResult(..., ambiguous=True)` while
+  preserving definite pre-send connection retries, explicit `4xx` rejection handling, `429`
+  `Retry-After` backoff, `5xx` retries, and idempotent `PATCH` edits; existing `schedule`
+  (`schedule.py` primary `POST`, `404`-recovery repost, and mirror `POST`), `codes`
+  (`codeposter.py`), and CLI (`__main__.py` `test-card`/`check-webhooks`) callers leave
+  `stop_on_ambiguous=False` by default and retain their exact pre-PR baseline retry and
+  `SendResult` behavior. Keep default-off formatting/pagination parity, authorized
+  independent official-news delivery, news/maintenance recovery hardening, and preserved
+  `schedule`/`codes` behavior clearly distinct.
+
+Run `.venv/bin/python -m gamexpress benchmark --iterations 300` (or add `--json`) on any clean
+revision to reproduce the exact SHA-stamped `median`/`mean`/`p95` offline CPU timings across all
+12 cases (`short=341c+1img`, `medium=4926c+1img <=7000`, `long=12348c+18imgs`), default-off
+parity checks (`output_equal=True`, `main_1e071d8_sha256_equal=True`,
+`timestamp_parser_calls=0`, `extra_feature_http_or_webhook=0`),
+and mocked/derived protocol counts (`short(off)=1 msg / 1 media GET / 1 POST`,
+`medium<=7000(off)=2 msgs / 1 media GET / 2 POSTs (+1.2s min pacing)`,
+`long>7000(off)=1 excerpt msg / 1 media GET / 1 POST`,
+`long>7000(expand_full=1)=4 msgs / 18 media GETs / 4 POSTs (+3.6s min pacing)`).

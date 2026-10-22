@@ -1,8 +1,8 @@
 # Privacy Policy
 
-**Effective date:** October 18, 2026
-**Applies to:** *Game-Express*, the open-source game version-schedule announcer, optional official-news and redemption-code
-poster ("the Service"):
+**Effective date:** October 22, 2026
+**Applies to:** *Game-Express*, the open-source game version-schedule announcer, redemption-code
+poster, and optional official-news and pre-load/maintenance-started announcer ("the Service"):
 - **Automation mode**: GitHub Actions + Discord webhooks.
 
 ---
@@ -28,9 +28,9 @@ is GitHub Actions.
 
 | Data | Where it lives | Why | Shared? |
 |---|---|---|---|
-| Public announcement data (titles, text, times, image links of official posts) | processed **in memory** during a run | building the cards | Discord receives rendered content; source services receive the public requests. Operational logs/summaries can retain source references. |
-| Dedup state: version numbers, code strings, Discord **message IDs** of the Service's own posts, the public post ID a card is locked to, confirmed banner names, timestamps, a short non-reversible webhook fingerprint | `state/state.json` **inside the operator's repository** | deduplication and editing its own cards | GitHub and anyone with repository access; a public repository makes committed state public. An explicitly configured peer instance can read its accessible state file. |
-| Webhook URLs, optional nitter token | operator's **encrypted GitHub secrets** | authentication | GitHub stores secrets; credentials are sent to their intended service when required. Output redaction/masking is a safeguard, not a guarantee; review logs before sharing them. |
+| Public announcement data (titles, text, times, image/video links of official posts) | processed **in memory** during a run | building the cards | Discord receives rendered content; source services receive the public requests. Operational logs/summaries can retain source references. |
+| Dedup state: version numbers, code strings, public news/milestone IDs, Discord **message IDs** of the Service's own posts, the public post ID a card is locked to, confirmed banner names, timestamps, a short non-reversible webhook fingerprint | `state/state.json` **inside the operator's repository** | deduplication and editing its own cards | GitHub and anyone with repository access; a public repository makes committed state public. An explicitly configured peer instance can read its accessible state file. |
+| Webhook URLs, optional nitter token (`NITTER_RSS_TOKEN`), optional Reddit private feed link/token (`REDDIT_FEED_TOKEN`), optional Python-bump token (`BUMP_PAT`) | operator's **encrypted GitHub secrets** | authentication | GitHub stores secrets; each credential is sent strictly to its intended service (`NITTER_RSS_TOKEN` only to the allowlisted token-gated mirrors, `REDDIT_FEED_TOKEN` only to official `reddit.com` hosts). Output redaction/masking is a safeguard, not a guarantee; review logs before sharing them. |
 
 No analytics, telemetry, cookies, tracking pixels, advertising, or profiling. The monitor reads only
 public source pages and sends cards to the operator's configured webhooks.
@@ -40,13 +40,16 @@ public source pages and sends cards to the operator's configured webhooks.
 The Service sends HTTPS requests for public content to the services below.
 Recipients can observe request metadata such as the runner IP and requested
 URL; configured credentials are sent to the intended service when required:
-- HoYoLAB / HoYoverse (news API, livestream code module, HoYoPlay launcher API), and the c3kay.de
+- HoYoLAB / HoYoverse (news API, livestream code module, HoYoPlay launcher & basic-info APIs), and the c3kay.de
   JSON Feed mirror of HoYoLAB news, used only when the HoYoLAB API cannot be reached;
-- Kuro Games (official website JSON, launcher index);
+- Kuro Games (official website JSON, launcher index, structured launch media);
 - nitter instances (`nitter.cf` and `xitter.cf` first, for single posts and timelines; a token-gated
-  instance is used only when the operator sets a token, and the token is sent only to that instance),
+  instance is used only when the operator sets `NITTER_RSS_TOKEN`), `teapawt.org` / `teapaw.org` / `teapawt.net` / `xitter.gq` / `nitter.gq`,
   FxTwitter, fixupx and vxTwitter (public X posts);
-- hoyo-codes.seria.moe, api.ennead.cc (Open Gacha Codes and the official game calendars for banner names), wuthering.gg, the Fandom game wikis (MediaWiki
+- Reddit and Redlib instances (`www.reddit.com` and `old.reddit.com` public feeds — carrying `REDDIT_FEED_TOKEN`
+  query parameters only when configured — public Redlib mirrors, rich-embed proxies `vxreddit.com`, `embedez.com`,
+  and `embeddit.deltandy.me`, and the public `arctic-shift.photon-reddit.com` archive as a fallback);
+- hoyo-codes.seria.moe, api.ennead.cc (Open Gacha Codes and the official game calendars for banner names), wuthering.gg, the Fandom game wikis across all six games (MediaWiki
   API: code lists and banner lineups), and GitHub / jsDelivr (PromoGacha and Hum-Bao code lists, the
   optional peer-instance state file);
 - the official banner notices, found by title through HoYoLAB's search endpoint and Kuro's article menu (for
@@ -57,7 +60,7 @@ URL; configured credentials are sent to the intended service when required:
 The operator's scheduler (cron-job.org) only calls GitHub's API to start the workflow. It
 receives no data about Discord users.
 
-Each service has its own privacy policy. Links in cards (YouTube, Twitch, HoYoLAB, X, redeem
+Each service has its own privacy policy. Links in cards (YouTube, Twitch, HoYoLAB, X, Reddit, redeem
 pages, and the Discord invite button configured through `COMMUNITY_BUTTONS`) open third-party
 sites, and their policies apply.
 
@@ -83,8 +86,8 @@ about people. Discord's own age requirements apply to its users.
 
 ## 7. Your choices
 
-- **Operators** can disable any feature (`ENABLED_FEATURES=none`), revoke
-  webhooks, or delete the repository at any time.
+- **Operators** can disable any feature (`ENABLED_FEATURES=none`, `REDDIT_ENABLED=0`,
+  `NEWS_ENABLED=0`, `MAINTENANCE_ENABLED=0`), revoke webhooks, or delete the repository at any time.
 - **Discord users** can mute the channel or leave the server. Nothing about them is stored by
   the Service.
 
@@ -98,27 +101,33 @@ Updates are published in this file with a new effective date and noted in the
 Open an issue in the repository that hosts the instance you are using.
 
 
-## Optional official-news processing and retention
+## Optional official-news and milestone processing and retention
 
-When explicitly enabled, news reads full public official article text, publisher
-names, publication timestamps and image/GIF/video links from the already listed
-HoYoLAB/Kuro services and sends at most two rendered messages per article to
-dedicated Discord channels: full fitting content in one message, longer fitting
-content across at most two pages, or a labelled excerpt with a source link.
-The monitor performs bounded media GET/signature checks using a short in-memory
-response prefix; it does not store article media as a new dataset. Failed checks
-refresh the official article once, then hold delivery for retry. Discord fetches
-linked media according to its own behavior. Unsupported media remains
-an original-source link or notice. No Discord member data or new analytics is added.
+When explicitly enabled (`NEWS_ENABLED=1`), news reads full public official article text,
+publisher names, publication timestamps and image/GIF/video links from the already listed
+HoYoLAB/Kuro services and sends rendered Components V2 messages to dedicated Discord channels:
+by default (`NEWS_EXPAND_FULL=0`), full fitting content in one message, longer fitting content
+across at most two pages within the 7,000-character policy, or a labelled excerpt with a source
+link; when `NEWS_EXPAND_FULL=1` is set, longer articles may span up to an explicit `12`-page /
+`120,000`-character / `120`-media cap before falling back to an excerpt. Optional render-only
+timestamp conversion (`NEWS_TIMESTAMPS=1`) rewrites exact timezone-qualified date-times into
+Discord `<t:…>` tags without altering stored source payloads. The monitor performs bounded media
+GET/signature/dimension checks using short in-memory prefixes; it does not store article media as
+a dataset. Failed checks refresh the official article once, then hold delivery for retry. Discord
+fetches linked media according to its own behavior. Unsupported media remains an original-source
+link or notice. No Discord member data or new analytics is added.
 
-The existing repository state also retains public news IDs, publication times,
-publication floors, route/content fingerprints, delivery status and the monitor's
-own per-part message IDs; partial entries include minimal discovery metadata for
-retry. Completed news entries retain up to 30 days, with a 500-entry/game admission
-bound shared with partial progress. Safe capacity cleanup can remove completed
-entries older than 48 hours sooner, advancing a floor to prevent reposts. Partial
-progress remains until completion/review rather than being silently evicted; full
-capacity defers new admission. See configuration for catch-up/source limits.
-Disabling writes a pause marker once, without new source requests. Repository/Git
-history and Discord/log retention are independent of pruning this current JSON.
-Operators control visibility and must preserve attribution, state and credentials.
+When explicitly enabled (`MAINTENANCE_ENABLED=1` with `MAINTENANCE_GAMES`), milestone alerts retain
+per-game `preload` and `maintenance` state entries, non-reversible webhook fingerprints, message
+IDs, timestamps, version-lock metadata, and bounded post-delivery refresh counters in the existing
+`state/state.json`. Signed URL query strings (`auth_key=`) are redacted in summaries and logs.
+
+The existing repository state retains public news IDs, publication times, publication floors,
+route/content fingerprints, delivery status and the monitor's own per-part message IDs; partial
+entries include minimal discovery metadata for retry. Completed news entries retain up to 30 days,
+with a 500-entry/game admission bound shared with partial progress. Safe capacity cleanup can
+remove completed entries older than 48 hours sooner, advancing a floor to prevent reposts. Partial
+progress remains until completion/review rather than being silently evicted; full capacity defers
+new admission. Disabling writes a pause marker once, without new source requests. Repository/Git
+history and Discord/log retention are independent of pruning this current JSON. Operators control
+visibility and must preserve attribution, state and credentials.

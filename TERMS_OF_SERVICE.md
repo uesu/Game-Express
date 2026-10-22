@@ -1,8 +1,9 @@
 # Terms of Service
 
-**Effective date:** October 18, 2026
-**Applies to:** *Game-Express*, the open-source game version-schedule announcer, optional official-news and redemption-code
-poster ("the Service"), running as a GitHub Actions workflow that posts through Discord webhooks.
+**Effective date:** October 22, 2026
+**Applies to:** *Game-Express*, the open-source game version-schedule announcer, redemption-code
+poster, and optional official-news and pre-load/maintenance-started announcer ("the Service"),
+running as a GitHub Actions workflow that posts through Discord webhooks.
 
 ---
 
@@ -11,10 +12,13 @@ By deploying, running or modifying an instance of the Service, you agree to thes
 
 ## 2. What the Service is
 A set of open-source Python scripts that read **public official announcements** (HoYoLAB,
-official X accounts, Kuro Games' website, official launcher APIs), **community and wiki pages** used
-for banner lineups and estimated dates (official banner notices found by title, a community banner feed, game wikis, countdown sites), and
-**public redemption-code lists**, then post formatted cards to Discord channels that **you** control. There is no hosted
-service operated by the author on your behalf. Each operator runs their own instance.
+official X accounts, official Reddit accounts and flaired moderator posts, Kuro Games' website,
+official launcher APIs), **community and wiki pages** used for banner lineups, backup media/post
+resolution, code witnesses and estimated dates (official banner notices found by title, a community
+banner feed, game wikis, public nitter/Redlib mirrors, rich-embed proxies, public archives, and
+countdown sites), and **public redemption-code lists**, then post formatted cards to Discord
+channels that **you** control. There is no hosted service operated by the author on your behalf.
+Each operator runs their own instance.
 
 Operational logs and completion summaries are best-effort diagnostics, not
 proof of healthy sources, successful delivery or committed/pushed state. Follow
@@ -25,16 +29,18 @@ service is introduced by completion reporting.
 
 ## 3. No affiliation
 The Service is **not affiliated with, endorsed by, or sponsored by** HoYoverse / miHoYo, Kuro
-Games, NetEase, Discord, X Corp., or any database or API it reads. All game names, logos, images
-and trademarks belong to their respective owners and are shown for informational purposes.
+Games, NetEase, Discord, X Corp., Reddit, Inc., or any database, mirror or API it reads. All game
+names, logos, images, videos and trademarks belong to their respective owners and are shown for
+informational purposes.
 
 ## 4. Accuracy — STC / TBA
 Schedules, banners, maintenance times and codes come from official and community sources and
 **can change** without notice:
 - **STC = Subject to Change**, and **TBA = To be Announced**.
 - Official notices win over estimates. When no official time has been published yet, the card may
-  show a community **estimate** (countdown sites, the community banner feed) — always labelled as such
-  on the card itself, and replaced automatically the moment the official notice appears.
+  show a community or cadence **estimate** (countdown sites, the community banner feed, learned
+  release cadence, or first-observed launcher availability) — always labelled as such on the card
+  itself, and replaced automatically when an authoritative official notice arrives.
 - **Locks.** Once a card is posted, its title link and key art stay on the announcement it was built
   from. A banner name locks when an official notice confirms it, or when any two reputable sources agree
   (the community feed, the official game calendar, the game wiki), for 5★ and 4★ alike. A locked name is not changed by the feed or the wiki, and an official name is not changed by a
@@ -49,7 +55,7 @@ Schedules, banners, maintenance times and codes come from official and community
 ## 5. Operator responsibilities
 If you run an instance, you are responsible for:
 - **Using webhooks and tokens you own**, and keeping them secret.
-- **Following the rules of every service involved**: the [Discord Terms of Service](https://discord.com/terms), the [Discord Developer Policy](https://discord.com/developers/docs/policies-and-agreements/developer-policy), the X/Twitter terms, and the terms of the APIs the Service reads.
+- **Following the rules of every service involved**: the [Discord Terms of Service](https://discord.com/terms), the [Discord Developer Policy](https://discord.com/developers/docs/policies-and-agreements/developer-policy), the X/Twitter terms, the Reddit User Agreement and API Terms, and the terms of the APIs and mirrors the Service reads.
 - **Respecting sources**: keep the default low request rate (a run every ~5 minutes, with only a few requests per source; a wiki banner lookup and a title search are each repeated at most every three hours while a banner is still TBA, and at most every six hours while it is unconfirmed) and do not use the Service to overload, scrape at high frequency, or resell data.
 - **Your server's content**: ping roles, channels, and who can see the posts.
 
@@ -82,18 +88,20 @@ noted in the [changelog](docs/changelog/CHANGELOG.md). Continued use after a cha
 Open an issue in the repository that hosts the instance you are using.
 
 
-## Optional official news
+## Optional official news and milestone alerts
 
-News is off by default and requires explicit operator opt-in and dedicated
-webhooks. Operators remain responsible for permission to redistribute full public
-article text/media, attribution and the source/platform terms. Articles retain
-retrievable content when it fits; oversized articles use a labelled one-container
-excerpt with at most one lead image and original-source access. Failed direct-media
-preflight can hold delivery; checks do not guarantee Discord playback. Unsupported media, source/index
-coverage, Discord limits, outages and ambiguous acknowledgements can prevent or
-duplicate delivery. Wuthering Waves discovery uses a bounded current index, not a
-complete archive. The Service does not guarantee delivery of every official
-announcement or playback of every linked video. Silent baselines, bounded catch-up
-and retention deliberately avoid historical floods; partial-delivery state must
-not be reset to force tests. These limitations do not remove the existing warranty,
-operator responsibility or no-affiliation provisions.
+Official news (`NEWS_ENABLED=1`) and pre-load/maintenance-started alerts
+(`MAINTENANCE_ENABLED=1` with `MAINTENANCE_GAMES`) are off by default and require explicit
+operator opt-in and dedicated per-game webhooks. Operators remain responsible for permission to
+redistribute public article text/media, attribution and all upstream source/platform terms. By
+default (`NEWS_EXPAND_FULL=0`), fitting articles deliver in at most two validated pages within
+7,000 normalized characters or fall back to a labelled one-container excerpt with at most one lead
+image and original-source access; setting `NEWS_EXPAND_FULL=1` lifts that ceiling up to an explicit
+12-page / 120,000-character / 120-media cap before excerpt fallback. Optional render-time timestamp
+conversion (`NEWS_TIMESTAMPS=1`) converts unambiguous source timestamps into Discord `<t:…>` tags.
+Failed direct-media preflight or ambiguous webhook responses hold delivery for review rather than
+blindly replaying duplicates; checks do not guarantee Discord playback. Wuthering Waves news
+discovery uses a bounded current English index (`startTime`, fallback `createTime`), not a complete
+archive. Silent baselines, bounded catch-up and retention deliberately avoid historical floods;
+partial-delivery or milestone state must not be reset to force tests. These limitations do not
+remove the existing warranty, operator responsibility or no-affiliation provisions.
