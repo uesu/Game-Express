@@ -31,7 +31,7 @@ Sensitive — *Settings → Secrets and variables → Actions → **Secrets***.
 | `DISCORD_WEBHOOK_SCHEDULE_<GAME>` | optional per-game schedule channel, e.g. `DISCORD_WEBHOOK_SCHEDULE_WUWA` |
 | `DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME>` | optional — **copies** the card to a second channel as well, e.g. `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ZZZ` (see *Fan-out* below) |
 | `NITTER_RSS_TOKEN` | optional — the e-mailed token for the token-gated nitter and redlib mirrors (`https://nitter.miningtcup.me/`, `https://redlib.miningtcup.me` — the same secret News-Express uses). Empty only skips those mirrors |
-| `REDDIT_FEED_TOKEN` | optional — private RSS feed token appended on `https://www.reddit.com/r/<sub>/new.rss` (`?feed=…`) |
+| `REDDIT_FEED_TOKEN` | optional — private RSS feed token from `old.reddit.com/prefs/feeds/`: paste `<40-char-key>&user=<your_username>` (everything after `?feed=`, same format as News-Express; pasting `?feed=…` or the full `https://old.reddit.com/.rss?feed=…&user=…` URL is normalized automatically) |
 
 **Webhook routing**, most specific first:
 

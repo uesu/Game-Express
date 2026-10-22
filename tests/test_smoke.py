@@ -13665,7 +13665,16 @@ def test_reddit_zero_waste_schedule_failover_single_request_feed_token_and_share
     from gamexpress import runner
     from gamexpress.config import load_settings
     from gamexpress.sources import hoyolab
-    from gamexpress.sources.reddit import RedditClient
+    from gamexpress.sources.reddit import RedditClient, format_reddit_feed_query
+
+    # All 4 copy-paste formats from `old.reddit.com/prefs/feeds/` normalize identically
+    dummy_key = "0123456789abcdef0123456789abcdef01234567"
+    expected_q = f"feed={dummy_key}&user=example_user"
+    assert format_reddit_feed_query(f"{dummy_key}&user=example_user") == expected_q
+    assert format_reddit_feed_query(f"?feed={dummy_key}&user=example_user") == expected_q
+    assert format_reddit_feed_query(f"feed={dummy_key}&user=example_user") == expected_q
+    assert format_reddit_feed_query(f"https://old.reddit.com/.rss?feed={dummy_key}&user=example_user") == expected_q
+    assert format_reddit_feed_query(dummy_key) == f"feed={dummy_key}"
 
     # 1. `GE_SECRETS_JSON` auto-wiring + 1-request `REDDIT_FEED_TOKEN` fast path
     st_tokens = load_settings({

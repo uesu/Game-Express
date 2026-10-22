@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 
 import aiohttp
@@ -97,7 +98,7 @@ class Fetcher:
                     if r.status in (400, 401, 403, 404, 410):
                         break  # permanent for this run — don't hammer
             except (aiohttp.ClientError, asyncio.TimeoutError, UnicodeDecodeError) as e:
-                last = f"{type(e).__name__}: {e}"
+                last = re.sub(r"\?[^\s)'\"]+", "", f"{type(e).__name__}: {e}")
             if attempt < retries:
                 await asyncio.sleep(delay)
                 delay *= 2

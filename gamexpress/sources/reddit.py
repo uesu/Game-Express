@@ -43,7 +43,7 @@ import re
 from calendar import timegm
 from collections.abc import Callable
 from datetime import datetime, timezone
-from urllib.parse import quote, urlsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 import feedparser
 
@@ -144,6 +144,32 @@ def redlib_media_to_reddit(url: str, base_origin: str = "") -> str:
 def canonical_post_url(subreddit: str, post_id: str, slug_part: str = "") -> str:
     tail = f"{slug_part.strip('/')}/" if slug_part.strip("/") else ""
     return f"https://www.reddit.com/r/{subreddit}/comments/{post_id}/{tail}"
+
+
+def format_reddit_feed_query(raw_token: str) -> str:
+    """Normalize `REDDIT_FEED_TOKEN` into an encoded `feed=...` (+ optional `&user=...`) query.
+
+    Accepts any form copied from `old.reddit.com/prefs/feeds/`:
+      * `<40-hex>&user=<username>` (the exact value used by `News-Express`)
+      * `<40-hex>`
+      * `?feed=<40-hex>&user=<username>` or `feed=<40-hex>&user=<username>`
+      * `https://old.reddit.com/.rss?feed=<40-hex>&user=<username>`
+    """
+    tok = (raw_token or "").strip()
+    if not tok:
+        return ""
+    if tok.lower().startswith(("http://", "https://")):
+        q = urlsplit(tok).query
+    elif tok.startswith("?"):
+        q = tok[1:]
+    elif tok.lower().startswith("feed="):
+        q = tok
+    else:
+        q = f"feed={tok}"
+    pairs = [(k, v) for k, v in parse_qsl(q, keep_blank_values=False) if k.lower() in ("feed", "user")]
+    if not pairs or not any(k.lower() == "feed" for k, _ in pairs):
+        return ""
+    return urlencode(pairs)
 
 
 def _parse_created_ts(raw: str | None) -> int:
@@ -620,8 +646,9 @@ class RedditClient:
         if inst in OFFICIAL_RSS_HOSTS:
             if kind == "sub":
                 url = f"{inst}/r/{target}/new.rss"
-                if inst == "https://www.reddit.com" and self.settings.reddit_token:
-                    url = f"{url}?feed={quote(self.settings.reddit_token)}"
+                feed_q = format_reddit_feed_query(self.settings.reddit_token)
+                if inst == "https://www.reddit.com" and feed_q:
+                    url = f"{url}?{feed_q}"
             else:
                 url = f"{inst}/user/{target}/submitted.rss"
             body = await self._get_text(
