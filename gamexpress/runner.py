@@ -79,9 +79,9 @@ async def _gather_game(ctx: Ctx, g: Game, since: int) -> None:
                                  reddit_task)
     items: list[Item] = [it for part in parts for it in part]
     ctx.items[g.key] = items
-    reddit_ok = getattr(ctx, "reddit", None) is not None and any(
-        f"u/{a.lower()}" in ctx.reddit.reachable or f"r/{s.lower()}" in ctx.reddit.reachable
-        for a in g.reddit_official for s in g.subreddits
+    reddit_ok = getattr(ctx, "reddit", None) is not None and (
+        any(f"u/{a.lower()}" in ctx.reddit.reachable for a in g.reddit_official)
+        or any(f"r/{s.lower()}" in ctx.reddit.reachable for s in g.subreddits)
     )
     ctx.reachable[g.key] = (
         probe.ok > 0

@@ -178,29 +178,34 @@ def _strip_tags(fragment: str) -> str:
 
 
 def _extract_div_blocks(page: str, marker_re: re.Pattern[str]) -> list[tuple[str, str]]:
-    """Extract balanced `<div ...>...</div>` blocks whose opening tag matches `marker_re`."""
+    """Extract balanced `<div|details ...>...</div|details>` blocks matching `marker_re`."""
     blocks: list[tuple[str, str]] = []
-    div_re = re.compile(r"</?div\b[^>]*>", re.I)
     for m in marker_re.finditer(page):
         open_tag = m.group(0)
+        tm = re.match(r"<([a-z0-9]+)\b", open_tag, re.I)
+        tag = tm.group(1) if tm else "div"
+        tag_re = re.compile(rf"</?{re.escape(tag)}\b[^>]*>", re.I)
         depth = 1
         pos = m.end()
+        end_idx = len(page)
         while depth > 0:
-            nxt = div_re.search(page, pos)
+            nxt = tag_re.search(page, pos)
             if not nxt:
                 break
             tok = nxt.group(0)
             if tok.startswith("</"):
                 depth -= 1
+                if depth == 0:
+                    end_idx = nxt.start()
             elif not tok.endswith("/>"):
                 depth += 1
             pos = nxt.end()
-        blocks.append((open_tag, page[m.end():pos - 6 if depth == 0 else pos]))
+        blocks.append((open_tag, page[m.end():end_idx]))
     return blocks
 
 
-_POST_OPEN_RE = re.compile(r'<div\s+class="post(?:\s+[^"]*)?"(?:\s+id="([^"]+)")?[^>]*>', re.I)
-_COMMENT_OPEN_RE = re.compile(r'<div\s+id="([^"]+)"\s+class="comment(?:\s+[^"]*)?"[^>]*>', re.I)
+_POST_OPEN_RE = re.compile(r'<div\b(?=[^>]*\bclass="(?:[^"]*\s)?post(?:\s[^"]*)?")[^>]*>', re.I)
+_COMMENT_OPEN_RE = re.compile(r'<(?:div|details)\b(?=[^>]*\bclass="(?:[^"]*\s)?comment(?:\s[^"]*)?")[^>]*>', re.I)
 
 
 def parse_redlib_html(body: str, base_origin: str = "https://snoo.habedieeh.re") -> list[dict]:
@@ -212,7 +217,11 @@ def parse_redlib_html(body: str, base_origin: str = "https://snoo.habedieeh.re")
     order: list[str] = []
 
     for open_tag, chunk in _extract_div_blocks(body, _POST_OPEN_RE):
-        pm = POST_LINK_RE.search(chunk)
+        tm = re.search(r'<h[12]\s+class="post_title">(.*?)</h[12]>', chunk, re.I | re.S)
+        pm = POST_LINK_RE.search(tm.group(1)) if tm else None
+        if not pm:
+            cm_link = re.search(r'class="post_comments"[^>]*href="([^"]+)"', chunk, re.I)
+            pm = POST_LINK_RE.search(cm_link.group(1)) if cm_link else POST_LINK_RE.search(chunk)
         id_attr = re.search(r'\bid="([^"]+)"', open_tag)
         post_id = (pm.group(2) if pm else (id_attr.group(1) if id_attr else "")).strip().lower()
         subreddit = (pm.group(1) if pm else "").strip()
@@ -235,7 +244,6 @@ def parse_redlib_html(body: str, base_origin: str = "https://snoo.habedieeh.re")
         ts = _parse_created_ts(cm.group(1) if cm else "")
 
         flair = ""
-        tm = re.search(r'<h[12]\s+class="post_title">(.*?)</h[12]>', chunk, re.I | re.S)
         title = ""
         if tm:
             h_inner = tm.group(1)
@@ -308,16 +316,21 @@ def parse_redlib_html(body: str, base_origin: str = "https://snoo.habedieeh.re")
     profile_author = page_author_m.group(1) if page_author_m else ""
 
     for open_tag, cchunk in _extract_div_blocks(body, _COMMENT_OPEN_RE):
+        nested_c = _COMMENT_OPEN_RE.search(cchunk)
+        own_cchunk = cchunk[:nested_c.start()] if nested_c else cchunk
         cid_m = re.search(r'\bid="([^"]+)"', open_tag)
         cid = cid_m.group(1) if cid_m else ""
-        cam = re.search(r'class="comment_author[^"]*"[^>]*>u/([^<\s]+)<', cchunk, re.I)
+        cam = re.search(r'class="comment_author[^"]*"[^>]*>u/([^<\s]+)<', own_cchunk, re.I)
         cauthor = cam.group(1).strip() if cam else ""
-        plink_m = POST_LINK_RE.search(cchunk)
-        target_pid = (plink_m.group(2).lower() if plink_m else (order[0] if len(order) == 1 else ""))
+        if len(order) == 1:
+            target_pid = order[0]
+        else:
+            plink_m = POST_LINK_RE.search(own_cchunk)
+            target_pid = plink_m.group(2).lower() if plink_m else ""
         cbody = ""
         clinks: list[str] = []
         cimgs: list[str] = []
-        for _, cb in _extract_div_blocks(cchunk, re.compile(r'<div\s+class="comment_body\b[^"]*"[^>]*>', re.I)):
+        for _, cb in _extract_div_blocks(own_cchunk, re.compile(r'<div\s+class="comment_body\b[^"]*"[^>]*>', re.I)):
             cbody, clinks, cimgs = html_to_text(cb)
             break
         if target_pid and target_pid in posts and cbody:
@@ -585,7 +598,7 @@ class RedditClient:
         fn = getattr(self.fetcher, "get_json", None)
         return await fn(url, **kwargs) if callable(fn) else None
 
-    def _eligible_instances(self, *, for_post_detail: bool = False) -> list[str]:
+    def _eligible_instances(self, *, for_post_detail: bool = False, kind: str = "sub") -> list[str]:
         out: list[str] = []
         for raw in self.settings.reddit_instances:
             inst = raw.strip().rstrip("/")
@@ -596,6 +609,9 @@ class RedditClient:
             if for_post_detail and inst in REDDIT_LISTING_ONLY:
                 continue
             out.append(inst)
+        if kind == "sub" and self.settings.reddit_token and "https://www.reddit.com" in out:
+            out.remove("https://www.reddit.com")
+            out.insert(0, "https://www.reddit.com")
         return out
 
     async def _fetch_listing_on(self, inst: str, kind: str, target: str) -> list[dict] | None:
@@ -674,7 +690,7 @@ class RedditClient:
     async def _gather_listing(self, kind: str, target: str) -> list[dict] | None:
         merged: dict[str, dict] = {}
         working = 0
-        fleet = self._eligible_instances(for_post_detail=False)
+        fleet = self._eligible_instances(for_post_detail=False, kind=kind)
         for i in range(0, len(fleet), REDDIT_BATCH):
             if working >= REDDIT_WORKING:
                 break
@@ -956,17 +972,45 @@ class RedditClient:
                     candidates.append(e)
 
         found: dict | None = None
+        unresolved: list[dict] = []
         for e in candidates:
             title = e.get("title") or ""
             body = e.get("text") or ""
-            if not schedule.is_program_announcement(game, body, title=title):
+            if schedule.is_program_announcement(game, body, title=title):
+                full_text = f"{title}\n{body}"
+                mentioned = find_versions(full_text)
+                if version and mentioned and version not in mentioned and version not in full_text:
+                    continue
+                if found is None or (e.get("ts") or 0) < (found.get("ts") or 0):
+                    found = e
                 continue
-            full_text = f"{title}\n{body}"
-            mentioned = find_versions(full_text)
-            if version and mentioned and version not in mentioned and version not in full_text:
-                continue
-            if found is None or (e.get("ts") or 0) < (found.get("ts") or 0):
-                found = e
+            if (
+                not body
+                and e.get("id")
+                and e.get("subreddit")
+                and not schedule.NOT_PROGRAM_TITLE.search(title)
+                and any(re.search(pat, title, re.I) for pat in game.program_patterns)
+            ):
+                mentioned_title = find_versions(title)
+                if version and mentioned_title and version not in mentioned_title and version not in title:
+                    continue
+                unresolved.append(e)
+
+        if found is None:
+            for e in unresolved[:2]:
+                detail = await self.resolve_post(e["subreddit"], e["id"])
+                if not detail:
+                    continue
+                title = detail.get("title") or e.get("title") or ""
+                body = detail.get("text") or ""
+                if not schedule.is_program_announcement(game, body, title=title):
+                    continue
+                full_text = f"{title}\n{body}"
+                mentioned = find_versions(full_text)
+                if version and mentioned and version not in mentioned and version not in full_text:
+                    continue
+                if found is None or (detail.get("ts") or 0) < (found.get("ts") or 0):
+                    found = detail
         if found is None:
             return None
         return Item(

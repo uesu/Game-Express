@@ -95,9 +95,10 @@ def is_program_announcement(game: Game, text: str, title: str = "") -> bool:
     body = text or ""
     if not _any(program_patterns(game), f"{title}\n{body}"):
         return False
-    if title and NOT_PROGRAM_TITLE.search(title):
-        return False
-    if NOT_PROGRAM_TITLE.search(body[:HEADLINE_LEN]):
+    if title:
+        if NOT_PROGRAM_TITLE.search(title):
+            return False
+    elif NOT_PROGRAM_TITLE.search(body[:HEADLINE_LEN]):
         return False
     if PROGRAM_EXCLUDE.search(body):
         return False

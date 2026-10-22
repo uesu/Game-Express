@@ -887,7 +887,7 @@ def test_every_official_feed_a_game_declares_is_actually_requested():
     reddit_subs = [s for g in live for s in g.subreddits]
     assert reddit_officials == [
         "genshinimpact", "HonkaiStarRail", "ZZZ_Official",
-        "WutheringWaves", "HonkaiNexusAnima", "AnantaOfficial",
+        "HonkaiNexusAnima", "AnantaOfficial",
     ]
     assert reddit_subs == [
         "Genshin_Impact", "HonkaiStarRail", "ZZZ_Official",
@@ -905,11 +905,13 @@ def test_every_official_feed_a_game_declares_is_actually_requested():
     asyncio.run(pull_reddit())
     r_urls = {u for u, _p in rec3.calls}
     for a in reddit_officials:
-        assert f"https://www.reddit.com/user/{a}/submitted.rss" in r_urls, a
+        assert f"https://redlib.catsarch.com/user/{a}" in r_urls, a
         assert f"https://snoo.habedieeh.re/user/{a}" in r_urls, a
+        assert f"https://www.reddit.com/user/{a}/submitted.rss" in r_urls, a
     for s in reddit_subs:
-        assert f"https://www.reddit.com/r/{s}/new.rss" in r_urls, s
+        assert f"https://redlib.catsarch.com/r/{s}/new" in r_urls, s
         assert f"https://snoo.habedieeh.re/r/{s}/new" in r_urls, s
+        assert f"https://www.reddit.com/r/{s}/new.rss" in r_urls, s
 
 
 def test_prepared_games_switch_on():
@@ -13135,20 +13137,16 @@ def test_live_oct_2026_banner_notices_and_self_healing():
 def test_reddit_fleet_ordering_tiering_and_exclusions():
     """Pins the 2026-10-22 verified Reddit/Redlib fleet order, proxy chain, and excluded hosts."""
     from gamexpress.config import DEFAULT_REDDIT, DEFAULT_REDDIT_ARCHIVE, DEFAULT_REDDIT_PROXIES
-    from gamexpress.sources.reddit import REDDIT_LISTING_ONLY, TOKEN_GATED_REDDIT
+    from gamexpress.sources.reddit import REDDIT_LISTING_ONLY, TOKEN_GATED_REDDIT, RedditClient
 
     assert len(DEFAULT_REDDIT) == 17
-    assert DEFAULT_REDDIT[:3] == [
-        "https://www.reddit.com",
-        "https://old.reddit.com",
-        "https://redlib.miningtcup.me",
-    ]
     assert set(TOKEN_GATED_REDDIT) == {"https://redlib.miningtcup.me"}
 
-    full_dual_path = [
+    active_healthy_tier = [
         "https://redlib.catsarch.com",
         "https://redlib.privacyredirect.com",
         "https://snoo.habedieeh.re",
+        "https://redlib.miningtcup.me",
         "https://redlib.tiekoetter.com",
         "https://redlib-1.privadency.com",
         "https://redlib-2.privadency.com",
@@ -13158,17 +13156,35 @@ def test_reddit_fleet_ordering_tiering_and_exclusions():
         "https://rl.awy.one",
         "https://redlib.freedit.eu",
         "https://redlib.utilibre.org",
+        "https://www.reddit.com",
+        "https://old.reddit.com",
         "https://eddrit.com",
         "https://redlib.privadency.com",
         "https://safereddit.com",
         "https://redlib.nadeko.net",
     ]
-    assert DEFAULT_REDDIT[3:9] == full_dual_path
-    assert DEFAULT_REDDIT[9:] == partial_and_legacy_tail
+    assert DEFAULT_REDDIT[:7] == active_healthy_tier
+    assert DEFAULT_REDDIT[7:] == partial_and_legacy_tail
     assert frozenset(partial_and_legacy_tail[:4]) == REDDIT_LISTING_ONLY
-    assert max(DEFAULT_REDDIT.index(h) for h in full_dual_path) < min(
+    assert max(DEFAULT_REDDIT.index(h) for h in active_healthy_tier) < min(
         DEFAULT_REDDIT.index(h) for h in partial_and_legacy_tail
     )
+
+    # Without `REDDIT_FEED_TOKEN`, Batch 1 hits only live public dual-path mirrors (zero unauth `reddit.com` 403s);
+    # with `REDDIT_FEED_TOKEN`, `https://www.reddit.com` leaps automatically to slot 0 for subreddit RSS!
+    rc_unauth = RedditClient(None, settings())
+    assert "https://www.reddit.com" not in rc_unauth._eligible_instances(kind="sub")[:4]
+    rc_authed = RedditClient(None, settings(REDDIT_FEED_TOKEN="feedtok123"))
+    assert rc_authed._eligible_instances(kind="sub")[0] == "https://www.reddit.com"
+
+    # Verified publisher trust audit: `u/WutheringWaves` on live Reddit is an unrelated 2022 squatter account!
+    assert GAMES["wuwa"].reddit_official == []
+    assert GAMES["wuwa"].subreddits == ["WutheringWaves"]
+    assert GAMES["genshin"].reddit_official == ["genshinimpact"]
+    assert GAMES["starrail"].reddit_official == ["HonkaiStarRail"]
+    assert GAMES["zzz"].reddit_official == ["ZZZ_Official"]
+    assert GAMES["hna"].reddit_official == ["HonkaiNexusAnima"]
+    assert GAMES["ananta"].reddit_official == ["AnantaOfficial"]
 
     excluded_candidates = {
         "https://reddit.idevicehacked.com",
@@ -13538,6 +13554,103 @@ def test_edge_case_regressions_bare_tz_period_kuro_empty_ameta_and_maint_extensi
         assert ctx.webhook.edits[0][1]["allowed_mentions"] == {"parse": []}
         assert "<t:1792558800:" in json.dumps(ctx.webhook.edits[0][1])
         assert ctx.state.maintenance_record("zzz")["versions"]["3.3"]["maintenance"]["end_ts"] == 1792558800
+
+
+def test_extra_audit_reddit_parser_op_comment_program_and_empty_official_reachability():
+    """Covers the five final live-audit fixes on `gamexpress/sources/reddit.py` & `gamexpress/runner.py`:
+    1. `parse_redlib_html`: `h1/h2.post_title` link wins over older Reddit links quoted inside body.
+    2. `parse_redlib_html`: single-thread (`/comments/<id>/`) OP comment stays attached to `order[0]`
+       even when the OP comment cross-links an earlier Reddit megathread.
+    3. `RedditClient.program_post`: image announcement on `/r/ZZZ_Official/new` (`1wxyy16` shape)
+       with `Official Media` flair resolves `/r/ZZZ_Official/comments/1wxyy16/` and merges OP air time."""
+    from gamexpress.sources.reddit import RedditClient, parse_redlib_html
+
+    # 1 + 2: Single-thread page whose body & OP comment both link an older thread `1oldmega`
+    thread_html = """<!DOCTYPE html><html><head><title>ZZZ 3.3 Special Program - Redlib</title></head><body>
+    <div id="page">
+      <div class="post" id="1wxyy16">
+        <div class="post_header">
+          <a class="post_subreddit" href="/r/ZZZ_Official">r/ZZZ_Official</a>
+          <a class="post_author" href="/user/cakeel-">u/cakeel-</a>
+          <span class="created" title="Oct 07 2026, 04:00:00 UTC">15d ago</span>
+        </div>
+        <h1 class="post_title">
+          <a class="post_flair" href="/r/ZZZ_Official/search?q=flair%3AOfficial">Official Media</a>
+          <a href="/r/ZZZ_Official/comments/1wxyy16/zenless_zone_zero_version_33_special_program/">
+            Zenless Zone Zero Version 3.3 "Journey to the Sky" Special Program Announcement
+          </a>
+        </h1>
+        <div class="post_media_content">
+          <a class="post_media_image" href="/img/w2qz30mdokth1.png"><img src="/preview/pre/w2qz30mdokth1.png"/></a>
+        </div>
+        <div class="post_body"><p>Previous thread: <a href="/r/ZZZ_Official/comments/1oldmega/prev/">here</a> — during the livestream, not only will we drop a redemption code!</p></div>
+      </div>
+      <div class="comment" id="c_op_airtime">
+        <a class="comment_author op" href="/user/cakeel-">u/cakeel-</a>
+        <div class="comment_body">
+          <p>See <a href="/r/ZZZ_Official/comments/1oldmega/prev/">hype thread</a> — The Zenless Zone Zero Version 3.3 "Journey to the Sky" Special Program will begin on October 9 at 19:30 (UTC+8)!</p>
+        </div>
+        <div class="replies">
+          <details class="comment" id="c_collapsed_op">
+            <a class="comment_author op" href="/user/cakeel-">u/cakeel-</a>
+            <div class="replies">
+              <div class="comment" id="c_troll_reply">
+                <a class="comment_author" href="/user/troll_user">u/troll_user</a>
+                <div class="comment_body"><p>Redemption Codes: SPOOFEDFAKE999</p></div>
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div></body></html>"""
+
+    parsed = parse_redlib_html(thread_html, "https://snoo.habedieeh.re")
+    assert len(parsed) == 1
+    assert parsed[0]["id"] == "1wxyy16"
+    assert "October 9 at 19:30 (UTC+8)" in parsed[0]["text"]
+    assert "SPOOFEDFAKE999" not in parsed[0]["text"]
+    assert parsed[0]["images"] == ["https://i.redd.it/w2qz30mdokth1.png"]
+
+    # 3: Listing page has NO text body on image post `1wxyy16` -> `program_post` auto-resolves thread!
+    listing_html = """<!DOCTYPE html><html><head><title>r/ZZZ_Official</title></head><body>
+    <div id="posts">
+      <div class="post" id="1wxyy16">
+        <a class="post_subreddit" href="/r/ZZZ_Official">r/ZZZ_Official</a>
+        <a class="post_author" href="/user/cakeel-">u/cakeel-</a>
+        <span class="created" title="Oct 07 2026, 04:00:00 UTC">15d ago</span>
+        <h2 class="post_title">
+          <a class="post_flair" href="/r/ZZZ_Official/search?q=flair%3AOfficial">Official Media</a>
+          <a href="/r/ZZZ_Official/comments/1wxyy16/zenless_zone_zero_version_33_special_program/">
+            Zenless Zone Zero Version 3.3 "Journey to the Sky" Special Program Announcement
+          </a>
+        </h2>
+      </div>
+    </div></body></html>"""
+
+    class _ZzzProgramFetcher:
+        async def get_text(self, url, **kw):
+            if "/user/ZZZ_Official" in url:
+                return """<!DOCTYPE html><html><body><div id="posts"><div class="post" id="1c6tf7z">
+                  <a class="post_subreddit" href="/r/ZZZ_Official">r/ZZZ_Official</a>
+                  <a class="post_author" href="/user/ZZZ_Official">u/ZZZ_Official</a>
+                  <span class="created" title="Apr 20 2024, 04:00:00 UTC">2y ago</span>
+                  <h2 class="post_title"><a href="/r/ZZZ_Official/comments/1c6tf7z/welcome/">Welcome</a></h2>
+                </div></div></body></html>"""
+            if "/r/ZZZ_Official/new" in url:
+                return listing_html
+            if "/r/ZZZ_Official/comments/1wxyy16/" in url:
+                return thread_html
+            return None
+
+        async def get_json(self, url, **kw):
+            return None
+
+    rc = RedditClient(_ZzzProgramFetcher(), settings())
+    item = asyncio.run(rc.program_post(GAMES["zzz"], "3.3"))
+    assert item is not None
+    assert item.id == "1wxyy16"
+    assert "October 9 at 19:30 (UTC+8)" in item.text
+    assert item.images == ["https://i.redd.it/w2qz30mdokth1.png"]
 
 
 if __name__ == "__main__":

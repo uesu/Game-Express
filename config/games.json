@@ -117,7 +117,7 @@
       "launcher": {"type": "kuro"},
       "kuro_news": true,
       "x_accounts": ["Wuthering_Waves"],
-      "reddit": {"subreddits": ["WutheringWaves"], "official": ["WutheringWaves"]},
+      "reddit": {"subreddits": ["WutheringWaves"], "official": []},
       "program_label": "Special Broadcast",
       "program_patterns": ["special broadcast", "preview livestream", "preview live stream"],
       "banner_patterns": ["featured resonator", "resonator convene", "convene"],

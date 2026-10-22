@@ -184,22 +184,25 @@ DEFAULT_COMMUNITY_BUTTONS = [
 # instant .org/.net failover to a runner-proven origin plus an independent shitter
 # backend inside the first fallback wave. Fleet 21 -> 25; nothing deleted.
 DEFAULT_REDDIT = [
-    # Primary official & token-authenticated origins
-    "https://www.reddit.com",             # official RSS (`/r/<sub>/new.rss`, supports `REDDIT_FEED_TOKEN`)
-    "https://old.reddit.com",             # official RSS fallback origin
-    "https://redlib.miningtcup.me",       # token-gated private Redlib (`NITTER_RSS_TOKEN`)
-    # Fully working public dual-path Redlib mirrors (`/new` + `/user` + `/search` + `/comments/` all 200 OK)
+    # Hot path & active healthy tier: 100% 200 OK public dual-path Redlib mirrors + token-gated
+    # private Redlib (`NITTER_RSS_TOKEN`). `https://www.reddit.com` leaps to slot 0 automatically
+    # on `/r/<sub>/new.rss?feed=...` when `REDDIT_FEED_TOKEN` is configured; without a token,
+    # unauthenticated `reddit.com` / `old.reddit.com` 403 on Azure Actions runner IPs and sit in
+    # the fallback tail below so normal runs incur zero 403 waste.
     "https://redlib.catsarch.com",
     "https://redlib.privacyredirect.com",
     "https://snoo.habedieeh.re",          # Redlib v3.0.0 (#592), full listing + single-post + 1080p CMAF
+    "https://redlib.miningtcup.me",       # token-gated private Redlib (`NITTER_RSS_TOKEN`)
     "https://redlib.tiekoetter.com",      # Redlib (#592), full listing + single-post
     "https://redlib-1.privadency.com",    # direct Privadency node #1 (bypasses splash wall)
     "https://redlib-2.privadency.com",    # direct Privadency node #2 (bypasses splash wall)
-    # Tail: partial-working (`/new`-only pre-#592) & degraded legacy mirrors — never probed when healthy hosts answer
+    # Tail: partial-working (`/new`-only pre-#592), runner-gated, & legacy degraded mirrors
     "https://red.artemislena.eu",         # `/new` 200 OK; pre-#592 on `/comments/`
     "https://rl.awy.one",                 # `/new` 200 OK; pre-#592 on `/comments/`
     "https://redlib.freedit.eu",          # `/new` 200 OK; pre-#592 on `/comments/`
     "https://redlib.utilibre.org",        # `/new` 200 OK; pre-#592 on `/comments/`
+    "https://www.reddit.com",             # promoted to head when `REDDIT_FEED_TOKEN` is set; 403 unauth on Actions IPs
+    "https://old.reddit.com",             # official RSS fallback origin (403 unauth on Actions IPs)
     "https://eddrit.com",                 # legacy RSS frontend (`/r/<sub>/.rss`, rate-limited)
     "https://redlib.privadency.com",      # legacy splash redirect in front of `redlib-1` / `redlib-2`
     "https://safereddit.com",             # legacy mirror (upstream 429 rate-limited)
