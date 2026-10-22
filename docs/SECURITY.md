@@ -127,10 +127,16 @@ thing to revisit if a third-party step is ever added to that job. zizmor's
 
 `state.py` writes through a temp file + `os.replace()` (atomic), so a killed run can never
 leave a half-written file; a file that no longer parses is moved aside as `state.corrupt.json`
-instead of being overwritten, so nothing is lost silently. Every posted card records its message id and webhook
+instead of being overwritten, so nothing is lost silently. `State.load()` and every accessor also
+normalize non-dict or non-numeric sub-slots in memory so a hand-edited or partially corrupted
+sub-record never crashes a live run. Every posted card records its message id and webhook
 fingerprint, which is what makes "edit the existing card" and "never post the same thing twice"
-reliable across runs. Primary/standby instances coordinate through `peer_state_url` +
-`failover_after_min`.
+reliable across runs. In `runner.run_once()`, every top-level stage (`schedule`, `codes`,
+`maintenance`, `news`, `program_announcements.json`) and per-game worker runs inside a guarded
+boundary with `state.prune()`, `state.save()`, and `write_summary()` guaranteed in `finally` —
+persisting completed work from earlier stages and writing `$GITHUB_STEP_SUMMARY` while withholding
+`state.heartbeat()` whenever `ctx.errors` is non-empty so standby failover (`peer_state_url` +
+`failover_after_min`) remains faithful.
 
 ---
 

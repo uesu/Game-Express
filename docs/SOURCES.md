@@ -22,8 +22,14 @@ monitor sees exactly the pages below — an announcement cannot hide in the "wro
 | Zenless Zone Zero | 8 | `hoyolab.com/circles/8/47/official?page_type=47&page_sort={notices,events,news}` |
 | Honkai: Nexus Anima | 9 | `hoyolab.com/circles/9/90002/official?page_type=90002&page_sort={notices,events,news}` |
 
-Wuthering Waves (Kuro) and ANANTA (NetEase) have no HoYoLAB circle — they are covered by the Kuro
-official site / launcher and by X respectively. The API is used rather than the web pages because
+Wuthering Waves (Kuro) and ANANTA (NetEase) have no HoYoLAB circle — WW is covered by the Kuro
+official site / launcher + X + `r/WutheringWaves`, while ANANTA is covered by official X
+(`@Ananta_EN`), verified official Reddit (`u/AnantaOfficial` + `r/AnantaOfficial`), and Fandom
+(`ananta:Redemption_Code`), with NetEase / ANANTA CDN hosts (`easebar.com`, `anantagame.com`,
+`netease.com`, `163.com`) allowlisted for media attachment downloads. `MAINTENANCE_GAMES=all`
+expands to all 6 games (`ALL_MAINTENANCE_GAMES`: `genshin`, `starrail`, `zzz`, `wuwa`, `hna`,
+`ananta`), whereas `NEWS_GAMES=all` covers the 5 games with structured official HoYoLAB / Kuro
+news feeds (`DEFAULT_OPTIONAL_GAMES`). The HoYoLAB API is used rather than web pages because
 it returns the same posts as structured JSON, with no HTML or JavaScript to scrape.
 | HoYoLAB post (official) | `…/getPostFull?gids={gid}&post_id={id}` | full body (`content` HTML, or `structured_content` when `content == "en-us"`) + images | ✅ HSR 46814308 (quirk), GI 46604275 |
 | c3kay JSON-Feed (mirror, fallback) | `https://feeds.c3kay.de/{genshin,starrail,zenless}.json` | JSON Feed 1.1 with full `content_html`, refreshed every 30 min | ✅ |
@@ -161,7 +167,7 @@ never asked. `runner.find_program` now runs X first; everything below it is a ba
 
 - **Active healthy tier (`7` hosts — Batch 1 + dual-path backups, zero unauthenticated `403` waste on GitHub Actions):** `https://redlib.catsarch.com`, `https://redlib.privacyredirect.com`, `https://snoo.habedieeh.re` (Redlib `v3.0.0`, full listing + single-post + `1080p` CMAF), token-gated `https://redlib.miningtcup.me` (`NITTER_RSS_TOKEN`), `https://redlib.tiekoetter.com`, `https://redlib-1.privadency.com`, and `https://redlib-2.privadency.com`.
 - **Fallback tail (`10` partial / runner-gated / degraded hosts — placed strictly last so healthy runs make `0` tail requests):** pre-`#592` listing-only instances (`https://red.artemislena.eu`, `https://rl.awy.one`, `https://redlib.freedit.eu`, `https://redlib.utilibre.org`), `https://www.reddit.com` (promoted to slot `0` with `?feed=` when `REDDIT_FEED_TOKEN` is set; unauthenticated Actions IPs otherwise receive `403`), `https://old.reddit.com`, and degraded legacy mirrors (`https://eddrit.com`, `https://redlib.privadency.com`, `https://safereddit.com`, `https://redlib.nadeko.net`).
-- **Verified publisher accounts vs community subreddits (`config/games.json`):** `genshin` (`u/genshinimpact`, `r/Genshin_Impact`), `starrail` (`u/HonkaiStarRail`, `r/HonkaiStarRail`), `zzz` (`u/ZZZ_Official`, `r/ZZZ_Official`), `wuwa` (`official: []`, `r/WutheringWaves` — `u/WutheringWaves` on live Reddit is an unrelated 2022 squatter account and is never trusted as `verified=True`), `hna` (`u/HonkaiNexusAnima`, `r/HonkaiNexusAnima`), and `ananta` (`u/AnantaOfficial`, `r/AnantaOfficial`). Community `reddit:<sub>` code hits are unverified (`SOURCE_FAMILY["reddit"] = "reddit"`) and require independent second-family corroboration (`CODES_MIN_SOURCES = 2`).
+- **Verified publisher accounts vs community subreddits (`config/games.json`):** `genshin` (`u/genshinimpact`, `r/Genshin_Impact`), `starrail` (`u/HonkaiStarRail`, `r/HonkaiStarRail`), `zzz` (`u/ZZZ_Official`, `r/ZZZ_Official`), `wuwa` (`official: []`, `r/WutheringWaves` — `u/WutheringWaves` on live Reddit is an unrelated 2022 squatter account and is never trusted as `verified=True`), `hna` (`u/HonkaiNexusAnima`, `r/HonkaiNexusAnima`), and `ananta` (`u/AnantaOfficial`, `r/AnantaOfficial`). Verified publisher Reddit code hits carry source `"reddit_official"` (`verified=True`, rendered as `Official Reddit` on code cards), while community `reddit:<sub>` code hits remain unverified (`SOURCE_FAMILY["reddit"] = "reddit"`, rendered as `Reddit`) and require independent second-family corroboration (`CODES_MIN_SOURCES = 2`). Schedule and item provenance labels render `"reddit"` / `reddit.com` links accurately as `"Reddit"`.
 - **Single-post JSON/HTML proxy chain (`DEFAULT_REDDIT_PROXIES`):** `https://www.vxreddit.com` → `https://embedez.com` → `https://embeddit.deltandy.me` (supporting both Mastodon-style JSON/OpenGraph metadata and v2 `<script id="discord:component-embed" type="application/json">` HTML embeds, preferring muxed video+audio streams over un-muxed `v.redd.it` video streams), with `https://arctic-shift.photon-reddit.com` as last-resort archive lookup.
 
 **Lookup order and the lock.** `runner.find_program` asks X first (the seed, then the X timeline), then
