@@ -468,8 +468,9 @@ class CodeSources:
     """Per-run cache + in-flight de-duplication: every spec is fetched at most once per
     run even when all games prefetch concurrently (codehub's JSON is shared by 4 games)."""
 
-    def __init__(self, fetcher: Fetcher) -> None:
+    def __init__(self, fetcher: Fetcher, reddit=None) -> None:
         self.fetcher = fetcher
+        self._reddit = reddit
         self._inflight: dict[str, asyncio.Task] = {}
 
     async def _once(self, key: str, factory):
@@ -531,5 +532,11 @@ class CodeSources:
             t = await f.get_text(WUTHERING_GG, source="codes:wuthering.gg", retries=1,
                                  headers={"Accept": "text/html,application/xhtml+xml"})
             return parse_wuthering_gg(t) if t is not None else None
+        if kind == "reddit":
+            if self._reddit is None:
+                from ..config import load_settings
+                from .reddit import RedditClient
+                self._reddit = RedditClient(f, load_settings({}))
+            return await self._reddit.community_codes(arg)
         log.warning("unknown code source spec %r", spec)
         return None

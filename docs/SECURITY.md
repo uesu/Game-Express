@@ -66,7 +66,7 @@ Tests: `test_a_hostile_source_cannot_inject_links_or_kill_a_card`,
 
 A code is posted only if it is **official**, **redeem-validated**, or listed by
 **`CODES_MIN_SOURCES` (default 2) independent source families** — one compromised community
-site cannot invent a code on its own (`codeposter.gate()`).
+site or unverified subreddit post cannot invent a code on its own (`codeposter.gate()`).
 
 On top of that, `codeposter.MAX_CARDS_PER_RUN = 5` caps one game at 5 cards (50 codes) per run.
 A real drop is 1–6 codes; dozens at once means a broken or tampered source, and the leftovers

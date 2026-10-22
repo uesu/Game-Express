@@ -19,6 +19,7 @@ from .http import BOT_UA, Fetcher, Probe
 from .models import Item
 from .sources import bannerfeed, countdown, hoyolab, kuro, launcher, newspage
 from .sources.codes import CodeSources
+from .sources.reddit import RedditClient
 from .sources.twitter import XClient
 from .state import State
 from .textutil import version_key
@@ -48,6 +49,7 @@ class Ctx:
     estimates: dict = field(default_factory=dict)   # game key -> countdown-site estimate
     media: dict = field(default_factory=dict)       # game key -> version -> program announcement
     banners: dict = field(default_factory=dict)     # game key -> list of 5★ rate-up banners
+    reddit: RedditClient | None = None
 
 
 async def gather_versions(ctx: Ctx) -> None:
@@ -69,12 +71,23 @@ async def gather_versions(ctx: Ctx) -> None:
 async def _gather_game(ctx: Ctx, g: Game, since: int) -> None:
     want = schedule.wants(g)
     probe = Probe(ctx.fetcher)              # counts THIS game's answers while games run in parallel
+    reddit_task = (ctx.reddit.items(g, want, since)
+                   if getattr(ctx, "reddit", None) is not None else asyncio.sleep(0, result=[]))
     parts = await asyncio.gather(hoyolab.fetch_items(probe, g, want, since),
                                  kuro.fetch_items(probe, g, want, since),
-                                 ctx.x.items(g, want, since))
+                                 ctx.x.items(g, want, since),
+                                 reddit_task)
     items: list[Item] = [it for part in parts for it in part]
     ctx.items[g.key] = items
-    ctx.reachable[g.key] = probe.ok > 0 or any(a.lower() in ctx.x.reachable for a in g.x_accounts)
+    reddit_ok = getattr(ctx, "reddit", None) is not None and any(
+        f"u/{a.lower()}" in ctx.reddit.reachable or f"r/{s.lower()}" in ctx.reddit.reachable
+        for a in g.reddit_official for s in g.subreddits
+    )
+    ctx.reachable[g.key] = (
+        probe.ok > 0
+        or any(a.lower() in ctx.x.reachable for a in g.x_accounts)
+        or reddit_ok
+    )
     icons = ctx.state.data.setdefault("icons", {})
     fresh = next((ctx.x.avatars[a.lower()] for a in g.x_accounts if a.lower() in ctx.x.avatars), None)
     if fresh and icons.get(g.key) != fresh:
@@ -144,6 +157,19 @@ async def find_program(ctx, g: Game, ver: str) -> dict | None:
         hit = await newspage.fetch_program(ctx.fetcher, g, ver, now)
     if not hit and getattr(g, "program_feeds", None):
         hit = await newspage.fetch_program_feed(ctx.fetcher, g, ver, now)
+    if not hit and getattr(ctx, "reddit", None) is not None and ctx.settings.reddit_enabled:
+        r_item = await ctx.reddit.program_post(g, ver)
+        if r_item:
+            source_url = r_item.url
+            hit = {
+                "url": r_item.url,
+                "title": r_item.title,
+                "images": list(r_item.images or []),
+                "youtube": "",
+                "text": r_item.text,
+                "ts": r_item.published_ts or now,
+                "source": "reddit",
+            }
     if not hit:
         return None
     # the air time comes from the article's own text, through the same extractor that
@@ -272,9 +298,11 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
     try:
         started = time.monotonic()
         fetcher = Fetcher(session, timeout=settings.http_timeout)
+        reddit = RedditClient(fetcher, settings)
         ctx = Ctx(settings=settings, games=active_games(games_all, settings), state=state, fetcher=fetcher,
                   webhook=WebhookClient(session, dry_run=settings.dry_run), x=XClient(fetcher, settings),
-                  code_sources=CodeSources(fetcher), overrides=overrides, now=int(time.time()))
+                  code_sources=CodeSources(fetcher, reddit=reddit), overrides=overrides,
+                  now=int(time.time()), reddit=reddit)
         await failover_check(ctx)
         features = settings.features if ctx.active else set()
         if features & {"schedule", "codes"} and ctx.games:

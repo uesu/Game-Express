@@ -137,7 +137,7 @@ def parse_launcher_index(data: dict) -> dict:
         chosen_video = live_video or top_video
         chosen_vmeta = live_vmeta if live_video else top_vmeta
         chosen_art = live_art or top_art
-        chosen_ameta = live_art and live_ameta or top_ameta
+        chosen_ameta = live_ameta if live_art else top_ameta
         out["live_media"] = {
             "version": live,
             "video": chosen_video,

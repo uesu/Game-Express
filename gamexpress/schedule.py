@@ -248,13 +248,13 @@ LABEL_NO_TIME = re.compile(r"storage|space|GB|file\s+size|download\s+size", re.I
 
 # precedence of sources for a field (higher wins). Derived values are below external countdown
 # estimates; the banner feed is the lowest (5). Any official source or override replaces both.
-PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "news": 45, "x": 40, "launcher": 20,
+PRIORITY = {"override": 100, "hoyolab": 50, "kuro": 50, "news": 45, "x": 40, "reddit": 38, "launcher": 20,
             "countdown": 10, "pattern": 9, "gachawiki": 6, "bannerfeed": 5}
 # Which program post may HOLD the card's link and key art (the lock). X first: its post carries the
 # announcement's own URL and its photo at full size. HoYoLAB and the official sites hold the card
 # when X cannot be read (nitter and the tweet-data services all down). A card locked to one of
 # them is upgraded once X shows the same announcement -- see _upgrade_announcement().
-LOCK_RANK = {"x": 3, "hoyolab": 2, "kuro": 2, "news": 1}
+LOCK_RANK = {"x": 3, "hoyolab": 2, "kuro": 2, "news": 1, "reddit": 1}
 ESTIMATED_KEYS = ("program_ts", "preinstall_ts", "maint_start_ts", "maint_end_ts")
 MAINT_HOURS_ESTIMATE = 5          # typical HoYoverse / Kuro maintenance window
 WIKI_RECHECK_H = 6                  # a complete banner block with unconfirmed names is re-read this often

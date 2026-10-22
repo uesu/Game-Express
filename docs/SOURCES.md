@@ -392,6 +392,19 @@ page fetcher, and so were the ennead calendars. The production reachability of t
 | genshin.dev | character/game data API, not schedules or codes |
 | gachabase.net · nanoka.cc · sr.yatta.moe · lunaris.moe · ambr.top | databases, listed in [CREDITS.md](CREDITS.md#community-databases--resources). No public schedule/banner API was verified, so **banner names come from official notices or `config/overrides.json`** |
 
+## Reddit & Redlib fleet (2026-10-22)
+
+`sources/reddit.py` integrates Reddit and Redlib across all six configured games (`r/Genshin_Impact` / `u/genshinimpact`, `r/HonkaiStarRail` / `u/HonkaiStarRail`, `r/ZZZ_Official` / `u/ZZZ_Official`, `r/WutheringWaves` / `u/WutheringWaves`, `r/HonkaiNexusAnima` / `u/HonkaiNexusAnima`, and `r/AnantaOfficial` / `u/AnantaOfficial`) under strict role separation:
+
+- **Official publisher accounts (`game.reddit_official`)** feed `schedule` and `codes` as verified official `Item(source="reddit", ...)` entries (`PRIORITY["reddit"] = 38`, `LOCK_RANK["reddit"] = 1`), merging same-author follow-up comments under image posts (such as broadcast timestamps posted in the author's first comment) and rewriting Redlib `/img/`, `/preview/`, and `/vid/` paths back to canonical `redd.it` URLs. When X recovers, any card temporarily locked to official Reddit upgrades to X automatically.
+- **Community subreddit listings (`reddit:<Subreddit>` in `codes.sources`)** emit unverified `CodeHit(code, "reddit", None)` witnesses (`family("reddit") == "reddit"`). A single unverified community post never passes `CODES_MIN_SOURCES = 2` alone (`status = "pending"`), while providing a fast second independent witness alongside `fandom`, `seria`, `humbao`, `ennead`/`ogc`, or `wuthering.gg` (including pre-launch `hna` and `ananta`).
+- **Ordered `DEFAULT_REDDIT` fleet (`17` entries, batched in waves of `4`, stopping at `2` answers):**
+  1. Primary / token-authenticated origins (`[0..2]`): `https://www.reddit.com` (`REDDIT_FEED_TOKEN`), `https://old.reddit.com`, `https://redlib.miningtcup.me` (`NITTER_RSS_TOKEN`).
+  2. Fully working public dual-path Redlib mirrors (`[3..8]`, verified `200 OK` on `/r/<sub>/new`, `/user/<acct>`, `/search`, and `/comments/<id>/`; queried directly via HTML because upstream Redlib leaves `REDLIB_ENABLE_RSS` disabled on public instances): `https://redlib.catsarch.com`, `https://redlib.privacyredirect.com`, `https://snoo.habedieeh.re`, `https://redlib.tiekoetter.com`, `https://redlib-1.privadency.com`, `https://redlib-2.privadency.com`.
+  3. Partial-working & degraded tail (`[9..16]`, placed last — zero requests while healthy hosts answer; pre-`#592` listing-only hosts skipped on single-post `/comments/` lookups): `https://red.artemislena.eu`, `https://rl.awy.one`, `https://redlib.freedit.eu`, `https://redlib.utilibre.org`, followed by legacy mirrors `https://eddrit.com`, `https://redlib.privadency.com`, `https://safereddit.com`, `https://redlib.nadeko.net`.
+  4. Newly discovered candidates that were runner-refused (`403`), challenge-walled, JS-interstitial (`Still trying to load your page…`), `502` / empty-body broken, duplicate `302` aliases, spoofs, honeypots, or non-JSON SPA viewers were excluded completely and are never added to `DEFAULT_REDDIT`.
+- **`DEFAULT_REDDIT_PROXIES` (`Discordbot/2.0` rich-embed chain):** `https://www.vxreddit.com` (muxed video+audio primary) -> `https://embedez.com` (`proxy.embedez.com` 1080p audio-muxed fallback) -> `https://embeddit.deltandy.me` (supports both live v1 Mastodon `/api/v1/statuses/<id>` JSON and the still-unfinished v2 `<script id="discord:component-embed" type="application/json">` format, keeping raw un-muxed `v.redd.it` fallback video behind `vxreddit` and `embedez`), with `https://arctic-shift.photon-reddit.com` retained only as a last-resort JSON archive fallback.
+
 ## Games not yet released
 
 - **Honkai: Nexus Anima**:

@@ -183,6 +183,37 @@ DEFAULT_COMMUNITY_BUTTONS = [
 # teapawt.org -> teapaw.org -> teapawt.net -> nitter.mie.foundation (TRIAL), giving
 # instant .org/.net failover to a runner-proven origin plus an independent shitter
 # backend inside the first fallback wave. Fleet 21 -> 25; nothing deleted.
+DEFAULT_REDDIT = [
+    # Primary official & token-authenticated origins
+    "https://www.reddit.com",             # official RSS (`/r/<sub>/new.rss`, supports `REDDIT_FEED_TOKEN`)
+    "https://old.reddit.com",             # official RSS fallback origin
+    "https://redlib.miningtcup.me",       # token-gated private Redlib (`NITTER_RSS_TOKEN`)
+    # Fully working public dual-path Redlib mirrors (`/new` + `/user` + `/search` + `/comments/` all 200 OK)
+    "https://redlib.catsarch.com",
+    "https://redlib.privacyredirect.com",
+    "https://snoo.habedieeh.re",          # Redlib v3.0.0 (#592), full listing + single-post + 1080p CMAF
+    "https://redlib.tiekoetter.com",      # Redlib (#592), full listing + single-post
+    "https://redlib-1.privadency.com",    # direct Privadency node #1 (bypasses splash wall)
+    "https://redlib-2.privadency.com",    # direct Privadency node #2 (bypasses splash wall)
+    # Tail: partial-working (`/new`-only pre-#592) & degraded legacy mirrors — never probed when healthy hosts answer
+    "https://red.artemislena.eu",         # `/new` 200 OK; pre-#592 on `/comments/`
+    "https://rl.awy.one",                 # `/new` 200 OK; pre-#592 on `/comments/`
+    "https://redlib.freedit.eu",          # `/new` 200 OK; pre-#592 on `/comments/`
+    "https://redlib.utilibre.org",        # `/new` 200 OK; pre-#592 on `/comments/`
+    "https://eddrit.com",                 # legacy RSS frontend (`/r/<sub>/.rss`, rate-limited)
+    "https://redlib.privadency.com",      # legacy splash redirect in front of `redlib-1` / `redlib-2`
+    "https://safereddit.com",             # legacy mirror (upstream 429 rate-limited)
+    "https://redlib.nadeko.net",          # legacy mirror (`__goaway_challenge` bot wall)
+]
+
+DEFAULT_REDDIT_PROXIES = [
+    "https://www.vxreddit.com",           # primary: oEmbed JSON + muxed video+audio `redditvideo.mp4`
+    "https://embedez.com",                # secondary: `providers/search` + `proxy.embedez.com` 1080p muxed fallback
+    "https://embeddit.deltandy.me",       # tertiary: v1 Mastodon JSON + v2 `discord:component-embed` (`Discordbot/2.0`)
+]
+
+DEFAULT_REDDIT_ARCHIVE = "https://arctic-shift.photon-reddit.com"
+
 DEFAULT_NITTER = [
     # ── hot path: probed on EVERY run (NITTER_BATCH = 4) — measured answerers only ──
     "https://nitter.cf",                # proven from the runners: 6/6 handles, every run
@@ -438,6 +469,10 @@ class Settings:
     banner_search: bool = True         # BANNER_SEARCH=0 -> never look up banner notices by title
     banner_calendar: bool = True       # BANNER_CALENDAR=0 -> never read the official calendar (api.ennead.cc) for banner names
     gacha_wiki: bool = True            # GACHA_WIKI=0 -> never fill banner lineups from the game wikis
+    reddit_enabled: bool = True
+    reddit_instances: list[str] = field(default_factory=lambda: list(DEFAULT_REDDIT))
+    reddit_proxies: list[str] = field(default_factory=lambda: list(DEFAULT_REDDIT_PROXIES))
+    reddit_token: str = ""
 
     news_enabled: bool = False
     news_games: set[str] = field(default_factory=set)
@@ -610,6 +645,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     games_filter = {g.strip().lower() for g in (_env(env, "GAMES") + "," + _env(env, "GAME")).split(",")
                     if g.strip()}
     nitter = [u.strip().rstrip("/") for u in _env(env, "NITTER_INSTANCES").split(",") if u.strip()]
+    reddit = [u.strip().rstrip("/") for u in _env(env, "REDDIT_INSTANCES").split(",") if u.strip()]
+    reddit_proxies = [u.strip().rstrip("/") for u in _env(env, "REDDIT_PROXIES").split(",") if u.strip()]
     extra = _buttons_env(env, "EXTRA_BUTTONS", 3)
     community = _buttons_env(env, "COMMUNITY_BUTTONS") or list(DEFAULT_COMMUNITY_BUTTONS)
     if _env(env, "COMMUNITY_BUTTONS", "").strip().lower() in ("none", "off", "-", "0", "false"):
@@ -644,6 +681,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         banner_search=_bool(env, "BANNER_SEARCH", True),
         banner_calendar=_bool(env, "BANNER_CALENDAR", True),
         gacha_wiki=_bool(env, "GACHA_WIKI", True),
+        reddit_enabled=_bool(env, "REDDIT_ENABLED", True),
+        reddit_instances=reddit or list(DEFAULT_REDDIT),
+        reddit_proxies=reddit_proxies or list(DEFAULT_REDDIT_PROXIES),
+        reddit_token=_env(env, "REDDIT_FEED_TOKEN"),
         show_legend=_bool(env, "SHOW_LEGEND", True),
         repost=_env(env, "REPOST").replace(" ", "").lower(),
         http_timeout=_int(env, "HTTP_TIMEOUT", 20),
@@ -810,6 +851,8 @@ class Game:
     c3kay_feed: str = ""
     launcher: dict = field(default_factory=dict)
     x_accounts: list[str] = field(default_factory=list)
+    subreddits: list[str] = field(default_factory=list)
+    reddit_official: list[str] = field(default_factory=list)
     kuro_news: bool = False
     program_label: str = "Special Program"
     program_patterns: list[str] = field(default_factory=lambda: ["special program"])
@@ -843,6 +886,7 @@ def load_games(path: Path | None = None) -> dict[str, Game]:
         card_raw = {**defaults.get("card", {}), **g.get("card", {})}
         card = CardStyle(**{k: v for k, v in card_raw.items() if k in CardStyle.__dataclass_fields__})
         hl = g.get("hoyolab") or {}
+        rd = g.get("reddit") or {}
         games[key] = Game(
             key=key,
             name=g["name"],
@@ -855,6 +899,8 @@ def load_games(path: Path | None = None) -> dict[str, Game]:
             c3kay_feed=hl.get("c3kay", ""),
             launcher=g.get("launcher") or {},
             x_accounts=list(g.get("x_accounts") or []),
+            subreddits=list(rd.get("subreddits") or []),
+            reddit_official=list(rd.get("official") or []),
             kuro_news=bool(g.get("kuro_news", False)),
             program_label=g.get("program_label", "Special Program"),
             program_patterns=list(g.get("program_patterns") or ["special program"]),

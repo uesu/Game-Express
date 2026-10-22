@@ -880,6 +880,37 @@ def test_every_official_feed_a_game_declares_is_actually_requested():
         assert f"https://nitter.cf/{a}/rss" in urls, a
         assert f"https://xitter.cf/{a}/rss" in urls, a
 
+    # every game's declared official Reddit account AND subreddit must also be queried
+    from gamexpress.sources.reddit import RedditClient
+
+    reddit_officials = [a for g in live for a in g.reddit_official]
+    reddit_subs = [s for g in live for s in g.subreddits]
+    assert reddit_officials == [
+        "genshinimpact", "HonkaiStarRail", "ZZZ_Official",
+        "WutheringWaves", "HonkaiNexusAnima", "AnantaOfficial",
+    ]
+    assert reddit_subs == [
+        "Genshin_Impact", "HonkaiStarRail", "ZZZ_Official",
+        "WutheringWaves", "HonkaiNexusAnima", "AnantaOfficial",
+    ]
+    rec3 = Rec()
+    rc = RedditClient(rec3, st)
+
+    async def pull_reddit():
+        for a in reddit_officials:
+            await rc.user(a)
+        for s in reddit_subs:
+            await rc.subreddit(s)
+
+    asyncio.run(pull_reddit())
+    r_urls = {u for u, _p in rec3.calls}
+    for a in reddit_officials:
+        assert f"https://www.reddit.com/user/{a}/submitted.rss" in r_urls, a
+        assert f"https://snoo.habedieeh.re/user/{a}" in r_urls, a
+    for s in reddit_subs:
+        assert f"https://www.reddit.com/r/{s}/new.rss" in r_urls, s
+        assert f"https://snoo.habedieeh.re/r/{s}/new" in r_urls, s
+
 
 def test_prepared_games_switch_on():
     """All six games ship ON now, but the prepared-game machinery must keep working: it is what
@@ -13099,6 +13130,414 @@ def test_live_oct_2026_banner_notices_and_self_healing():
         GAMES["wuwa"], disagree_rec["data"], disagree_rec["prov"], {"phase1_4": ["Buling", "Taoqi", "Youhu"]}, 1792633227
     )
     assert disagree_rec["data"]["banners"]["phase1_4"] == []
+
+
+def test_reddit_fleet_ordering_tiering_and_exclusions():
+    """Pins the 2026-10-22 verified Reddit/Redlib fleet order, proxy chain, and excluded hosts."""
+    from gamexpress.config import DEFAULT_REDDIT, DEFAULT_REDDIT_ARCHIVE, DEFAULT_REDDIT_PROXIES
+    from gamexpress.sources.reddit import REDDIT_LISTING_ONLY, TOKEN_GATED_REDDIT
+
+    assert len(DEFAULT_REDDIT) == 17
+    assert DEFAULT_REDDIT[:3] == [
+        "https://www.reddit.com",
+        "https://old.reddit.com",
+        "https://redlib.miningtcup.me",
+    ]
+    assert set(TOKEN_GATED_REDDIT) == {"https://redlib.miningtcup.me"}
+
+    full_dual_path = [
+        "https://redlib.catsarch.com",
+        "https://redlib.privacyredirect.com",
+        "https://snoo.habedieeh.re",
+        "https://redlib.tiekoetter.com",
+        "https://redlib-1.privadency.com",
+        "https://redlib-2.privadency.com",
+    ]
+    partial_and_legacy_tail = [
+        "https://red.artemislena.eu",
+        "https://rl.awy.one",
+        "https://redlib.freedit.eu",
+        "https://redlib.utilibre.org",
+        "https://eddrit.com",
+        "https://redlib.privadency.com",
+        "https://safereddit.com",
+        "https://redlib.nadeko.net",
+    ]
+    assert DEFAULT_REDDIT[3:9] == full_dual_path
+    assert DEFAULT_REDDIT[9:] == partial_and_legacy_tail
+    assert frozenset(partial_and_legacy_tail[:4]) == REDDIT_LISTING_ONLY
+    assert max(DEFAULT_REDDIT.index(h) for h in full_dual_path) < min(
+        DEFAULT_REDDIT.index(h) for h in partial_and_legacy_tail
+    )
+
+    excluded_candidates = {
+        "https://reddit.idevicehacked.com",
+        "https://redlib.nohost.network",
+        "https://redlib.kylrth.com",
+        "https://redlib-3.privadency.com",
+        "https://redlib.kareem.one",
+        "https://rl.blitzw.in",
+        "https://red.arancia.click",
+        "https://redlib.jaydenha.uk",
+        "https://l.opnxng.com",
+        "https://api.pullpush.io",
+        "https://ghostddit.aeddit.com",
+        "https://rxddit.com",
+        "https://rxyddit.com",
+        "https://troddit.com",
+    }
+    fleet_all = set(DEFAULT_REDDIT) | set(DEFAULT_REDDIT_PROXIES) | {DEFAULT_REDDIT_ARCHIVE}
+    assert excluded_candidates.isdisjoint(fleet_all)
+    assert DEFAULT_REDDIT_PROXIES == [
+        "https://www.vxreddit.com",
+        "https://embedez.com",
+        "https://embeddit.deltandy.me",
+    ]
+
+
+def test_redlib_html_parser_merges_author_comment_and_rewrites_redd_it_media():
+    """Live 2026-10-22 `u/genshinimpact` `1xbd2nm` shape: image post + same-author comment timestamp,
+    canonical `redd.it` URL rewrite, challenge rejection, and zero tail hits when healthy tier answers."""
+    from gamexpress.sources.reddit import (
+        RedditClient,
+        is_challenge_or_error_page,
+        parse_redlib_html,
+        redlib_media_to_reddit,
+    )
+
+    assert is_challenge_or_error_page("<html><body>Still trying to load your page…</body></html>")
+    assert is_challenge_or_error_page("<!doctype html><html><head></head><body></body></html>")
+    assert is_challenge_or_error_page("Error: RSS is disabled on this instance.")
+    assert redlib_media_to_reddit("/img/cvcmo1xyeqwh1.jpeg", "https://snoo.habedieeh.re") == (
+        "https://i.redd.it/cvcmo1xyeqwh1.jpeg"
+    )
+    assert redlib_media_to_reddit(
+        "https://redlib.tiekoetter.com/preview/pre/abc123.png?width=1080&auto=webp"
+    ) == "https://preview.redd.it/abc123.png?width=1080&auto=webp"
+    assert redlib_media_to_reddit("/vid/xyz987/CMAF_1080.mp4", "https://snoo.habedieeh.re") == (
+        "https://v.redd.it/xyz987/CMAF_1080.mp4"
+    )
+
+    user_page = """<!DOCTYPE html><html><head><title>genshinimpact (u/genshinimpact) - Redlib</title></head><body>
+    <div id="posts">
+      <div class="post" id="1xbd2nm">
+        <div class="post_header">
+          <a class="post_subreddit" href="/r/Genshin_Impact">r/Genshin_Impact</a>
+          <a class="post_author" href="/user/genshinimpact">u/genshinimpact</a>
+          <span class="created" title="Oct 21 2026, 04:00:05 UTC">23h ago</span>
+        </div>
+        <h2 class="post_title">
+          <a class="post_flair" href="/r/Genshin_Impact/search?q=flair%3AOfficial">Official Post</a>
+          <a href="/r/Genshin_Impact/comments/1xbd2nm/genshin_impact_version_72_special_program_preview/">
+            Genshin Impact Version 7.2 Special Program Preview
+          </a>
+        </h2>
+        <div class="post_media_content">
+          <a class="post_media_image" href="/img/cvcmo1xyeqwh1.jpeg"><img src="/preview/pre/cvcmo1xyeqwh1.jpeg"/></a>
+        </div>
+      </div>
+      <a href="/r/Genshin_Impact/comments/1xbd2nm/genshin_impact_version_72_special_program_preview/n9z1abc/#n9z1abc">
+        Genshin Impact Version 7.2 Special Program Preview
+      </a>
+      <div class="comment_body"><p>in r/Genshin_Impact • 23h ago</p>
+        <p>Dear Travelers, it's announcement time! The special program for Genshin Impact's new version will premiere on the official <a href="https://www.twitch.tv/genshinimpactofficial">Twitch</a> and <a href="https://www.youtube.com/@GenshinImpact">YouTube</a> channels on 10/23/2026 at 08:00 AM (UTC-4)!</p>
+      </div>
+    </div></body></html>"""
+
+    parsed = parse_redlib_html(user_page, "https://snoo.habedieeh.re")
+    assert len(parsed) == 1
+    post = parsed[0]
+    assert post["id"] == "1xbd2nm"
+    assert post["subreddit"] == "Genshin_Impact"
+    assert post["author"] == "genshinimpact"
+    assert post["flair"] == "Official Post"
+    assert post["url"] == (
+        "https://www.reddit.com/r/Genshin_Impact/comments/1xbd2nm/"
+        "genshin_impact_version_72_special_program_preview/"
+    )
+    assert post["images"] == ["https://i.redd.it/cvcmo1xyeqwh1.jpeg"]
+    assert "10/23/2026 at 08:00 AM (UTC-4)" in post["text"]
+    assert schedule.is_program_announcement(GAMES["genshin"], post["text"], title=post["title"])
+
+    # Healthy batch-1 answers stop before partial/degraded tail hosts are ever probed,
+    # and public Redlib hosts never waste a `.rss` probe.
+    probed: list[str] = []
+
+    class _TierFetcher:
+        async def get_text(self, url, **kw):
+            probed.append(url)
+            if url.startswith(("https://redlib.catsarch.com/", "https://redlib.privacyredirect.com/")):
+                return user_page
+            return None
+
+    rc = RedditClient(_TierFetcher(), settings())
+    items = asyncio.run(rc.items(GAMES["genshin"], schedule.wants(GAMES["genshin"]), 0))
+    assert len(items) == 1 and items[0].source == "reddit" and items[0].id == "1xbd2nm"
+    assert not any("red.artemislena.eu" in u or "safereddit.com" in u or "nadeko.net" in u for u in probed)
+    assert not any("catsarch.com" in u and u.endswith(".rss") for u in probed)
+
+
+def test_reddit_official_vs_community_code_corroboration_and_program_backup():
+    """Community subreddit posts cannot self-confirm codes; paired with a second family they post;
+    official Reddit serves as `find_program` fallback when X/HoYoLAB/news miss, and upgrades to X."""
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import runner
+    from gamexpress.sources import hoyolab, newspage
+    from gamexpress.sources.codes import CodeSources
+    from gamexpress.sources.reddit import RedditClient
+
+    sub_html = """<!DOCTYPE html><html><head><title>r/AnantaOfficial</title></head><body>
+    <div id="posts">
+      <div class="post" id="1zcode9">
+        <a class="post_subreddit" href="/r/AnantaOfficial">r/AnantaOfficial</a>
+        <a class="post_author" href="/user/random_player">u/random_player</a>
+        <span class="created" title="Oct 22 2026, 05:00:00 UTC">1h ago</span>
+        <h2 class="post_title"><a href="/r/AnantaOfficial/comments/1zcode9/new_redeem_code/">
+          New redemption code: ANANTA2027GIFT
+        </a></h2>
+        <div class="post_body"><p>Redeem code ANANTA2027GIFT before next week!</p></div>
+      </div>
+    </div></body></html>"""
+
+    fandom_json = {
+        "query": {
+            "pages": {
+                "1": {
+                    "revisions": [{
+                        "slots": {
+                            "main": {
+                                "*": "{{Code Row|ANANTA2027GIFT|All|100 Credits|2026-10-22|2027-02-01}}"
+                            }
+                        }
+                    }]
+                }
+            }
+        }
+    }
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "state.json"
+
+        class _LoneRedditFetcher:
+            async def get_text(self, url, **kw):
+                if "r/AnantaOfficial/new" in url:
+                    return sub_html
+                return None
+
+            async def get_json(self, url, **kw):
+                return None
+
+        ctx = make_ctx(
+            path,
+            now=1792650000,
+            GAMES="ananta",
+            ENABLE_GAMES="ananta",
+            BOOTSTRAP_POST="1",
+            DISCORD_WEBHOOK_CODES_ANANTA=HOOK,
+        )
+        lone_f = _LoneRedditFetcher()
+        ctx.reddit = RedditClient(lone_f, ctx.settings)
+        ctx.code_sources = CodeSources(lone_f, reddit=ctx.reddit)
+        asyncio.run(codeposter.run(ctx))
+        # Lone community Reddit mention MUST stay pending — never posted alone!
+        assert ctx.webhook.sent == []
+        assert ctx.state.code_records("ananta")["ANANTA2027GIFT"]["status"] == "pending"
+
+        # Add Fandom as the second independent community witness -> posts cleanly!
+        class _CorroboratedFetcher(_LoneRedditFetcher):
+            async def get_json(self, url, **kw):
+                if "fandom.com/api.php" in url:
+                    return fandom_json
+                return None
+
+        corr_f = _CorroboratedFetcher()
+        ctx.reddit = RedditClient(corr_f, ctx.settings)
+        ctx.code_sources = CodeSources(corr_f, reddit=ctx.reddit)
+        asyncio.run(codeposter.run(ctx))
+        assert len(ctx.webhook.sent) == 1
+        assert "ANANTA2027GIFT" in json.dumps(ctx.webhook.sent[0])
+
+        # `find_program`: X first when present; official Reddit backup when X/HoYoLAB/newspage miss;
+        # card locked to `reddit` upgrades automatically to `x` once X returns.
+        prog_item = Item(
+            source="reddit",
+            game="genshin",
+            id="1xbd2nm",
+            url="https://www.reddit.com/r/Genshin_Impact/comments/1xbd2nm/genshin_impact_version_72_special_program_preview/",
+            title="Genshin Impact Version 7.2 Special Program Preview",
+            text="The Version 7.2 Special Program will premiere on 10/23/2026 at 08:00 AM (UTC-4)!",
+            published_ts=1792555205,
+            images=["https://i.redd.it/cvcmo1xyeqwh1.jpeg"],
+            author="genshinimpact",
+        )
+        ctx.x = types.SimpleNamespace(program_tweet=AsyncMock(return_value=None))
+        ctx.reddit = types.SimpleNamespace(program_post=AsyncMock(return_value=prog_item))
+        with (
+            patch.object(hoyolab, "find_program", new=AsyncMock(return_value=None)),
+            patch.object(newspage, "fetch_program", new=AsyncMock(return_value=None)),
+        ):
+            hit = asyncio.run(runner.find_program(ctx, GAMES["genshin"], "7.2"))
+        assert hit is not None and hit["source"] == "reddit"
+        assert hit["images"] == ["https://i.redd.it/cvcmo1xyeqwh1.jpeg"]
+        assert hit["program_ts"] == 1792756800
+
+
+def test_reddit_proxy_chain_v1_mastodon_v2_component_embed_and_muxed_video_priority():
+    """Tests both Embeddit v1 Mastodon JSON and v2 `<script id="discord:component-embed">` HTML,
+    `Discordbot/2.0` UA, skipping pre-#592 listing-only Redlib mirrors on `/comments/`, and
+    preferring muxed video+audio (`vxreddit`/`embedez`) over silent un-muxed `v.redd.it` streams."""
+    from gamexpress.sources.reddit import (
+        PROXY_BOT_UA,
+        RedditClient,
+        parse_embeddit_component_html,
+        parse_embeddit_status,
+    )
+
+    v1 = parse_embeddit_status({
+        "content": "<p>Official trailer drop! https://youtu.be/dQw4w9WgXcQ</p>",
+        "media_attachments": [
+            {"type": "image", "url": "https://i.redd.it/keyart72.png"},
+        ],
+    })
+    assert v1 is not None and v1["format"] == "mastodon-v1"
+    assert v1["images"] == ["https://i.redd.it/keyart72.png"]
+    assert v1["audio_muxed"] is True
+
+    # Escaped `\u003c` inside `<script id="discord:component-embed" type="application/json">`
+    v2_video_html = (
+        '<!doctype html><html><head><script id="discord:component-embed" type="application/json">'
+        '{"component":{"type":"container","components":['
+        '{"type":"text_display","content":"## \\u003ca\\u003e Official Clip\\n\\nBody copy"},'
+        '{"type":"media_gallery","items":[{"media":{"url":"https://v.redd.it/abc999/DASH_1080.mp4"}}]}'
+        ']}}</script></head><body></body></html>'
+    )
+    v2 = parse_embeddit_component_html(v2_video_html)
+    assert v2 is not None and v2["format"] == "component-embed-v2"
+    assert v2["videos"] == ["https://v.redd.it/abc999/DASH_1080.mp4"]
+    assert v2["audio_muxed"] is False
+
+    seen_calls: list[tuple[str, dict]] = []
+
+    class _ProxyFetcher:
+        async def get_text(self, url, **kw):
+            seen_calls.append((url, kw.get("headers") or {}))
+            if "embeddit.deltandy.me/r/" in url:
+                return v2_video_html
+            if "vxreddit.com/r/" in url:
+                return '<meta property="og:video" content="https://www.vxreddit.com/r/ZZZ_Official/comments/1vid/redditvideo.mp4">'
+            return None
+
+        async def get_json(self, url, **kw):
+            seen_calls.append((url, kw.get("headers") or {}))
+            return None
+
+    # Put `embeddit.deltandy.me` AHEAD of `vxreddit.com` deliberately to prove un-muxed
+    # `v.redd.it/DASH_*.mp4` yields to muxed `vxreddit` video while still sending `Discordbot/2.0`!
+    st = settings(
+        REDDIT_INSTANCES="https://red.artemislena.eu,https://rl.awy.one",
+        REDDIT_PROXIES="https://embeddit.deltandy.me,https://www.vxreddit.com",
+    )
+    rc = RedditClient(_ProxyFetcher(), st)
+    resolved = asyncio.run(rc.resolve_post("ZZZ_Official", "1vid"))
+    assert resolved is not None
+    assert resolved["videos"] == ["https://www.vxreddit.com/r/ZZZ_Official/comments/1vid/redditvideo.mp4"]
+    called_urls = [u for u, _h in seen_calls]
+    assert not any("red.artemislena.eu" in u or "rl.awy.one" in u for u in called_urls)
+    assert all(h.get("User-Agent") == PROXY_BOT_UA for u, h in seen_calls if "embeddit" in u or "vxreddit" in u)
+
+
+def test_edge_case_regressions_bare_tz_period_kuro_empty_ameta_and_maint_extension():
+    """Pins three edge-case bugs uncovered during the 2026-10-22 audit:
+    1. `news_timestamps`: bare `UTC+8.` / `UTC-4.` / `UTC.` at end of sentence keep trailing period
+       and convert cleanly, while malformed fractional `UTC+8.5.` stays rejected.
+    2. `sources.kuro.parse_launcher_index`: empty `live_ameta` on `live_art` never leaks `top_ameta`.
+    3. `maintenance.run`: mid-maintenance official `end_ts` extension silently edits the posted card."""
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import maintenance
+    from gamexpress.news_timestamps import convert_news_timestamps
+    from gamexpress.sources import kuro
+    from gamexpress.sources import launcher as launcher_mod
+
+    # 1. Bare timezone followed immediately by sentence-ending period `.`
+    assert convert_news_timestamps("Maintenance starts on 2026/10/28 06:00 UTC+8.", enabled=True) == (
+        "Maintenance starts on <t:1793138400:f>."
+    )
+    assert convert_news_timestamps("Livestream on 2026/10/23 08:00 AM UTC-4.", enabled=True) == (
+        "Livestream on <t:1792756800:f>."
+    )
+    assert convert_news_timestamps("Reset at 2026/10/23 00:00 UTC.", enabled=True) == (
+        "Reset at <t:1792713600:f>."
+    )
+    assert convert_news_timestamps("Event runs 2026/10/28 06:00 – 11:00 UTC+8.", enabled=True) == (
+        "Event runs <t:1793138400:f> – <t:1793156400:f>."
+    )
+    # Fractional / invalid bare offset followed by `.` must still stay untouched
+    assert convert_news_timestamps("Invalid zone 2026/10/28 06:00 UTC+8.5.", enabled=True) == (
+        "Invalid zone 2026/10/28 06:00 UTC+8.5."
+    )
+
+    # 2. `kuro.parse_launcher_index` with `live_art` carrying no dimension metadata vs `top_art`
+    parsed_kuro = kuro.parse_launcher_index({
+        "default": {
+            "version": "3.7.0",
+            "background": "https://cdn.kurogame.com/live_bg.png",
+        },
+        "background": {
+            "url": "https://cdn.kurogame.com/top_fallback_bg.png",
+            "width": 1920,
+            "height": 1080,
+        },
+    })
+    assert parsed_kuro["live_media"]["artwork"] == "https://cdn.kurogame.com/live_bg.png"
+    assert "width" not in parsed_kuro["live_media"]["artwork_meta"]
+
+    # 3. `maintenance.run`: official end-time extension within 6h edit window silently PATCHes card
+    zzz_video = "https://fastcdn.hoyoverse.com/static-resource-v2/2026/10/19/zzz_33.webm"
+    live_binfo = {"U5hbdsT9W7": [{"video": zzz_video, "background": "", "theme": "", "links": []}]}
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "state.json"
+        ctx = make_ctx(
+            path,
+            now=1792530000,
+            MAINTENANCE_ENABLED="1",
+            ONLY="maintenance",
+            MAINTENANCE_GAMES="zzz",
+            DISCORD_WEBHOOK_MAINTENANCE_ZZZ=HOOK,
+        )
+        ctx.state.schedule_records("zzz")["3.3"] = {
+            "status": "posted",
+            "data": {"version": "3.3", "maint_start_ts": 1792533600, "maint_end_ts": 1792551600},
+            "prov": {"maint_start_ts": [50, 1], "maint_end_ts": [50, 1]},
+        }
+        ctx.versions["zzz"] = {"live": "3.2", "pre": "3.3"}
+        ctx.items["zzz"] = []
+        ctx.fetcher = types.SimpleNamespace(verify_media=lambda u: asyncio.sleep(0, result=(u == zzz_video)))
+
+        # Seed baseline first
+        asyncio.run(maintenance.run(ctx))
+        assert ctx.webhook.sent == []
+
+        # Maintenance starts (`1792533600` .. `1792551600`) with tier-1 video already locked
+        ctx.now = 1792533660
+        ctx.webhook = ScriptedWebhook([SendResult(True, 200)], [SendResult(True, 200, "maint-ext-1")])
+        with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value=live_binfo)):
+            asyncio.run(maintenance.run(ctx))
+        assert len(ctx.webhook.sends) == 1 and len(ctx.webhook.edits) == 0
+        assert ctx.state.maintenance_record("zzz")["versions"]["3.3"]["maintenance"]["end_ts"] == 1792551600
+
+        # Official notice extends maintenance end by +2h (`1792558800`) inside 6h window -> silent PATCH!
+        ctx.now = 1792540800
+        ctx.state.schedule_records("zzz")["3.3"]["data"]["maint_end_ts"] = 1792558800
+        with patch.object(launcher_mod, "hoyoplay_basic_info", new=AsyncMock(return_value=live_binfo)):
+            asyncio.run(maintenance.run(ctx))
+            asyncio.run(maintenance.run(ctx))  # idempotent on subsequent ticks
+        assert len(ctx.webhook.edits) == 1
+        assert ctx.webhook.edits[0][0] == "maint-ext-1"
+        assert ctx.webhook.edits[0][1]["allowed_mentions"] == {"parse": []}
+        assert "<t:1792558800:" in json.dumps(ctx.webhook.edits[0][1])
+        assert ctx.state.maintenance_record("zzz")["versions"]["3.3"]["maintenance"]["end_ts"] == 1792558800
 
 
 if __name__ == "__main__":

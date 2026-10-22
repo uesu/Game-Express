@@ -334,10 +334,12 @@ def cmd_validate(_args) -> int:
         flag = "✓" if on else "·"
         note = "" if on else (f" (off; auto-on {g.auto_enable_on})" if g.auto_enable_on else " (off)")
         print(f"  {flag} {g.key:9} {g.name:22}{note}\n      {cols[0]}\n      {cols[1]}\n      {cols[2]}\n      {cols[3]}\n"
-              f"      X={','.join(g.x_accounts) or '—'} code_sources={','.join(g.codes.get('sources', [])) or '—'} "
+              f"      X={','.join(g.x_accounts) or '—'} Reddit={','.join(g.subreddits) or '—'} "
+              f"code_sources={','.join(g.codes.get('sources', [])) or '—'} "
               f"4★/phase={g.four_star_count or 'count not set (set four_star_count at launch)'}")
     valid_bools = {"1", "true", "yes", "on", "y", "0", "false", "no", "off", "n"}
     for name in (
+        "REDDIT_ENABLED",
         "NEWS_ENABLED",
         "NEWS_TIMESTAMPS",
         "NEWS_EXPAND_FULL",

@@ -30,7 +30,8 @@ Sensitive — *Settings → Secrets and variables → Actions → **Secrets***.
 | `DISCORD_WEBHOOK_URL` | optional catch-all fallback |
 | `DISCORD_WEBHOOK_SCHEDULE_<GAME>` | optional per-game schedule channel, e.g. `DISCORD_WEBHOOK_SCHEDULE_WUWA` |
 | `DISCORD_WEBHOOK_<FEATURE>_MIRROR_<GAME>` | optional — **copies** the card to a second channel as well, e.g. `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ZZZ` (see *Fan-out* below) |
-| `NITTER_RSS_TOKEN` | optional — the e-mailed token for the one token-gated nitter mirror, `https://nitter.miningtcup.me/` (the same secret News-Express uses). Empty only skips that mirror |
+| `NITTER_RSS_TOKEN` | optional — the e-mailed token for the token-gated nitter and redlib mirrors (`https://nitter.miningtcup.me/`, `https://redlib.miningtcup.me` — the same secret News-Express uses). Empty only skips those mirrors |
+| `REDDIT_FEED_TOKEN` | optional — private RSS feed token appended on `https://www.reddit.com/r/<sub>/new.rss` (`?feed=…`) |
 
 **Webhook routing**, most specific first:
 
@@ -126,6 +127,7 @@ being dropped. A codes drop split across several messages mentions the role on *
 | `GAMES` | all enabled | allow-list, e.g. `genshin,starrail` |
 | `ENABLE_GAMES` | — | switch prepared games on, e.g. `hna` or `hna,ananta` |
 | `X_ENABLED` / `NITTER_INSTANCES` | on / built-in fleet | X monitoring on/off, or a custom nitter list |
+| `REDDIT_ENABLED` / `REDDIT_INSTANCES` / `REDDIT_PROXIES` | on / built-in fleets | official Reddit + community code corroboration on/off, custom Reddit/Redlib frontend list, or custom `Discordbot/2.0` rich-embed proxy chain |
 | `LOOKBACK_HOURS` | 72 | how far back official posts are considered |
 
 ### Accuracy and estimates

@@ -725,6 +725,7 @@ async def _ensure_inputs_for_games(ctx, target_games: list[Game]) -> None:
                 hoyolab.fetch_items(probe, g, want, since),
                 kuro.fetch_items(probe, g, want, since),
                 ctx.x.items(g, want, since) if getattr(ctx, "x", None) is not None else asyncio.sleep(0, result=[]),
+                ctx.reddit.items(g, want, since) if getattr(ctx, "reddit", None) is not None else asyncio.sleep(0, result=[]),
             )
             ctx.items[g.key] = [it for part in parts for it in part]
 
@@ -890,10 +891,20 @@ async def run(ctx) -> None:
                                 cur_url_unusable = not await _verify_url(
                                     ctx.fetcher, cur_url, ctx.now, cache=verified_cache
                                 )
-                            auth_ts_upgrade = (
-                                entry.get("provenance") in ("observed", "estimated")
+                            expected_end = int(end_ts) if (kind == "maintenance" and end_ts) else None
+                            end_ts_shifted = (
+                                kind == "maintenance"
                                 and prov_tag in ("official", "override")
-                                and start_ts is not None
+                                and "end_ts" in entry
+                                and entry.get("end_ts") != expected_end
+                            )
+                            auth_ts_upgrade = (
+                                (
+                                    entry.get("provenance") in ("observed", "estimated")
+                                    and prov_tag in ("official", "override")
+                                    and start_ts is not None
+                                )
+                                or end_ts_shifted
                             )
                             if cur_tier > 1 or cur_url_unusable or auth_ts_upgrade:
                                 binfo = await get_basic_info() if game.launcher.get("type") == "hoyoplay" else {}
@@ -941,7 +952,7 @@ async def run(ctx) -> None:
                                         if auth_ts_upgrade:
                                             entry["provenance"] = prov_tag
                                             if kind == "maintenance":
-                                                entry["end_ts"] = int(end_ts) if end_ts else None
+                                                entry["end_ts"] = expected_end
                                         entry["edited_at"] = ctx.now
                                         entry["edit_attempts"] = 0
                                         entry["edit_count"] = int(entry.get("edit_count") or 0) + 1
@@ -1015,6 +1026,7 @@ async def run(ctx) -> None:
                 vstate[kind] = {
                     "status": "posted",
                     "ts": int(start_ts),
+                    "end_ts": int(end_ts) if (kind == "maintenance" and end_ts) else None,
                     "provenance": prov_tag,
                     "posted_at": ctx.now,
                     "message_id": result.message_id,

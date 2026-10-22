@@ -111,7 +111,7 @@ existed stay out of the channel.
   |---|---|---|
   | maintenance start / end | community countdown sites | `COUNTDOWN_ESTIMATES=0` |
   | pre-install | that game's **median observed lead** in hours, learned from real notices | — |
-  | the announcement's own link + key art | the X post first, then the paged-back HoYoLAB list, then the official news page, then the news-feed mirror | `PROGRAM_MEDIA=0` |
+  | the announcement's own link + key art | the X post first, then the paged-back HoYoLAB list, then the official news page, then the news-feed mirror, then official Reddit | `PROGRAM_MEDIA=0` |
 
   Details: **[docs/ACCURACY.md → Filling the gaps](docs/ACCURACY.md#filling-the-gaps-before-the-official-notice)**.
   Once the card is posted, its link, key art and air time are locked to the announcement that opened
