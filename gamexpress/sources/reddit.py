@@ -50,7 +50,7 @@ import feedparser
 from ..config import DEFAULT_REDDIT_ARCHIVE, Game, Settings
 from ..http import Fetcher
 from ..models import CodeHit, Item
-from ..textutil import clean_text, dedupe, find_urls, find_versions, html_to_text
+from ..textutil import clean_text, dedupe, find_urls, find_versions, html_to_text, strip_invisible
 from .codes import extract_codes_from_text, sanitize
 
 log = logging.getLogger("gamexpress.reddit")
@@ -156,16 +156,28 @@ def canonical_post_url(subreddit: str, post_id: str, slug_part: str = "") -> str
 
 
 _MD_LINK_TARGET_RE = re.compile(r"^\[[^\]]*\]\(([^)\s]+)\)$")
+_ENV_ASSIGN_PREFIX_RE = re.compile(r"^(?:export\s+)?REDDIT_FEED_TOKEN\s*=\s*", re.I)
 _SAFE_FEED_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{4,128}$")
 _SAFE_FEED_USER_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+_REDDIT_NAV_LINK_RE = re.compile(
+    r"^https?://(?:[a-z0-9-]+\.)?reddit\.com/(?:(?:user|u)/[^/?#]+/?|r/[A-Za-z0-9_]+/?)(?:[?#].*)?$",
+    re.I,
+)
+_REMOVED_BODY_MARKERS = frozenset({
+    "[removed]",
+    "[deleted]",
+    "[ removed by reddit ]",
+    "[ removed by moderator ]",
+})
 
 
 def format_reddit_feed_query(raw_token: str) -> str:
     """Normalize `REDDIT_FEED_TOKEN` into an encoded `feed=...` (+ optional `&user=...`) query.
 
     Accepts any private RSS link/token copied from `old.reddit.com`, `www.reddit.com`, or
-    `reddit.com` (including wrapping quotes, parentheses/brackets, Markdown `[url](url)` links,
-    scheme-less host URLs, or HTML `&amp;` entities):
+    `reddit.com` (including invisible copy-paste chars, wrapping quotes/backticks/parentheses,
+    Markdown `[url](url)` links, `.env` `REDDIT_FEED_TOKEN=...` lines, scheme-less host URLs,
+    either query parameter order, or HTML `&amp;` entities):
       * `https://old.reddit.com/.rss?feed=<40-hex>&user=<username>`
       * `https://www.reddit.com/.rss?feed=<40-hex>&user=<username>`
       * `https://reddit.com/.rss?feed=<40-hex>&user=<username>`
@@ -174,38 +186,43 @@ def format_reddit_feed_query(raw_token: str) -> str:
       * `?feed=<40-hex>&user=<username>` or `feed=<40-hex>&user=<username>`
       * `<40-hex>`
     """
-    tok = html.unescape((raw_token or "").strip())
+    tok = html.unescape(strip_invisible(raw_token or "")).strip()
+    tok = _ENV_ASSIGN_PREFIX_RE.sub("", tok).strip()
     m_md = _MD_LINK_TARGET_RE.match(tok)
     if m_md:
         tok = m_md.group(1).strip()
-    tok = tok.strip("\"'()<>[]").strip()
+    tok = tok.strip("\"'`()<>[]").strip()
     if not tok:
         return ""
     if "://" in tok:
         q = urlsplit(tok).query
     elif tok.startswith("?"):
         q = tok[1:]
-    elif "?" in tok and not tok.lower().startswith("feed="):
+    elif "?" in tok and not tok.lower().startswith(("feed=", "user=")):
         q = tok.split("?", 1)[1]
-    elif tok.lower().startswith("feed="):
+    elif tok.lower().startswith(("feed=", "user=")):
         q = tok
     else:
         q = f"feed={tok}"
-    pairs: list[tuple[str, str]] = []
-    has_feed = False
+    feed_val = ""
+    user_val = ""
     for k, v in parse_qsl(q, keep_blank_values=False):
         kl = k.lower()
         val = v.strip()
         if kl == "feed":
             if not _SAFE_FEED_TOKEN_RE.match(val):
                 return ""
-            pairs.append(("feed", val))
-            has_feed = True
+            feed_val = val
         elif kl == "user":
             if not _SAFE_FEED_USER_RE.match(val):
                 return ""
-            pairs.append(("user", val))
-    return urlencode(pairs) if has_feed else ""
+            user_val = val
+    if not feed_val:
+        return ""
+    pairs = [("feed", feed_val)]
+    if user_val:
+        pairs.append(("user", user_val))
+    return urlencode(pairs)
 
 
 def _is_official_subreddit_post(game: Game, entry: dict) -> bool:
@@ -468,7 +485,14 @@ def parse_reddit_rss(xml_text: str) -> list[dict]:
             e.get("summary") or e.get("description") or ""
         )
         text, links, imgs = html_to_text(html_body)
-        text = re.sub(r"\s*(?:submitted by\s+/?u/\S+\s*)?\[link\]\s*\[comments\]\s*$", "", text, flags=re.I).strip()
+        text = re.sub(
+            r"\s*(?:submitted by\s+/?u/\S+(?:\s+to\s+/?r/\S+)?\s*)?\[link\]\s*\[comments\]\s*$",
+            "",
+            text,
+            flags=re.I,
+        ).strip()
+        if text.lower() in _REMOVED_BODY_MARKERS:
+            text = ""
 
         if is_comment_entry or post_id in posts:
             if post_id in posts and text:
@@ -483,7 +507,7 @@ def parse_reddit_rss(xml_text: str) -> list[dict]:
                             u for u in links
                             if u.startswith(("http://", "https://"))
                             and not POST_LINK_RE.search(u)
-                            and "reddit.com/user/" not in u
+                            and not _REDDIT_NAV_LINK_RE.match(u)
                         ]
                     )
                     p["images"] = dedupe(
@@ -505,7 +529,7 @@ def parse_reddit_rss(xml_text: str) -> list[dict]:
             u for u in links
             if u.startswith(("http://", "https://"))
             and not POST_LINK_RE.search(u)
-            and "reddit.com/user/" not in u
+            and not _REDDIT_NAV_LINK_RE.match(u)
             and u not in images
         ]
         posts[post_id] = {
@@ -963,6 +987,10 @@ class RedditClient:
             best is None
             or (best.get("videos") and any(UNMUXED_REDDIT_VIDEO_RE.match(v) for v in best["videos"]))
             or (not best.get("videos") and any("v.redd.it/" in u.lower() for u in (best.get("links") or [])))
+            or (
+                any("/gallery/" in u.lower() for u in (best.get("links") or []))
+                and not any("redd.it/" in img.lower() for img in (best.get("images") or []))
+            )
         )
         if need_proxy:
             for proxy_base in self.settings.reddit_proxies:
@@ -993,7 +1021,7 @@ class RedditClient:
                     }
                 else:
                     best["videos"] = list(hit.get("videos") or best["videos"])
-                    best["images"] = dedupe(best["images"] + list(hit.get("images") or []))
+                    best["images"] = dedupe(list(hit.get("images") or []) + best["images"])
                 break
 
         if best is None and unmuxed_fallback is not None:

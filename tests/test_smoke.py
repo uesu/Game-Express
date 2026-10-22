@@ -14079,5 +14079,121 @@ def test_old_and_www_reddit_feed_urls_dual_origin_failover_post_rss_op_comment_a
             assert reddit_m_spy.await_count == 1
 
 
+def test_adversarial_real_reddit_atom_footer_summary_redaction_gallery_and_token_fuzz():
+    """Pins four genuine production bugs uncovered by adversarial wire-format & redaction fuzzing:
+    1. Public `GITHUB_STEP_SUMMARY` privacy leak (`runner._summary_text`): when `REDDIT_FEED_TOKEN`
+       stores a full URL on one host (e.g. `old.reddit.com`), runtime error strings on another host
+       (`www.reddit.com/r/<sub>/new.rss?feed=...&user=<username>`) previously redacted `feed=` while
+       leaking `&user=<username>` into the public workflow summary.
+    2. Real live `old.reddit.com` / `www.reddit.com` Atom XML footer (`submitted by /u/<Author> to
+       r/<Subreddit> <br/> [link] [comments]` + `/u/` & `/r/<sub>/` links): previously left non-empty
+       `text == 'submitted by /u/... to r/...'`, which prevented `items()` and `program_post()` from
+       resolving OP's pinned livestream comment on image-only official announcements!
+    3. Multi-image gallery posts resolved via `.rss` (`reddit.com/gallery/<id>`, `images == []`) now
+       enrich full-res gallery images via `reddit_proxies`, and `http._news_media_prefix` allowlists
+       `deltandy.me` alongside `vxreddit.com` and `embedez.com`.
+    4. `format_reddit_feed_query()` handles zero-width mobile copy-paste characters (`\\ufeff`,
+       `\\u200b`), Markdown backticks, pasted `.env` `REDDIT_FEED_TOKEN=...` lines, and reversed
+       `?user=...&feed=...` query order cleanly."""
+    from gamexpress import runner, schedule
+    from gamexpress.config import load_settings
+    from gamexpress.sources.reddit import RedditClient, format_reddit_feed_query, parse_reddit_rss
+
+    dummy = "0123456789abcdef0123456789abcdef01234567"
+    expected = f"feed={dummy}&user=example_user"
+
+    # 1. Public `GITHUB_STEP_SUMMARY` redacts BOTH `feed=` AND `user=`
+    raw_err = f"Failed https://www.reddit.com/r/Genshin_Impact/new.rss?feed={dummy}&user=private_acct_name"
+    sanitized = runner._summary_text(raw_err)
+    assert dummy not in sanitized
+    assert "private_acct_name" not in sanitized
+    assert "user=[REDACTED]" in sanitized
+
+    # 2. Invisible BOM/ZWSP, backticks, `REDDIT_FEED_TOKEN=...` prefix, and reversed `?user=...&feed=...`
+    for messy in (
+        f"https://www.reddit.com/.rss?user=example_user&feed={dummy}",
+        f"https://old.reddit.com/.rss?user=example_user&feed={dummy}",
+        f"\ufeffhttps://old.reddit.com/.rss?feed={dummy}&user=example_user\u200b",
+        f"`https://old.reddit.com/.rss?feed={dummy}&user=example_user`",
+        f"REDDIT_FEED_TOKEN=https://old.reddit.com/.rss?feed={dummy}&user=example_user",
+        f"REDDIT_FEED_TOKEN={dummy}&user=example_user",
+    ):
+        assert format_reddit_feed_query(messy) == expected, f"failed on {messy!r}"
+
+    # 3. Verbatim live `old.reddit.com/.rss` & `www.reddit.com/r/<sub>/new.rss` Atom table footer
+    real_atom = """<?xml version="1.0" encoding="UTF-8" ?>
+    <feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"><entry>
+      <id>t3_1liveatom</id>
+      <title>Version 7.3 Special Program Preview</title>
+      <link href="https://old.reddit.com/r/Genshin_Impact/comments/1liveatom/version_73_special_program_preview/"/>
+      <author><name>/u/genshinimpact</name><uri>https://old.reddit.com/user/genshinimpact</uri></author>
+      <category term="Genshin_Impact" label="r/Genshin_Impact"/>
+      <updated>2026-10-22T06:00:00+00:00</updated>
+      <media:thumbnail url="https://b.thumbs.redditmedia.com/xyz123.jpg"/>
+      <content type="html">&lt;table&gt; &lt;tr&gt;&lt;td&gt;&lt;a href="https://old.reddit.com/r/Genshin_Impact/comments/1liveatom/version_73_special_program_preview/"&gt;&lt;img src="https://b.thumbs.redditmedia.com/xyz123.jpg" /&gt;&lt;/a&gt;&lt;/td&gt;&lt;td&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://www.reddit.com/u/genshinimpact"&gt; /u/genshinimpact &lt;/a&gt; to &lt;a href="https://old.reddit.com/r/Genshin_Impact/"&gt; r/Genshin_Impact &lt;/a&gt; &lt;br/&gt; &lt;span&gt;&lt;a href="https://www.reddit.com/gallery/1liveatom"&gt;[link]&lt;/a&gt;&lt;/span&gt; &amp;#32; &lt;span&gt;&lt;a href="https://old.reddit.com/r/Genshin_Impact/comments/1liveatom/version_73_special_program_preview/"&gt;[comments]&lt;/a&gt;&lt;/span&gt; &lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</content>
+    </entry></feed>"""
+
+    parsed = parse_reddit_rss(real_atom)
+    assert len(parsed) == 1
+    assert parsed[0]["text"] == ""
+    assert parsed[0]["links"] == ["https://www.reddit.com/gallery/1liveatom"]
+
+    # End-to-end: real `to r/Genshin_Impact` image/gallery entry triggers `resolve_post()`, merges
+    # OP's pinned comment via `.rss?feed=...`, AND puts full-res gallery art ahead of 140px thumbnail!
+    thread_rss = """<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+      <entry>
+        <id>t3_1liveatom</id>
+        <title>Version 7.3 Special Program Preview</title>
+        <link href="https://www.reddit.com/r/Genshin_Impact/comments/1liveatom/version_73_special_program_preview/"/>
+        <author><name>/u/genshinimpact</name></author>
+        <updated>2026-10-22T06:00:00+00:00</updated>
+        <media:thumbnail url="https://b.thumbs.redditmedia.com/xyz123.jpg"/>
+        <content type="html">&lt;td&gt; submitted by &lt;a href="https://www.reddit.com/u/genshinimpact"&gt;/u/genshinimpact&lt;/a&gt; to &lt;a href="https://www.reddit.com/r/Genshin_Impact/"&gt;r/Genshin_Impact&lt;/a&gt; &lt;br/&gt; &lt;a href="https://www.reddit.com/gallery/1liveatom"&gt;[link]&lt;/a&gt; &lt;a href="https://www.reddit.com/r/Genshin_Impact/comments/1liveatom/version_73_special_program_preview/"&gt;[comments]&lt;/a&gt; &lt;/td&gt;</content>
+      </entry>
+      <entry>
+        <id>t1_m9realop</id>
+        <title>/u/genshinimpact on Version 7.3 Special Program Preview</title>
+        <link href="https://www.reddit.com/r/Genshin_Impact/comments/1liveatom/version_73_special_program_preview/m9realop/"/>
+        <author><name>/u/genshinimpact</name></author>
+        <updated>2026-10-22T06:01:00+00:00</updated>
+        <content type="html">&lt;div class="md"&gt;&lt;p&gt;The special program for Genshin Impact's new version will premiere on 2026-11-20 at 08:00 (UTC-4)!&lt;/p&gt;&lt;/div&gt;</content>
+      </entry>
+    </feed>"""
+
+    proxy_gallery_html = """<html><head>
+      <meta property="og:title" content="Version 7.3 Special Program Preview"/>
+      <meta property="og:image" content="https://i.redd.it/gallery_full_1.jpg"/>
+    </head></html>"""
+
+    class _RealAtomEndToEndFetcher:
+        async def get_text(self, url, **kw):
+            if url == f"https://www.reddit.com/user/genshinimpact/submitted.rss?{expected}":
+                return real_atom
+            if url == f"https://www.reddit.com/r/Genshin_Impact/comments/1liveatom/.rss?{expected}":
+                return thread_rss
+            if "vxreddit.com/r/Genshin_Impact/comments/1liveatom/" in url:
+                return proxy_gallery_html
+            return None
+
+        async def get_json(self, url, **kw):
+            return None
+
+    rc_real = RedditClient(
+        _RealAtomEndToEndFetcher(),
+        load_settings({
+            "REDDIT_FEED_TOKEN": f"`https://www.reddit.com/.rss?user=example_user&feed={dummy}`",
+            "REDDIT_INSTANCES": "https://www.reddit.com,https://old.reddit.com",
+            "REDDIT_PROXIES": "https://www.vxreddit.com",
+        }),
+    )
+    real_items = asyncio.run(rc_real.items(GAMES["genshin"], schedule.wants(GAMES["genshin"]), 0))
+    assert len(real_items) == 1
+    assert real_items[0].images[0] == "https://i.redd.it/gallery_full_1.jpg"
+    ext = schedule.extract(GAMES["genshin"], real_items[0])
+    assert ext is not None and ext.version == "7.3" and ext.fields["program_ts"] == 1795176000
+    assert '"deltandy.me"' in Path("gamexpress/http.py").read_text(encoding="utf-8")
+
+
 if __name__ == "__main__":
     sys.exit(main())

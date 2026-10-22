@@ -360,7 +360,7 @@ def _summary_text(value):
             text = text.replace(secret, "[REDACTED]")
     text = re.sub(r"https?://[^\s/]*(?:discord(?:app)?\.com)/api/webhooks/[^\s<>]+",
                   "[REDACTED_WEBHOOK]", text, flags=re.I)
-    text = re.sub(r"([?&](?:token|feed|key|api_key|access_token|auth_key)=)[^&\s<>]+",
+    text = re.sub(r"([?&](?:token|feed|user|key|api_key|access_token|auth_key)=)[^&\s<>]+",
                   r"\1[REDACTED]", text, flags=re.I)
     text = re.sub(r"(Bearer\s+)[^\s<>]+", r"\1[REDACTED]", text, flags=re.I)
     return html.escape(text.replace("\r", " ").replace("\n", " "), quote=False).replace("`", "'")[:1200]

@@ -139,7 +139,7 @@ class Fetcher:
 
         hosts = ("hoyolab.com", "hoyoverse.com", "hoyocdn.com", "mihoyo.com",
                  "mihoyocdn.com", "kurogame.com", "kurogames.com", "ytimg.com", "twimg.com",
-                 "redd.it", "redditmedia.com", "vxreddit.com", "embedez.com")
+                 "redd.it", "redditmedia.com", "vxreddit.com", "embedez.com", "deltandy.me")
         try:
             for _ in range(4):
                 parts = urlsplit(url)
