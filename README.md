@@ -524,8 +524,8 @@ Flags: `--dry-run --only --game --repost --kind --ping --out --unlaunched --verb
 | Data | Chain |
 |---|---|
 | HoYoverse news | official HoYoLAB API → c3kay JSON-Feed mirror |
-| X timelines | the built-in nitter fleet (25 entries, 24 live — `xcancel.com` is suspended and kept last as a dead entry; `NITTER_INSTANCES` overrides the list). The first **two** working mirrors are merged, so a stale-but-200 mirror can't hide a tweet |
-| Tweet details | nitter.cf → xitter.cf → teapawt.org → teapaw.org → teapawt.net by id (when the account is known) → FxTwitter → fixupx → vxTwitter → the nitter text. A status mirror that fails twice in one run is skipped for the rest of it |
+| X timelines | the built-in nitter fleet (27 entries, 26 live — `xcancel.com` is suspended and kept last as a dead entry; `NITTER_INSTANCES` overrides the list). The first **two** working mirrors are merged, so a stale-but-200 mirror can't hide a tweet |
+| Tweet details | nitter.cf → xitter.cf → teapawt.org → teapaw.org → teapawt.net → xitter.gq → nitter.gq by id (when the account is known) → FxTwitter → fixupx → vxTwitter → the nitter text. A status mirror that fails twice in one run is skipped for the rest of it |
 | Reddit backup & code witness | built-in Reddit/Redlib fleet (17 entries across healthy Redlib dual-path mirrors + partial/runner-gated tail, plus 3 proxies `vxreddit.com` → `embedez.com` → `embeddit.deltandy.me` and `arctic-shift.photon-reddit.com` archive; optional `REDDIT_FEED_TOKEN` drives `[0] www.reddit.com` → `[1] old.reddit.com` 1-request RSS fast path + `.json` fallback; `REDDIT_ENABLED=0` disables all Reddit HTTP calls) |
 | Codes | up to 10 sources per game (validators, APIs, wikis, community witnesses, official posts), fetched in parallel, behind the gate above |
 | Version / pre-install | HoYoPlay `getGameBranches` / Kuro launcher index |

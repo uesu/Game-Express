@@ -44,7 +44,7 @@ URL; configured credentials are sent to the intended service when required:
   JSON Feed mirror of HoYoLAB news, used only when the HoYoLAB API cannot be reached;
 - Kuro Games (official website JSON, launcher index, structured launch media);
 - nitter instances (`nitter.cf` and `xitter.cf` first, for single posts and timelines; a token-gated
-  instance is used only when the operator sets `NITTER_RSS_TOKEN`), `teapawt.org` / `teapaw.org` / `teapawt.net`,
+  instance is used only when the operator sets `NITTER_RSS_TOKEN`), `teapawt.org` / `teapaw.org` / `teapawt.net` / `xitter.gq` / `nitter.gq`,
   FxTwitter, fixupx and vxTwitter (public X posts);
 - Reddit and Redlib instances (`www.reddit.com` and `old.reddit.com` public feeds — carrying `REDDIT_FEED_TOKEN`
   query parameters only when configured — public Redlib mirrors, rich-embed proxies `vxreddit.com`, `embedez.com`,

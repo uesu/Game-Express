@@ -169,21 +169,24 @@ DEFAULT_COMMUNITY_BUTTONS = [
 # who has never refused. xcopy records its verdict beside kareem, demoted not
 # deleted. Fleet 19 -> 21; nothing deleted, as always.
 #
-# 2026-10-22 ROTATION #7 (teapawt TLD expansion + mie.foundation): all four new
+# 2026-10-22 ROTATION #7 (teapawt TLD expansion + mie.foundation): all six new
 # candidates answered 8/8 union handles live with 100% top-tweet id parity against
-# nitter.cf/xitter.cf and zero refusals -- 4cuck/teapawt's three new official domains
-# teapawt.org (493 ms avg on d420, fastest listed), teapaw.org (548 ms) and
-# teapawt.net (578 ms), plus codeberg.org/shitter/shitter's working-list host
-# nitter.mie.foundation (rev a75ff9fa14). Every RSS link on teapawt.org, teapaw.org
-# and teapawt.net points back at xitter.cf -- they front the same runner-proven
-# teapawt origin behind independent .org/.net TLDs rather than Freenom .cf, with
-# explicit operator scraping permission and working /<account>/status/<id>/rss feeds.
-# Keeping all four runner-proven hosts in Batch 1 (nitter.cf, xitter.cf, meowing,
-# miningtcup) avoids extra parallel hits on the teapawt origin during normal runs
-# while avoiding un-runner-tested 403 risk; Batch 2 (slots 5-8) now opens with
-# teapawt.org -> teapaw.org -> teapawt.net -> nitter.mie.foundation (TRIAL), giving
-# instant .org/.net failover to a runner-proven origin plus an independent shitter
-# backend inside the first fallback wave. Fleet 21 -> 25; nothing deleted.
+# nitter.cf/xitter.cf and zero refusals -- all five newly listed 4cuck/teapawt sibling
+# domains on status.d420.net (commit 145ca9eb, 2026-10-22 07:55 UTC): teapawt.org
+# (426 ms avg, 100%), xitter.gq (450 ms, 100%), nitter.gq (455 ms, 100%), teapawt.net
+# (462 ms, 100%), and teapaw.org (488 ms, 100%), plus codeberg.org/shitter/shitter's
+# working-list host nitter.mie.foundation (rev a75ff9fa14). Every RSS link on
+# teapawt.org, teapaw.org, teapawt.net, xitter.gq and nitter.gq points back at
+# xitter.cf -- they front the same runner-proven teapawt origin behind independent
+# .org/.net/.gq TLDs alongside .cf, with explicit operator scraping permission on
+# status.d420.net and working /<account>/status/<id>/rss feeds. Keeping all four
+# runner-proven hosts in Batch 1 (nitter.cf, xitter.cf, meowing, miningtcup) avoids
+# extra parallel hits on the teapawt origin during normal runs while avoiding
+# un-runner-tested 403 risk; Batch 2 (slots 5-8) opens with teapawt.org -> teapaw.org
+# -> teapawt.net -> nitter.mie.foundation (TRIAL), and Batch 3 (slots 9-12) opens with
+# xitter.gq -> nitter.gq -> nitter.freedit.eu -> nitter.gravitywell.xyz, preserving
+# multi-backend diversity in every 4-host wave while spanning .cf/.org/.net/.gq.
+# Fleet 21 -> 27 (26 live); nothing deleted.
 DEFAULT_REDDIT = [
     # Hot path & active healthy tier: 100% 200 OK public dual-path Redlib mirrors + token-gated
     # private Redlib (`NITTER_RSS_TOKEN`). `https://www.reddit.com` leaps to slot 0 automatically
@@ -263,6 +266,17 @@ DEFAULT_NITTER = [
                                         # 100% top-id parity, zero refusals, native t.co
                                         # expansion; rewrites YouTube links to
                                         # piped.video (handled by youtube_id). TRIAL.
+    "https://xitter.gq",                # rotation #7 (2026-10-22): NEW, head of batch 3.
+                                        # Official 4cuck/teapawt .gq sibling on
+                                        # status.d420.net (450 ms avg, 100% uptime,
+                                        # explicit scraping permission, 8/8 union +
+                                        # /status/<id>/rss). Seated alongside independent
+                                        # shitter/nitter hosts in batch 3 so neither
+                                        # batch 2 nor batch 3 is single-origin.
+    "https://nitter.gq",                # rotation #7 (2026-10-22): NEW. Official
+                                        # 4cuck/teapawt .gq sibling on status.d420.net
+                                        # (455 ms avg, 100% uptime, explicit scraping
+                                        # permission, 8/8 union + /status/<id>/rss).
     "https://nitter.freedit.eu",        # rotation #6 (2026-10-15): NEW, head of the
                                         # fallbacks. The only host in existence with
                                         # full union coverage: 5/5 News-Express accounts

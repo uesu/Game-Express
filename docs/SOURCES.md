@@ -27,8 +27,8 @@ official site / launcher and by X respectively. The API is used rather than the 
 it returns the same posts as structured JSON, with no HTML or JavaScript to scrape.
 | HoYoLAB post (official) | `…/getPostFull?gids={gid}&post_id={id}` | full body (`content` HTML, or `structured_content` when `content == "en-us"`) + images | ✅ HSR 46814308 (quirk), GI 46604275 |
 | c3kay JSON-Feed (mirror, fallback) | `https://feeds.c3kay.de/{genshin,starrail,zenless}.json` | JSON Feed 1.1 with full `content_html`, refreshed every 30 min | ✅ |
-| Official X accounts | nitter RSS fleet `https://<instance>/<account>/rss` (25 entries, 24 live — `xcancel.com` is suspended; originally from News-Express round 13/14) | timeline (first 2 working instances merged) | fleet taken from News-Express |
-| Tweet details | `https://nitter.cf/<account>/status/{id}/rss` (then `xitter.cf`, `teapawt.org`, `teapaw.org`, `teapawt.net`, when the account is known) → `https://api.fxtwitter.com/status/{id}` → `https://api.fixupx.com/status/{id}` → `https://api.vxtwitter.com/Twitter/status/{id}` | full text with expanded links, photos, exact timestamp; the winner is logged | ✅ all 4 reference tweets |
+| Official X accounts | nitter RSS fleet `https://<instance>/<account>/rss` (27 entries, 26 live — `xcancel.com` is suspended; originally from News-Express round 13/14) | timeline (first 2 working instances merged) | fleet taken from News-Express |
+| Tweet details | `https://nitter.cf/<account>/status/{id}/rss` (then `xitter.cf`, `teapawt.org`, `teapaw.org`, `teapawt.net`, `xitter.gq`, `nitter.gq`, when the account is known) → `https://api.fxtwitter.com/status/{id}` → `https://api.fixupx.com/status/{id}` → `https://api.vxtwitter.com/Twitter/status/{id}` | full text with expanded links, photos, exact timestamp; the winner is logged | ✅ all 4 reference tweets |
 | Kuro official site (WW) | `https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/json/G152/en/{ArticleMenu,MainMenu}.json` + `…/article/{id}.json` | official articles incl. *Featured Resonator/Weapon Convene* banner notices; times are UTC+8 | ✅ (English menus are homepage **subsets**, so X stays primary for WW) |
 | HoYoPlay launcher | `https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGameBranches?launcher_id=VYTpXlbWo8` | exact live version (`main.tag`) + pre-install availability (`pre_download`) | ✅ ZZZ `3.2.0` |
 | Kuro launcher (WW) | `https://prod-alicdn-gamestarter.kurogame.com/launcher/game/G153/50004_obOHXFrFanqsaIEOmuKroCcbZkQRBC7c/index.json` | live version (`default.version`) + `predownload` | structure from WW downloader configs |
@@ -74,16 +74,17 @@ IPv4-only, so it may lose a `NITTER_GRACE` race on a handle but never the quorum
 token-gated `nitter.miningtcup.me` (6/6). That round's ranking rule, which every later rotation
 inherits: **no member that blocks GitHub Actions / Azure datacenter IPs sits above one that
 doesn't.** Rotation #7 (2026-10-22) keeps all four runner-proven hosts in Batch 1 (`nitter.cf` and
-`xitter.cf` untouched at slots 1–2, `nitter.meowing.monster`, `nitter.miningtcup.me`) and seats four
-8/8 union-verified mirrors across Batch 2 (`teapawt.org` 493 ms, `teapaw.org` 548 ms, `teapawt.net`
-578 ms — official `.org`/`.net` sibling domains of `4cuck/teapawt` with explicit scraping permission
+`xitter.cf` untouched at slots 1–2, `nitter.meowing.monster`, `nitter.miningtcup.me`), seats four
+8/8 union-verified mirrors across Batch 2 (`teapawt.org` 426 ms, `teapaw.org` 488 ms, `teapawt.net`
+462 ms — official `.org`/`.net` sibling domains of `4cuck/teapawt` with explicit scraping permission
 and `/status/<id>/rss` feeds — plus `nitter.mie.foundation` from `shitter/shitter`'s working list as
-an independent `TRIAL`), followed by `nitter.freedit.eu` (8/8) and `nitter.gravitywell.xyz` (5/8,
+an independent `TRIAL`), and seats `xitter.gq` (450 ms) and `nitter.gq` (455 ms) from `status.d420.net`
+at the head of Batch 3 ahead of `nitter.freedit.eu` (8/8) and `nitter.gravitywell.xyz` (5/8,
 deterministic `User not found` gaps), all costing zero requests while the hot path is healthy.
 
 Being polite about it matters: these are volunteer-run mirrors and `status.d420.de` asks
 outright that they not be scraped. The design already keeps the cost low — the loop stops at
-the first two answers, so a healthy run spends 2 requests per handle, not 25.
+the first two answers, so a healthy run spends 2 requests per handle, not 27.
 
 A mirror that stops answering is **demoted, never deleted**. `x.n0g.xyz` returned HTTP 404 then
 429 on every handle in three consecutive live runs, so it sits at the very end of the fleet as a
@@ -95,7 +96,7 @@ simply be blocking GitHub's runners while answering fine from a VPS — `nitter.
 24/24 fetches across four Azure regions, runs #2662–#2665, the trial verdict of 2026-10-15).
 
 Single tweets are read **from nitter.cf first** when the account is known: `XClient.tweet()` asks the
-nitter status feed (`nitter.cf`, `xitter.cf`, `teapawt.org`, `teapaw.org`, `teapawt.net`) for that post. FxTwitter is asked
+nitter status feed (`nitter.cf`, `xitter.cf`, `teapawt.org`, `teapaw.org`, `teapawt.net`, `xitter.gq`, `nitter.gq`) for that post. FxTwitter is asked
 only when nitter cannot answer, or when the post carries a `t.co` link that nitter leaves unexpanded (the
 YouTube link is read from the expanded URL). The chain after that is **fxtwitter → fixupx → vxtwitter**,
 and the nitter text is the last resort. A status mirror that fails `STATUS_FAIL_LIMIT` (2) times in one run

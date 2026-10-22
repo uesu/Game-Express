@@ -78,17 +78,20 @@ def save_program_seed(game_key: str, version: str, entry: dict, path: Path | Non
 FX_SOURCES = (("fxtwitter", "https://api.fxtwitter.com/status/{id}"),
               ("fixupx", "https://api.fixupx.com/status/{id}"))
 VXTWITTER_URL = "https://api.vxtwitter.com/Twitter/status/{id}"
-# Single-tweet lookups ask nitter.cf first. xitter.cf, teapawt.org, teapaw.org and teapawt.net are
-# the same 4cuck/teapawt backend behind .cf/.org/.net domains, so they follow in order for zero-API
-# DNS/edge failover. All five serve a per-status RSS feed (…/<account>/status/<id>/rss) reaching back
-# weeks: nitter.cf resolved ZZZ 3.2's post from 2026-08-24 on 2026-10-09, and all five resolved
-# Genshin 7.2's announcement (2112755760107081755) live on 2026-10-22.
+# Single-tweet lookups ask nitter.cf first. xitter.cf, teapawt.org, teapaw.org, teapawt.net,
+# xitter.gq and nitter.gq are the same 4cuck/teapawt backend across .cf/.org/.net/.gq domains on
+# status.d420.net, so they follow in order for zero-API DNS/edge failover. All seven serve a
+# per-status RSS feed (…/<account>/status/<id>/rss) reaching back weeks: nitter.cf resolved ZZZ
+# 3.2's post from 2026-08-24 on 2026-10-09, and all seven resolved Genshin 7.2's announcement
+# (2112755760107081755) live on 2026-10-22.
 STATUS_MIRRORS = (
     "https://nitter.cf",
     "https://xitter.cf",
     "https://teapawt.org",
     "https://teapaw.org",
     "https://teapawt.net",
+    "https://xitter.gq",
+    "https://nitter.gq",
 )
 # After this many failed requests in one run a status mirror is skipped for the rest of the run. Without
 # this a dead nitter.cf costs a full NITTER_TIMEOUT on EVERY tweet before FxTwitter is asked.

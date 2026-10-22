@@ -3843,7 +3843,7 @@ def test_the_documented_nitter_fleet_size_matches_the_code():
     configured = len(DEFAULT_NITTER)
     suspended = [u for u in DEFAULT_NITTER if "xcancel" in u]      # kept last, cannot answer
     live = configured - len(suspended)
-    assert (configured, live) == (25, 24)
+    assert (configured, live) == (27, 26)
 
     if not _check_fleet_documentation(ROOT, configured, live):
         print("    INFO: fleet documentation check not applicable: all three docs absent; code fleet assertion still checked")
@@ -5455,6 +5455,10 @@ NITTER_SERVES_REAL_RSS = (
                                     # 578 ms avg on d420, 4cuck/teapawt .net sibling
     "https://nitter.mie.foundation", # rotation #7 (2026-10-22): 8/8 union handles, top-id parity,
                                     # zero refusals, native t.co expansion (shitter list). TRIAL.
+    "https://xitter.gq",            # rotation #7 (2026-10-22): 8/8 union handles + /status/rss,
+                                    # 450 ms avg on status.d420.net, 4cuck/teapawt .gq sibling
+    "https://nitter.gq",            # rotation #7 (2026-10-22): 8/8 union handles + /status/rss,
+                                    # 455 ms avg on status.d420.net, 4cuck/teapawt .gq sibling
     "https://nitter.freedit.eu",   # rotation #6 (2026-10-15): 8/8 union handles across
                                    # two days -- 5/5 News-Express accounts (2026-10-14)
                                    # plus GenshinImpact, honkaistarrail and ZZZ_EN this
@@ -12950,11 +12954,13 @@ def test_rotation_7_teapawt_tld_expansion_and_mie_foundation():
     """Rotation #7 (2026-10-22): slots 1-4 remain runner-proven (nitter.cf & xitter.cf untouched,
     meowing.monster, miningtcup.me); Batch 2 (slots 5-8) seats teapawt.org, teapaw.org, teapawt.net
     (.org/.net TLD failover on 4cuck/teapawt) + independent nitter.mie.foundation (8/8 union TRIAL);
-    and STATUS_MIRRORS fails over from dead .cf domains onto teapawt.org without external API calls."""
+    Batch 3 (slots 9-12) seats xitter.gq & nitter.gq (.gq siblings on status.d420.net) ahead of
+    nitter.freedit.eu & nitter.gravitywell.xyz; and STATUS_MIRRORS fails over across .cf -> .org ->
+    .net -> .gq without external API calls."""
     from gamexpress.config import DEFAULT_NITTER
     from gamexpress.sources import twitter as tw
 
-    assert len(DEFAULT_NITTER) == 25
+    assert len(DEFAULT_NITTER) == 27
     assert DEFAULT_NITTER[:4] == [
         "https://nitter.cf",
         "https://xitter.cf",
@@ -12967,14 +12973,22 @@ def test_rotation_7_teapawt_tld_expansion_and_mie_foundation():
         "https://teapawt.net",
         "https://nitter.mie.foundation",
     ]
+    assert DEFAULT_NITTER[8:12] == [
+        "https://xitter.gq",
+        "https://nitter.gq",
+        "https://nitter.freedit.eu",
+        "https://nitter.gravitywell.xyz",
+    ]
     assert tw.STATUS_MIRRORS == (
         "https://nitter.cf",
         "https://xitter.cf",
         "https://teapawt.org",
         "https://teapaw.org",
         "https://teapawt.net",
+        "https://xitter.gq",
+        "https://nitter.gq",
     )
-    for host in DEFAULT_NITTER[4:8]:
+    for host in DEFAULT_NITTER[4:12]:
         assert host in NITTER_SERVES_REAL_RSS, host
 
     status_xml = """<?xml version="1.0" encoding="UTF-8"?>
@@ -13012,6 +13026,29 @@ def test_rotation_7_teapawt_tld_expansion_and_mie_foundation():
         "https://nitter.cf/GenshinImpact/status/2112755760107081755/rss",
         "https://xitter.cf/GenshinImpact/status/2112755760107081755/rss",
         "https://teapawt.org/GenshinImpact/status/2112755760107081755/rss",
+    ]
+
+    # Full .cf + .org + .net TLD outage fails over onto .gq (`xitter.gq` -> `nitter.gq`) cleanly
+    gq_calls: list[str] = []
+
+    class GqOnlyFetcher:
+        async def get_text(self, url, **_kw):
+            gq_calls.append(url)
+            if url == "https://nitter.gq/GenshinImpact/status/2112755760107081755/rss":
+                return status_xml
+            return None
+
+        async def get_json(self, url, **_kw):
+            gq_calls.append(url)
+            raise AssertionError("FxTwitter should not be called when nitter.gq resolves cleanly")
+
+    gq_client = tw.XClient(GqOnlyFetcher(), settings())
+    gq_hit = asyncio.run(gq_client.tweet("2112755760107081755", account="GenshinImpact"))
+    assert gq_hit is not None and gq_hit["id"] == "2112755760107081755"
+    assert gq_client.source_used == {"nitter": 1}
+    assert gq_calls[-2:] == [
+        "https://xitter.gq/GenshinImpact/status/2112755760107081755/rss",
+        "https://nitter.gq/GenshinImpact/status/2112755760107081755/rss",
     ]
 
 
