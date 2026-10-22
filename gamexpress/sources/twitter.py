@@ -14,6 +14,7 @@ import re
 import time
 from calendar import timegm
 from collections.abc import Callable
+from pathlib import Path
 from urllib.parse import quote
 
 import feedparser
@@ -52,22 +53,25 @@ def program_seed(game_key: str, version: str) -> dict:
     return hit if isinstance(hit, dict) else {}
 
 
-def save_program_seed(game_key: str, version: str, entry: dict) -> bool:
+def save_program_seed(game_key: str, version: str, entry: dict, path: Path | None = None) -> bool:
     """Record a newly discovered announcement. Returns True when the file changed, which is what
     tells the workflow there is something to commit back."""
     global _seeds
-    data = json.loads(SEED_PATH.read_text(encoding="utf-8")) if SEED_PATH.exists() else {}
+    target = SEED_PATH if path is None else path
+    data = json.loads(target.read_text(encoding="utf-8")) if target.exists() else {}
     per_game = data.setdefault(game_key, {})
     old = per_game.get(version)
     if isinstance(old, dict) and old.get("id") == entry.get("id"):
         return False
     import time as _t
-    per_game[version] = {**entry, "found_at": int(_t.time())}
-    SEED_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
-                         encoding="utf-8")
-    _seeds = None                                  # next read picks the new entry up
+    per_game[version] = {"found_at": int(_t.time()), **entry}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+                      encoding="utf-8")
+    if path is None:
+        _seeds = None                              # next read picks the new entry up
     log.info("[x:%s] recorded the %s program announcement (%s) in %s",
-             game_key, version, entry.get("id"), SEED_PATH.name)
+             game_key, version, entry.get("id"), target.name)
     return True
 
 

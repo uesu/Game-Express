@@ -23,7 +23,7 @@ from statistics import median
 from urllib.parse import urlparse
 
 from .cards import ESTIMATE_LABELS, mark_test, schedule_payload
-from .config import Game, Ping
+from .config import CONFIG_DIR, Game, Ping
 from .discord import webhook_fingerprint
 from .media import rank, youtube_thumb
 from .models import Item
@@ -437,7 +437,7 @@ def extract_maintenance(item: Item) -> dict:
 
 
 def _clean_name(raw: str) -> str:
-    name = re.sub(r"\s*[\(（][^)）]*[\)）]\s*", "", raw).strip(" .,;:!")
+    name = re.sub(r"\s+", " ", re.sub(r"\s*[\(（][^)）]*[\)）]\s*", " ", raw)).strip(" .,;:!")
     return name if 1 < len(name) <= 40 and not re.search(r"https?://|\d{3,}", name) else ""
 
 
@@ -964,6 +964,37 @@ def _names(value) -> tuple[str, ...]:
     return tuple(str(n).strip().lower() for n in (value or []))
 
 
+def _same_person(a: str, b: str) -> bool:
+    """True when `a` and `b` refer to the same character across short/full source conventions
+    (e.g. 'Velina'/'Velina Airgid', 'Norma'/'Norma Hollowell', 'Manato'/'Komano Manato',
+    'Seth'/'Seth Lowell'), while keeping SP/variant names ('The Herta', 'Dan Heng • ...',
+    'Soldier 0 - Anby') distinct."""
+    na, nb = a.strip().lower(), b.strip().lower()
+    if na == nb:
+        return True
+    short, full = (na, nb) if len(na) <= len(nb) else (nb, na)
+    words = full.split()
+    if " " in short or full.startswith("the ") or not all(w.isalpha() for w in words):
+        return False
+    return short in words
+
+
+def _same_names(left, right) -> bool:
+    """True when two character lists name the same set of characters 1-for-1."""
+    xs, ys = list(_names(left)), list(_names(right))
+    if len(xs) != len(ys):
+        return False
+    if xs == ys:
+        return True
+    used = [False] * len(ys)
+    for x in xs:
+        idx = next((i for i, y in enumerate(ys) if not used[i] and _same_person(x, y)), None)
+        if idx is None:
+            return False
+        used[idx] = True
+    return True
+
+
 def banner_settled(data: dict) -> set[str]:
     """The banner keys that are confirmed and locked on this card."""
     return set(data.get("banners_settled") or [])
@@ -973,9 +1004,9 @@ def _derived_ok(key: str, value, banners: dict) -> bool:
     """A wiki-derived field must agree with the phase lists it comes from. The 4★ summary is the
     list both phases share; re-runs are names featured in a phase, so they are a subset of them."""
     if key == "four_star":
-        return all(_names(banners.get(k)) == _names(value) for k in DERIVED_BANNER_INPUTS[key])
-    phase_names = set(_names(banners.get("phase1"))) | set(_names(banners.get("phase2")))
-    return bool(phase_names) and set(_names(value)) <= phase_names
+        return all(_same_names(banners.get(k), value) for k in DERIVED_BANNER_INPUTS[key])
+    phase_names = list(_names(banners.get("phase1"))) + list(_names(banners.get("phase2")))
+    return bool(phase_names) and all(any(_same_person(v, p) for p in phase_names) for v in _names(value))
 
 
 def _official_owned(prov: dict, key: str) -> bool:
@@ -1007,7 +1038,7 @@ def _confirm(data: dict, prov: dict, key: str, group: str, current, value, banne
     A matching name is one more witness. An official notice locks its name on its own; feed and wiki
     names lock once they agree (two groups). The two derived 4★-summary keys keep their own rule.
     Nothing happens when the names differ: the caller decides what to write in that case."""
-    if not value or _names(current) != _names(value):
+    if not value or not _same_names(current, value):
         return
     groups = set(prov.get(f"b_{key}_by") or []) | {group}
     prov[f"b_{key}_by"] = sorted(groups)
@@ -1039,7 +1070,7 @@ def _fill_phase(data: dict, prov: dict, banners: dict, key: str, group: str, val
     if not value:
         return False
     have = banners.get(key)
-    if have and _names(have) == _names(value):
+    if have and _same_names(have, value):
         _confirm(data, prov, key, group, have, value, banners)
         return False
     owner = prov.get(f"b_{key}", [0])[0]
@@ -1058,7 +1089,7 @@ def _fill_phase(data: dict, prov: dict, banners: dict, key: str, group: str, val
     fill = {g for g in by if g in ("feed", "calendar")}
     if group not in fill:
         return False
-    other_backs_card = bool(other) and _names(other) == _names(have)
+    other_backs_card = bool(other) and _same_names(other, have)
     if fill == {group} or not other_backs_card:
         banners[key] = value
         prov[f"b_{key}"] = [PRIORITY["bannerfeed"], now]
@@ -1220,7 +1251,7 @@ def apply_gacha_wiki(game: Game, data: dict, prov: dict, wiki: dict | None, now:
         owner = prov.get(f"b_{key}", [0])[0]
         have = banners.get(key)
         if have:
-            if _names(have) == _names(value):
+            if _same_names(have, value):
                 _confirm(data, prov, key, "wiki", have, value, banners)
                 continue
             # A value is only as good as the read it came from, so the wiki reader is allowed
@@ -2057,6 +2088,41 @@ def newly_locked_lines(before: dict, after: dict, prov: dict) -> list[str]:
     return lines
 
 
+def _persist_live_program_seed(ctx, game: Game, ver: str, data: dict, now: int) -> None:
+    """Persist an official X Special Program / Broadcast tweet discovered on the live Nitter
+    timeline directly into `program_announcements.json` on the first run that locks the card.
+
+    Previously only fallback lookups in `XClient.program_tweet()` called `save_program_seed()`,
+    so timely announcements caught live on the 5-minute poll (such as Genshin Impact 7.2 tweet
+    2112755760107081755 on 2026-10-21) were never written to `program_announcements.json` and
+    aged out of Nitter a few days later."""
+    if ctx.settings.test_mode or not data.get("announcement_locked") or data.get("announcement_source") != "x":
+        return
+    url = str(data.get("title_url") or "")
+    m = re.search(r"https?://(?:x|twitter)\.com/([A-Za-z0-9_]+)/status/(\d{15,25})", url)
+    if not m:
+        return
+    account, tid = m.group(1), m.group(2)
+    entry = {
+        "id": tid,
+        "account": account,
+        "url": f"https://x.com/{account}/status/{tid}",
+        "posted_ts": int(data.get("announcement_ts") or now),
+        "image": (data.get("images") or [""])[0],
+        "found_at": int(now),
+    }
+    state_path = getattr(ctx.state, "path", None)
+    seed_path = None
+    if state_path is not None:
+        try:
+            if state_path.resolve() != (CONFIG_DIR.parent / "state" / "state.json").resolve():
+                seed_path = state_path.parent / "program_announcements.json"
+        except OSError:
+            seed_path = state_path.parent / "program_announcements.json"
+    from .sources.twitter import save_program_seed
+    save_program_seed(game.key, ver, entry, path=seed_path)
+
+
 async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], records: dict,
                           override: dict, live_info: dict, bootstrapped: bool,
                           estimates: dict | None = None, media: dict | None = None,
@@ -2068,6 +2134,7 @@ async def _handle_version(ctx, game: Game, ver: str, extracts: list[Extract], re
     data = merge(game, ver, extracts, record, override, live_info, now, notes, estimates, media,
                  banner_feed, lead_h=observed_lead_h(records), records=records, wiki=wiki,
                  calendar=(record.get("calendar") or {}).get("banners"))
+    _persist_live_program_seed(ctx, game, ver, data, now)
     ctx.report.extend(notes)
     before = record.get("data") or {}      # merge() copies; record["data"] is reassigned below
     changed_fields = [lbl for key, lbl in CARD_FIELDS if before.get(key) != data.get(key)] if before else []

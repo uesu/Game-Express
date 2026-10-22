@@ -12749,5 +12749,159 @@ def test_news_malformed_cms_img_src_renders_cleanly_across_default_timestamps_an
         assert "unsupported article media URL" in str(exc)
 
 
+def test_clean_name_preserves_word_boundary_around_parenthetical_tags():
+    """Parenthetical tags like '(Fire - Anomaly)' or '(Hydro)' must leave a space when stripped."""
+    assert schedule._clean_name("Phoenix (Fire - Anomaly) is") == "Phoenix is"
+    assert schedule._clean_name("Columbina (Hydro) is") == "Columbina is"
+    zzz_notice = Item(
+        "hoyolab", "zzz", "47100001", "https://www.hoyolab.com/article/47100001",
+        'Exclusive Channel "Into the Flames of Life" Signal Search Details',
+        "During the event, limited S-Rank Agent Phoenix (Fire - Anomaly) and A-Rank Agents "
+        "Seth (Electric - Defense) & Manato (Ether - Support) have significantly boosted drop rates! "
+        '※ Limited S-Rank Agent Phoenix (Fire - Anomaly) is "Star-Studded Cast" exclusive. '
+        '※ Limited S-Rank Agent Velina (Physical - Stun) is "Star-Studded Cast" exclusive.',
+        at8("2026-10-14 12:00"), [], [],
+    )
+    ex = schedule.extract(GAMES["zzz"], zzz_notice)
+    assert ex is not None
+    assert ex.fields["banner_five"] == ["Phoenix"]
+    assert ex.fields["banner_four"] == ["Seth", "Manato"]
+
+
+def test_short_and_full_character_names_confirm_and_lock_phase4_and_reruns():
+    """Short feed/calendar names and full wiki names lock phase1_4 & reruns without overwriting stored names,
+    while keeping distinct SP/variant characters ('The Herta', 'Soldier 0 - Anby', 'Dan Heng • ...') apart."""
+    from gamexpress.sources import gachawiki
+
+    assert schedule._same_person("Velina", "Velina Airgid") is True
+    assert schedule._same_person("Norma", "Norma Hollowell") is True
+    assert schedule._same_person("Seth", "Seth Lowell") is True
+    assert schedule._same_person("Manato", "Komano Manato") is True
+    assert schedule._same_person("Herta", "The Herta") is False
+    assert schedule._same_person("Dan Heng", "Dan Heng • Imbibitor Lunae") is False
+    assert schedule._same_person("Anby", "Soldier 0 - Anby") is False
+
+    wiki_raw = (Path(__file__).parent / "fixtures" / "gachawiki" / "version_zzz_3_3.wiki").read_text()
+    wiki = gachawiki.build_lineup("zzz", wiki_raw, {}, four_star_count=2)
+    rec = {
+        "status": "posted",
+        "data": {
+            "version": "3.3",
+            "banners": {
+                "phase1": ["Phoenix", "Velina"],
+                "phase2": ["Severian", "Norma"],
+                "phase1_4": ["Seth", "Manato"],
+            },
+            "banners_settled": ["phase1", "phase2"],
+        },
+        "prov": {
+            "b_phase1": [50, 1], "b_phase1_by": ["official"],
+            "b_phase2": [50, 1], "b_phase2_by": ["official"],
+            "b_phase1_4": [40, 1], "b_phase1_4_by": ["calendar"],
+        },
+    }
+    data = schedule.merge(
+        GAMES["zzz"], "3.3", [], rec, {}, {"live": "3.3"}, at8("2026-10-22 08:00"), [],
+        wiki=wiki, calendar={"phase1": ["Phoenix", "Velina"], "phase1_4": ["Seth", "Manato"]},
+    )
+    assert data["banners"]["phase1_4"] == ["Seth", "Manato"]
+    assert "phase1_4" in data["banners_settled"]
+    assert "reruns" in data["banners_settled"]
+
+
+def test_live_hoyoverse_special_programs_persist_seeds_and_genshin_72_seed_present():
+    """Live Nitter Special Program tweets persist to program_announcements.json on first lock across all HoYo games."""
+    from unittest.mock import patch
+
+    from gamexpress import runner
+    from gamexpress.config import load_settings
+    from gamexpress.discord import SendResult
+    from gamexpress.sources import twitter as tw
+
+    seed72 = tw.program_seed("genshin", "7.2")
+    assert seed72 is not None
+    assert seed72["id"] == "2112755760107081755"
+    assert seed72["image"] == "https://pbs.twimg.com/media/HVHuNNXXQAAlYwT.jpg?name=orig"
+
+    sent: list[dict] = []
+
+    class _WH:
+        async def send(self, url, payload, stop_on_ambiguous=False):
+            assert cards.validate_payload(payload) == []
+            sent.append(payload)
+            return SendResult(True, 200, f"m-{len(sent)}")
+
+        async def edit(self, url, mid, payload):
+            return SendResult(True, 200, mid)
+
+    with tempfile.TemporaryDirectory() as td, patch.dict(
+        os.environ, {"DISCORD_WEBHOOK_SCHEDULE": "https://discord.com/api/webhooks/111/sched"}
+    ):
+        st = State.load(Path(td) / "state.json")
+        for gk in ("genshin", "starrail", "zzz", "hna"):
+            st.mark_bootstrapped("schedule", gk)
+        ctx = runner.Ctx(
+            settings=load_settings(),
+            games=[GAMES[k] for k in ("genshin", "starrail", "zzz", "hna")],
+            state=st, fetcher=None, webhook=_WH(), x=None, code_sources=None,
+            overrides={}, now=1793350000,
+        )
+        ctx.versions = {"genshin": {"live": "7.2"}, "starrail": {"live": "4.6"}, "zzz": {"live": "3.3"}, "hna": {}}
+        ctx.items = {
+            "genshin": [Item("x", "genshin", "2125000000000000001",
+                             "https://x.com/GenshinImpact/status/2125000000000000001", "",
+                             'Dear Travelers, the Genshin Impact "Song of the Welkin Moon" Special Program will premiere '
+                             'on November 27, 2026 at 07:00 AM (UTC-5)!',
+                             1793350000, ["https://pbs.twimg.com/media/GI73KEYART.jpg?name=orig"], [])],
+            "starrail": [Item("x", "starrail", "2125000000000000002",
+                              "https://x.com/honkaistarrail/status/2125000000000000002", "",
+                              'The Honkai: Star Rail Version 4.7 "Twilight of Stars" Special Program will officially '
+                              'release on October 30 at 19:30 (UTC+8)!',
+                              1793350000, ["https://pbs.twimg.com/media/HSR47KEYART.jpg?name=orig"], [])],
+            "zzz": [Item("x", "zzz", "2125000000000000003",
+                         "https://x.com/ZZZ_EN/status/2125000000000000003", "",
+                         'Zenless Zone Zero Version 3.4 "Hollow Echoes" Special Program will begin on '
+                         'November 20 at 19:30 (UTC+8)!',
+                         1793350000, ["https://pbs.twimg.com/media/ZZZ34KEYART.jpg?name=orig"], [])],
+            "hna": [Item("x", "hna", "2125000000000000004",
+                         "https://x.com/HonkaiNA/status/2125000000000000004", "",
+                         'Honkai: Nexus Anima Version 1.0 Special Program will premiere on November 15, 2026 at 19:00 (UTC+8)!',
+                         1793350000, ["https://pbs.twimg.com/media/HNA10KEYART.jpg?name=orig"], [])],
+        }
+        asyncio.run(schedule.run(ctx))
+        assert len(sent) == 4
+        seeds = json.loads((Path(td) / "program_announcements.json").read_text())
+        assert seeds["genshin"]["7.3"]["id"] == "2125000000000000001"
+        assert seeds["starrail"]["4.7"]["id"] == "2125000000000000002"
+        assert seeds["zzz"]["3.4"]["id"] == "2125000000000000003"
+        assert seeds["hna"]["1.0"]["id"] == "2125000000000000004"
+
+
+def test_fandom_code_parser_ignores_non_wikitable_templates_like_terminology_infobox():
+    """Top-of-page '{{Terminology Infobox | ...}}' templates outside '{| ... |}' wikitables must never emit bogus codes."""
+    from gamexpress.sources import codes
+
+    wikitext = """{{Terminology Infobox
+|title        = Redemption Code
+|type         = Game Systems
+}}
+{| class="wikitable"
+! Code !! Rewards !! Duration
+|-
+| WUWAGIFT || Astrite x50 || Indefinite
+|}
+=== Expired Codes ===
+{| class="wikitable"
+|-
+| OLDWUWACODE || Shell Credit x10,000 || Expired
+|}
+"""
+    payload = {"query": {"pages": {"1": {"revisions": [{"slots": {"main": {"*": wikitext}}}]}}}}
+    hits = {h.code: h for h in codes.parse_fandom(payload, "wuwa")}
+    assert "TERMINOLOGYINFOBOX" not in hits
+    assert hits["WUWAGIFT"].expired is False
+    assert hits["OLDWUWACODE"].expired is True
+
+
 if __name__ == "__main__":
     sys.exit(main())
