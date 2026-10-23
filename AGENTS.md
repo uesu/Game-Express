@@ -370,11 +370,15 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
   depth-1 `[...]` spans unescaped inside `` `[label](url)` ``, emit unmatched/outer-nested
   brackets outside linked spans as `\[` / `\]` (splitting across multiple link spans where
   needed or falling back to escaped brackets plus bare `url` when no linkable text exists),
-  and keep bare self-labelled URLs and raw button/media URL fields unchanged. Never capture
-  the next section in a link; retain a leading newline when formatting Quill headings.
-- HTML bold conversion must balance nested/adjacent spans across media boundaries,
-  not emit literal stray `**`. Pad both sides of decorative closing `✦` markers
-  only when missing; retain source emphasis, not source HTML styling.
+  and keep bare self-labelled/visible-URL links (including bold/emphasis-wrapped URLs in
+  Quill or HTML such as `47174982`) and raw button/media URL fields as plain bare URLs
+  outside `**...**`. Never capture the next section in a link; retain outer spaces/blank
+  lines on inline Quill runs and accumulate multi-op Quill headings/lists before formatting.
+- HTML and Quill emphasis conversion must balance nested/adjacent spans across color runs,
+  block tags, and media boundaries without emitting literal stray `**`/`****` or double-bolded
+  `**[**label**](url)**` heading links, lift leading whitespace out before opening emphasis,
+  and escape literal CMS `*` footnotes/multipliers (`\*`) outside URLs. Pad both sides of
+  decorative closing `✦` markers only when missing; retain source emphasis, not source HTML styling.
 - Missing HoYoLAB publisher nickname falls back to the configured game name;
   supplied nicknames are preserved. This is fallback metadata, not a hardcoded author.
 - Add spaces after unpadded `※`/`✦`; blank lines only between consecutive `※` notes,

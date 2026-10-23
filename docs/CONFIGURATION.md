@@ -454,9 +454,16 @@ message, including single-message layouts with multiple containers.
 Compact consecutive numeric, circled-number, alphabetic and square (`■`) entries
 without rewriting words/markers or crossing ordinary paragraph/section boundaries.
 HTML list items with nested paragraphs must keep `- ` attached to their first
-visible text. Correct converter boundaries, not source-specific wording. Marker
-spacing only pads existing `※`/`✦`; never insert a missing source marker to match
-a screenshot. Preserve source HTML/API/mirror responses and exact media URLs.
+visible text, and multi-op Quill headings/lists accumulate inline runs on the same
+line before applying heading bolding or bullet prefixes. Inline Quill/HTML emphasis
+preserves outer horizontal spaces and blank lines per paragraph without spanning
+`****` across color-split runs or blank lines, unwraps bold/emphasis-wrapped
+self-labelled or visible-URL anchors into clean bare URLs (closing any open bold span
+before bare URLs), flattens nested bold heading links into `**[label](url)**`, and
+escapes literal CMS `*` footnotes/multipliers (`\*`) outside URLs. Correct converter
+boundaries, not source-specific wording. Marker spacing only pads existing `※`/`✦`;
+never insert a missing source marker to match a screenshot. Preserve source
+HTML/API/mirror responses and exact media URLs.
 
 ### Optional measured long-strip grouping — implemented
 
