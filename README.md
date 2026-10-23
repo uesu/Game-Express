@@ -398,14 +398,14 @@ editing YAML. The ones worth knowing:
 | Variable | Default | What it does |
 |---|---|---|
 | `PING_ROLE_ID` | *(unset)* | role(s) to ping. Unset = no ping |
-| `ENABLED_FEATURES` | `schedule,codes` | schedule/code selection; `none` disables all live features, including news |
+| `ENABLED_FEATURES` | `schedule,codes` | schedule/code selection; `none` disables all live features, including news and maintenance |
 | `NEWS_ENABLED` | `0` | explicit opt-in; adds news unless globally disabled |
 | `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | news subset, independent of schedule/codes |
 | `NEWS_GROUP_LONG_STRIPS` | `0` | optional measured grouping; off retains article order |
 | `NEWS_TIMESTAMPS` | `0` | optional `<t:EPOCH:…>` conversion in rendered news text |
 | `NEWS_EXPAND_FULL` | `0` | optional multi-page full articles (up to 12 pages / 120,000 chars / 120 media) |
 | `MAINTENANCE_ENABLED` | `0` | explicit opt-in for `Pre-Load Started` / `Maintenance Started` |
-| `MAINTENANCE_GAMES` | *(empty)* | explicit per-game list required to activate maintenance alerts |
+| `MAINTENANCE_GAMES` | *(empty)* | explicit per-game list (`all` or game keys) required to activate maintenance alerts |
 | `GAMES` / `ENABLE_GAMES` | all enabled / — | run a subset · switch prepared games on |
 | `LOOKBACK_HOURS` | 72 | how far back official posts are considered |
 | `CODES_MIN_SOURCES` | 2 | independent sources needed for an unverified code |
@@ -414,9 +414,9 @@ editing YAML. The ones worth knowing:
 
 Webhook routing, most specific first:
 `DISCORD_WEBHOOK_<FEATURE>_<GAME>` → `DISCORD_WEBHOOK_<FEATURE>` → `DISCORD_WEBHOOK_URL`.
-This fallback chain is for schedule/codes only; news requires its own dedicated per-game
-secret. `python -m gamexpress validate` prints resolved routing. Repository variables and secrets
-are merged from workflow JSON blobs; no per-variable YAML wiring is needed.
+This fallback chain is for schedule/codes only; news and maintenance require their own dedicated
+per-game secrets. `python -m gamexpress validate` prints resolved routing. Repository variables
+and secrets are merged from workflow JSON blobs; no per-variable YAML wiring is needed.
 
 ---
 
@@ -424,15 +424,18 @@ are merged from workflow JSON blobs; no per-variable YAML wiring is needed.
 
 **➡️ Full rules: [docs/ACCURACY.md](docs/ACCURACY.md).** The short version:
 
-1. **Detect** — official posts from HoYoLAB, official X accounts and the Kuro site, filtered by
-   per-game patterns. Recaps, replays, "has ended" and merch are ignored.
+1. **Detect** — official posts from HoYoLAB, official X accounts, the Kuro site, and the official
+   Reddit backup (`REDDIT_ENABLED=1`), filtered by per-game patterns. Recaps, replays,
+   "has ended" and merch are ignored.
 2. **Extract from official text only** — times need an explicit offset (`UTC+8`; `(server time)`
-   is never trusted), versions come from `Version 4.6` / `Ver.4.6` / `V4.6`, banners only from
+   is never trusted), versions come from `Version 4.6` / `Ver.4.6` / `V4.6` (plus epithet notices
+   like `"Luna II"` and unnumbered `"1.0"` pre-release launch notices), banners only from
    names following "5-star character" / "S-Rank Agent" / "5-star Resonator" — bare after the tier
    phrase, or bare after a closing quote in the epithet shape, and never a quoted *channel* title
    after the game's gacha-mode phrase (`Signal Search`, `Event Wish`, `Convene`, …).
-3. **Merge with provenance** — *overrides > official notice > official tweet > launcher signal >
-   countdown estimate > learned pre-install fallback > banner feed*.
+3. **Merge with provenance** — *overrides > official notice > official tweet > official Reddit >
+   launcher signal > countdown estimate > learned pre-install / cadence fallback > official
+   calendar > game wiki > banner feed*.
 4. **Unknown is `TBA`**, banners always carry `(STC)`, and no estimate can overwrite an official
    value.
 5. **Only an announcement opens a card.** A *Special Program* / *Special Broadcast* creates it;
@@ -445,11 +448,13 @@ are merged from workflow JSON blobs; no per-variable YAML wiring is needed.
    reposts.
 
 **The code gate.** A code posts when **any one** of these is true: it comes from an **official**
-source; a **redeem-validator** (seria or Hum-Bao, which try every code on a real account) says it
-works and none says it expired; or **≥ `CODES_MIN_SOURCES` independent** community sources list
-it as active and **none** lists it as expired. An explicit *valid until* date that has passed
-beats every source that still lists the code. Anything else waits as *pending* for up to 14 days,
-with the reason in the job summary.
+source (HoYoLAB livestream module or official X / HoYoLAB / Reddit post); a **redeem-validator**
+(seria or Hum-Bao, which try every code on a real account) says it works and none says it
+expired; or **≥ `CODES_MIN_SOURCES` independent** community families (e.g. `ennead`/`ogc`,
+`fandom`, `wuthering.gg`, `reddit`) list it as active and **none** lists it as expired (preserving
+cached rewards and prior pending witnesses across transient single-poll upstream outages). An
+explicit *valid until* date that has passed beats every source that still lists the code. Anything
+else waits as *pending* for up to 14 days, with the current reason in the job summary.
 
 ---
 
@@ -528,7 +533,7 @@ Flags: `--dry-run --only --game --repost --kind --ping --out --unlaunched --verb
 | Tweet details | nitter.cf → xitter.cf → teapawt.org → teapaw.org → teapawt.net → xitter.gq → nitter.gq by id (when the account is known) → FxTwitter → fixupx → vxTwitter → the nitter text. A status mirror that fails twice in one run is skipped for the rest of it |
 | Reddit backup & code witness | built-in Reddit/Redlib fleet (17 entries across healthy Redlib dual-path mirrors + partial/runner-gated tail, plus 3 proxies `vxreddit.com` → `embedez.com` → `embeddit.deltandy.me` and `arctic-shift.photon-reddit.com` archive; optional `REDDIT_FEED_TOKEN` drives `[0] www.reddit.com` → `[1] old.reddit.com` 1-request RSS fast path + `.json` fallback; `REDDIT_ENABLED=0` disables all Reddit HTTP calls) |
 | Codes | up to 10 sources per game (validators, APIs, wikis, community witnesses, official posts), fetched in parallel, behind the gate above |
-| Version / pre-install | HoYoPlay `getGameBranches` / Kuro launcher index |
+| Version / pre-install / launch media | HoYoPlay `getGameBranches` + `getAllGameBasicInfo` / Kuro `G153` game & launcher background indexes |
 
 A dead source is logged, shown in the job summary, and skipped. Everything is fetched in parallel
 (max 12 connections, per-request timeouts), so a run takes seconds even when several hosts are

@@ -212,7 +212,7 @@ trustworthy as any other official post, because that is what it is.
 | What the source gives | What the card uses |
 |---|---|
 | `pbs.twimg.com/media/X.jpg` | `…X.jpg?name=orig` (X serves `small` unless you ask) |
-| `pbs.twimg.com/media/X?format=jpg&name=large` | unchanged — it already asks for a size |
+| `pbs.twimg.com/media/X?format=jpg&name=large` | preserved as-is (`twimg_orig` never rewrites an explicit size), while `_same_file()` & `rank()` deduplicate it against `X.jpg?name=orig` and pick `name=orig` when both appear |
 | `nitter.<instance>/pic/media%2FX.jpg` | `https://pbs.twimg.com/media/X.jpg?name=orig` |
 | `i.ytimg.com/vi/ID/hqdefault.jpg` | `…/maxresdefault.jpg` (1280×720 instead of 480×360) |
 | `fastcdn.hoyoverse.com/content-v2/…` | unchanged — already the full-size article cover |
@@ -382,8 +382,8 @@ page fetcher, and so were the ennead calendars. The production reachability of t
   - ZZZ 3.2 Phase II (Roxy, Promeia; Corin, Billy): start 2026-09-30 12:00 and end 2026-10-20 14:59 UTC+8, matching the post.
   - Star Rail 4.6: Pearl and Evanescia, and the Qingque/Xueyi/Misha 4★ lists match the posts. **Mortenax Blade (4.6 Phase II) is already listed** with start 1792580400 (2026-10-21 19:00 UTC+8, the same stamp as the hub). Star Rail stamps run about 7 hours later than the posts' "server time".
   - ZZZ 3.3 Phase I **is listed** (checked 2026-10-09, after the channel tweets): Phoenix and Velina at S-rank, Seth and Manato at A-rank, starting 1792544400 — the names the X tweets gave, plus the 4★ pair the tweets do not carry. Phase II is not listed yet.
-  - Not yet listed: Genshin 7.1 Phase II.
-  - **Status: not integrated.** It is a third-party relay of HoYoverse's game data, not an official post, so it would count as a hub-level source. Whether it may confirm a name is an operator decision (see the note below).
+  - Not yet listed on 2026-10-09: Genshin 7.1 Phase II.
+  - **Status: integrated via `sources/calendarfeed.py` (`PRIORITY["calendar"] = 7`).** Counted as one of the three independent confirmation groups alongside `feed` (`hub.json`) and `wiki` (`gachawiki.py`).
 - **`hakush.in` / `seriaati/hakushin-py`** (Python async wrapper): the wrapper's README says it is mainly for beta game data and that Wuthering Waves is "not planned". Its docs site was not reachable (404 on the GitHub Pages address), and `sr.yatta.moe` and `gi.yatta.moe` `/api/v2/en/banner` return 404. **No banner schedule was found there, so not used.**
 - **Other async wrappers found by search:** `seriaati/genshin.py` (HoYoLAB/Miyoushe API, asyncio + pydantic) and `seriaati/enka-py` (showcase data). Neither is a banner-schedule source. Not used.
 - **`api.ennead.cc/mihoyo`** root: codes only (`/codes` for Genshin, Star Rail, ZZZ, Honkai, Themis).
@@ -402,7 +402,7 @@ page fetcher, and so were the ennead calendars. The production reachability of t
 | MoonShadow1976 WW asset repos | manually maintained, last updated Jan 2026, so too stale for codes |
 | DuolaD/HoYo_Versioncatcher | launcher-data repo; led us to the launcher endpoints |
 | genshin.dev | character/game data API, not schedules or codes |
-| gachabase.net · nanoka.cc · sr.yatta.moe · lunaris.moe · ambr.top | databases, listed in [CREDITS.md](CREDITS.md#community-databases--resources). No public schedule/banner API was verified, so **banner names come from official notices or `config/overrides.json`** |
+| gachabase.net · nanoka.cc · sr.yatta.moe · lunaris.moe · ambr.top | databases, listed in [CREDITS.md](CREDITS.md#community-databases--resources). No public schedule/banner API was verified, so **banner names come from official notices, `Kitsudock-data` (`hub.json`), the `api.ennead.cc` calendars, the Fandom wikis, or `config/overrides.json`** |
 
 ## Reddit & Redlib fleet (2026-10-22)
 
@@ -520,10 +520,11 @@ confuse the earlier mirrored-article 5625 parser test with this article.
 ## Current official-news paging policy (supersedes earlier one-message-only wording)
 
 Keep fitting full articles unchanged in one message (possibly multiple containers).
-If that fails, permit at most two actual messages when normalized source text plus
-title/byline once is <=7,000 characters and both payloads validate independently
-against 4,000 text characters / 40 components / 1–10 gallery items. The 7,000
-ceiling is fixed policy, not a Discord limit and not a new environment variable.
+By default (`NEWS_EXPAND_FULL=0`), if that fails, permit at most two actual messages
+when normalized source text plus title/byline once is <=7,000 characters and both
+payloads validate independently against 4,000 text characters / 40 components /
+1–10 gallery items (setting `NEWS_EXPAND_FULL=1` lifts that ceiling up to an explicit
+`12`-page / `120,000`-character / `120`-media cap before excerpt fallback).
 Preserve complete wording and source media order. Prefer source block boundaries;
 use safe paragraph boundaries only for larger text blocks. Never split a link or
 unbalanced bold span. If packing fails, use the existing one-container excerpt
@@ -606,3 +607,4 @@ endpoints and existing caches only (never headless browsers or HTML scraping):
 |---|---|---|
 | GI / HSR / ZZZ / HNA | HoYoPlay `getAllGameBasicInfo` (`hyp-api.hoyoverse.com`) + existing HoYoLAB / X Special Program cache | (1) version-matched `.webm`/`.mp4` background clip, (2) version-matched `.webp`/image background, (3) `overrides.json` / Special Program key art, (4) omit gallery; version/launch lock separates selected tier so late launch video upgrades initial artwork inside `LATE_MEDIA_EDIT_WINDOW_S` (including opaque shortlink `bg["id"]` rotations within `[-11d, +7d]`) while blocking prior-version and Phase II swaps |
 | Wuthering Waves | Kuro global launcher `G153/index.json` + lazy `background/{hash}/en.json` (`aki-game.net` / `aki-game.com` `.mp4` + `firstFrameImage` `.webp`) + structured website/article JSON (`hw-media-cdn-mingchao.kurogame.com`) + Special Program X/Kuro art | (1) version-matched `.mp4` clip keeping signed `?auth_key=…` query parameters intact and rejecting prior-version URLs when `en.json` lags behind `default.version`; signed URLs expire and renew inside `LATE_MEDIA_EDIT_WINDOW_S` (`6 h` / `21,600 s`, `MAX_LATE_MEDIA_ATTEMPTS = 3` consecutive failed `PATCH` calls reset on `res.ok`, `MAX_LATE_EDITS = 6` total succeeded `PATCH` calls, per-run URL check deduplication) only when corroborating source metadata (`hash`/`md5`/`size`+`full_version`) binds the exact launch asset (never bare host/path alone), otherwise falling back to (2) matching-version artwork, (3) `overrides.json` / Special Program key art, or (4) cleanly omitting media without durable mirroring |
+| ANANTA | Official X (`@Ananta_EN`) + verified official Reddit (`u/AnantaOfficial`) + `config/overrides.json` / `program_announcements.json` (`easebar.com`, `anantagame.com`, `netease.com`, `163.com`, `pbs.twimg.com`, `redd.it` allowlisted) | Tier 3 (`overrides.json` `image` pin → Special Program / launch key art) → Tier 4 clean gallery omission until NetEase publishes a structured global launcher background API |

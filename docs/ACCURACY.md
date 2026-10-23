@@ -16,17 +16,20 @@ Related: [SOURCES.md](SOURCES.md) (what each upstream serves) ·
 
 ## The schedule pipeline
 
-1. **Detect**: official posts are read from HoYoLAB, official X accounts and the Kuro site, then
-   filtered by per-game patterns (`special program`, `special broadcast`, maintenance /
-   pre-install notices, banner notices, explicit "redemption code" posts). Posts that aren't
-   announcements are ignored: recaps, replays, "has ended", merch.
+1. **Detect**: official posts are read from HoYoLAB, official X accounts, the Kuro site, and
+   the official Reddit failover backup (`REDDIT_ENABLED=1`), then filtered by per-game patterns
+   (`special program`, `special broadcast`, maintenance / pre-install notices, banner notices,
+   explicit "redemption code" posts). Posts that aren't announcements are ignored: recaps,
+   replays, "has ended", merch.
 2. **Extract, from official text only**:
    - **Program time** comes from the post's datetime with an explicit offset: `UTC+8`,
      `UTC-4`, `GMT+8`. `(server time)` is never trusted, because it differs per region.
      Missing years are inferred from the post date (`December 19 at 19:30 (UTC+8)`).
-   - **Version**: `Version 4.6` / `Ver.4.6` / `V4.6`. Genshin tweets that only say "the new
-     version" get the number from the matching HoYoLAB post, or from the official launcher's
-     live version + 0.1.
+   - **Version**: `Version 4.6` / `Ver.4.6` / `V4.6`. Posts that omit the numeric version —
+     such as Genshin tweets that only say "the new version", English HoYoLAB epithet maintenance
+     previews (`Version "Luna II" Update Maintenance Preview`), or unnumbered pre-release global
+     launch notices (`"1.0"` on `HNA` / `ANANTA`) — resolve the number from sibling notices,
+     `version_name` / nearby timestamps in tracked records, launcher `pre`, or `live + 0.1`.
    - **Maintenance**: pre-install, start, and end (end comes from an explicit end time, a range
      like `04:00 - 11:00 (UTC+8)`, or "estimated to take 5 hours"). Compensation deadlines and
      event end dates are never mistaken for maintenance.
@@ -44,8 +47,10 @@ Related: [SOURCES.md](SOURCES.md) (what each upstream serves) ·
      name looks like a real name, and no official source disagrees. Otherwise the card shows
      `4 Star Characters: TBA` and the job summary says why. Once two official posts disagree,
      that phase stays TBA until you confirm the names in `config/overrides.json`.
-3. **Merge with provenance.** Priority is *overrides > official notice > official tweet >
-   launcher signal > countdown estimate > learned pre-install fallback > banner feed*.
+3. **Merge with provenance.** Priority is *overrides (`100`) > official notice (`50`/`45`) >
+   official tweet (`40`) > official Reddit (`38`) > launcher signal (`20`) > countdown estimate
+   (`10`) > learned pre-install / cadence fallback (`9`) > official calendar (`7`) > game wiki
+   (`6`) > banner feed (`5`)*.
 4. **Unknown values are TBA, and banners always carry (STC).** Countdown and learned pre-install
    values are explicitly labelled estimated; neither can overwrite an official value.
 5. **Only an announcement opens a card.** A *Special Program* / *Special Broadcast* / livestream
@@ -227,15 +232,19 @@ Fan reposts are ignored, and a title that matches the wrong version or phase is 
 ## The code gate
 
 A code is posted when **any one** of these is true:
-1. it comes from an **official** source: the HoYoLAB livestream module, or an official X /
-   HoYoLAB post that explicitly lists redemption codes;
+1. it comes from an **official** source: the HoYoLAB livestream module, or a verified official
+   X, HoYoLAB, or Reddit publisher post (`Official Reddit`) that explicitly lists redemption codes;
 2. a **redeem-validator** (hoyo-codes.seria.moe or Hum-Bao, which both try every code on a real
    account) reports it working, and no validator reports it expired;
-3. at least `CODES_MIN_SOURCES` (default **2**) *independent* community sources list it as
+3. at least `CODES_MIN_SOURCES` (default **2**) *independent* community source families list it as
    active **and no source lists it as expired**.
-   - Open Gacha Codes and ennead count as one source, because they share a backend.
-   - PromoGacha copies seria and the wikis, so it counts as whichever of those it copied.
-   - The other independent sources are fandom and wuthering.gg.
+   - Open Gacha Codes and ennead count as one family (`ennead`), because they share a backend.
+   - PromoGacha copies seria, ennead and the wikis, so it counts as whichever upstream it copied.
+   - The other independent community families are `fandom` (all 6 wikis), `wuthering.gg`, and
+     community `reddit` (`reddit:<Subreddit>` across all 6 games).
+   - If a previously seen witness's upstream fails (`None`) on a single poll while a second
+     independent family arrives, that pending witness and its cached rewards are retained across
+     the transient outage without reviving sources that answered HTTP 200 without listing the code.
 
 ### Expiry dates come first
 

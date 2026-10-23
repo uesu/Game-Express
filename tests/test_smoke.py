@@ -14621,7 +14621,84 @@ def test_final_pre_merge_edge_cases_and_repo_doc_consistency():
         assert f"{len(config.DEFAULT_REDDIT_PROXIES)} proxies" in readme_t
         assert f"{len(config.DEFAULT_REDDIT)} Reddit/Redlib entries" in security_t
         assert "arknights" not in sources_t.lower()
-        assert "October 22, 2026" in privacy_t and "October 22, 2026" in terms_t
+        assert "Status: not integrated." not in sources_t
+        assert "October 23, 2026" in privacy_t and "October 23, 2026" in terms_t
+        assert "aki-game.net" in privacy_t and "easebar.com" in privacy_t
+
+        import re
+
+        # Full repository-wide Markdown link, heading-anchor, changelog-index, and prod-manifest guard:
+        # skips cleanly in docs-free production checkouts, fails immediately if any link, `#anchor`,
+        # `docs/changelog/README.md` index entry, or `PROD-REPO-SETUP.md` file count goes stale!
+        def _gh_slug(heading: str) -> str:
+            s = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", heading.strip().lower())
+            s = s.replace("`", "").replace("*", "")
+            return "".join(ch if (ch.isalnum() or ch in "-_") else ("-" if ch.isspace() else "") for ch in s)
+
+        def _strip_inline_code(line: str) -> str:
+            return re.sub(r"(`+)[^`]*?\1", "", line)
+
+        md_files = sorted(
+            p for p in ROOT.rglob("*.md")
+            if ".git" not in p.parts and ".pytest_cache" not in p.parts and ".venv" not in p.parts
+        )
+        anchors_by_file: dict[Path, set[str]] = {}
+        h2_slugs: dict[Path, list[tuple[str, str]]] = {}
+        for p in md_files:
+            seen: dict[str, int] = {}
+            anchors: set[str] = set()
+            h2s: list[tuple[str, str]] = []
+            in_fence = False
+            for raw_line in p.read_text(encoding="utf-8").splitlines():
+                if raw_line.strip().startswith("```"):
+                    in_fence = not in_fence
+                    continue
+                if in_fence:
+                    continue
+                m = re.match(r"^(#{1,6})\s+(.*)$", raw_line)
+                if m:
+                    base = _gh_slug(m.group(2))
+                    n = seen.get(base, 0)
+                    seen[base] = n + 1
+                    full_slug = base if n == 0 else f"{base}-{n}"
+                    anchors.add(full_slug)
+                    if len(m.group(1)) == 2:
+                        h2s.append((m.group(2).strip(), full_slug))
+            anchors_by_file[p.resolve()] = anchors
+            h2_slugs[p.resolve()] = h2s
+
+        for p in md_files:
+            in_fence = False
+            for lineno, raw_line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+                if raw_line.strip().startswith("```"):
+                    in_fence = not in_fence
+                    continue
+                if in_fence:
+                    continue
+                clean_line = _strip_inline_code(raw_line)
+                for _lbl, target in re.findall(r"\[([^\]]+)\]\(([^)]+)\)", clean_line):
+                    target = target.strip()
+                    if target.startswith(("http://", "https://", "mailto:")):
+                        continue
+                    path_part, _, frag = target.partition("#")
+                    dest = (p.parent / path_part).resolve() if path_part else p.resolve()
+                    assert dest.exists(), f"{p}:{lineno}: broken link target {target!r}"
+                    if frag and dest in anchors_by_file:
+                        assert frag in anchors_by_file[dest], f"{p}:{lineno}: missing anchor #{frag} in {dest.name}"
+
+        changelog_md = (ROOT / "docs" / "changelog" / "CHANGELOG.md").resolve()
+        changelog_idx = (ROOT / "docs" / "changelog" / "README.md").read_text(encoding="utf-8")
+        for idx_i, (title, slug) in enumerate(h2_slugs[changelog_md]):
+            assert f"(CHANGELOG.md#{slug})" in changelog_idx, f"CHANGELOG section missing from docs/changelog/README.md: {title!r} (#{slug})"
+            if idx_i > 0:
+                assert "unreleased" not in title.lower(), f"Historical shipped CHANGELOG section still marked unreleased: {title!r}"
+
+        prod_doc = (ROOT / "docs" / "PROD-REPO-SETUP.md").read_text(encoding="utf-8")
+        py_count = sum(1 for p in (ROOT / "gamexpress").rglob("*.py") if "__pycache__" not in p.parts)
+        runtime_count = py_count + 8
+        assert f"# expect {runtime_count + 2} ({runtime_count} runtime + 2 policy files)" in prod_doc
+        assert f"# {runtime_count + 4} if you also copied the two python-bump files" in prod_doc
+        assert "15 Redlib mirrors" not in (ROOT / "docs" / "TROUBLESHOOTING.md").read_text(encoding="utf-8")
 
 
 def test_hotfix_monitor_764_765_none_extracts_runner_isolation_ananta_hna_and_state_hardening():
@@ -15037,7 +15114,8 @@ def test_audit_fix_2_epithet_inference_prerelease_1_0_and_non_cadence_countdown_
 
 
 def test_audit_fix_3_kuro_g153_launcher_background_allowlist_and_ww_lifecycle():
-    from gamexpress import http as http_mod, maintenance
+    from gamexpress import http as http_mod
+    from gamexpress import maintenance
     from gamexpress.sources import kuro as kuro_mod
 
     fx = json.loads((Path(__file__).resolve().parent / "fixtures" / "kuro_launcher_background_trimmed.json").read_text(encoding="utf-8"))
@@ -15191,7 +15269,8 @@ def test_audit_fix_4_5_twimg_dedup_shortlink_upgrade_and_6_game_live_state_zero_
     from unittest.mock import AsyncMock, patch
 
     from gamexpress import maintenance, media
-    from gamexpress.sources import kuro as kuro_mod, launcher as launcher_mod
+    from gamexpress.sources import kuro as kuro_mod
+    from gamexpress.sources import launcher as launcher_mod
 
     # 1) Tweet photo query-format (`?format=jpg&name=large`) deduplicates cleanly against `.jpg?name=orig` in any order!
     large_u = "https://pbs.twimg.com/media/HTxU4O3W4AAGolV?format=jpg&name=large"
@@ -15353,9 +15432,7 @@ def test_audit_fix_6_cards_button_512_guard_codeposter_pending_outage_and_peer_s
             "wuthering.gg": None,
             "ogc:wuwa": [models.CodeHit("WUWA38LIVE", "ogc", None)],
         }
-        ctx.code_sources = types.SimpleNamespace(
-            fetch=lambda sp: asyncio.sleep(0, result=poll2b[sp] if sp in poll2b else [])
-        )
+        ctx.code_sources = types.SimpleNamespace(fetch=lambda sp: asyncio.sleep(0, result=poll2b.get(sp, [])))
         asyncio.run(codeposter.run(ctx))
         ww_posted = ctx.state.code_records("wuwa")["WUWA38LIVE"]
         assert ww_posted["status"] == "posted"

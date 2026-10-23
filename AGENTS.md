@@ -49,7 +49,7 @@ behaviours are deliberate (and must not be "fixed"), how to verify a change, and
 already cost a broken run. `README.md` is the user-facing manual and `docs/` is its reference
 material; this file is the maintainer's mental model.
 
-Last updated **2026-10-22**.
+Last updated **2026-10-23**.
 
 ---
 
@@ -110,9 +110,11 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    maintains both halves.
 3. **Scraped URLs go through `cards.safe_url()`, always.** Everything a card links to comes
    from somebody else's server. `safe_url` keeps http(s)-only, strips nothing silently but
-   rejects control characters, and percent-encodes parentheses so a `)` cannot close a markdown
-   link early and inject a phishing line. `link_button()` returning `None` is deliberate: drop
-   one button, still post the card. See `docs/SECURITY.md` §2.
+   rejects control characters, caps URLs at `SAFE_URL_MAX = 1024`, and percent-encodes
+   parentheses so a `)` cannot close a markdown link early and inject a phishing line.
+   `link_button()` additionally enforces Discord's stricter `BUTTON_URL_MAX = 512` limit and
+   returns `None` deliberately so an oversized or invalid link drops only that button (and
+   empty Action Rows are never emitted), still posting the card. See `docs/SECURITY.md` §2.
 4. **GitHub's native `schedule:` stays disabled.** Two schedulers raced in News-Express and
    double-posted. cron-job.org is the single trigger.
 5. **The first run for a new game/feature seeds silently.** `BOOTSTRAP_POST` off = record what
@@ -318,13 +320,13 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
   `docs/changelog/`.
 - **README structure is an invariant.** Keep the root README a concise user manual,
   not an append-only handoff log. Every shipped feature must appear in its numbered
-  "What it posts" section (schedule, codes, optional official news). Put detailed
-  setup, variables/secrets, rendering policies, media bounds and verification in
-  existing `docs/` references; update `docs/README.md` with working links. Integrate
-  corrections into the canonical section instead of appending "latest" or
-  "supersedes earlier" policy dumps. Keep **Legal & credits as the final root
-  README section**, preserve its existing links/attribution, and never append a
-  feature beneath it. Keep changelog entries newest-first with a matching row in
+  "What it posts" section (schedule, codes, optional official news, optional pre-load &
+  maintenance started). Put detailed setup, variables/secrets, rendering policies, media
+  bounds and verification in existing `docs/` references; update `docs/README.md` with
+  working links. Integrate corrections into the canonical section instead of appending
+  "latest" or "supersedes earlier" policy dumps. Keep **Legal & credits as the final root
+  README section**, preserve its existing links/attribution, and never append a feature
+  beneath it. Keep changelog entries newest-first with a matching row in
   `docs/changelog/README.md`; do not put current-policy appendices after old history.
   Verify touched paths/anchors, headings, defaults and duplicate/stale statements.
   Passing CI or an apply check is not proof of a fully audited manual or bug-free
@@ -394,10 +396,12 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
 ## Current official-news paging policy (supersedes earlier one-message-only wording)
 
 Keep fitting full articles unchanged in one message (possibly multiple containers).
-If that fails, permit at most two actual messages when normalized source text plus
-title/byline once is <=7,000 characters and both payloads validate independently
-against 4,000 text characters / 40 components / 1–10 gallery items. The 7,000
-ceiling is fixed policy, not a Discord limit and not a new environment variable.
+By default (`NEWS_EXPAND_FULL=0`), if that fails, permit at most two actual messages
+when normalized source text plus title/byline once is <=7,000 characters and both
+payloads validate independently against 4,000 text characters / 40 components /
+1–10 gallery items (the 7,000 ceiling is default policy; explicit `NEWS_EXPAND_FULL=1`
+lifts it up to the bounded `12`-page / `120,000`-character / `120`-media cap before
+falling back to a labelled single-container excerpt).
 Preserve complete wording and source media order. Prefer source block boundaries;
 use safe paragraph boundaries only for larger text blocks. Never split a link or
 unbalanced bold span. If packing fails, use the existing one-container excerpt

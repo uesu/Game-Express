@@ -19,9 +19,10 @@ how ZZZ 3.3 kept the slot word `Agent` on the card for a full day in October 202
 | priority | source | what it may do |
 |---|---|---|
 | 100 | `config/overrides.json` | anything — the human is always right |
-| 50 / 45 / 40 | HoYoLAB · Kuro · news page · X | the official line-up |
+| 50 / 45 / 40 / 38 | HoYoLAB · Kuro · news page · X · official Reddit | the official line-up |
 | 50 / 45 | title search (HoYoLAB search, Kuro menu) | the official notice of the card's own version, any age; a hit is a candidate, the lock rules still apply |
-| 9 | cadence patterns | timestamps only |
+| 20 / 10 / 9 | launcher · countdown sites · cadence patterns | timestamps only |
+| 7 | `api.ennead.cc` official game calendars (`calendar`) | fill 5★ / 4★ names on GI / HSR / ZZZ and confirm another source |
 | **6** | **the game wikis (this doc)** | **fill a banner slot that is still TBA, confirm a name another source gave, and revise or withdraw its own unconfirmed entries** |
 | 5 | `hub.json` banner feed | fill a 5★ phase that is still TBA |
 

@@ -32,12 +32,18 @@ Everything on a card except the game's own `config/games.json` entry is scraped 
 else's server. Two sinks matter:
 
 **Links.** `cards.safe_url()` is the single gate. A URL reaches a card only if it is plain
-`http(s)`, free of whitespace and control characters, and shorter than 1 KiB; parentheses are
-percent-encoded. That blocks the two concrete attacks:
+`http(s)`, free of whitespace and control characters, and no longer than `SAFE_URL_MAX` (1 KiB);
+parentheses are percent-encoded. Discord's stricter `BUTTON_URL_MAX = 512` cap is additionally
+enforced in `cards.link_button()` and `cards.validate_payload()` alongside non-empty `1..5`
+Action Row validation, and direct media preflight/dimension checks allowlist only verified
+official publisher CDNs (`hoyoverse.com`, `hoyolab.com`, `mihoyo.com`, `kurogame.com`,
+`kurogames.com`, `aki-game.net`, `aki-game.com`, `easebar.com`, `anantagame.com`, `netease.com`,
+`163.com`) plus X/Reddit media hosts where applicable. That blocks the concrete attacks:
 
-* `javascript:` / `data:` in a button would make Discord reject the **whole message**, so one
-  poisoned field would silently kill a real announcement. Now the single button is dropped
-  (`link_button()` returns `None`) and the card still posts.
+* `javascript:` / `data:` or an oversized (`>512`-char) URL in a link button would make Discord
+  reject the **whole message** (`HTTP 400 Invalid Form Body`), so one poisoned or bloated link
+  would silently kill a real announcement. Now only that single button is dropped
+  (`link_button()` returns `None`, empty Action Rows are omitted) and the card still posts.
 * `)` inside a markdown link closes it early:
   `[title](https://ok/x) [FREE CODES](https://evil)` renders as an extra clickable link that
   nobody here wrote — a phishing line inside a card readers trust *because* it came from this
