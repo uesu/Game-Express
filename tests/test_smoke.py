@@ -15273,5 +15273,119 @@ def test_audit_fix_4_5_twimg_dedup_shortlink_upgrade_and_6_game_live_state_zero_
         assert idle_path.read_text(encoding="utf-8") == snap_before
 
 
+def test_audit_fix_6_cards_button_512_guard_codeposter_pending_outage_and_peer_seen_media():
+    from gamexpress import cards, codeposter, models
+    from gamexpress.state import State
+
+    # 1) All 4 features: `link_button()` drops >512-char URLs (while `safe_url()` still permits <=1024-char
+    #    gallery/markdown URLs), and `validate_payload()` rejects empty action rows & >512-char button URLs.
+    url_600 = "https://www.hoyolab.com/article/47151000?utm_extra=" + ("x" * 555)
+    assert cards.safe_url(url_600) == url_600
+    assert cards.link_button("Read Post", url_600) is None
+    assert cards.validate_payload({
+        "flags": cards.IS_COMPONENTS_V2,
+        "components": [cards.container([{"type": 1, "components": []}])],
+    }) == ["action row needs 1-5 buttons"]
+
+    # News card with a 600-char article URL STILL renders validly: header markdown link works, oversized
+    # `Read Post` button drops cleanly while keeping `Citlali News` + `Donate` buttons intact!
+    long_url_item = models.Item(
+        source="hoyolab",
+        game="genshin",
+        id="47999999",
+        url=url_600,
+        title="Event Overview",
+        text="",
+        published_ts=1792720000,
+        article_blocks=[{"kind": "text", "text": "Travelers, a new event begins soon!"}],
+    )
+    rendered_news = cards.news_payloads(GAMES["genshin"], long_url_item)
+    assert len(rendered_news) == 1 and cards.validate_payload(rendered_news[0]) == []
+
+    # 2) Feature 2 (`codeposter.run`):
+    #    a) Same-family addition (`ennead` -> `ennead, ogc`, live `OKTCHX26J57Q` case) keeps `status == "pending"`
+    #       AND updates `rec["gate"]` cleanly to `"only ennead, ogc"`.
+    #    b) Transient `None` outage on first witness (`wuthering.gg` 503 on Poll 2) still corroborates cleanly when
+    #       second independent family (`ogc`) reports active AND preserves Poll 1 `rewards`!
+    #    c) Upstream answering HTTP 200 WITHOUT the code is NOT revived across polls!
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "state.json"
+        ctx = make_ctx(path, now=1792700000, DISCORD_WEBHOOK_CODES_GENSHIN=HOOK, DISCORD_WEBHOOK_CODES_WUWA=HOOK)
+        ctx.state.mark_bootstrapped("codes", "genshin")
+        ctx.state.mark_bootstrapped("codes", "wuwa")
+        ctx.items = {"genshin": [], "wuwa": []}
+
+        # Poll 1: `OKTCHX26J57Q` seen on `ennead` only; `WUWA38LIVE` seen on `wuthering.gg` with rewards;
+        #         `STALEGONE` seen on `wuthering.gg`.
+        poll1 = {
+            "ennead:genshin": [models.CodeHit("OKTCHX26J57Q", "ennead", ["Mora ×10,000"])],
+            "ogc:genshin": [],
+            "wuthering.gg": [
+                models.CodeHit("WUWA38LIVE", "wuthering.gg", ["Astrite ×100"]),
+                models.CodeHit("STALEGONE", "wuthering.gg", ["Astrite ×50"]),
+            ],
+            "ogc:wuwa": [],
+        }
+        ctx.code_sources = types.SimpleNamespace(fetch=lambda sp: asyncio.sleep(0, result=poll1.get(sp, [])))
+        asyncio.run(codeposter.run(ctx))
+        assert ctx.state.code_records("genshin")["OKTCHX26J57Q"]["gate"] == "only ennead"
+        assert ctx.state.code_records("wuwa")["WUWA38LIVE"]["status"] == "pending"
+
+        # Poll 2a: `ogc:genshin` joins (`same family`), `wuthering.gg` answers `[]` (dropped `STALEGONE`!).
+        ctx.now = 1792700300
+        poll2a = {
+            "ennead:genshin": [models.CodeHit("OKTCHX26J57Q", "ennead", ["Mora ×10,000"])],
+            "ogc:genshin": [models.CodeHit("OKTCHX26J57Q", "ogc", ["Mora ×10,000"])],
+            "wuthering.gg": [models.CodeHit("WUWA38LIVE", "wuthering.gg", ["Astrite ×100"])],
+            "ogc:wuwa": [models.CodeHit("STALEGONE", "ogc", None)],  # wuthering.gg answered WITHOUT STALEGONE -> stays pending!
+        }
+        ctx.code_sources = types.SimpleNamespace(fetch=lambda sp: asyncio.sleep(0, result=poll2a.get(sp, [])))
+        asyncio.run(codeposter.run(ctx))
+        assert ctx.state.code_records("genshin")["OKTCHX26J57Q"]["status"] == "pending"
+        assert ctx.state.code_records("genshin")["OKTCHX26J57Q"]["gate"] == "only ennead, ogc"
+        assert ctx.state.code_records("wuwa")["STALEGONE"]["status"] == "pending"
+
+        # Poll 2b: `wuthering.gg` temporarily 503s (`None`) right when `ogc:wuwa` reports `WUWA38LIVE` (rewards=None):
+        #          corroborates across `wuthering.gg + ogc` AND preserves `"Astrite ×100"` on the posted Discord card!
+        ctx.now = 1792700600
+        ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, "ww-code-msg-1")])
+        poll2b = {
+            "wuthering.gg": None,
+            "ogc:wuwa": [models.CodeHit("WUWA38LIVE", "ogc", None)],
+        }
+        ctx.code_sources = types.SimpleNamespace(
+            fetch=lambda sp: asyncio.sleep(0, result=poll2b[sp] if sp in poll2b else [])
+        )
+        asyncio.run(codeposter.run(ctx))
+        ww_posted = ctx.state.code_records("wuwa")["WUWA38LIVE"]
+        assert ww_posted["status"] == "posted"
+        assert ww_posted["rewards"] == ["Astrite ×100"]
+        assert ww_posted["sources"] == ["ogc", "wuthering.gg"]
+        assert "Astrite ×100" in json.dumps(ctx.webhook.sends[0], ensure_ascii=False)
+
+        # 3) Standby failover (`State.merge_peer(..., include_maintenance=True)`) imports `seen_media`!
+        standby = State(Path(directory) / "standby.json")
+        standby.merge_peer(
+            {
+                "maintenance": {
+                    "wuwa": {
+                        "route": "f7e18488aac788d3",
+                        "seeded_at": 1792665058,
+                        "versions": {
+                            "3.7": {
+                                "seen_media": ["https://hw-pcdownload-qcloud.aki-game.net/launcher/clientUpload/fbp4pj51dfnw2uyyzt.mp4"],
+                                "maintenance": {"status": "seeded", "ts": 1790712000},
+                            }
+                        },
+                    }
+                }
+            },
+            include_maintenance=True,
+        )
+        assert standby.maintenance_record("wuwa")["versions"]["3.7"]["seen_media"] == [
+            "https://hw-pcdownload-qcloud.aki-game.net/launcher/clientUpload/fbp4pj51dfnw2uyyzt.mp4"
+        ]
+
+
 if __name__ == "__main__":
     sys.exit(main())
