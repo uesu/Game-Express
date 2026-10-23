@@ -427,12 +427,14 @@ and secrets are merged from workflow JSON blobs; no per-variable YAML wiring is 
 1. **Detect** — official posts from HoYoLAB, official X accounts, the Kuro site, and the official
    Reddit backup (`REDDIT_ENABLED=1`), filtered by per-game patterns. Recaps, replays,
    "has ended" and merch are ignored.
-2. **Extract from official text only** — times need an explicit offset (`UTC+8`; `(server time)`
-   is never trusted), versions come from `Version 4.6` / `Ver.4.6` / `V4.6` (plus epithet notices
-   like `"Luna II"` and unnumbered `"1.0"` pre-release launch notices), banners only from
-   names following "5-star character" / "S-Rank Agent" / "5-star Resonator" — bare after the tier
-   phrase, or bare after a closing quote in the epithet shape, and never a quoted *channel* title
-   after the game's gacha-mode phrase (`Signal Search`, `Event Wish`, `Convene`, …).
+2. **Extract from official text only** — schedule clocks need an explicit offset (`UTC+8`; `(server time)`
+   is never rendered as a clock timestamp, only used to match an unnumbered banner's active version/phase),
+   versions come from `Version 4.6` / `Ver.4.6` / `V4.6` (plus epithet notices like `"Luna II"`,
+   unnumbered `"1.0"` pre-release launch notices, and active-phase Convene / Wish posts), and banners only
+   from names following "5-star character" / "S-Rank Agent" / "5-star Resonator" — bare after the tier
+   phrase, or bare after a closing quote in the epithet shape, uniting co-running sibling 5★ banners
+   that share the same boosted 4★ lineup and never publishing a quoted *channel* title after the game's
+   gacha-mode phrase (`Signal Search`, `Event Wish`, `Convene`, …).
 3. **Merge with provenance** — *overrides > official notice > official tweet > official Reddit >
    launcher signal > countdown estimate > learned pre-install / cadence fallback > official
    calendar > game wiki > banner feed*.
@@ -644,13 +646,20 @@ Historical records are preserved in
 - This monitor is a thin layer over other people's work — [seriaati/hoyo-codes](https://github.com/seriaati/hoyo-codes),
   [Ertezy/Kitsudock-data](https://github.com/Ertezy/Kitsudock-data),
   [c3kay/hoyolab-rss-feeds](https://github.com/c3kay/hoyolab-rss-feeds),
+  [torikushiii/hoyoverse-api](https://github.com/torikushiii/hoyoverse-api) (`api.ennead.cc`) and
   [Open Gacha Codes](https://github.com/torikushiii/OpenGachaCodes),
   [Hum-Bao/hoyoverse-codes](https://github.com/Hum-Bao/hoyoverse-codes),
-  [PromoGacha](https://github.com/gripcrip-blip/codehub), the Fandom wikis and their editors,
-  [nitter](https://github.com/zedeus/nitter) and [redlib](https://github.com/redlib-org/redlib)
-  and every operator who keeps a public instance online, and
-  [FxTwitter](https://github.com/FixTweet/FxTwitter). The full list, with licences and the
-  community databases: **[docs/CREDITS.md](docs/CREDITS.md)**.
+  [PromoGacha](https://github.com/gripcrip-blip/codehub),
+  [DuolaD/HoYo_Versioncatcher](https://github.com/DuolaD/HoYo_Versioncatcher),
+  [TwintailTeam/game-manifests](https://github.com/TwintailTeam/game-manifests) and
+  [TomyJan/GenshinImpact-Client-Version](https://github.com/TomyJan/GenshinImpact-Client-Version),
+  the [gengamer.in](https://genshin-countdown.gengamer.in/) and
+  [gachacountdown.online](https://gachacountdown.online/) countdowns, the Fandom wikis and their
+  editors, [nitter](https://github.com/zedeus/nitter), [redlib](https://github.com/redlib-org/redlib)
+  and [eddrit](https://github.com/corenting/eddrit) and every operator who keeps a public instance
+  online, [FxEmbed / FxTwitter](https://github.com/FxEmbed/FxEmbed), and
+  [BetterTwitFix / vxTwitter](https://github.com/dylanpdx/BetterTwitFix). The full list, with
+  licences and the community databases: **[docs/CREDITS.md](docs/CREDITS.md)**.
 - **Special thanks:** **[Arena AI](https://arena.ai/company/about)** ([@arena on X](https://x.com/arena?lang=en))
   for making these engineering additions, upstream audits, and reliability upgrades possible.
 - **Sibling project:** [News-Express](https://github.com/uesu/News-Express) — same design,

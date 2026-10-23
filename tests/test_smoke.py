@@ -15464,5 +15464,200 @@ def test_audit_fix_6_cards_button_512_guard_codeposter_pending_outage_and_peer_s
         ]
 
 
+def test_monitor_916_unnumbered_convene_inference_sibling_merge_and_credits_hygiene():
+    """Pins the exact live `Monitor #916` Wuthering Waves 3.7 Phase II split-Convene production bug
+    (`article/5668` reruns `Lucilla, Lynae` + unnumbered `@Wuthering_Waves` status `2112740670930604168`
+    debut `Suoming`), concurrent same-second Wish-1/Wish-2 sibling union, timeline age-out stability,
+    and repository credits accuracy/privacy rules."""
+    import copy
+    import logging
+    import re
+
+    from gamexpress import schedule
+    from gamexpress.sources import twitter
+    from gamexpress.state import State
+
+    fx_suoming = json.loads((ROOT / "tests" / "fixtures" / "fx_wuwa_3_7_convene_suoming.json").read_text(encoding="utf-8"))
+    kuro_5668 = json.loads((ROOT / "tests" / "fixtures" / "kuro_wuwa_5668_phase2_trimmed.json").read_text(encoding="utf-8"))
+
+    suoming_item = twitter.item_from_fx_json("wuwa", fx_suoming)
+    kuro_p2_item = Item(
+        "kuro",
+        "wuwa",
+        str(kuro_5668["articleId"]),
+        f"https://wutheringwaves.kurogames.com/en/main/news/detail/{kuro_5668['articleId']}",
+        kuro_5668["articleTitle"],
+        kuro_5668["articleContent"],
+        1792491520,
+    )
+
+    # 1) Unnumbered `2112740670930604168` resolves cleanly to `wuwa` `3.7` `phase 2` BOTH via
+    #    tracked `maint_start_ts` alone AND alongside `article/5668` with ZERO `has no version yet` logs.
+    live_wuwa_state = State(Path("/tmp/nonexistent-wuwa-state.json"))
+    live_wuwa_state.data = {
+        "schedule": {
+            "wuwa": {
+                "3.7": {
+                    "status": "seeded",
+                    "data": {
+                        "announcement_locked": True,
+                        "version": "3.7",
+                        "maint_start_ts": 1790712000,
+                        "maint_end_ts": 1790737200,
+                        "banners": {
+                            "phase1": ["Hsin", "Chisa", "Iuno"],
+                            "phase1_4": ["Buling", "Taoqi", "Youhu"],
+                            "phase2": ["Lucilla", "Lynae"],
+                            "phase2_4": ["Lumi", "Danjin", "Chixia"],
+                            "reruns": ["Chisa", "Iuno", "Lucilla", "Lynae"],
+                        },
+                        "banners_settled": ["phase1", "phase2", "phase2_4", "reruns"],
+                    },
+                    "prov": {
+                        "b_phase1": [100, 1792647317],
+                        "b_phase2": [50, 1792491520],
+                        "b_phase2_by": ["official"],
+                        "b_phase2_4": [50, 1792491520],
+                        "b_phase2_4_by": ["official"],
+                        "b_reruns": [6, 1791544043],
+                        "b_reruns_by": ["wiki"],
+                    },
+                }
+            }
+        }
+    }
+
+    records_logged: list[str] = []
+
+    class _ListHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records_logged.append(record.getMessage())
+
+    handler = _ListHandler()
+    schedule.log.addHandler(handler)
+    try:
+        ctx_solo = types.SimpleNamespace(
+            versions={"wuwa": {"live": "3.7"}},
+            state=live_wuwa_state,
+            items={"wuwa": [suoming_item]},
+        )
+        by_ver_solo = schedule.version_extracts(ctx_solo, GAMES["wuwa"], log_missing=True)
+        assert "3.7" in by_ver_solo and len(by_ver_solo["3.7"]) == 1
+        assert by_ver_solo["3.7"][0].fields["banner_phase"] == 2
+        assert not any("has no version yet" in m for m in records_logged), records_logged
+
+        ctx_both = types.SimpleNamespace(
+            versions={"wuwa": {"live": "3.7"}},
+            state=live_wuwa_state,
+            items={"wuwa": [kuro_p2_item, suoming_item]},
+        )
+        by_ver_both = schedule.version_extracts(ctx_both, GAMES["wuwa"], log_missing=True)
+        assert len(by_ver_both["3.7"]) == 2
+        assert not any("has no version yet" in m for m in records_logged), records_logged
+    finally:
+        schedule.log.removeHandler(handler)
+
+    # 2) Live `Monitor #916` healing + debut-first order + multi-poll & post-age-out zero churn:
+    rec = live_wuwa_state.schedule_records("wuwa")["3.7"]
+    notes: list[str] = []
+    rec["data"] = schedule.merge(
+        GAMES["wuwa"], "3.7", by_ver_both["3.7"], rec, {}, {}, 1792725325, notes
+    )
+    assert rec["data"]["banners"]["phase2"] == ["Suoming", "Lucilla", "Lynae"]
+    assert rec["data"]["banners"]["phase2_4"] == ["Lumi", "Danjin", "Chixia"]
+    assert "phase2" in rec["data"]["banners_settled"]
+    assert "b_phase2_conflict" not in rec["prov"]
+    assert not notes
+
+    snap_data = copy.deepcopy(rec["data"])
+    snap_prov = copy.deepcopy(rec["prov"])
+
+    # Next poll with both items present -> byte-identical data & prov
+    rec["data"] = schedule.merge(
+        GAMES["wuwa"], "3.7", by_ver_both["3.7"], rec, {}, {}, 1792725625, notes
+    )
+    assert rec["data"] == snap_data and rec["prov"] == snap_prov and not notes
+
+    # Day 5 after X tweet `2112740670930604168` ages out while Kuro `article/5668` stays in menu -> still identical!
+    only_kuro = [schedule.extract(GAMES["wuwa"], kuro_p2_item)]
+    rec["data"] = schedule.merge(
+        GAMES["wuwa"], "3.7", only_kuro, rec, {}, {}, 1793000000, notes
+    )
+    assert rec["data"] == snap_data and rec["prov"] == snap_prov and not notes
+
+    # 3) Concurrent same-second Wish-1 + Wish-2 posts on HoYoLAB (`same ts`, distinct `item.id`) union cleanly:
+    gi_w1 = Item(
+        "hoyolab",
+        "genshin",
+        "47200001",
+        "https://www.hoyolab.com/article/47200001",
+        "Version 7.2 Event Wish Notice - Phase I",
+        'During the event wish, the event-exclusive 5-star character "Starlit Vow" Skirk (Cryo) as well as '
+        'the 4-star characters Dahlia (Hydro), Candace (Hydro), and Mika (Cryo) will receive a huge drop-rate boost!',
+        1793600000,
+    )
+    gi_w2 = Item(
+        "hoyolab",
+        "genshin",
+        "47200002",
+        "https://www.hoyolab.com/article/47200002",
+        "Version 7.2 Event Wish Notice - Phase I",
+        'During the event wish, the event-exclusive 5-star character "Tasteful Excellence" Escoffier (Cryo) as well as '
+        'the 4-star characters Dahlia (Hydro), Candace (Hydro), and Mika (Cryo) will receive a huge drop-rate boost!',
+        1793600000,
+    )
+    gi_rec: dict = {}
+    gi_notes: list[str] = []
+    gi_rec["data"] = schedule.merge(
+        GAMES["genshin"],
+        "7.2",
+        [schedule.extract(GAMES["genshin"], gi_w1), schedule.extract(GAMES["genshin"], gi_w2)],
+        gi_rec,
+        {},
+        {},
+        1793600300,
+        gi_notes,
+    )
+    assert gi_rec["data"]["banners"]["phase1"] == ["Skirk", "Escoffier"]
+    assert gi_rec["data"]["banners"]["phase1_4"] == ["Dahlia", "Candace", "Mika"]
+    assert not gi_notes
+
+    # 4) Permanent / standard banner notice with no version, no duration, and no sibling 4★ stays version=None:
+    perm_item = Item(
+        "x",
+        "wuwa",
+        "9999999999999999999",
+        "https://x.com/Wuthering_Waves/status/9999999999999999999",
+        "",
+        "[Tidal Chorus] Permanent Resonator Convene\nDuring the event, 5-Star Resonator: Verina receives boosted drop rates!",
+        1792551603,
+    )
+    ex_perm = schedule.extract(GAMES["wuwa"], perm_item)
+    schedule.infer_versions([ex_perm], live="3.7", records=live_wuwa_state.schedule_records("wuwa"))
+    assert ex_perm.version is None
+
+    # 5) Credits & README footer ordering + privacy hygiene check (when docs exist in checkout):
+    if (ROOT / "docs").is_dir() and (ROOT / "README.md").is_file():
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        credits = (ROOT / "docs" / "CREDITS.md").read_text(encoding="utf-8")
+        h2s = [ln.strip() for ln in readme.splitlines() if ln.startswith("## ")]
+        assert h2s[-1] == "## 📄 Legal & credits", h2s
+        assert "https://github.com/FixTweet/FxTwitter" not in readme
+        assert "https://github.com/FixTweet/FxTwitter" not in credits
+        assert "https://github.com/FxEmbed/FxEmbed" in readme and "https://github.com/FxEmbed/FxEmbed" in credits
+        for expected in (
+            "https://github.com/torikushiii/hoyoverse-api",
+            "https://github.com/TwintailTeam/game-manifests",
+            "https://github.com/TomyJan/GenshinImpact-Client-Version",
+            "https://genshin-countdown.gengamer.in/",
+            "https://gachacountdown.online/",
+            "https://github.com/corenting/eddrit",
+            "https://github.com/dylanpdx/BetterTwitFix",
+            "https://arena.ai/company/about",
+        ):
+            assert expected in credits, expected
+        assert not re.search(r"github\.com/[^/\s)]+/embeddit", readme + "\n" + credits, re.I)
+
+
 if __name__ == "__main__":
     sys.exit(main())

@@ -400,7 +400,8 @@ page fetcher, and so were the ennead calendars. The production reachability of t
 | heartlog/Hoyocodes · promogacha.netlify.app | static sites. PromoGacha's GitHub JSON **is** used |
 | chiraitori/HoYo_Code_Sender_Discord_Bot · Hum-Bao/hoyoverse-codes-backend · retvil/hoyo-code-monitor · lukascortes/gacha-codes-notifier | reference implementations; their sources are covered above (Hum-Bao's **published TXT lists** are used as a validator since v1.1) |
 | MoonShadow1976 WW asset repos | manually maintained, last updated Jan 2026, so too stale for codes |
-| DuolaD/HoYo_Versioncatcher | launcher-data repo; led us to the launcher endpoints |
+| DuolaD/HoYo_Versioncatcher | launcher-data repo; led us to the HoYoPlay launcher endpoints |
+| TwintailTeam/game-manifests · TomyJan/GenshinImpact-Client-Version | launcher-manifest repos documenting Kuro's `G153` global launcher index and `background/{hash}/en.json` schemas (`sources/kuro.py`) |
 | genshin.dev | character/game data API, not schedules or codes |
 | gachabase.net · nanoka.cc · sr.yatta.moe · lunaris.moe · ambr.top | databases, listed in [CREDITS.md](CREDITS.md#community-databases--resources). No public schedule/banner API was verified, so **banner names come from official notices, `Kitsudock-data` (`hub.json`), the `api.ennead.cc` calendars, the Fandom wikis, or `config/overrides.json`** |
 
