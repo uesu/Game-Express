@@ -558,18 +558,20 @@ def extract(game: Game, item: Item) -> Extract | None:
 
 
 # --------------------------------------------------------------------------- merging
-def infer_versions(extracts: list[Extract], live: str | None, records: dict) -> None:
-    """Fill missing versions (e.g. Genshin tweets say 'the new version'): match another
-    program post within 3 h, else a tracked record within 3 h, else live+0.1."""
+def infer_versions(extracts: list[Extract], live: str | None, records: dict,
+                   pre: str | None = None) -> None:
+    """Fill missing versions (e.g. Genshin tweets/notices say 'Version "Luna II"' or 'the new version'):
+    match another post, else a tracked record (`version_name` or nearby timestamp), else `pre` / `live+0.1`."""
     clean = [e for e in (extracts or []) if e is not None]
     safe_records = records if isinstance(records, dict) else {}
-    known = [e for e in clean if e.version and e.kind == "program"]
+    known_prog = [e for e in clean if e.version and e.kind == "program"]
+    known_maint = [e for e in clean if e.version and e.kind == "maintenance"]
     for e in clean:
         if e.version:
             continue
         pts = e.fields.get("program_ts")
         if e.kind == "program" and pts:
-            match = next((k for k in known if abs((k.fields.get("program_ts") or 0) - pts) <= 3 * 3600), None)
+            match = next((k for k in known_prog if abs((k.fields.get("program_ts") or 0) - pts) <= 3 * 3600), None)
             if match:
                 e.version = match.version
                 continue
@@ -580,6 +582,35 @@ def infer_versions(extracts: list[Extract], live: str | None, records: dict) -> 
                 e.version = rec
                 continue
             if live:
+                e.version, e.version_inferred = bump_minor(live), True
+        elif e.kind == "maintenance":
+            mts = e.fields.get("maint_start_ts") or 0
+            pre_ts = e.fields.get("preinstall_ts") or 0
+            title_lc = (e.item.title or "").lower()
+            match = next(
+                (k for k in known_maint
+                 if (mts and abs((k.fields.get("maint_start_ts") or 0) - mts) <= 3 * 3600)
+                 or (pre_ts and abs((k.fields.get("preinstall_ts") or 0) - pre_ts) <= 3 * 3600)),
+                None,
+            )
+            if match:
+                e.version = match.version
+                continue
+            rec = next(
+                (v for v, r in safe_records.items()
+                 if isinstance(r, dict)
+                 for d in [r.get("data") if isinstance(r.get("data"), dict) else {}]
+                 if (d.get("version_name") and str(d["version_name"]).strip().lower() in title_lc)
+                 or (mts and d.get("maint_start_ts") and abs(int(d["maint_start_ts"]) - mts) <= 3 * 86400)
+                 or (pre_ts and d.get("preinstall_ts") and abs(int(d["preinstall_ts"]) - pre_ts) <= 3 * 86400)),
+                None,
+            )
+            if rec:
+                e.version = rec
+                continue
+            if pre:
+                e.version, e.version_inferred = str(pre), True
+            elif live:
                 e.version, e.version_inferred = bump_minor(live), True
 
 
@@ -1402,10 +1433,11 @@ def apply_program_media(data: dict, prov: dict, media: dict | None, now: int) ->
 def version_extracts(ctx, game: Game, log_missing: bool = False) -> dict[str, list[Extract]]:
     """Group this run's official extracts by version. The monitor and program lookup share this
     grouping so they can never disagree about which versions are current."""
-    live = (ctx.versions.get(game.key) or {}).get("live")
+    vinfo = ctx.versions.get(game.key) or {}
+    live = vinfo.get("live")
     records = ctx.state.schedule_records(game.key)
     extracts = [e for e in (extract(game, it) for it in ctx.items.get(game.key, [])) if e]
-    infer_versions(extracts, live, records)
+    infer_versions(extracts, live, records, pre=vinfo.get("pre"))
     by_version: dict[str, list[Extract]] = {}
     for e in extracts:
         if not e.version:

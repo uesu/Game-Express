@@ -14912,5 +14912,366 @@ def test_hotfix_monitor_764_765_none_extracts_runner_isolation_ananta_hna_and_st
         raise AssertionError("textutil.news_blocks must keep raising ValueError on unreadable JSON")
 
 
+def test_audit_fix_1_override_iso8601_and_image_tier3_precedence():
+    from gamexpress import maintenance, media
+
+    now = 1793900000
+    hsr_overrides = {
+        "4.7": {
+            "preinstall_ts": "2026-11-07T12:00:00+08:00",
+            "maint_start_ts": "2026-11-09T06:00:00+08:00",
+            "image": "https://pbs.twimg.com/media/HSR47OverrideKeyArt.jpg",
+        }
+    }
+    plans = maintenance.resolve_version_plans(GAMES["starrail"], {}, [], {}, hsr_overrides, now)
+    assert plans["4.7"]["preinstall_ts"] == 1794024000
+    assert plans["4.7"]["maint_start_ts"] == 1794175200
+    assert plans["4.7"]["maint_end_ts"] is None
+    assert plans["4.7"]["preinstall_provenance"] == "override"
+    assert plans["4.7"]["maint_provenance"] == "override"
+
+    # Malformed timestamp strings must degrade cleanly rather than raising ValueError.
+    bad_ov = {"4.7": {"maint_start_ts": "not-a-timestamp", "maint_end_ts": ""}}
+    safe_plans = maintenance.resolve_version_plans(GAMES["hna"], {}, [], {}, bad_ov, now)
+    assert safe_plans["4.7"]["maint_start_ts"] is None
+
+    # `overrides.json` `"image"` wins top Tier-3 priority ahead of `program_announcements.json` and `schedule_images`.
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = make_ctx(Path(directory) / "state.json", now=now)
+        expected_override_img = media.upgrade(hsr_overrides["4.7"]["image"])
+        pin_img = "https://pbs.twimg.com/media/StalePin47.jpg?name=orig"
+        sched_img = "https://pbs.twimg.com/media/StaleSched47.jpg?name=orig"
+        plans["4.7"]["schedule_images"] = [sched_img]
+        ctx.fetcher = types.SimpleNamespace(
+            verify_media=lambda u: asyncio.sleep(0, result=(u in {expected_override_img, pin_img, sched_img}))
+        )
+        tier, chosen = asyncio.run(
+            maintenance.resolve_launch_media(
+                ctx,
+                GAMES["starrail"],
+                "4.7",
+                plans["4.7"],
+                {},
+                basic_info={},
+                program_pins={"starrail": {"4.7": {"image": pin_img}}},
+            )
+        )
+        assert (tier, chosen) == (3, expected_override_img)
+
+
+def test_audit_fix_2_epithet_inference_prerelease_1_0_and_non_cadence_countdown_estimates():
+    from gamexpress import maintenance, models
+
+    now = 1793600000
+    # 1) Genshin epithet-only official notice ("Luna II", no numeric "7.2") resolves cleanly onto 7.2!
+    luna_notice = models.Item(
+        source="hoyolab",
+        game="genshin",
+        id="47990001",
+        url="https://www.hoyolab.com/article/47990001",
+        title='Version "Luna II" Update Maintenance Preview',
+        text=(
+            "Dear Travelers,\n"
+            "Pre-installation Function Available: 2026/11/09 12:00 (UTC+8)\n"
+            "Update maintenance begins 2026/11/11 06:00 (UTC+8) and is estimated to take 5 hours."
+        ),
+        published_ts=1793580000,
+    )
+    gi_plans = maintenance.resolve_version_plans(
+        GAMES["genshin"], {}, [luna_notice], {"live": "7.1", "pre": "7.2"}, {}, now
+    )
+    assert gi_plans["7.2"]["preinstall_ts"] == 1794196800
+    assert gi_plans["7.2"]["maint_start_ts"] == 1794348000
+    assert gi_plans["7.2"]["maint_end_ts"] == 1794366000
+    assert gi_plans["7.2"]["maint_provenance"] == "official"
+
+    # 2) Pre-release HNA & ANANTA unnumbered global launch notices ("Global Launch" without "1.0") -> "1.0"!
+    for pre_key, src_name, author_url in (
+        ("hna", "x", "https://x.com/NexusAnima_EN/status/2199990000000000001"),
+        ("ananta", "reddit", "https://www.reddit.com/r/AnantaOfficial/comments/launch1/global_launch_notice/"),
+    ):
+        launch_item = models.Item(
+            source=src_name,
+            game=pre_key,
+            id=f"{pre_key}-launch-1",
+            url=author_url,
+            title=f"{GAMES[pre_key].name} Global Launch Pre-Download & Maintenance Notice",
+            text=(
+                "Pre-download opens 2026/12/01 10:00 (UTC+8).\n"
+                "Server maintenance runs 2026/12/03 06:00 (UTC+8) - 2026/12/03 10:00 (UTC+8)."
+            ),
+            published_ts=1795900000,
+        )
+        p_plans = maintenance.resolve_version_plans(GAMES[pre_key], {}, [launch_item], {}, {}, now)
+        assert "1.0" in p_plans
+        assert p_plans["1.0"]["preinstall_ts"] == 1796090400
+        assert p_plans["1.0"]["maint_start_ts"] == 1796248800
+        assert p_plans["1.0"]["maint_end_ts"] == 1796263200
+        assert p_plans["1.0"]["maint_provenance"] == "official"
+
+    # 3) Shortened 5-week (35d) patch refined by countdown source (`rank = 10`) stays aligned with schedule!
+    zzz_records = {
+        "3.3": {
+            "status": "posted",
+            "data": {"version": "3.3", "preinstall_ts": 1792382400, "maint_start_ts": 1792533600, "maint_end_ts": 1792551600},
+            "prov": {"preinstall_ts": [50, 1], "maint_start_ts": [50, 1], "maint_end_ts": [50, 1]},
+        },
+        "3.4": {
+            "status": "posted",
+            "data": {
+                "version": "3.4",
+                "preinstall_ts": 1795406400,
+                "maint_start_ts": 1795557600,  # +35d (5-week shortened patch) instead of +42d (1796162400)
+                "maint_end_ts": 1795575600,
+                "estimated": ["preinstall_ts", "maint_start_ts", "maint_end_ts"],
+                "estimate_sources": ["gachacountdown"],
+            },
+            "prov": {"preinstall_ts": [9, 1], "maint_start_ts": [10, 1], "maint_end_ts": [10, 1]},
+        },
+    }
+    zzz_plans = maintenance.resolve_version_plans(GAMES["zzz"], zzz_records, [], {"live": "3.3", "pre": None}, {}, now)
+    assert zzz_plans["3.4"]["maint_start_ts"] == 1795557600
+    assert zzz_plans["3.4"]["preinstall_ts"] == 1795406400
+    assert zzz_plans["3.4"]["maint_estimated"] is True
+    assert zzz_plans["3.4"]["maint_source"] == "gachacountdown"
+
+
+def test_audit_fix_3_kuro_g153_launcher_background_allowlist_and_ww_lifecycle():
+    from gamexpress import http as http_mod, maintenance
+    from gamexpress.sources import kuro as kuro_mod
+
+    fx = json.loads((Path(__file__).resolve().parent / "fixtures" / "kuro_launcher_background_trimmed.json").read_text(encoding="utf-8"))
+    parsed_37 = kuro_mod.parse_launcher_background(
+        fx["background_en_3_7"], bg_hash=fx["launcher_config_g153"]["functionCode"]["background"]
+    )
+    assert parsed_37["video"] == "https://hw-pcdownload-qcloud.aki-game.net/launcher/clientUpload/fbp4pj51dfnw2uyyzt.mp4"
+    assert parsed_37["artwork"] == "https://hw-pcdownload-qcloud.aki-game.net/launcher/clientUpload/cxol3urv2yjpftavjv.webp"
+    assert parsed_37["video_meta"]["bg_hash"] == "dOlPEc8xvpP8r4k2lyIOK6p0R7hNNqRf"
+
+    parsed_dated = kuro_mod.parse_launcher_background(fx["background_dated_20260930"], bg_hash="e4ea009e702a4961be86c815d87dbe68")
+    assert parsed_dated["video"].endswith("/20260930/dc839ed8df284b1fb37d03ee34f188e3.mp4")
+    assert maintenance._asset_upload_ts(parsed_dated["video"]) is not None
+
+    # Security: path traversal in `functionCode.background` is strictly rejected with 0 background fetches.
+    seen_urls: list[str] = []
+
+    class StubKuroFetcher:
+        def __init__(self, cfg_payload: dict, bg_payload: dict):
+            self.cfg_payload = cfg_payload
+            self.bg_payload = bg_payload
+
+        async def get_json(self, url: str, **_kw):
+            seen_urls.append(url)
+            if url == kuro_mod.LAUNCHER_CONFIG:
+                return self.cfg_payload
+            return self.bg_payload
+
+    assert asyncio.run(
+        kuro_mod.launcher_media(StubKuroFetcher({"functionCode": {"background": "../../etc/passwd"}}, fx["background_en_3_7"]))
+    ) == {}
+    assert seen_urls == [kuro_mod.LAUNCHER_CONFIG]
+
+    seen_urls.clear()
+    live_bg = asyncio.run(kuro_mod.launcher_media(StubKuroFetcher(fx["launcher_config_g153"], fx["background_en_3_7"])))
+    assert live_bg["video"] == parsed_37["video"] and len(seen_urls) == 2
+
+    # Allowlist: `aki-game.net` and `aki-game.com` pass `verify_media` with real MP4/WebP magic bytes!
+    mp4_header = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"\x00" * 64
+    webp_header = b"RIFF\x24\x00\x00\x00WEBPVP8 " + b"\x00" * 64
+
+    class FakeResp:
+        def __init__(self, status: int, content_type: str, body: bytes):
+            self.status = status
+            self.headers = {"Content-Type": content_type, "Content-Range": f"bytes 0-{len(body) - 1}/1048576"}
+            self._body = body
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            return False
+
+        @property
+        def content(self):
+            body = self._body
+
+            class Reader:
+                async def iter_chunked(self, _n):
+                    yield body
+
+            return Reader()
+
+    class FakeSession:
+        def get(self, url: str, **_kw):
+            raw = mp4_header if url.endswith(".mp4") else webp_header
+            ctype = "video/mp4" if url.endswith(".mp4") else "image/webp"
+            return FakeResp(206, ctype, raw)
+
+    f = http_mod.Fetcher(FakeSession())
+    assert asyncio.run(f.verify_media(parsed_37["video"])) is True
+    assert asyncio.run(f.verify_media(parsed_37["artwork"])) is True
+    assert asyncio.run(f.verify_media(parsed_dated["video"])) is True
+    assert asyncio.run(f.verify_media("https://evil-untrusted.example.com/launcher/clientUpload/fake.mp4")) is False
+
+    # End-to-end WW 3.7 -> 3.8 lifecycle:
+    #   * Preload (`live=3.7, pre=3.8`): records 3.7's `.mp4` on 3.7, does NOT leak 3.7 video onto 3.8, posts 3.8 key art!
+    #   * Maint T+0 (`live=3.8`, CDN `en.json` not rotated yet): STILL blocks stale 3.7 `.mp4`, posts 3.8 key art promptly!
+    #   * Maint T+15m (`en.json` rotates to 3.8's `w38_launch.mp4`): silently `PATCH`-upgrades 3.8 card to Tier 1 `.mp4`!
+    ww38_prog = "https://pbs.twimg.com/media/WW38BroadcastKeyArt.jpg?name=orig"
+    ww38_mp4 = "https://hw-pcdownload-qcloud.aki-game.net/launcher/clientUpload/w38_launch_slug.mp4"
+    ww38_webp = "https://hw-pcdownload-qcloud.aki-game.net/launcher/clientUpload/w38_firstframe.webp"
+    valid = {parsed_37["video"], parsed_37["artwork"], ww38_prog, ww38_mp4, ww38_webp}
+
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = make_ctx(
+            Path(directory) / "state.json",
+            now=1794100000,
+            MAINTENANCE_ENABLED="1",
+            ONLY="maintenance",
+            MAINTENANCE_GAMES="wuwa",
+            DISCORD_WEBHOOK_MAINTENANCE_WUWA=HOOK,
+        )
+        ctx.state.schedule_records("wuwa")["3.8"] = {
+            "status": "posted",
+            "data": {"version": "3.8", "preinstall_ts": 1794196800, "maint_start_ts": 1794340800, "maint_end_ts": 1794366000, "images": [ww38_prog]},
+            "prov": {"preinstall_ts": [50, 1], "maint_start_ts": [50, 1], "maint_end_ts": [50, 1]},
+        }
+        ctx.versions["wuwa"] = {"live": "3.7", "pre": None}
+        ctx.items["wuwa"] = []
+
+        cur_en = dict(fx["background_en_3_7"])
+
+        class LiveKuroStub:
+            async def verify_media(self, u: str) -> bool:
+                return u in valid
+
+            async def get_json(self, url: str, **_kw):
+                if url == kuro_mod.LAUNCHER_CONFIG:
+                    return fx["launcher_config_g153"]
+                return cur_en
+
+        ctx.fetcher = LiveKuroStub()
+        # 0) Seed baseline cleanly (0 webhook sends).
+        asyncio.run(maintenance.run(ctx))
+        assert ctx.webhook.sent == []
+
+        # 1) WW 3.8 Pre-Load (`live=3.7, pre=3.8`): records 3.7 media, posts 3.8 Special Broadcast Key Art (Tier 3).
+        ctx.versions["wuwa"] = {"live": "3.7", "pre": "3.8"}
+        ctx.now = 1794196860
+        ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, "ww38-pre-msg")])
+        asyncio.run(maintenance.run(ctx))
+        pre_state = ctx.state.maintenance_record("wuwa")["versions"]["3.8"]["preload"]
+        assert pre_state["media_tier"] == 3 and pre_state["media_url"] == ww38_prog
+        assert parsed_37["video"] in ctx.state.maintenance_record("wuwa")["versions"]["3.7"]["seen_media"]
+
+        # 2) WW 3.8 Maintenance T+1m (`live=3.8`, `en.json` temporarily still serving 3.7 slug): STILL blocks stale 3.7 slug!
+        ctx.versions["wuwa"] = {"live": "3.8", "pre": None}
+        ctx.now = 1794340860
+        ctx.webhook = ScriptedWebhook([], [SendResult(True, 200, "ww38-maint-msg")])
+        asyncio.run(maintenance.run(ctx))
+        maint_state = ctx.state.maintenance_record("wuwa")["versions"]["3.8"]["maintenance"]
+        assert maint_state["media_tier"] == 3 and maint_state["media_url"] == ww38_prog
+
+        # 3) WW 3.8 Maintenance T+15m (`en.json` rotates to 3.8 `.mp4` slug): silent `PATCH` upgrades card to Tier 1 `.mp4`!
+        cur_en = {
+            "functionSwitch": 1,
+            "backgroundFile": ww38_mp4,
+            "backgroundFileType": 2,
+            "firstFrameImage": ww38_webp,
+        }
+        ctx.now = 1794341760
+        ctx.webhook = ScriptedWebhook([SendResult(True, 200)], [])
+        asyncio.run(maintenance.run(ctx))
+        assert len(ctx.webhook.sends) == 0 and len(ctx.webhook.edits) == 1
+        assert ctx.webhook.edits[0][0] == "ww38-maint-msg"
+        assert maint_state["media_tier"] == 1 and maint_state["media_url"] == ww38_mp4
+
+
+def test_audit_fix_4_5_twimg_dedup_shortlink_upgrade_and_6_game_live_state_zero_churn():
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import maintenance, media
+    from gamexpress.sources import kuro as kuro_mod, launcher as launcher_mod
+
+    # 1) Tweet photo query-format (`?format=jpg&name=large`) deduplicates cleanly against `.jpg?name=orig` in any order!
+    large_u = "https://pbs.twimg.com/media/HTxU4O3W4AAGolV?format=jpg&name=large"
+    orig_u = "https://pbs.twimg.com/media/HTxU4O3W4AAGolV.jpg?name=orig"
+    assert media.rank([large_u, orig_u]) == [orig_u]
+    assert media.rank([orig_u, large_u]) == [orig_u]
+
+    # 2) GI 5-week shortened prior Phase II wallpaper (`-14d`) is rejected while Special Program Friday upload (`-10d`)
+    #    is accepted at Tier 2, AND opaque shortlink `bg["id"]` rotation 2 days later upgrades cleanly to Tier 1 `.webm`!
+    prior_phase2_webp = "https://launcher-webstatic.hoyoverse.com/launcher-public/2026/10/26/prior_phase2.webp"
+    gi72_sp_webp = "https://launcher-webstatic.hoyoverse.com/launcher-public/2026/10/30/gi72_sp_friday.webp"
+    gi72_launch_webm = "https://fastcdn.hoyoverse.com/static-resource-v2/2026/11/10/gi72_animated.webm"
+    gi72_phase2_webm = "https://fastcdn.hoyoverse.com/static-resource-v2/2026/12/02/gi72_phase2.webm"
+    valid_gi = {prior_phase2_webp, gi72_sp_webp, gi72_launch_webm, gi72_phase2_webm}
+
+    with tempfile.TemporaryDirectory() as directory:
+        ctx = make_ctx(Path(directory) / "state.json", now=1794196900)  # 2026-11-09 Pre-Load day
+        ctx.versions["genshin"] = {"live": "7.1", "pre": "7.2"}
+        ctx.fetcher = types.SimpleNamespace(verify_media=lambda u: asyncio.sleep(0, result=(u in valid_gi)))
+        plan_gi72 = {"preinstall_ts": 1794196800, "maint_start_ts": 1794348000, "schedule_images": [], "override": {}}
+        vstate_gi72: dict = {}
+
+        # Shortened-patch `-14d` wallpaper rejected cleanly (`(4, None)`):
+        stale_binfo = {"gopR6Cufr3": [{"id": "id-prior", "video": "", "background": prior_phase2_webp, "links": ["https://hoyo.link/oldA"]}]}
+        assert asyncio.run(
+            maintenance.resolve_launch_media(ctx, GAMES["genshin"], "7.2", plan_gi72, vstate_gi72, basic_info=stale_binfo, program_pins={})
+        ) == (4, None)
+
+        # `-10d` Special Program Friday `.webp` locks at Tier 2:
+        sp_binfo = {"gopR6Cufr3": [{"id": "id-oct30", "video": "", "background": gi72_sp_webp, "links": ["https://hoyo.link/sp72A"]}]}
+        assert asyncio.run(
+            maintenance.resolve_launch_media(ctx, GAMES["genshin"], "7.2", plan_gi72, vstate_gi72, basic_info=sp_binfo, program_pins={})
+        ) == (2, gi72_sp_webp)
+
+        # Rotated opaque shortlink + new `bg["id"]` inside launch window (`2026/11/10`) upgrades cleanly to Tier 1 `.webm`!
+        anim_binfo = {"gopR6Cufr3": [{"id": "id-nov10", "video": gi72_launch_webm, "background": gi72_sp_webp, "links": ["https://hoyo.link/anim72B"]}]}
+        assert asyncio.run(
+            maintenance.resolve_launch_media(ctx, GAMES["genshin"], "7.2", plan_gi72, vstate_gi72, basic_info=anim_binfo, program_pins={})
+        ) == (1, gi72_launch_webm)
+
+        # 3) All-6-games idle poll (`GI`, `HSR`, `ZZZ`, `WW`, `HNA`, `ANANTA`) mirroring live `uesu/8mqzv4k2n7c` state:
+        #    0 `hoyoplay_basic_info` calls, 0 `kuro.launcher_media` calls, 0 webhook calls, 0 state churn!
+        idle_path = Path(directory) / "live_shape_state.json"
+        idle_ctx = make_ctx(
+            idle_path,
+            now=1792720000,  # 2026-10-23 (mid-cycle across all 4 live games + 2 pre-release games)
+            MAINTENANCE_ENABLED="1",
+            ONLY="maintenance",
+            MAINTENANCE_GAMES="all",
+            DISCORD_WEBHOOK_MAINTENANCE_GENSHIN=HOOK,
+            DISCORD_WEBHOOK_MAINTENANCE_STARRAIL=HOOK,
+            DISCORD_WEBHOOK_MAINTENANCE_ZZZ=HOOK,
+            DISCORD_WEBHOOK_MAINTENANCE_WUWA=HOOK,
+            DISCORD_WEBHOOK_MAINTENANCE_HNA=HOOK,
+            DISCORD_WEBHOOK_MAINTENANCE_ANANTA=HOOK,
+        )
+        idle_ctx.versions = {
+            "genshin": {"live": "7.1", "pre": None},
+            "starrail": {"live": "4.6", "pre": None},
+            "zzz": {"live": "3.3", "pre": None},
+            "wuwa": {"live": "3.7", "pre": None},
+        }
+        idle_ctx.items = {g: [] for g in ("genshin", "starrail", "zzz", "wuwa", "hna", "ananta")}
+        # Seed baseline once, then assert a steady-state 5-minute poll performs 0 background HTTP calls & 0 saves!
+        asyncio.run(maintenance.run(idle_ctx))
+        snap_before = idle_path.read_text(encoding="utf-8")
+        binfo_spy = AsyncMock(return_value={})
+        kmedia_spy = AsyncMock(return_value={})
+        idle_ctx.fetcher = types.SimpleNamespace(get_json=AsyncMock(return_value={}), verify_media=AsyncMock(return_value=True))
+        with (
+            patch.object(launcher_mod, "hoyoplay_basic_info", new=binfo_spy),
+            patch.object(kuro_mod, "launcher_media", new=kmedia_spy),
+        ):
+            idle_ctx.now = 1792720300
+            asyncio.run(maintenance.run(idle_ctx))
+        assert binfo_spy.await_count == 0
+        assert kmedia_spy.await_count == 0
+        assert idle_ctx.webhook.sent == []
+        assert idle_path.read_text(encoding="utf-8") == snap_before
+
+
 if __name__ == "__main__":
     sys.exit(main())
