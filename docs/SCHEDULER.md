@@ -151,7 +151,7 @@ go faster. The limits are these, with the numbers measured on real runs (2026-10
 | **Overlap** | impossible by construction: the `concurrency` group is `cancel-in-progress: false`, so a trigger that arrives mid-run queues and then checks out the newest state | safe at any interval ≥ 1 min |
 | **GitHub Actions minutes** | public repo = **free and unlimited** | no cost |
 | **`workflow_dispatch` API calls** | 12/hour at 5 min, against a 5,000/hour token limit | 0.2 % of the limit |
-| **Upstream requests per run** | ~55–60 (HoYoLAB ×9, code APIs ×20, nitter ×~24 for six X accounts, plus Kuro / launcher / banner feed) | ≈ 17 k/day at 5 min, vs 8 k/day at 10 min |
+| **Upstream requests per run** | ~55–65 (HoYoLAB ×9, code APIs & Reddit community witnesses, nitter ×2 per handle across six X accounts, plus Kuro / launcher / banner feed) | ≈ 17–19 k/day at 5 min, vs 8–9 k/day at 10 min |
 
 **The only real constraint is upstream politeness, not GitHub.** HoYoLAB's API is unofficial, and
 the nitter mirrors, `hoyo-codes.seria.moe`, `api.ennead.cc`, `feeds.c3kay.de` and `wuthering.gg`

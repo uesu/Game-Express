@@ -59,8 +59,8 @@ in place — air time, link and key art all come back together.
 | Symptom | Fix |
 |---|---|
 | `every code source was unreachable` | a transient outage. The next run catches up because codes are compared against the state, not the time |
-| X silent | nitter fleet down. HoYoLAB / Kuro sources and the official Reddit backup (`REDDIT_ENABLED=1`, optional `REDDIT_FEED_TOKEN` fast path + 15 Redlib mirrors) still work automatically; add `NITTER_RSS_TOKEN` or a fresh `NITTER_INSTANCES` |
-| A code isn't posted | it's *pending*: only one source has it, or a source lists it as expired. The job summary shows the reason. Official / redeem-validated codes post immediately |
+| X silent | nitter fleet down. HoYoLAB / Kuro sources and the official Reddit backup (`REDDIT_ENABLED=1`, optional `REDDIT_FEED_TOKEN` fast path + 17-entry Reddit/Redlib fleet) still work automatically; add `NITTER_RSS_TOKEN` or a fresh `NITTER_INSTANCES` |
+| A code isn't posted | it's *pending*: only one source family has it (`ennead` and `ogc` share one family), or a source lists it as expired. The job summary shows the current reason (`only ennead, ogc`). Official / redeem-validated codes post immediately, and transient single-poll upstream outages retain previously witnessed pending families and rewards |
 | A banner name that a newer notice contradicts does not change | the name is locked on purpose: an official notice locked it, or two reputable sources (the hub, the official calendar, the wiki) agreed ([BANNER_DATABASE.md](BANNER_DATABASE.md#confirmation-and-the-lock)). A later official notice that names someone else is logged as a conflict in the run summary, not applied. To change it, put the right name in `config/overrides.json`; the next run edits the card |
 | `4 Star Characters: TBA` although the names are known | the official text didn't list exactly the expected number, or two posts disagreed. Put the names in `config/overrides.json`; the card is edited on the next run |
 

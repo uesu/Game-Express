@@ -538,11 +538,15 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
 - **Silent baseline on first enable:** on first activation (or re-enable after pause),
   already-passed milestones and live/settled versions are marked `seeded` silently
   without posting historical announcements.
-- **Strict precedence:** official notices/tweets/Reddit (`rank 38–50`) → explicit
-  `config/overrides.json` entries → persisted first-observed launcher pre-download
-  availability (`observed_preinstall_ts`, retained across polls/restarts and rendered
-  with explicit observation wording rather than claiming a published start time) →
-  documented cadence predictions (`rank 9`, clearly marked estimated). Holiday-shifted
+- **Strict precedence:** official notices/tweets/Reddit (`rank 38–50`, including inferred
+  epithet versions such as `"Luna II"` and unnumbered `"1.0"` launch notices for pre-release
+  games) → explicit `config/overrides.json` entries (supporting both Unix epochs and ISO-8601
+  strings with timezone offsets, plus `image` pins at the top of Tier 3) → persisted
+  first-observed launcher pre-download availability (`observed_preinstall_ts`, retained
+  across polls/restarts and rendered with explicit observation wording rather than claiming
+  a published start time) → refined non-cadence `schedule` estimates (`countdown` sources
+  for 5-week / 7-week shifted patches) → documented cadence predictions (`rank 9`, clearly
+  marked estimated). Holiday-shifted
   official notices always override cadence predictions, observations and stale overrides;
   HNA and ANANTA never invent an unverified cadence, and unknown `maint_end_ts` omits `End Time`
   rather than guessing.

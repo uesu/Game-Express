@@ -261,7 +261,7 @@ without posting. Locally the two are the equivalent of the workflow's test modes
 | Idea | Why | Effort |
 |---|---|---|
 | **4★ / banner names from official notices and the wiki** (current) → fill gaps with `config/overrides.json` | HoYoverse often shows banners only as images; overrides are the reliable fix, and the card is edited silently | 1 min per version |
-| Add **HNA / ANANTA code sources** at launch (seria / Open Gacha Codes add new games quickly) | only official posts and X feed them today | small (`games.json` only) |
+| Add **seria / Open Gacha Codes** for HNA / ANANTA at launch | Fandom wikis, official X/Reddit, and community Reddit witnesses already feed them today (plus `hoyolab:9` on HNA); validator APIs add new games after launch | small (`games.json` only) |
 | Add a free uptime check (e.g. healthchecks.io) pinged at the end of each run | a second alarm besides cron-job.org emails | small |
 | Re-check the nitter fleet every few months (as in News-Express) | nitter instances come and go; X is the main WW source | small |
 | More games supported by Open Gacha Codes (Arknights: Endfield, Neverness to Everness) | the code API already has them | small (`games.json`) |

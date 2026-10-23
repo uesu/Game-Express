@@ -168,7 +168,7 @@ existed. What was already there:
 
 | requirement | where it already lives |
 |---|---|
-| a trust tier below every real source | `PRIORITY["pattern"] = 9` vs `countdown` 10, `launcher` 20, `x` 40, `news` 45, `hoyolab`/`kuro` 50, `override` 100 — `schedule.PRIORITY` |
+| a trust tier below every real source | `PRIORITY["pattern"] = 9` vs `bannerfeed` 5, `gachawiki` 6, `calendar` 7, `countdown` 10, `launcher` 20, `reddit` 38, `x` 40, `news` 45, `hoyolab`/`kuro` 50, `override` 100 — `schedule.PRIORITY` |
 | per-field provenance so a guess never overwrites a fact | `prov[key] = [priority, ts]`, merged in the record loop of `schedule.merge()` |
 | a working pattern-derived prediction, as precedent | `schedule.derive_preinstall()` writes at `PRIORITY["pattern"]` and refuses to touch a value it did not itself derive |
 | learning the offset from observed history instead of a constant | `schedule.observed_lead_h()` + median |
@@ -274,10 +274,13 @@ or `gamexpress/schedule.py`:
    TZ-less times stay completely untouched. When disabled (`NEWS_TIMESTAMPS=0`), the scanner is
    bypassed completely.
 2. **`gamexpress/maintenance.py` (`MAINTENANCE_ENABLED=1` + `MAINTENANCE_GAMES`, default off):**
-   resolves `Pre-Load Started` and `Maintenance Started` timestamps with strict precedence
-   **official notice/tweet (`40 <= rank < 100`) > explicit `config/overrides.json` > persisted
-   first-observed launcher pre-download signal (`observed_preinstall_ts`, rendered with explicit
-   observation wording) > documented cadence prediction (`rank 9`)**. Official Chinese-holiday or
-   shortened/extended cycle notices automatically supersede observations, cadence estimates and
-   stale overrides; games without a verified cadence (`hna`, `ananta`) never synthesize predicted
-   timestamps, and unknown maintenance end times omit `End Time` rather than inventing one.
+   resolves `Pre-Load Started` and `Maintenance Started` timestamps across all 6 games with
+   strict precedence **official notice/tweet/Reddit (`38 <= rank < 100`, including inferred
+   epithet versions like `"Luna II"` and `"1.0"` pre-release launch notices) > explicit
+   `config/overrides.json` (Unix epoch or ISO-8601 strings) > persisted first-observed launcher
+   pre-download signal (`observed_preinstall_ts`, rendered with explicit observation wording) >
+   refined non-cadence `schedule` estimates (`countdown` sources at `rank >= 10` on shifted
+   5-week / 7-week patches) > documented cadence prediction (`rank 9`)**. Official Chinese-holiday
+   or shortened/extended cycle notices automatically supersede observations, cadence estimates
+   and stale overrides; games without a verified cadence (`hna`, `ananta`) never synthesize
+   predicted timestamps, and unknown maintenance end times omit `End Time` rather than inventing one.
