@@ -15,7 +15,7 @@ allowed to do**.
 
 | # | What could go wrong | Realistic? | Handled by |
 |---|---|---|---|
-| T1 | A community source (nitter mirror, Redlib mirror, Reddit proxy, wiki, code API) is taken over and feeds the bot a hostile payload | Yes — 26 nitter mirrors, 17 Reddit/Redlib entries and 3 proxies include community-operated hosts | §2 |
+| T1 | A community source (nitter mirror, Redlib mirror, Reddit proxy, wiki, code API) is taken over and feeds the bot a hostile payload | Yes — 26 nitter mirrors, 22 Reddit/Redlib entries and 3 proxies include community-operated hosts | §2 |
 | T2 | A source floods the bot with hundreds of fake "codes" | Yes — a parser change upstream is enough | §3 |
 | T3 | A webhook URL, `NITTER_RSS_TOKEN`, or `REDDIT_FEED_TOKEN` leaks into a public log or summary | Yes, logs are public on a public repo | §4 |
 | T4 | A compromised GitHub Action steals the Discord webhooks or pushes to the repo | Rare but real (supply chain) | §5 |
@@ -72,7 +72,9 @@ Tests: `test_a_hostile_source_cannot_inject_links_or_kill_a_card`,
 
 A code is posted only if it is **official**, **redeem-validated**, or listed by
 **`CODES_MIN_SOURCES` (default 2) independent source families** — one compromised community
-site or unverified subreddit post cannot invent a code on its own (`codeposter.gate()`).
+site or unverified subreddit post cannot invent a code on its own (`codeposter.gate()`, with
+`Item.official` on subreddit fallbacks restricted to verified publisher/moderator accounts so
+public user-selectable `"Official News"` / `"Official Media"` flairs never grant single-source trust).
 
 On top of that, `codeposter.MAX_CARDS_PER_RUN = 5` caps one game at 5 cards (50 codes) per run.
 A real drop is 1–6 codes; dozens at once means a broken or tampered source, and the leftovers

@@ -233,7 +233,8 @@ Fan reposts are ignored, and a title that matches the wrong version or phase is 
 
 A code is posted when **any one** of these is true:
 1. it comes from an **official** source: the HoYoLAB livestream module, or a verified official
-   X, HoYoLAB, or Reddit publisher post (`Official Reddit`) that explicitly lists redemption codes;
+   X, HoYoLAB, or Reddit publisher/moderator post (`Official Reddit` — never a public user-selectable
+   subreddit flair on its own) that explicitly lists redemption codes;
 2. a **redeem-validator** (hoyo-codes.seria.moe or Hum-Bao, which both try every code on a real
    account) reports it working, and no validator reports it expired;
 3. at least `CODES_MIN_SOURCES` (default **2**) *independent* community source families list it as
