@@ -183,6 +183,12 @@ Wangyue is excluded.
   exact timezone-qualified dates/times in rendered news bodies (plus `server time`
   on `UTC+8`) into Discord `<t:EPOCH:…>` tags without touching source payloads,
   URLs, inline/fenced code, date-only phrases or schedule extraction.
+- **Source-preserving formatting:** preserves Quill/HTML spacing, blank lines, and
+  multi-op headings/bullet lists, coalesces adjacent emphasis spans without stray
+  `****` markers, emits self-labelled or visible-URL links as clean bare URLs instead
+  of Discord-blocked `[**https://…**](https://…)` masked links, unwraps double-bolded
+  heading links (`**[label](url)**`), and escapes literal `*` footnotes/multipliers
+  without altering upstream HTML, JSON, API calls, or source adapters.
 - **Controls at the end:** all three custom-emoji buttons occur only in the final
   container of the final message. Part labels identify containers; Page labels
   identify separate messages.
