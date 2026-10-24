@@ -573,6 +573,59 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
   - *Check cadence:* evaluated at most once per scheduled `maintenance.run(ctx)` execution (existing 5-minute poll schedule — no in-run loops), memoized per run (`verified_cache`) so each distinct URL is checked at most once per poll (`0` HTTP checks on already-expired `auth_key=` timestamps), and skipping `hoyoplay_basic_info` completely when `cur_tier == 1` is healthy and no authoritative timestamp upgrade applies.
   - *Separate succeeded-edit cap (`MAX_LATE_EDITS = 6`):* tracked monotonically in `entry["edit_count"]` (never reset), capping total succeeded silent `PATCH` edits per posted milestone across upgrades, renewals, and fallbacks.
 
+## Beta kit & revision-diff cards (feature 5 — explicit opt-in; default off)
+
+The fifth feature publishes a game's **beta** revision: a full kit overview for every
+character that is new in the beta version, the new weapons / W-Engines / light cones /
+disc drives / relic sets / echo sets, and the older characters a revision touched
+(tagged `[CHANGED]`, with a link to the before/after diff).
+
+`BETA_ENABLED` is **off by default**. Disabled, the feature makes **zero** requests and
+adds nothing to `state/state.json`. It never posts to a schedule or codes channel:
+routing is dedicated (`DISCORD_WEBHOOK_BETA_<GAME>` > `DISCORD_WEBHOOK_BETA` >
+`DISCORD_WEBHOOK_NEWS_<GAME>`), with no catch-all, mirror or `FORCE_WEBHOOK` fallback.
+
+| Setting | Kind | Default | Meaning |
+|---|---|---|---|
+| `BETA_ENABLED` | Variable | `0` | Master switch; disabled unless explicitly truthy (and overridden by `ENABLED_FEATURES=none/off/standby/0`) |
+| `BETA_GAMES` | Variable | `genshin,starrail,zzz,wuwa` | Game allow-list. `all` resolves to the same four — **Honkai: Nexus Anima and ANANTA are excluded until they ship**; `none` switches it off |
+| `DISCORD_WEBHOOK_BETA_<GAME>` | Secret | *(unset)* | Dedicated per-game channel (`GENSHIN`, `STARRAIL`, `ZZZ`, `WUWA` + short aliases `GI`, `HSR`, `WW`) |
+| `DISCORD_WEBHOOK_BETA` | Secret | *(unset)* | Shared beta channel for any opted-in game without its own secret |
+| `DISCORD_WEBHOOK_NEWS_<GAME>` | Secret | *(unset)* | Last resort: that game's existing news channel (e.g. `zzz-news`). Never the schedule/codes catch-all |
+| `PING_BETA_<GAME>` / `PING_BETA` | Variable | *(unset = silent)* | Role ping on the **first page only**. `PING_ROLE_ID` is deliberately **not** inherited |
+| `BETA_MIN_POLL_MINUTES` | Variable | `30` | Minimum interval between changelog re-checks (`0` = every run). A quiet beta costs one manifest GET |
+| `BETA_MAX_CHARACTERS` | Variable | `4` | New characters rendered per revision |
+| `BETA_MAX_CHANGES` | Variable | `8` | Already-released characters a revision touched |
+| `BETA_MAX_EQUIPMENT` | Variable | `12` | Weapons / W-Engines / light cones / disc drives / relics / echoes |
+| `BETA_MAX_REQUESTS` | Variable | `48` | Hard HTTP ceiling for the whole feature in one run |
+
+Where the data comes from (`gamexpress/beta.py`, see [SOURCES.md](SOURCES.md#beta-kit--revision-diff-sources-2026-10-24)):
+
+- **`https://static.nanoka.cc/manifest.json`** — one small JSON naming each game's newest
+  data revision and the ids that are new in it. The cheapest possible "did anything move?".
+- **the game's beta changelog** — `https://<game>.gachabase.net/changelog/beta?lang=en`
+  for GI / HSR / ZZZ; Wuthering Waves has no gachabase site, so it is driven by the
+  manifest's `new` lists alone.
+- **`https://static.nanoka.cc/<game>/<revision>/en/<kind>/<id>.json`** — the kit / weapon /
+  set detail, fetched once per new entry and bounded by `BETA_MAX_REQUESTS`.
+
+Safety invariants:
+
+- **No invented numbers and no invented directions.** Values are read straight from the
+  database export. A changed entry the changelog lists as UPDATED is tagged `[CHANGED]`;
+  the feature never claims `[BUFF]` or `[NERF]`, because a single snapshot cannot
+  establish a direction. An entry whose stored kit is unchanged is `[TEXT FIX]`.
+- **Image lock.** A splash-art URL resolved for an entry is stored in
+  `state["beta"][game]["locked_images"]` and reused. A locked image is never re-verified,
+  so a finished card stops generating traffic entirely.
+- **Idempotent per revision.** One card set per `(game, revision)`; a later run that sees
+  the same revision posts nothing. A partial delivery resumes from the stored message ids
+  instead of re-posting, and an ambiguous Discord outcome is held rather than retried.
+- **Fail-over aware.** `state["beta"]` merges across peers so a standby never double-posts.
+- **Bounded pages.** Long kits split into sequential Components V2 containers, each
+  independently inside Discord's 4,000-character and 40-component limits, labelled
+  `Page n/N`.
+
 ## Discord webhook versus bot delivery
 
 Incoming webhooks remain the appropriate simple outbound transport here; they do

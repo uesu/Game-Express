@@ -61,10 +61,12 @@ official sources, decides whether anything is new, posts **Discord Components V2
 **webhooks**, commits its state, and exits. A run takes ~25 s end to end (~5–6 s of that is the
 Python).
 
-Four independent features: **`schedule`** (version/Special-Program cards) and **`codes`**
+Five independent features: **`schedule`** (version/Special-Program cards) and **`codes`**
 (redemption-code cards) on by default, plus explicit opt-in **`news`** (`NEWS_ENABLED=1`, full
-official articles for five games) and **`maintenance`** (`MAINTENANCE_ENABLED=1` +
-`MAINTENANCE_GAMES`, independent `Pre-Load Started` and `Maintenance Started` cards). Six games:
+official articles for five games), **`maintenance`** (`MAINTENANCE_ENABLED=1` +
+`MAINTENANCE_GAMES`, independent `Pre-Load Started` and `Maintenance Started` cards), and
+**`beta`** (`BETA_ENABLED=1` + `BETA_GAMES`, beta kit & revision-diff cards for the four
+released games — `hna` and `ananta` are excluded until they ship). Six games:
 `genshin`, `starrail`, `zzz`, `wuwa`, `hna`, `ananta`.
 
 **There is no Discord bot and there must not be one.** A bot existed long ago; it was removed in
@@ -79,18 +81,19 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 | Path | Role |
 |---|---|
 | `gamexpress/__main__.py` | CLI: `run`, `test-card`, `check-webhooks`, `preview`, `speculate`, `validate`, `benchmark` |
-| `gamexpress/runner.py` | builds `Ctx` (settings, games, state, fetcher, webhook, X client, Reddit client), fail-over, `run_news`, `maintenance.run`, run summary |
+| `gamexpress/runner.py` | builds `Ctx` (settings, games, state, fetcher, webhook, X client, Reddit client), fail-over, `run_news`, `maintenance.run`, `beta.run`, run summary |
 | `gamexpress/schedule.py` (the largest module by far) | the brain: picks the announcement, parses times, locks banners, speculates a cycle, builds/edits the schedule card |
 | `gamexpress/codeposter.py` | the code gate (families, validators, min-sources), posts/edits code cards |
 | `gamexpress/maintenance.py` | fourth feature (off by default): independent `Pre-Load Started` & `Maintenance Started` cards, `official > override > observed > cadence` precedence, 4-tier version-verified launch media, corroborated signed URL renewal/fallback, silent seed & bounded late `PATCH` |
+| `gamexpress/beta.py` | fifth feature (off by default): beta kit & revision-diff cards from `static.nanoka.cc/manifest.json` + the game's gachabase beta changelog, image locking, revision idempotence, bounded request budget |
 | `gamexpress/news_timestamps.py` | single-pass `O(N)` render-only news timestamp converter (`NEWS_TIMESTAMPS`, off by default) |
-| `gamexpress/cards.py` | Components V2 payload builders (`schedule`, `codes`, `news`, `maintenance`) + `validate_payload` |
+| `gamexpress/cards.py` | Components V2 payload builders (`schedule`, `codes`, `news`, `maintenance`, `beta`) + `validate_payload` |
 | `gamexpress/discord.py` | webhook POST/PATCH, 429/5xx retries, `WEBHOOK_SPACING = 1.2 s` pacing |
 | `gamexpress/http.py` | shared `aiohttp` fetcher, `MAX_PARALLEL = 12`, per-source health counters |
-| `gamexpress/state.py` | `state/state.json` (`SCHEMA = 1`): posted keys, message ids, bootstrap flags, heartbeat |
+| `gamexpress/state.py` | `state/state.json` (`SCHEMA = 1`): posted keys, message ids, bootstrap flags, heartbeat, `beta` revisions / snapshots / locked images |
 | `gamexpress/config.py` | `Settings` (env) + `Game` (games.json) + `game_is_on` / `active_games` |
 | `gamexpress/sources/*` | one module per upstream: `twitter` (nitter fleet + FxEmbed), `reddit` (Redlib fleet + `reddit.com` feed token + rich-embed proxies), `hoyolab`, `kuro`, `codes`, `launcher`, `bannerfeed`, `calendarfeed`, `gachawiki`, `banner_search`, `countdown`, `newspage` |
-| `gamexpress/{models,media,textutil,timeparse,samples,preview_html}.py` | the `Item` / `CodeHit` dataclasses, image URL normalisation, HTML→text, date/time parsing, sample cards, local preview |
+| `gamexpress/{models,media,textutil,timeparse,samples,preview_html}.py` | the `Item` / `CodeHit` / `BetaCharacter` / `BetaEquipment` / `BetaPatch` / `BetaSectionEntry` dataclasses, image URL normalisation, HTML→text, date/time parsing, sample cards, local preview |
 | `config/games.json` | per-game config (see §4) · `config/overrides.json` human corrections · `config/program_announcements.json` discovered tweet ids |
 | `tests/test_smoke.py` | the main suite: every test offline — no network, no secrets |
 | `tests/test_schedule_epithet_and_settled.py` · `tests/test_gachawiki_placeholder.py` | the 2026-10-08 schedule regressions (the first also runs in a checkout with no dependencies installed) and the ZZZ 3.3 "Agent" placeholder guard. Every test file has a plain runner and **every one is a CI gate** — `test_ci_and_the_python_bump_gate_run_every_offline_test_file` fails the moment a new file is not wired into `ci.yml` and the python-bump gate |
@@ -540,3 +543,33 @@ and mocked/derived protocol counts (`short(off)=1 msg / 1 media GET / 1 POST`,
 `medium<=7000(off)=2 msgs / 1 media GET / 2 POSTs (+1.2s min pacing)`,
 `long>7000(off)=1 excerpt msg / 1 media GET / 1 POST`,
 `long>7000(expand_full=1)=4 msgs / 18 media GETs / 4 POSTs (+3.6s min pacing)`).
+
+
+## Beta kit & revision-diff cards (feature 5, 2026-10-24)
+
+`BETA_ENABLED=0` by default — disabled, `gamexpress/beta.py` makes **zero** requests and
+writes nothing to `state/state.json`.
+
+Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
+`gamexpress/cards.py`, the `beta` state block, or `BETA_*` settings:
+
+- **Dedicated destinations only.** `DISCORD_WEBHOOK_BETA_<GAME>` > `DISCORD_WEBHOOK_BETA` >
+  `DISCORD_WEBHOOK_NEWS_<GAME>`. Never the schedule/codes catch-all, never a mirror, never
+  `FORCE_WEBHOOK`. `PING_BETA_<GAME>` > `PING_BETA` only — `PING_ROLE_ID` is deliberately not
+  inherited, so turning the feature on cannot start pinging an unrelated role.
+- **Never invent a number or a direction.** Values come from the database export or they are
+  omitted. A changed entry is `[CHANGED]`; `[BUFF]` / `[NERF]` require a before *and* an after,
+  which a single revision snapshot does not provide.
+- **Never let an unresolved backend key reach a card.** `TestKey_PlaceHolder`,
+  `Robin_Skill_Normal_Title`, `EquipmentSuit_34300_name`, `missing.webp` and friends are the
+  database saying it has no data yet (`beta._is_key`, `beta._usable_image`).
+- **Keep the budget bounded.** `BETA_MIN_POLL_MINUTES`, `BETA_MAX_CHARACTERS`,
+  `BETA_MAX_CHANGES`, `BETA_MAX_EQUIPMENT`, `BETA_MAX_REQUESTS` are all clamped in
+  `beta._budget`; a bad value must fall back to a bounded default, never to unbounded.
+- **Keep the image lock.** A resolved image goes into
+  `state["beta"][game]["locked_images"][id]` and is reused; a locked image is never re-verified.
+  That lock is what stops a published card from polling forever.
+- **HNA and ANANTA stay out** until they ship (`DEFAULT_BETA_GAMES` and the
+  `- {"hna", "ananta"}` subtraction in `load_settings`).
+- **Tests stay offline.** New parsers get a fixture under `tests/fixtures/beta/`; nothing in the
+  suite may touch the network.

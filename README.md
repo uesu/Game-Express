@@ -247,6 +247,61 @@ Full setup and safeguards: **[docs/CONFIGURATION.md → Pre-load & maintenance s
 
 ---
 
+### 5 · Beta kit & revision-diff cards (optional; off by default)
+
+While a version is in beta, the community databases publish a new **revision** (v2, v3, …)
+every few days. This feature watches those revisions and posts one batch per new revision to
+that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA` →
+`DISCORD_WEBHOOK_NEWS_<GAME>` — never a schedule or codes channel).
+
+```
+┌─────────────────────────────────────────────────────────────
+│ ## [ZZZ - 3.4.1 Beta] Patch Notes: v3.4.1 Rev. 19834130
+│ Resource: [gachabase](https://zzz.gachabase.net/changelog/beta?lang=en) / [nanoka](https://zzz.nanoka.cc/diff)
+│ ─────────────
+│ ### ✦ New Agents
+│ [ splash art ]
+│ # ★5 • Robin • Ether • Defense
+│ -# …                                  ← character line
+│ **Base Stats**
+│ > Lv. 60 — HP 8754 · ATK 750 · DEF 706
+│ > CRIT Rate 5% · CRIT DMG 50% · Impact 90
+│ ### Core Passive & Additional Ability
+│ **Core Passive:** — [CHANGED]
+│ > When Robin uses certain skills, she grants all squad members a [Robin Shield] …
+│ ### Mechanic Definitions
+│ > - **Aftershock:** …
+│ ─────────────
+│ <a:starwardsleepywink:…> **Citlali News**   [ <a:starwardyayy:…> ]
+│ -# Citlali Mains • Zenless Zone Zero 3.4.1 Beta • Page 1/3
+└─────────────────────────────────────────────────────────────
+```
+
+- **What it posts.** A full kit overview for every character that is **new** in this beta
+  version — every skill with its numbers, the mindscape / constellation / resonance chain, and
+  the mechanic definitions the kit references; the new weapons, W-Engines, light cones, disc
+  drives, relic sets and echo sets; and the older characters a revision touched, tagged
+  `[CHANGED]` with a link to the before/after diff.
+- **Honest by design.** Every value is read straight from the database export. A changed entry
+  is tagged `[CHANGED]` — never `[BUFF]` or `[NERF]`, which one revision snapshot cannot
+  establish. Unlocalised backend strings (`TestKey_PlaceHolder`) and placeholder images are
+  dropped, so an unfinished localisation omits its gallery instead of posting internal
+  identifiers.
+- **Off by default, and cheap when it is on.** `BETA_ENABLED=1` is required. A quiet beta
+  costs one small manifest GET; `BETA_MIN_POLL_MINUTES` (default `30`) gates re-checks and
+  `BETA_MAX_CHARACTERS` / `BETA_MAX_CHANGES` / `BETA_MAX_EQUIPMENT` / `BETA_MAX_REQUESTS`
+  clamp every run. Disabled, the feature makes **zero** requests.
+- **HNA and ANANTA are excluded** until they ship — `BETA_GAMES` defaults to the four released
+  games and `all` resolves to the same four.
+- **It stops on its own.** A resolved splash-art URL is locked in state and never re-fetched,
+  and one revision is published exactly once, so a finished card generates no further traffic.
+
+Full setup, variables and safeguards:
+**[docs/CONFIGURATION.md → Beta kit & revision-diff cards](docs/CONFIGURATION.md#beta-kit--revision-diff-cards-feature-5--explicit-opt-in-default-off)**.
+Sources: **[docs/SOURCES.md → Beta kit & revision-diff sources](docs/SOURCES.md#beta-kit--revision-diff-sources-2026-10-24)**.
+
+---
+
 ## 🎮 Supported games
 
 | Game | Status | Schedule sources | Code sources |
@@ -411,6 +466,10 @@ editing YAML. The ones worth knowing:
 | `NEWS_EXPAND_FULL` | `0` | optional multi-page full articles (up to 12 pages / 120,000 chars / 120 media) |
 | `MAINTENANCE_ENABLED` | `0` | explicit opt-in for `Pre-Load Started` / `Maintenance Started` |
 | `MAINTENANCE_GAMES` | *(empty)* | explicit per-game list (`all` or game keys) required to activate maintenance alerts |
+| `BETA_ENABLED` | `0` | explicit opt-in for beta kit / revision-diff cards (feature 5) |
+| `BETA_GAMES` | `genshin,starrail,zzz,wuwa` | beta subset; `all` resolves to the same four (HNA and ANANTA excluded until launch) |
+| `BETA_MIN_POLL_MINUTES` | `30` | minimum interval between beta changelog re-checks |
+| `BETA_MAX_REQUESTS` | `48` | hard HTTP ceiling for the whole beta feature per run |
 | `GAMES` / `ENABLE_GAMES` | all enabled / — | run a subset · switch prepared games on |
 | `LOOKBACK_HOURS` | 72 | how far back official posts are considered |
 | `CODES_MIN_SOURCES` | 2 | independent sources needed for an unverified code |

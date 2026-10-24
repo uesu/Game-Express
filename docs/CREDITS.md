@@ -85,3 +85,19 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 
 - **The definitive database for all HoYoverse and Wuthering Waves (Release, Beta & CBT)**: https://gachabase.net/ · https://nanoka.cc/
 - **More Database**: https://endfield.teamstardust.org/ · https://silver.teamstardust.org/ · https://www.ntegame.com/ · https://irminsul.gg/ · https://perlica.moe/ · https://endfieldtools.dev/ · https://anantacodex.com/
+
+### Beta kit & revision-diff data (feature 5, `BETA_ENABLED`)
+
+Feature 5 reads **only** two community databases, and only when an operator opts in:
+
+- **[nanoka.cc](https://nanoka.cc/)** (`gi.`, `hsr.`, `zzz.`, `ww.` sub-domains) — the revision
+  manifest (`static.nanoka.cc/manifest.json`) and the structured per-revision JSON exports this
+  feature renders kits from. Thanks to the nanoka maintainers for publishing clean, structured
+  data at `static.nanoka.cc/<game>/<revision>/en/<kind>/<id>.json`.
+- **[gachabase.net](https://gachabase.net/)** (`gi.`, `hsr.`, `zzz.` sub-domains) — the beta
+  changelog (`/<game>.gachabase.net/changelog/beta?lang=en`) that names each revision and every
+  entry it touched, and the per-entry before/after diff pages the cards link to
+  (`/diff/<kind>/<id>/<slug>?prev=…&cur=…`).
+
+Neither host is contacted while `BETA_ENABLED` is off. The monitor does not scrape either site's
+HTML UI and does not re-host their images — cards link to the URLs those databases publish.

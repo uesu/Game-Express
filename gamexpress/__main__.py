@@ -85,6 +85,51 @@ def sample_payloads(kind: str = "all", game: str = "", *, mark: bool = False,
                         author="Official source (sample)")
             for i, payload in enumerate(news_payloads(games[key], item)):
                 out.append(("news", f"news_{key}_{i + 1}", payload))
+    if kind == "beta":
+        from .cards import beta_payloads
+        from .models import BetaCharacter, BetaEquipment, BetaPatch, BetaSectionEntry
+
+        # Offline shape check: one new character with a two-page-worth kit plus one
+        # equipment entry, so both the kit and the gallery paths are exercised.
+        long_lines = [
+            "Deals Spectro DMG equal to 512.40% of ATK to all enemies in front.",
+            "When the target is under [Contamination], this DMG is increased by 30%.",
+            "Each stack of [Radiant Edge] consumed increases this skill's CRIT DMG by 12%.",
+            "Restores 10 points of Concerto Energy. This effect can trigger once every 20s.",
+        ]
+        for key in ("genshin", "starrail", "zzz", "wuwa"):
+            if game and key != game:
+                continue
+            if key not in games:
+                continue
+            sample_char = BetaCharacter(
+                id=f"{key}:sample", name="Sample Newcomer", rarity=5,
+                element="Ether", role="Defense",
+                subtext="-# Sample kit — offline preview data, not a real beta entry",
+                stats_lines=["Lv. 60 — HP 8754 · ATK 750 · DEF 706", "CRIT Rate 5%", "CRIT DMG 50%"],
+                sections=[
+                    BetaSectionEntry(title="Basic Attack: Sample Strike", category="Basic Attack",
+                                     tag="[NEW]", meta="", lines=list(long_lines) * 3),
+                    BetaSectionEntry(title="Special Attack: Sample Blast", category="Special Attack",
+                                     tag="[NEW]", meta="Single Target", lines=list(long_lines) * 3),
+                    BetaSectionEntry(title="Core Passive: Sample Resolve", category="Core Passive",
+                                     tag="[NEW]", meta="", lines=list(long_lines) * 2),
+                ],
+                is_new=True,
+            )
+            sample_equip = BetaEquipment(
+                id=f"{key}:sample-equip", name="Sample Signature", category_label="W-Engines",
+                rarity=5, tag="[NEW]", stats_line="Base ATK 713", effect_title="Sample Effect",
+                lines=["Increases the equipper's CRIT Rate by 24%.",
+                       "When the equipper applies a shield, squad DEF increases by 10% for 10s."],
+            )
+            sample_patch = BetaPatch(
+                game_key=key, beta_version="0.0", rev_label="v0.0 Rev. 00000000 — offline sample",
+                rev_id="sample", characters=[sample_char], equipment=[sample_equip],
+            )
+            for i, payload in enumerate(beta_payloads(games[key], sample_patch, settings,
+                                                      _ping("beta", key))):
+                out.append(("beta", f"beta_{key}_{i + 1}", payload))
     if kind == "maintenance":
         from .cards import maintenance_payload
 
@@ -126,7 +171,7 @@ async def cmd_test_card(args) -> int:
 
     from .discord import WebhookClient
     settings = load_settings()
-    if args.kind in ("news", "maintenance"):
+    if args.kind in ("news", "maintenance", "beta"):
         print(f"{args.kind.title()} samples are preview-only; use preview --kind {args.kind}. No messages sent.")
         return 0
     rc = 0
@@ -214,6 +259,7 @@ def cmd_preview(args) -> int:
             "codes": "Code cards",
             "news": "Official news samples",
             "maintenance": "Pre-Load & Maintenance samples",
+            "beta": "Beta kit & changelog samples",
         }[feature]
         cards.append((group, name, payload))
     if args.kind in ("all", "codes") and (not args.game or args.game == "starrail"):
@@ -291,6 +337,27 @@ def cmd_speculate(args) -> int:
     return 0
 
 
+def _beta_ping_names(settings, games: dict) -> list[str]:
+    """Every env name that could carry the feature-5 ping (checked, never inherited)."""
+    names = ["PING_BETA"]
+    for g in games.values():
+        for slug_name in settings._game_slugs(g.key):
+            names.append(f"PING_BETA_{slug_name}")
+    return names
+
+
+def _beta_budget_text(settings) -> str:
+    from .beta import _budget
+
+    class _Shim:
+        def __init__(self, s):
+            self.settings = s
+
+    b = _budget(_Shim(settings))
+    return (f"chars≤{b['max_chars']} changed≤{b['max_changed']} equip≤{b['max_equip']} "
+            f"requests≤{b['max_requests']} repoll≥{b['min_poll_min']}m")
+
+
 def cmd_validate(_args) -> int:
     from .sources.reddit import format_reddit_feed_query
 
@@ -311,13 +378,17 @@ def cmd_validate(_args) -> int:
           f"| group long strips={'on' if settings.news_group_long_strips else 'off'} | dedicated destinations only")
     print(f"maintenance={'on' if 'maintenance' in settings.features else 'off'} "
           f"| maintenance games={','.join(sorted(settings.maintenance_games)) or 'none'} | dedicated destinations only")
+    print(f"beta={'on' if 'beta' in settings.features else 'off'} "
+          f"| beta games={','.join(sorted(settings.beta_games)) or 'none'} "
+          f"| ping={'configured' if any(str(settings.env.get(n, '') or '').strip() for n in _beta_ping_names(settings, games)) else 'off (no PING_BETA set)'} "
+          f"| budget={_beta_budget_text(settings)}")
     print("emoji: " + ", ".join(f"{k}={'✓' if v else '—'}" for k, v in settings.emoji.items()))
     ok = True
     from .discord import WEBHOOK_RE, webhook_fingerprint
     for g in games.values():
         on = game_is_on(g, settings)
         cols = []
-        for feature in ("schedule", "codes", "news", "maintenance"):
+        for feature in ("schedule", "codes", "news", "maintenance", "beta"):
             secret, url = settings.webhook_source(feature, g.key)
             hook = f"✓ {secret}" if url else "— none"
             if url and not WEBHOOK_RE.match(url):
@@ -340,10 +411,13 @@ def cmd_validate(_args) -> int:
             cols.append(f"{feature}[{hook} | {ping_text or 'no ping'}{mirror}]")
         flag = "✓" if on else "·"
         note = "" if on else (f" (off; auto-on {g.auto_enable_on})" if g.auto_enable_on else " (off)")
-        print(f"  {flag} {g.key:9} {g.name:22}{note}\n      {cols[0]}\n      {cols[1]}\n      {cols[2]}\n      {cols[3]}\n"
+        print(f"  {flag} {g.key:9} {g.name:22}{note}\n      {cols[0]}\n      {cols[1]}\n      {cols[2]}\n"
+              f"      {cols[3]}\n      {cols[4]}\n"
               f"      X={','.join(g.x_accounts) or '—'} Reddit={','.join(g.subreddits) or '—'} "
               f"code_sources={','.join(g.codes.get('sources', [])) or '—'} "
-              f"4★/phase={g.four_star_count or 'count not set (set four_star_count at launch)'}")
+              f"4★/phase={g.four_star_count or 'count not set (set four_star_count at launch)'}"
+              + (f"\n      beta={g.beta.get('nanoka') or '—'} "
+                 f"changelog={g.beta.get('changelog') or '—'}" if g.beta else ""))
     valid_bools = {"1", "true", "yes", "on", "y", "0", "false", "no", "off", "n"}
     if settings.reddit_token and not feed_q:
         print("  ! REDDIT_FEED_TOKEN has no usable 'feed=...' key "
@@ -357,26 +431,37 @@ def cmd_validate(_args) -> int:
         "NEWS_EXPAND_FULL",
         "NEWS_GROUP_LONG_STRIPS",
         "MAINTENANCE_ENABLED",
+        "BETA_ENABLED",
     ):
         raw_val = str(settings.env.get(name, "") or "").strip()
         if raw_val and raw_val.lower() not in valid_bools:
             print(f"  ! {name}={raw_val!r} is not a recognized boolean ('0'/'1', 'false'/'true')")
             ok = False
-    for name, gset in (("NEWS_GAMES", settings.news_games), ("MAINTENANCE_GAMES", settings.maintenance_games)):
+    for name, gset in (("NEWS_GAMES", settings.news_games),
+                       ("MAINTENANCE_GAMES", settings.maintenance_games),
+                       ("BETA_GAMES", settings.beta_games)):
         unknown = sorted(k for k in gset if k not in games)
         if unknown:
             print(f"  ! {name} contains unknown game key(s): {', '.join(unknown)}")
+            ok = False
+    # Feature 5 is scoped to the four released games: a game that has not shipped has no
+    # beta to watch, and saying so here beats silently polling a changelog that is empty.
+    for key in sorted(settings.beta_games):
+        g = games.get(key)
+        if g is not None and not g.beta:
+            print(f"  ! BETA_GAMES includes {key}, which has no 'beta' block in config/games.json")
             ok = False
     ping_env_names = ["PING_ROLE_ID", "PING_SCHEDULE", "PING_CODES", "PING_MAINTENANCE"]
     for g in games.values():
         for slug_name in settings._game_slugs(g.key):
             ping_env_names.append(f"PING_MAINTENANCE_{slug_name}")
+    ping_env_names.extend(_beta_ping_names(settings, games))
     for name in ping_env_names:
         v = str(settings.env.get(name, "") or "")
         if v and parse_ping(v) is not None and not parse_ping(v) and v.lower() not in ("none", "off", "no", "false", "0", "-"):
             print(f"  ! {name}={v!r} has no valid role id (expected digits, 'everyone', 'here' or 'none')")
             ok = False
-    for check_kind in ("all", "news", "maintenance"):
+    for check_kind in ("all", "news", "maintenance", "beta"):
         for _f, name, payload in sample_payloads(check_kind):
             problems = validate_payload(payload)
             if problems:
@@ -774,10 +859,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("command", nargs="?", default="run",
                    choices=["run", "test-card", "check-webhooks", "preview", "speculate", "validate", "benchmark"])
     p.add_argument("--dry-run", action="store_true", help="build + log cards, never post")
-    p.add_argument("--only", choices=["schedule", "codes", "news", "maintenance"], help="run one feature")
+    p.add_argument("--only", choices=["schedule", "codes", "news", "maintenance", "beta"],
+                   help="run one feature")
     p.add_argument("--game", default="", help="restrict to one game key (e.g. starrail)")
     p.add_argument("--repost", default="", help="force a NEW post for game:version (e.g. genshin:7.2)")
-    p.add_argument("--kind", default="all", choices=["all", "schedule", "codes", "news", "maintenance"],
+    p.add_argument("--kind", default="all",
+                   choices=["all", "schedule", "codes", "news", "maintenance", "beta"],
                    help="test-card / check-webhooks / preview")
     p.add_argument("--ping", action="store_true", help="test-card: include your role ping (default: no ping)")
     p.add_argument("--unlaunched", action="store_true",

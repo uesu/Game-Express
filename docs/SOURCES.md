@@ -611,3 +611,52 @@ endpoints and existing caches only (never headless browsers or HTML scraping):
 | GI / HSR / ZZZ / HNA | HoYoPlay `getAllGameBasicInfo` (`hyp-api.hoyoverse.com`) + existing HoYoLAB / X Special Program cache | (1) version-matched `.webm`/`.mp4` background clip, (2) version-matched `.webp`/image background, (3) `overrides.json` / Special Program key art, (4) omit gallery; version/launch lock separates selected tier so late launch video upgrades initial artwork inside `LATE_MEDIA_EDIT_WINDOW_S` (including opaque shortlink `bg["id"]` rotations within `[-11d, +7d]`) while blocking prior-version and Phase II swaps |
 | Wuthering Waves | Kuro global launcher `G153/index.json` + lazy `background/{hash}/en.json` (`aki-game.net` / `aki-game.com` `.mp4` + `firstFrameImage` `.webp`) + structured website/article JSON (`hw-media-cdn-mingchao.kurogame.com`) + Special Program X/Kuro art | (1) version-matched `.mp4` clip keeping signed `?auth_key=…` query parameters intact and rejecting prior-version URLs when `en.json` lags behind `default.version`; signed URLs expire and renew inside `LATE_MEDIA_EDIT_WINDOW_S` (`6 h` / `21,600 s`, `MAX_LATE_MEDIA_ATTEMPTS = 3` consecutive failed `PATCH` calls reset on `res.ok`, `MAX_LATE_EDITS = 6` total succeeded `PATCH` calls, per-run URL check deduplication) only when corroborating source metadata (`hash`/`md5`/`size`+`full_version`) binds the exact launch asset (never bare host/path alone), otherwise falling back to (2) matching-version artwork, (3) `overrides.json` / Special Program key art, or (4) cleanly omitting media without durable mirroring |
 | ANANTA | Official X (`@Ananta_EN`) + verified official Reddit (`u/AnantaOfficial`) + `config/overrides.json` / `program_announcements.json` (`easebar.com`, `anantagame.com`, `netease.com`, `163.com`, `pbs.twimg.com`, `redd.it` allowlisted) | Tier 3 (`overrides.json` `image` pin → Special Program / launch key art) → Tier 4 clean gallery omission until NetEase publishes a structured global launcher background API |
+
+
+## Beta kit & revision-diff sources (2026-10-24)
+
+Feature 5 (`BETA_ENABLED=1`) reads **only** structured JSON/markdown from community
+databases that publish beta revisions. No HTML scraping, no headless browser, no
+authentication, and no endpoint that is not already public. Verified 2026-10-24.
+
+| Purpose | Endpoint | Shape |
+|---|---|---|
+| Revision probe | `https://static.nanoka.cc/manifest.json` | ~1 KiB. Per game: `latest`, `available`, `live`, and `new` → `character` / `weapon` / `lightcone` / `relicset` / `equipment` / `echo` id lists. One GET tells the feature whether anything moved |
+| Revision contents | `https://zzz.gachabase.net/changelog/beta?lang=en` (also `gi.` / `hsr.`) | Markdown. `## vX.Y.Z Rev. N \| <date>` headings, `### Agents` / `### W-Engines` / `### Drive Discs` sections, then one `[![img]name](detail) [See Changes](diff)` entry per touched item |
+| Before/after diff | `https://zzz.gachabase.net/diff/agents/1661/robin?prev=beta_3.4.1_19806165&cur=beta_3.4.1_19834130&lang=en` | Linked from every changelog entry; never fetched by this monitor (it is surfaced as a card link so a human can open it) |
+| Character kit | `https://static.nanoka.cc/<game>/<revision>/en/character/<id>.json` | One GET per new character. `<game>` ∈ `gi` / `hsr` / `zzz` / `ww`; `<revision>` is the manifest `latest` (e.g. `3.4.1+19836465`) |
+| Weapon / W-Engine / light cone | `https://static.nanoka.cc/<game>/<revision>/en/{weapon,lightcone}/<id>.json` | Stats + refinement effect text |
+| Disc drive / relic set / artifact / echo | `https://static.nanoka.cc/<game>/<revision>/en/{equipment,relicset,artifact,echo}/<id>.json` | 2-piece / 4-piece set bonuses (GI artifacts live in one `artifact.json`) |
+| Listing index | `https://static.nanoka.cc/<game>/<revision>/{weapon,equipment,lightcone,relicset,echo}.json` | One GET per kind per revision: rarity, max ATK and substat name for every id, so the card never has to guess them |
+
+Per-game namespaces and labels are declared in `config/games.json` (`beta.nanoka`,
+`beta.changelog`) and mapped in `gamexpress/beta.py::NANOKA_KINDS`:
+
+| Game | `nanoka` | Changelog | Character | Weapon | Set |
+|---|---|---|---|---|---|
+| Genshin Impact | `gi` | `gi.gachabase.net/changelog/beta` | Characters | Weapons | Artifacts |
+| Honkai: Star Rail | `hsr` | `hsr.gachabase.net/changelog/beta` | Characters | Light Cones | Relics & Ornaments |
+| Zenless Zone Zero | `zzz` | `zzz.gachabase.net/changelog/beta` | Agents | W-Engines | Drive Discs |
+| Wuthering Waves | `ww` | *(none — manifest-driven)* | Resonators | Weapons | Echoes |
+
+**Wuthering Waves** has no gachabase site, so its revision comes from the manifest's
+`new` lists alone. That is the correct scope there: the manifest says exactly what is
+new in `latest`, and there is no public per-revision diff to summarise.
+
+What is deliberately **not** done:
+
+- **No official splash-art API call per character.** The HoYo content API
+  (`sg-public-api-static.hoyoverse.com/content_v2_user/.../getContent`) does serve
+  `new-chara-cover-inner`, but its `iAppId` differs per title and the database's
+  character ids do **not** match the official `iInfoId`s (nanoka `1661` vs official
+  `166651`), so any mapping would be a guess. The card uses the database's own art,
+  which is present for every named entry.
+- **No `[BUFF]` / `[NERF]` inference.** A single revision snapshot cannot establish a
+  direction; the feature tags a changed entry `[CHANGED]` and links the diff.
+- **Placeholder images are dropped.** `cdn.gachabase.net/.../missing.webp` is the
+  database saying it has no art yet — it is filtered out and the gallery is omitted
+  cleanly rather than posting a broken image.
+- **Unlocalised backend keys never reach a card.** Strings like `TestKey_PlaceHolder`,
+  `Robin_Skill_Normal_Title` and `EquipmentSuit_34300_name` are recognised and dropped
+  (`gamexpress/beta.py::_is_key`), so an unfinished localisation shows as "no text yet"
+  instead of a wall of internal identifiers.
