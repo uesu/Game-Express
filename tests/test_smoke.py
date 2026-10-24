@@ -251,7 +251,7 @@ def test_reference_card_text_is_exact():
     assert ww.index("Maintenance Time & Compensation Details") < ww.index("Banners (STC)")
     gi = "\n".join(c["content"] for c in _render("genshin")["components"][0]["components"] if c["type"] == 10)
     assert "**[Version 7.1 Banners (STC)](https://lunaris.moe/banners)**" in gi
-    assert "※ Re-runs: Skirk, Escoffier" in gi
+    assert "※ Re-runs:" not in gi
 
 
 def test_title_emoji_is_configurable():
@@ -3476,7 +3476,7 @@ def test_wiki_display_names_render_full_forms_without_touching_stored_data():
     card = cards.banners_block(game, {"version": "3.3", **data})
     assert "✦ First Half/Phase: Phoenix Reffaella, Velina Airgid" in card
     assert "✦ Second Half/Phase: Severian Lowell, Norma Hollowell" in card
-    assert "※ Re-runs: Velina Airgid, Norma Hollowell" in card
+    assert "※ Re-runs:" not in card
     # names the map does not hold render exactly as stored (the 4★ line, from the calendar)
     assert "- 4 Star Characters (Default): Seth, Manato" in card
 
@@ -3604,7 +3604,7 @@ def test_gachawiki_lineup_reaches_the_rendered_card():
     assert "✦ First Half/Phase: Vesna, Vodyanitsa" in block_text
     assert "- 4 Star Characters: Bennett, Xingqiu, Sucrose" in block_text
     assert "✦ Second Half/Phase: Official Phase 2" in block_text    # official is never replaced
-    assert "※ Re-runs: Skirk, Escoffier" in block_text
+    assert "※ Re-runs:" not in block_text
     assert "※ Confirmed:" not in block_text                          # phases exist -> no early line
 
 
@@ -16169,6 +16169,54 @@ def test_reddit_2026_10_24_fleet_video_rewrite_and_nitter_reserve_pacing():
     assert 1 <= max_in_flight_meowing <= NITTER_RESERVE_PARALLEL == 2
     assert calls_by_host.get("nitter.cf") == 6 and calls_by_host.get("xitter.cf") == 6
     assert 1 <= calls_by_host.get("nitter.meowing.monster", 0) <= 6
+
+    # 4. Genshin 7.2 [[Furina]] & Valeriy wiki-link cleanup, state healing, and ※ Re-runs: removal
+    assert gachawiki.clean_name("[[Furina]] & Valeriy") == "Furina & Valeriy"
+    assert gachawiki.clean_name("[[Furina]] & [[Valeriy]]") == "Furina & Valeriy"
+    assert gachawiki.clean_name("[[Furina|Furina]] &amp; Valeriy") == "Furina & Valeriy"
+    assert gachawiki.clean_name("[[Furina") == "Furina"
+    gi72_wiki = (
+        ";New Characters\n"
+        '* [[File:Mitya Icon.png|35x35px]] [[Mitya]] (5-Star)\n'
+        ";Event Wishes\n"
+        "* Phase I\n"
+        "** [[Snowbound Oath/2026-11-04|Snowbound Oath]] ([[Mitya]])\n"
+        "** [[Chanson of Many Waters/2026-11-04|Chanson of Many Waters]] ([[Furina]] & Valeriy)\n"
+        "* Phase II\n"
+        "** [[Frostbound Reverie/2026-11-25|Frostbound Reverie]] ([[Zibai]])\n"
+        "** [[Verdant Sonata/2026-11-25|Verdant Sonata]] ([[Linnea]])\n"
+    )
+    gi72_lineup = gachawiki.build_lineup("genshin", gi72_wiki, {}, four_star_count=3)
+    assert gi72_lineup["phase1"] == ["Mitya", "Furina & Valeriy"]
+    assert gi72_lineup["phase2"] == ["Zibai", "Linnea"]
+    assert gi72_lineup["reruns"] == ["Furina & Valeriy", "Zibai", "Linnea"]
+
+    games = load_games(ROOT / "config" / "games.json")
+    stale_rec = {
+        "data": {
+            "version": "7.2",
+            "banners": {
+                "phase1": ["Mitya", "[[Furina]] & Valeriy"],
+                "phase2": ["Zibai", "Linnea"],
+                "reruns": ["[[Furina]] & Valeriy", "Zibai", "Linnea"],
+            },
+            "banners_settled": ["phase1", "phase2", "reruns"],
+        },
+        "prov": {
+            "b_phase1": [schedule.PRIORITY["gachawiki"], 1],
+            "b_phase2": [schedule.PRIORITY["gachawiki"], 1],
+            "b_reruns": [schedule.PRIORITY["gachawiki"], 1],
+        },
+    }
+    healed = schedule.merge(games["genshin"], "7.2", [], stale_rec, {}, {}, 1792770633, wiki=None)
+    assert healed["banners"]["phase1"] == ["Mitya", "Furina & Valeriy"]
+    assert healed["banners"]["reruns"] == ["Furina & Valeriy", "Zibai", "Linnea"]
+    rendered_gi72 = cards.banners_block(games["genshin"], healed)
+    assert "[[Furina]]" not in rendered_gi72 and "[[" not in rendered_gi72 and "]]" not in rendered_gi72
+    assert "※ Re-runs:" not in rendered_gi72
+    assert "\n\n\n" not in rendered_gi72
+    assert "✦ First Half/Phase: Mitya, Furina & Valeriy\n- 4 Star Characters: TBA" in rendered_gi72
+    assert "✦ Second Half/Phase: Zibai, Linnea\n- 4 Star Characters: TBA" in rendered_gi72
 
 
 if __name__ == "__main__":

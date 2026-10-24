@@ -83,7 +83,6 @@ existed stay out of the channel.
 │ ※ In the event that the maintenance is extended, …
 │ ─────────────
 │ **Version 4.6 Banners (STC)**
-│ ※ Re-runs: TBA
 │ ✦ First Half/Phase: Pearl         - 4 Star Characters: TBA
 │ ✦ Second Half/Phase: TBA          - 4 Star Characters: TBA
 │ ─────────────

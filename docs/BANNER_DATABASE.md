@@ -142,7 +142,6 @@ When a version has a debut roster but no phase data yet, the reader emits
 
 ```
 ※ Confirmed: Phoenix Reffaella, Severian Lowell
-※ Re-runs: TBA
 ```
 
 `confirmed` belongs to the wiki's key set but **not** to the banner key set, so the line
