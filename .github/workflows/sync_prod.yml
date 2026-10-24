@@ -37,10 +37,6 @@ on:
         description: 'Append [skip ci] to the production sync commit message'
         type: boolean
         default: false
-      sync_news_express:
-        description: 'Also sync uesu/News-Express -> uesu/7jkxmy9nvbc & uesu/wvkhabh2s22'
-        type: boolean
-        default: true
 
 permissions:
   contents: read
@@ -54,7 +50,7 @@ jobs:
     name: Validate & sync runtime to production
     if: github.repository == 'uesu/Game-Express'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - name: Check out development repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -101,6 +97,5 @@ jobs:
           SYNC_PAT: ${{ secrets.PROD_SYNC_PAT || secrets.BUMP_PAT }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
           SKIP_CI: ${{ inputs.skip_ci && '1' || vars.SKIP_PROD_CI || '0' }}
-          SYNC_NEWS_EXPRESS: ${{ (github.event_name != 'workflow_dispatch' || inputs.sync_news_express) && '1' || '0' }}
           STRICT_AUTH: ${{ (github.event_name == 'workflow_dispatch' || vars.REQUIRE_PROD_SYNC == '1') && '1' || '0' }}
         run: python .github/scripts/sync_prod.py

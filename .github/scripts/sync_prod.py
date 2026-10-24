@@ -1,31 +1,19 @@
-"""Synchronize the production runtime subsets for Game-Express and News-Express to live prod repos.
+"""Synchronize the production runtime subset from uesu/Game-Express to the live monitor repo.
 
-Used by .github/workflows/sync_prod.yml whenever commits land on main (or via workflow_dispatch):
-  - Syncs `uesu/Game-Express` (dev) -> `uesu/8mqzv4k2n7c` (Game-Express live production)
-  - Bootstraps `.github/workflows/sync_prod.yml` + `.github/scripts/sync_prod.py` onto
-    `uesu/News-Express` (dev) if missing/outdated, and syncs `uesu/News-Express` (`main`) ->
-    `uesu/7jkxmy9nvbc` (Reddit live production) and `uesu/wvkhabh2s22` (Twitter live production).
+Used by .github/workflows/sync_prod.yml whenever commits land on main (or via workflow_dispatch).
 
 Safety guarantees:
-  1. Live state & cache protection:
-     - `uesu/8mqzv4k2n7c`: `state/state.json` (and `placeholder/**`) are NEVER created,
-       overwritten, staged, or deleted.
-     - `uesu/7jkxmy9nvbc` & `uesu/wvkhabh2s22`: `posted_reddit.json`, `pending_reddit.json`,
-       `proxy_health.json`, `posted_tweets.json`, and `posted_messages.json` are NEVER created,
-       overwritten, staged, or deleted.
-  2. Program announcement seed union (`Game-Express`): `config/program_announcements.json`
-     preserves any tweet IDs discovered live by the production monitor while adding/updating
-     entries from the dev repo.
-  3. Atomic engine + test commits (`Game-Express` & `News-Express`): engine files and tests
-     land in a single git commit per production repo, eliminating the Round-75 "smoke guard
-     landed before engine" partial-upload race.
-  4. Dev-only exclusion: `docs/`, `README.md`, `AGENTS.md`, `PRIVACY_POLICY.md`,
+  1. Live state protection: `state/state.json` is NEVER created, overwritten, staged, or deleted
+     in the target production repository.
+  2. Program announcement seed union: `config/program_announcements.json` preserves any tweet IDs
+     discovered live by the production monitor while adding/updating entries from the dev repo.
+  3. Dev-only exclusion: `docs/`, `README.md`, `AGENTS.md`, `PRIVACY_POLICY.md`,
      `TERMS_OF_SERVICE.md`, `.env.example`, `previews/`, `archive/`, and
-     `.github/workflows/sync_prod.yml` are never copied into any production repository.
-  5. Concurrent monitor commit resilience: if a 5-minute production monitor pushes a state or
-     cache commit while a sync is in flight, the push retry fetches the new remote tip, resets
-     to `FETCH_HEAD`, and re-applies the deterministic tree sync on top of the fresh state/caches.
-  6. Workflow-scope fallback: if `.github/workflows/*` changed and the configured token lacks
+     `.github/workflows/sync_prod.yml` are never copied into the production repository.
+  4. Concurrent monitor commit resilience: if the 5-minute production monitor pushes a state
+     commit while a sync is in flight, the push retry fetches the new remote tip, resets to
+     `FETCH_HEAD`, and re-applies the deterministic tree sync on top of the fresh state.
+  5. Workflow-scope fallback: if `.github/workflows/*` changed and the configured token lacks
      `workflow` permission, the script automatically falls back to pushing all non-workflow code,
      config, and test updates and emits a clear warning naming the skipped workflow files.
 """
@@ -45,11 +33,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SOURCE_REPO = "uesu/Game-Express"
 DEFAULT_TARGET_REPOS = ("uesu/8mqzv4k2n7c",)
-DEFAULT_NEWS_SOURCE_REPO = "uesu/News-Express"
-DEFAULT_NEWS_TARGET_REPOS = (
-    "uesu/7jkxmy9nvbc",
-    "uesu/wvkhabh2s22",
-)
 DEFAULT_BRANCH = "main"
 
 SYNC_DIRS = (
@@ -98,122 +81,6 @@ EXCLUDED_DEV_PATHS = (
     "archive",
     ".github/workflows/sync_prod.yml",
 )
-
-# ── News-Express companion manifest (`uesu/News-Express` -> `7jkxmy9nvbc` & `wvkhabh2s22`) ──
-NEWS_SYNC_DIRS = (
-    "testing area",
-    "tests",
-    ".github/scripts",
-)
-
-NEWS_SYNC_WORKFLOW_FILES = (
-    ".github/workflows/ci.yml",
-    ".github/workflows/dependabot_auto_merge.yml",
-    ".github/workflows/python_version_bump.yml",
-    ".github/workflows/reddit_monitor.yml",
-    ".github/workflows/twitter_monitor.yml",
-)
-
-NEWS_SYNC_SINGLE_FILES = (
-    ".github/dependabot.yml",
-    ".gitignore",
-    "requirements.txt",
-)
-
-NEWS_PROTECTED_PROD_FILES = (
-    "posted_reddit.json",
-    "pending_reddit.json",
-    "proxy_health.json",
-    "posted_tweets.json",
-    "posted_messages.json",
-)
-
-NEWS_EXCLUDED_DEV_PATHS = (
-    "docs",
-    "README.md",
-    "AGENTS.md",
-    ".env.example",
-    ".github/workflows/sync_prod.yml",
-)
-
-NEWS_SYNC_WORKFLOW_YML = """\
-name: Sync to Production (7jkxmy9nvbc + wvkhabh2s22)
-
-# Automatically synchronizes the validated runtime subset from uesu/News-Express (dev)
-# to BOTH live production repositories (`uesu/7jkxmy9nvbc` Reddit + `uesu/wvkhabh2s22`
-# Twitter) whenever changes land on `main`, or on manual workflow_dispatch.
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      target_repos:
-        description: 'Target production repo(s), comma-separated (default: uesu/7jkxmy9nvbc,uesu/wvkhabh2s22)'
-        required: false
-        default: 'uesu/7jkxmy9nvbc,uesu/wvkhabh2s22'
-      dry_run:
-        description: 'Dry run only (compute diff and summary without pushing to prod)'
-        type: boolean
-        default: false
-      skip_ci:
-        description: 'Append [skip ci] to the production sync commit message'
-        type: boolean
-        default: false
-
-permissions:
-  contents: read
-
-concurrency:
-  group: sync-prod-${{ github.ref }}
-  cancel-in-progress: false
-
-jobs:
-  sync:
-    name: Validate & sync runtime to production
-    if: github.repository == 'uesu/News-Express'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Check out development repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7 — SHA-pinned
-        with:
-          persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7 — SHA-pinned
-        with:
-          python-version: '3.14.8'
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Pre-sync gate — compile every .py file
-        run: python -m compileall -q "testing area" tests .github/scripts
-
-      - name: Pre-sync gate — offline smoke test
-        run: python tests/test_smoke.py
-
-      - name: Pre-sync gate — Reddit signal unit tests
-        run: python tests/test_reddit_signals.py
-
-      - name: Pre-sync gate — Twitter media unit tests
-        run: python tests/test_twitter_media.py
-
-      - name: Sync validated runtime subset to production repositories
-        env:
-          SOURCE_REPO: ${{ github.repository }}
-          SOURCE_SHA: ${{ github.sha }}
-          TARGET_REPOS: ${{ inputs.target_repos || vars.PROD_REPOS || 'uesu/7jkxmy9nvbc,uesu/wvkhabh2s22' }}
-          SYNC_PAT: ${{ secrets.PROD_SYNC_PAT || secrets.BUMP_PAT }}
-          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
-          SKIP_CI: ${{ inputs.skip_ci && '1' || vars.SKIP_PROD_CI || '0' }}
-          STRICT_AUTH: ${{ (github.event_name == 'workflow_dispatch' || vars.REQUIRE_PROD_SYNC == '1') && '1' || '0' }}
-        run: python .github/scripts/sync_prod.py
-"""
 
 IGNORED_NAMES = frozenset({"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".DS_Store"})
 IGNORED_SUFFIXES = (".pyc", ".pyo")
@@ -284,25 +151,20 @@ def merge_program_announcements_bytes(src_bytes: bytes, dst_bytes: bytes | None)
     return (json.dumps(merged, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
 
 
-def _sync_tree_generic(
+def sync_tree(
     src_root: Path,
     dst_root: Path,
     *,
-    sync_dirs: tuple[str, ...],
-    sync_single_files: tuple[str, ...],
-    sync_workflow_files: tuple[str, ...],
-    dev_only_workflow_files: tuple[str, ...],
-    protected_prod_files: tuple[str, ...],
-    semantic_merge_files: tuple[str, ...] = (),
     include_workflows: bool = True,
 ) -> dict[str, list[str]]:
+    """Synchronize the allowed runtime subset from `src_root` into `dst_root`."""
     src_root = src_root.resolve()
     dst_root = dst_root.resolve()
     if src_root == dst_root:
         raise ValueError("Refusing to sync a repository directory onto itself.")
 
     protected_before: dict[str, bytes | None] = {}
-    for rel in protected_prod_files:
+    for rel in PROTECTED_PROD_FILES:
         target = dst_root / rel
         protected_before[rel] = target.read_bytes() if target.is_file() else None
 
@@ -310,7 +172,7 @@ def _sync_tree_generic(
     removed: list[str] = []
     preserved: list[str] = [rel for rel, data in protected_before.items() if data is not None]
 
-    for rel_dir in sync_dirs:
+    for rel_dir in SYNC_DIRS:
         sdir = src_root / rel_dir
         ddir = dst_root / rel_dir
         if not sdir.is_dir():
@@ -346,7 +208,7 @@ def _sync_tree_generic(
                     except OSError:
                         pass
 
-    for rel_file in sync_single_files:
+    for rel_file in SYNC_SINGLE_FILES:
         spath = src_root / rel_file
         dpath = dst_root / rel_file
         if not spath.is_file():
@@ -358,7 +220,7 @@ def _sync_tree_generic(
             updated.append(rel_file)
 
     if include_workflows:
-        for rel_wf in sync_workflow_files:
+        for rel_wf in SYNC_WORKFLOW_FILES:
             spath = src_root / rel_wf
             dpath = dst_root / rel_wf
             if not spath.is_file():
@@ -368,13 +230,13 @@ def _sync_tree_generic(
                 dpath.parent.mkdir(parents=True, exist_ok=True)
                 dpath.write_bytes(sbytes)
                 updated.append(rel_wf)
-        for dev_wf in dev_only_workflow_files:
+        for dev_wf in DEV_ONLY_WORKFLOW_FILES:
             dpath = dst_root / dev_wf
             if dpath.is_file():
                 dpath.unlink()
                 removed.append(dev_wf)
 
-    for rel_merge in semantic_merge_files:
+    for rel_merge in SEMANTIC_MERGE_FILES:
         spath = src_root / rel_merge
         dpath = dst_root / rel_merge
         if not spath.is_file():
@@ -405,46 +267,6 @@ def _sync_tree_generic(
     }
 
 
-def sync_tree(
-    src_root: Path,
-    dst_root: Path,
-    *,
-    include_workflows: bool = True,
-) -> dict[str, list[str]]:
-    """Synchronize the Game-Express runtime subset from `src_root` into `dst_root`."""
-    return _sync_tree_generic(
-        src_root,
-        dst_root,
-        sync_dirs=SYNC_DIRS,
-        sync_single_files=SYNC_SINGLE_FILES,
-        sync_workflow_files=SYNC_WORKFLOW_FILES,
-        dev_only_workflow_files=DEV_ONLY_WORKFLOW_FILES,
-        protected_prod_files=PROTECTED_PROD_FILES,
-        semantic_merge_files=SEMANTIC_MERGE_FILES,
-        include_workflows=include_workflows,
-    )
-
-
-def sync_news_tree(
-    src_root: Path,
-    dst_root: Path,
-    *,
-    include_workflows: bool = True,
-) -> dict[str, list[str]]:
-    """Synchronize the News-Express runtime subset from `src_root` into `dst_root`."""
-    return _sync_tree_generic(
-        src_root,
-        dst_root,
-        sync_dirs=NEWS_SYNC_DIRS,
-        sync_single_files=NEWS_SYNC_SINGLE_FILES,
-        sync_workflow_files=NEWS_SYNC_WORKFLOW_FILES,
-        dev_only_workflow_files=DEV_ONLY_WORKFLOW_FILES,
-        protected_prod_files=NEWS_PROTECTED_PROD_FILES,
-        semantic_merge_files=(),
-        include_workflows=include_workflows,
-    )
-
-
 def _run_git(
     args: list[str],
     *,
@@ -470,37 +292,28 @@ def _run_git(
     return proc
 
 
-def _stage_and_verify(
-    clone_dir: Path,
-    token: str = "",
-    *,
-    protected_files: tuple[str, ...] = PROTECTED_PROD_FILES,
-    excluded_dev_paths: tuple[str, ...] = EXCLUDED_DEV_PATHS,
-) -> list[str]:
+def _stage_and_verify(clone_dir: Path, token: str = "") -> list[str]:
     _run_git(["add", "-A"], cwd=clone_dir, token=token)
-    for rel in (*protected_files, *DEV_ONLY_WORKFLOW_FILES):
+    for rel in (*PROTECTED_PROD_FILES, *DEV_ONLY_WORKFLOW_FILES):
         _run_git(["reset", "-q", "HEAD", "--", rel], cwd=clone_dir, token=token, check=False)
         _run_git(["checkout", "--", rel], cwd=clone_dir, token=token, check=False)
     diff = _run_git(["diff", "--cached", "--name-only"], cwd=clone_dir, token=token)
     staged = [line.strip() for line in diff.stdout.splitlines() if line.strip()]
-    forbidden = set(staged).intersection({*protected_files, *excluded_dev_paths})
+    forbidden = set(staged).intersection({*PROTECTED_PROD_FILES, *EXCLUDED_DEV_PATHS})
     if forbidden:
         raise RuntimeError(f"Forbidden path(s) staged for production sync: {sorted(forbidden)}")
     return staged
 
 
-def parse_target_repos(
-    raw: str | None,
-    default: tuple[str, ...] = DEFAULT_TARGET_REPOS,
-) -> list[str]:
+def parse_target_repos(raw: str | None) -> list[str]:
     if not raw or not raw.strip():
-        return list(default)
+        return list(DEFAULT_TARGET_REPOS)
     repos: list[str] = []
     for part in re.split(r"[\s,]+", raw.strip()):
         cleaned = part.strip().strip("/")
         if cleaned and cleaned not in repos:
             repos.append(cleaned)
-    return repos or list(default)
+    return repos or list(DEFAULT_TARGET_REPOS)
 
 
 def sync_remote_repo(
@@ -515,11 +328,8 @@ def sync_remote_repo(
     skip_ci: bool = False,
     dry_run: bool = False,
     strict_auth: bool = False,
-    tree_sync_fn=sync_tree,
-    protected_files: tuple[str, ...] = PROTECTED_PROD_FILES,
-    excluded_dev_paths: tuple[str, ...] = EXCLUDED_DEV_PATHS,
 ) -> dict[str, object]:
-    """Clone `target_repo`, apply `tree_sync_fn`, and push atomically with retry on race."""
+    """Clone `target_repo`, apply `sync_tree`, and push atomically with retry on race."""
     if target_repo.strip().lower() == source_repo.strip().lower():
         raise ValueError(f"Refusing to sync source repository {source_repo!r} onto itself.")
 
@@ -576,13 +386,8 @@ def sync_remote_repo(
         skipped_workflows: list[str] = []
 
         for attempt in range(1, 6):
-            tree_sync_fn(src_root, clone_dir, include_workflows=include_workflows)
-            staged = _stage_and_verify(
-                clone_dir,
-                token=token,
-                protected_files=protected_files,
-                excluded_dev_paths=excluded_dev_paths,
-            )
+            sync_tree(src_root, clone_dir, include_workflows=include_workflows)
+            staged = _stage_and_verify(clone_dir, token=token)
             if not staged:
                 msg = (
                     f"{target_repo} is already up to date with {source_repo}@{short_sha}"
@@ -670,167 +475,6 @@ def sync_remote_repo(
     raise RuntimeError(f"Unexpected exit from sync loop for {target_repo}")
 
 
-def build_news_express_sync_script() -> str:
-    """Return the standalone `.github/scripts/sync_prod.py` script for `uesu/News-Express`."""
-    this_src = Path(__file__).read_text(encoding="utf-8")
-    this_src = this_src.replace(
-        'DEFAULT_SOURCE_REPO = "uesu/Game-Express"',
-        'DEFAULT_SOURCE_REPO = "uesu/News-Express"',
-    )
-    this_src = this_src.replace(
-        'DEFAULT_TARGET_REPOS = ("uesu/8mqzv4k2n7c",)',
-        'DEFAULT_TARGET_REPOS = ("uesu/7jkxmy9nvbc", "uesu/wvkhabh2s22")',
-    )
-    this_src = this_src.replace(
-        "tree_sync_fn=sync_tree,\n    protected_files: tuple[str, ...] = PROTECTED_PROD_FILES,\n"
-        "    excluded_dev_paths: tuple[str, ...] = EXCLUDED_DEV_PATHS,",
-        "tree_sync_fn=sync_news_tree,\n    protected_files: tuple[str, ...] = NEWS_PROTECTED_PROD_FILES,\n"
-        "    excluded_dev_paths: tuple[str, ...] = NEWS_EXCLUDED_DEV_PATHS,",
-    )
-    this_src = this_src.replace(
-        'os.environ.get("SYNC_NEWS_EXPRESS", "1")',
-        'os.environ.get("SYNC_NEWS_EXPRESS", "0")',
-    )
-    return this_src
-
-
-def sync_news_express_ecosystem(
-    *,
-    token: str,
-    news_source_repo: str = DEFAULT_NEWS_SOURCE_REPO,
-    news_target_repos: list[str] | None = None,
-    branch: str = DEFAULT_BRANCH,
-    skip_ci: bool = False,
-    dry_run: bool = False,
-    strict_auth: bool = False,
-) -> list[dict[str, object]]:
-    """Bootstrap `sync_prod.yml` into `uesu/News-Express` and sync `7jkxmy9nvbc` & `wvkhabh2s22`."""
-    targets = news_target_repos or list(DEFAULT_NEWS_TARGET_REPOS)
-    if not token and not dry_run:
-        msg = f"No token available to sync {news_source_repo} -> {', '.join(targets)}."
-        return [{"repo": r, "status": "skipped-no-token", "files": [], "message": msg} for r in targets]
-
-    remote_url = (
-        f"https://x-access-token:{token}@github.com/{news_source_repo}.git"
-        if token
-        else f"https://github.com/{news_source_repo}.git"
-    )
-    results: list[dict[str, object]] = []
-
-    with tempfile.TemporaryDirectory(prefix="ne-source-clone-") as tmp:
-        news_dir = Path(tmp) / "News-Express"
-        clone_proc = _run_git(
-            ["clone", "--depth", "1", "--branch", branch, remote_url, str(news_dir)],
-            cwd=Path(tmp),
-            token=token,
-            check=False,
-        )
-        if clone_proc.returncode != 0:
-            err = _redact(clone_proc.stderr.strip() or clone_proc.stdout.strip(), token)
-            warn = f"Could not clone {news_source_repo} ({err})."
-            print(f"::warning::{warn}")
-            if strict_auth:
-                raise RuntimeError(warn)
-            return [{"repo": news_source_repo, "status": "skipped-auth", "files": [], "message": warn}]
-
-        _run_git(["config", "user.name", "github-actions[bot]"], cwd=news_dir, token=token)
-        _run_git(
-            ["config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"],
-            cwd=news_dir,
-            token=token,
-        )
-
-        # Ensure standalone sync_prod.py and sync_prod.yml exist in uesu/News-Express
-        ne_script_path = news_dir / ".github" / "scripts" / "sync_prod.py"
-        ne_wf_path = news_dir / ".github" / "workflows" / "sync_prod.yml"
-        ne_script_content = build_news_express_sync_script()
-        bootstrapped_files: list[str] = []
-
-        if not ne_script_path.is_file() or ne_script_path.read_text(encoding="utf-8") != ne_script_content:
-            ne_script_path.parent.mkdir(parents=True, exist_ok=True)
-            ne_script_path.write_text(ne_script_content, encoding="utf-8")
-            bootstrapped_files.append(".github/scripts/sync_prod.py")
-
-        if not ne_wf_path.is_file() or ne_wf_path.read_text(encoding="utf-8") != NEWS_SYNC_WORKFLOW_YML:
-            ne_wf_path.parent.mkdir(parents=True, exist_ok=True)
-            ne_wf_path.write_text(NEWS_SYNC_WORKFLOW_YML, encoding="utf-8")
-            bootstrapped_files.append(".github/workflows/sync_prod.yml")
-
-        # Validate News-Express syntax (including generated sync_prod.py) before syncing
-        proc = subprocess.run(
-            [sys.executable, "-m", "compileall", "-q", "testing area", "tests", ".github/scripts"],
-            cwd=str(news_dir),
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if proc.returncode != 0:
-            tail = _redact((proc.stderr or proc.stdout)[-600:], token)
-            raise RuntimeError(f"News-Express compileall check failed: {tail}")
-
-        if bootstrapped_files and not dry_run:
-            _run_git(["add", *bootstrapped_files], cwd=news_dir, token=token)
-            diff_ne = _run_git(["diff", "--cached", "--name-only"], cwd=news_dir, token=token)
-            staged_ne = [x.strip() for x in diff_ne.stdout.splitlines() if x.strip()]
-            if staged_ne:
-                _run_git(
-                    [
-                        "commit",
-                        "-m",
-                        "Round 87: Add automated dev -> prod sync workflow (sync_prod.yml + sync_prod.py)",
-                    ],
-                    cwd=news_dir,
-                    token=token,
-                )
-                push_ne = _run_git(
-                    ["push", "origin", f"HEAD:{branch}"],
-                    cwd=news_dir,
-                    token=token,
-                    check=False,
-                )
-                if push_ne.returncode == 0:
-                    ne_head = _run_git(
-                        ["rev-parse", "--short", "HEAD"], cwd=news_dir, token=token
-                    ).stdout.strip()
-                    results.append(
-                        {
-                            "repo": news_source_repo,
-                            "status": "bootstrapped",
-                            "commit": ne_head,
-                            "files": staged_ne,
-                            "message": f"Installed automated sync workflow onto {news_source_repo}@{ne_head}.",
-                        }
-                    )
-                else:
-                    err_ne = _redact(push_ne.stderr.strip() or push_ne.stdout.strip(), token)
-                    print(f"::warning::Could not push workflow bootstrap to {news_source_repo}: {err_ne}")
-
-        news_sha = _run_git(["rev-parse", "HEAD"], cwd=news_dir, token=token).stdout.strip()
-        news_subj = _run_git(
-            ["log", "-1", "--pretty=%s"], cwd=news_dir, token=token
-        ).stdout.strip()
-
-        for target_repo in targets:
-            res = sync_remote_repo(
-                src_root=news_dir,
-                target_repo=target_repo,
-                token=token,
-                branch=branch,
-                source_repo=news_source_repo,
-                source_sha=news_sha,
-                commit_subject=news_subj,
-                skip_ci=skip_ci,
-                dry_run=dry_run,
-                strict_auth=strict_auth,
-                tree_sync_fn=sync_news_tree,
-                protected_files=NEWS_PROTECTED_PROD_FILES,
-                excluded_dev_paths=NEWS_EXCLUDED_DEV_PATHS,
-            )
-            results.append(res)
-
-    return results
-
-
 def write_step_summary(results: list[dict[str, object]], source_sha: str) -> None:
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     lines = [
@@ -875,7 +519,6 @@ def main() -> int:
     skip_ci = os.environ.get("SKIP_CI", "0").strip().lower() in ("1", "true", "yes")
     dry_run = os.environ.get("DRY_RUN", "0").strip().lower() in ("1", "true", "yes")
     strict_auth = os.environ.get("STRICT_AUTH", "0").strip().lower() in ("1", "true", "yes")
-    sync_news = os.environ.get("SYNC_NEWS_EXPRESS", "1").strip().lower() in ("1", "true", "yes")
 
     if not source_sha:
         proc = _run_git(["rev-parse", "HEAD"], cwd=ROOT, check=False)
@@ -899,34 +542,6 @@ def main() -> int:
             strict_auth=strict_auth,
         )
         results.append(res)
-
-    if sync_news and source_repo.strip().lower() == DEFAULT_SOURCE_REPO.lower():
-        news_targets = parse_target_repos(
-            os.environ.get("NEWS_TARGET_REPOS"),
-            default=DEFAULT_NEWS_TARGET_REPOS,
-        )
-        try:
-            news_results = sync_news_express_ecosystem(
-                token=token,
-                news_source_repo=DEFAULT_NEWS_SOURCE_REPO,
-                news_target_repos=news_targets,
-                branch=branch,
-                skip_ci=skip_ci,
-                dry_run=dry_run,
-                strict_auth=False,
-            )
-            results.extend(news_results)
-        except Exception as exc:
-            err_msg = _redact(str(exc), token)
-            print(f"::warning::News-Express companion sync encountered an error: {err_msg}")
-            results.append(
-                {
-                    "repo": DEFAULT_NEWS_SOURCE_REPO,
-                    "status": "warning",
-                    "files": [],
-                    "message": err_msg,
-                }
-            )
 
     write_step_summary(results, source_sha)
     return 0
