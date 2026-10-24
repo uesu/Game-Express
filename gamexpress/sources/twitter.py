@@ -156,7 +156,10 @@ class XClient:
             url += f"?token={quote(token, safe='')}"
         if reserve:
             sem = self._reserve_sem.setdefault(inst, asyncio.Semaphore(NITTER_RESERVE_PARALLEL))
+            had_to_wait = sem.locked()
             async with sem:
+                if had_to_wait:
+                    await asyncio.sleep(0)
                 body = await self.fetcher.get_text(url, source="nitter", headers=headers, retries=0,
                                                    timeout=NITTER_TIMEOUT)
         else:

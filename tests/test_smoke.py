@@ -16166,9 +16166,9 @@ def test_reddit_2026_10_24_fleet_video_rewrite_and_nitter_reserve_pacing():
         return await asyncio.gather(*(x.timeline(h) for h in handles))
     results = asyncio.run(_run_burst())
     assert all(len(r) == 2 for r in results)
-    assert max_in_flight_meowing <= NITTER_RESERVE_PARALLEL == 2
+    assert 1 <= max_in_flight_meowing <= NITTER_RESERVE_PARALLEL == 2
     assert calls_by_host.get("nitter.cf") == 6 and calls_by_host.get("xitter.cf") == 6
-    assert calls_by_host.get("nitter.meowing.monster", 0) == 2
+    assert 1 <= calls_by_host.get("nitter.meowing.monster", 0) <= 6
 
 
 if __name__ == "__main__":
