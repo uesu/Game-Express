@@ -15,7 +15,7 @@ allowed to do**.
 
 | # | What could go wrong | Realistic? | Handled by |
 |---|---|---|---|
-| T1 | A community source (nitter mirror, Redlib mirror, Reddit proxy, wiki, code API) is taken over and feeds the bot a hostile payload | Yes — 26 nitter mirrors, 22 Reddit/Redlib entries and 3 proxies include community-operated hosts | §2 |
+| T1 | A community source (nitter mirror, Redlib mirror, Reddit proxy, wiki, code API) is taken over and feeds the bot a hostile payload | Yes — 26 nitter mirrors, 24 Reddit/Redlib entries and 3 proxies include community-operated hosts | §2 |
 | T2 | A source floods the bot with hundreds of fake "codes" | Yes — a parser change upstream is enough | §3 |
 | T3 | A webhook URL, `NITTER_RSS_TOKEN`, or `REDDIT_FEED_TOKEN` leaks into a public log or summary | Yes, logs are public on a public repo | §4 |
 | T4 | A compromised GitHub Action steals the Discord webhooks or pushes to the repo | Rare but real (supply chain) | §5 |
