@@ -1,0 +1,101 @@
+name: Sync to Production (8mqzv4k2n7c)
+
+# Automatically synchronizes the validated runtime subset from uesu/Game-Express (dev)
+# to uesu/8mqzv4k2n7c (prod) whenever changes land on `main`, or on manual dispatch.
+#
+# Safety guarantees:
+#   1. Runs the full offline test + validation gate BEFORE touching the production repo.
+#   2. Never touches `state/state.json` in the production repo.
+#   3. Union-merges `config/program_announcements.json` so live-discovered tweet IDs in
+#      production are preserved alongside new entries from dev.
+#   4. Never copies dev-only documentation (`docs/`, `README.md`, `AGENTS.md`, etc.) or
+#      this `sync_prod.yml` workflow into the production repository.
+#   5. Uses `cancel-in-progress: false` and fetch+reset retry so concurrent 5-minute
+#      monitor state commits on production never collide with a sync push.
+#
+# Credentials:
+#   Uses `secrets.PROD_SYNC_PAT` if set, otherwise falls back to `secrets.BUMP_PAT`.
+#   Grant that token `Contents: Read and write` and `Workflows: Read and write` on
+#   `uesu/8mqzv4k2n7c`.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'state/**'
+  workflow_dispatch:
+    inputs:
+      target_repos:
+        description: 'Target production repo(s), comma-separated (default: uesu/8mqzv4k2n7c)'
+        required: false
+        default: 'uesu/8mqzv4k2n7c'
+      dry_run:
+        description: 'Dry run only (compute diff and summary without pushing to prod)'
+        type: boolean
+        default: false
+      skip_ci:
+        description: 'Append [skip ci] to the production sync commit message'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-prod-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Validate & sync runtime to production
+    if: github.repository == 'uesu/Game-Express'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out development repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
+        with:
+          python-version: '3.14.8'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          version: latest-known
+
+      - name: Install dependencies
+        env:
+          UV_SYSTEM_PYTHON: '1'
+        run: uv pip install -r requirements.txt pyyaml -q
+
+      - name: Pre-sync gate — compile every .py file
+        run: python -m compileall -q gamexpress tests .github/scripts
+
+      - name: Pre-sync gate — validate config + sample cards
+        run: python -m gamexpress validate
+
+      - name: Pre-sync gate — offline smoke + golden tests
+        run: python tests/test_smoke.py
+
+      - name: Pre-sync gate — schedule regressions + gacha-wiki placeholder guard
+        run: |
+          python tests/test_schedule_epithet_and_settled.py
+          python tests/test_gachawiki_placeholder.py
+
+      - name: Pre-sync gate — card preview renders
+        run: python -m gamexpress preview --out /tmp/previews > /dev/null
+
+      - name: Sync validated runtime subset to production
+        env:
+          SOURCE_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          TARGET_REPOS: ${{ inputs.target_repos || vars.PROD_REPO || 'uesu/8mqzv4k2n7c' }}
+          SYNC_PAT: ${{ secrets.PROD_SYNC_PAT || secrets.BUMP_PAT }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+          SKIP_CI: ${{ inputs.skip_ci && '1' || vars.SKIP_PROD_CI || '0' }}
+          STRICT_AUTH: ${{ (github.event_name == 'workflow_dispatch' || vars.REQUIRE_PROD_SYNC == '1') && '1' || '0' }}
+        run: python .github/scripts/sync_prod.py

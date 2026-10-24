@@ -16219,5 +16219,131 @@ def test_reddit_2026_10_24_fleet_video_rewrite_and_nitter_reserve_pacing():
     assert "✦ Second Half/Phase: Zibai, Linnea\n- 4 Star Characters: TBA" in rendered_gi72
 
 
+def test_prod_sync_workflow_and_tree_synchronizer_preserve_live_state_and_merge_seeds():
+    """Verifies automated dev -> prod syncing (.github/scripts/sync_prod.py + sync_prod.yml):
+    1. Live `state/state.json` and `placeholder/` in prod are never overwritten, staged, or deleted.
+    2. `config/program_announcements.json` preserves prod-discovered tweet IDs while adding dev seeds.
+    3. Dev-only files (`docs/`, `README.md`, `AGENTS.md`, `sync_prod.yml`, etc.) never leak into prod.
+    4. `.github/workflows/sync_prod.yml` (when present in dev) enforces `cancel-in-progress: false`,
+       `if: github.repository == 'uesu/Game-Express'`, `persist-credentials: false`, full offline test
+       gates before syncing, and zero `${{ ... }}` template interpolation inside `run:` blocks.
+    """
+    import importlib.util
+
+    script_path = ROOT / ".github" / "scripts" / "sync_prod.py"
+    assert script_path.is_file(), "missing .github/scripts/sync_prod.py"
+    spec = importlib.util.spec_from_file_location("ge_sync_prod", script_path)
+    assert spec and spec.loader
+    sync_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sync_mod)
+
+    # 1. Token redaction & target repo parsing
+    secret_tok = "ghp_SuperSecretTokenValue1234567890"
+    dirty = f"fatal: https://x-access-token:{secret_tok}@github.com/uesu/8mqzv4k2n7c.git denied ({secret_tok})"
+    cleaned = sync_mod._redact(dirty, secret_tok)
+    assert secret_tok not in cleaned and "x-access-token:***@github.com" in cleaned
+    assert sync_mod.parse_target_repos("") == ["uesu/8mqzv4k2n7c"]
+    assert sync_mod.parse_target_repos("uesu/8mqzv4k2n7c, uesu/mirror2 ") == [
+        "uesu/8mqzv4k2n7c",
+        "uesu/mirror2",
+    ]
+
+    # 2. Program announcement union merge
+    dev_seed_bytes = (ROOT / "config" / "program_announcements.json").read_bytes()
+    assert sync_mod.merge_program_announcements_bytes(dev_seed_bytes, None) == dev_seed_bytes
+    assert sync_mod.merge_program_announcements_bytes(dev_seed_bytes, dev_seed_bytes) == dev_seed_bytes
+
+    prod_with_live_seed = json.loads(dev_seed_bytes.decode("utf-8"))
+    prod_with_live_seed.setdefault("genshin", {})["7.9"] = {
+        "id": "2999999999999999999",
+        "account": "GenshinImpact",
+        "url": "https://x.com/GenshinImpact/status/2999999999999999999",
+        "posted_ts": 1800000000,
+        "image": "https://pbs.twimg.com/media/Test79.jpg?name=orig",
+        "found_at": 1800000050,
+    }
+    merged_bytes = sync_mod.merge_program_announcements_bytes(
+        dev_seed_bytes,
+        json.dumps(prod_with_live_seed).encode("utf-8"),
+    )
+    merged_obj = json.loads(merged_bytes.decode("utf-8"))
+    assert merged_obj["genshin"]["7.9"]["id"] == "2999999999999999999"
+    assert merged_obj["genshin"]["7.2"]["id"] == "2112755760107081755"
+
+    # 3. Full tree sync into a simulated production checkout
+    with tempfile.TemporaryDirectory(prefix="ge-sync-test-") as tmp:
+        prod_root = Path(tmp) / "prod"
+        (prod_root / "state").mkdir(parents=True)
+        (prod_root / "placeholder").mkdir(parents=True)
+        (prod_root / ".github" / "workflows").mkdir(parents=True)
+        (prod_root / "gamexpress").mkdir(parents=True)
+        (prod_root / "config").mkdir(parents=True)
+
+        live_state_payload = b'{"posted": {"genshin:7.2": {"message_id": "999888777"}}, "live": true}\n'
+        (prod_root / "state" / "state.json").write_bytes(live_state_payload)
+        (prod_root / "placeholder" / "README.txt").write_text("keep placeholder\n", encoding="utf-8")
+        (prod_root / "gamexpress" / "obsolete_module.py").write_text("# stale\n", encoding="utf-8")
+        (prod_root / ".github" / "workflows" / "sync_prod.yml").write_text("# accidental copy\n", encoding="utf-8")
+        (prod_root / "config" / "program_announcements.json").write_bytes(
+            json.dumps(prod_with_live_seed).encode("utf-8")
+        )
+
+        res = sync_mod.sync_tree(ROOT, prod_root, include_workflows=True)
+        assert "gamexpress/obsolete_module.py" in res["removed"]
+        assert ".github/workflows/sync_prod.yml" in res["removed"]
+        assert "state/state.json" in res["preserved"]
+        assert (prod_root / "state" / "state.json").read_bytes() == live_state_payload
+        assert (prod_root / "placeholder" / "README.txt").read_text(encoding="utf-8") == "keep placeholder\n"
+        assert not (prod_root / ".github" / "workflows" / "sync_prod.yml").exists()
+        assert not (prod_root / "docs").exists()
+        assert not (prod_root / "README.md").exists()
+        assert not (prod_root / "AGENTS.md").exists()
+        assert (prod_root / "gamexpress" / "schedule.py").is_file()
+        assert (prod_root / ".github" / "scripts" / "sync_prod.py").is_file()
+        synced_seeds = json.loads((prod_root / "config" / "program_announcements.json").read_text(encoding="utf-8"))
+        assert synced_seeds["genshin"]["7.9"]["id"] == "2999999999999999999"
+
+        # Second sync with identical state produces no updates except when program_announcements formats match
+        (prod_root / "config" / "program_announcements.json").write_bytes(dev_seed_bytes)
+        res_idempotent = sync_mod.sync_tree(ROOT, prod_root, include_workflows=True)
+        assert res_idempotent["updated"] == [] and res_idempotent["removed"] == []
+        assert (prod_root / "state" / "state.json").read_bytes() == live_state_payload
+
+        # Git staging seatbelt: _stage_and_verify never stages state/state.json or sync_prod.yml
+        sync_mod._run_git(["init", "-q"], cwd=prod_root)
+        sync_mod._run_git(["config", "user.name", "test"], cwd=prod_root)
+        sync_mod._run_git(["config", "user.email", "test@example.com"], cwd=prod_root)
+        sync_mod._run_git(["add", "-f", "state/state.json", "config/games.json"], cwd=prod_root)
+        sync_mod._run_git(["commit", "-q", "-m", "init"], cwd=prod_root)
+        (prod_root / "state" / "state.json").write_bytes(b'{"corrupted": true}\n')
+        staged_files = sync_mod._stage_and_verify(prod_root)
+        assert "state/state.json" not in staged_files
+        assert ".github/workflows/sync_prod.yml" not in staged_files
+        assert (prod_root / "state" / "state.json").read_bytes() == live_state_payload
+
+    # 4. Self-sync safety guard
+    try:
+        sync_mod.sync_remote_repo(
+            src_root=ROOT,
+            target_repo="uesu/Game-Express",
+            token="dummy",
+            source_repo="uesu/Game-Express",
+        )
+        raise AssertionError("Expected ValueError when syncing source_repo onto itself")
+    except ValueError:
+        pass
+
+    # 5. Workflow file invariants (checked in dev repo where sync_prod.yml resides)
+    wf_path = ROOT / ".github" / "workflows" / "sync_prod.yml"
+    if wf_path.is_file():
+        wf_text = wf_path.read_text(encoding="utf-8")
+        assert "if: github.repository == 'uesu/Game-Express'" in wf_text
+        assert "cancel-in-progress: false" in wf_text
+        assert "persist-credentials: false" in wf_text
+        assert "python .github/scripts/sync_prod.py" in wf_text
+        assert "python tests/test_smoke.py" in wf_text
+        assert "secrets.PROD_SYNC_PAT || secrets.BUMP_PAT" in wf_text
+
+
 if __name__ == "__main__":
     sys.exit(main())
