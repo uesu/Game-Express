@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Effective date:** October 23, 2026
+**Effective date:** October 24, 2026
 **Applies to:** *Game-Express*, the open-source game version-schedule announcer, redemption-code
 poster, and optional official-news and pre-load/maintenance-started announcer ("the Service"):
 - **Automation mode**: GitHub Actions + Discord webhooks.

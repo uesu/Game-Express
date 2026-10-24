@@ -251,7 +251,7 @@ def test_reference_card_text_is_exact():
     assert ww.index("Maintenance Time & Compensation Details") < ww.index("Banners (STC)")
     gi = "\n".join(c["content"] for c in _render("genshin")["components"][0]["components"] if c["type"] == 10)
     assert "**[Version 7.1 Banners (STC)](https://lunaris.moe/banners)**" in gi
-    assert "※ Re-runs: Skirk, Escoffier" in gi
+    assert "※ Re-runs:" not in gi
 
 
 def test_title_emoji_is_configurable():
@@ -3476,7 +3476,7 @@ def test_wiki_display_names_render_full_forms_without_touching_stored_data():
     card = cards.banners_block(game, {"version": "3.3", **data})
     assert "✦ First Half/Phase: Phoenix Reffaella, Velina Airgid" in card
     assert "✦ Second Half/Phase: Severian Lowell, Norma Hollowell" in card
-    assert "※ Re-runs: Velina Airgid, Norma Hollowell" in card
+    assert "※ Re-runs:" not in card
     # names the map does not hold render exactly as stored (the 4★ line, from the calendar)
     assert "- 4 Star Characters (Default): Seth, Manato" in card
 
@@ -3604,7 +3604,7 @@ def test_gachawiki_lineup_reaches_the_rendered_card():
     assert "✦ First Half/Phase: Vesna, Vodyanitsa" in block_text
     assert "- 4 Star Characters: Bennett, Xingqiu, Sucrose" in block_text
     assert "✦ Second Half/Phase: Official Phase 2" in block_text    # official is never replaced
-    assert "※ Re-runs: Skirk, Escoffier" in block_text
+    assert "※ Re-runs:" not in block_text
     assert "※ Confirmed:" not in block_text                          # phases exist -> no early line
 
 
@@ -13172,16 +13172,22 @@ def test_live_oct_2026_banner_notices_and_self_healing():
 
 
 def test_reddit_fleet_ordering_tiering_and_exclusions():
-    """Pins the 2026-10-23 verified Reddit/Redlib fleet order, proxy chain, and excluded hosts."""
+    """Pins the 2026-10-24 verified Reddit/Redlib fleet order, proxy chain, and excluded hosts."""
     from gamexpress.config import DEFAULT_REDDIT, DEFAULT_REDDIT_ARCHIVE, DEFAULT_REDDIT_PROXIES
-    from gamexpress.sources.reddit import REDDIT_LISTING_ONLY, TOKEN_GATED_REDDIT, RedditClient
+    from gamexpress.sources.reddit import (
+        REDDIT_LISTING_ONLY,
+        REDDIT_SUB_LISTING_ONLY,
+        TOKEN_GATED_REDDIT,
+        RedditClient,
+    )
 
-    assert len(DEFAULT_REDDIT) == 22
+    assert len(DEFAULT_REDDIT) == 24
     assert set(TOKEN_GATED_REDDIT) == {"https://redlib.miningtcup.me"}
 
     active_healthy_tier = [
         "https://redlib.mint.lgbt",
         "https://reddit.idevicehacked.com",
+        "https://redlib.reallyaweso.me",
         "https://redlib.catsarch.com",
         "https://snoo.habedieeh.re",
         "https://redlib.miningtcup.me",
@@ -13190,24 +13196,26 @@ def test_reddit_fleet_ordering_tiering_and_exclusions():
         "https://redlib-2.privadency.com",
     ]
     partial_and_legacy_tail = [
+        "https://redlib.ducks.party",
         "https://reddit.jeremyh.xyz",
         "https://redlib.jeikobu.net",
-        "https://redlib.vanillax.me",
         "https://red.artemislena.eu",
         "https://rl.awy.one",
         "https://redlib.freedit.eu",
         "https://redlib.utilibre.org",
         "https://www.reddit.com",
         "https://old.reddit.com",
+        "https://redlib.vanillax.me",
         "https://redlib.privacyredirect.com",
         "https://eddrit.com",
         "https://redlib.privadency.com",
         "https://safereddit.com",
         "https://redlib.nadeko.net",
     ]
-    assert DEFAULT_REDDIT[:8] == active_healthy_tier
-    assert DEFAULT_REDDIT[8:] == partial_and_legacy_tail
-    assert frozenset(partial_and_legacy_tail[:7]) == REDDIT_LISTING_ONLY
+    assert DEFAULT_REDDIT[:9] == active_healthy_tier
+    assert DEFAULT_REDDIT[9:] == partial_and_legacy_tail
+    assert frozenset(partial_and_legacy_tail[:7]) | {"https://redlib.vanillax.me"} == REDDIT_LISTING_ONLY
+    assert REDDIT_SUB_LISTING_ONLY == frozenset({"https://redlib.ducks.party"})
     assert max(DEFAULT_REDDIT.index(h) for h in active_healthy_tier) < min(
         DEFAULT_REDDIT.index(h) for h in partial_and_legacy_tail
     )
@@ -14626,7 +14634,7 @@ def test_final_pre_merge_edge_cases_and_repo_doc_consistency():
         assert f"{len(config.DEFAULT_REDDIT)} Reddit/Redlib entries" in security_t
         assert "arknights" not in sources_t.lower()
         assert "Status: not integrated." not in sources_t
-        assert "October 23, 2026" in privacy_t and "October 23, 2026" in terms_t
+        assert "October 24, 2026" in privacy_t and "October 24, 2026" in terms_t
         assert "aki-game.net" in privacy_t and "easebar.com" in privacy_t
 
         import re
@@ -16096,6 +16104,119 @@ def test_news_markdown_all_games_multi_op_headers_lists_links_stars_and_overlaps
     kuro_item = asyncio.run(kuro.news_article(NewsFetcher([kuro_doc]), GAMES["wuwa"], {"id": "9902", "ts": 1792728000}))
     assert kuro_item is not None
     assert cards.validate_payload(cards.news_payloads(GAMES["wuwa"], kuro_item)[0]) == []
+
+
+def test_reddit_2026_10_24_fleet_video_rewrite_and_nitter_reserve_pacing():
+    """Verifies 2026-10-24 fixes: Redlib v0.40.0 /vid/<id>/<CMAF|DASH|HLS>/<res>.mp4 rewrite,
+    REDDIT_SUB_LISTING_ONLY filtering on /user/ and /comments/, and NITTER_RESERVE_PARALLEL=2
+    pacing on batch reserve seats (nitter.meowing.monster) across 6 parallel game timelines."""
+    from gamexpress.sources.reddit import (
+        UNMUXED_REDDIT_VIDEO_RE,
+        RedditClient,
+        redlib_media_to_reddit,
+    )
+    from gamexpress.sources.twitter import NITTER_RESERVE_PARALLEL, XClient
+
+    # 1. Redlib v0.40.0 video path rewrite (/vid/<id>/CMAF/1080.mp4 -> https://v.redd.it/<id>/CMAF_1080.mp4)
+    for kind_dir, res_part in (("CMAF", "1080.mp4"), ("DASH", "720.mp4"), ("HLS", "720.mp4")):
+        rewritten = redlib_media_to_reddit(
+            f"/vid/8x7762s9twqg1/{kind_dir}/{res_part}",
+            "https://redlib.reallyaweso.me",
+        )
+        assert rewritten == f"https://v.redd.it/8x7762s9twqg1/{kind_dir}_{res_part}", rewritten
+        assert UNMUXED_REDDIT_VIDEO_RE.match(rewritten), rewritten
+
+    # 2. ducks.party is included in sub listings (kind="sub") and skipped on user/detail lookups
+    rc = RedditClient(None, settings())
+    sub_elig = rc._eligible_instances(for_post_detail=False, kind="sub")
+    user_elig = rc._eligible_instances(for_post_detail=False, kind="user")
+    detail_elig = rc._eligible_instances(for_post_detail=True, kind="sub")
+    assert "https://redlib.reallyaweso.me" in sub_elig[:3]
+    assert "https://redlib.reallyaweso.me" in user_elig[:3]
+    assert "https://redlib.reallyaweso.me" in detail_elig[:3]
+    assert "https://redlib.ducks.party" in sub_elig
+    assert "https://redlib.ducks.party" not in user_elig
+    assert "https://redlib.ducks.party" not in detail_elig
+
+    # 3. Nitter reserve seat pacing across 6 concurrent timelines (uesu/8mqzv4k2n7c 00:45Z 429 fix)
+    in_flight_meowing = 0
+    max_in_flight_meowing = 0
+    calls_by_host: dict[str, int] = {}
+
+    class ParallelBurstFetcher:
+        async def get_text(self, url, **k):
+            nonlocal in_flight_meowing, max_in_flight_meowing
+            parts = url.split("/")
+            host, acct = parts[2], parts[3]
+            calls_by_host[host] = calls_by_host.get(host, 0) + 1
+            if host == "nitter.meowing.monster":
+                in_flight_meowing += 1
+                max_in_flight_meowing = max(max_in_flight_meowing, in_flight_meowing)
+                try:
+                    await asyncio.sleep(0.05)
+                    return RSS.format(id="3333333333").replace("Wuthering_Waves", acct)
+                finally:
+                    in_flight_meowing -= 1
+            await asyncio.sleep(0.01)
+            return RSS.format(id="1111111111" if host == "nitter.cf" else "2222222222").replace("Wuthering_Waves", acct)
+
+    x = XClient(ParallelBurstFetcher(), settings())
+    handles = ["GenshinImpact", "honkaistarrail", "ZZZ_EN", "HonkaiNA", "Wuthering_Waves", "Ananta_EN"]
+    async def _run_burst():
+        return await asyncio.gather(*(x.timeline(h) for h in handles))
+    results = asyncio.run(_run_burst())
+    assert all(len(r) == 2 for r in results)
+    assert 1 <= max_in_flight_meowing <= NITTER_RESERVE_PARALLEL == 2
+    assert calls_by_host.get("nitter.cf") == 6 and calls_by_host.get("xitter.cf") == 6
+    assert 1 <= calls_by_host.get("nitter.meowing.monster", 0) <= 6
+
+    # 4. Genshin 7.2 [[Furina]] & Valeriy wiki-link cleanup, state healing, and ※ Re-runs: removal
+    assert gachawiki.clean_name("[[Furina]] & Valeriy") == "Furina & Valeriy"
+    assert gachawiki.clean_name("[[Furina]] & [[Valeriy]]") == "Furina & Valeriy"
+    assert gachawiki.clean_name("[[Furina|Furina]] &amp; Valeriy") == "Furina & Valeriy"
+    assert gachawiki.clean_name("[[Furina") == "Furina"
+    gi72_wiki = (
+        ";New Characters\n"
+        '* [[File:Mitya Icon.png|35x35px]] [[Mitya]] (5-Star)\n'
+        ";Event Wishes\n"
+        "* Phase I\n"
+        "** [[Snowbound Oath/2026-11-04|Snowbound Oath]] ([[Mitya]])\n"
+        "** [[Chanson of Many Waters/2026-11-04|Chanson of Many Waters]] ([[Furina]] & Valeriy)\n"
+        "* Phase II\n"
+        "** [[Frostbound Reverie/2026-11-25|Frostbound Reverie]] ([[Zibai]])\n"
+        "** [[Verdant Sonata/2026-11-25|Verdant Sonata]] ([[Linnea]])\n"
+    )
+    gi72_lineup = gachawiki.build_lineup("genshin", gi72_wiki, {}, four_star_count=3)
+    assert gi72_lineup["phase1"] == ["Mitya", "Furina & Valeriy"]
+    assert gi72_lineup["phase2"] == ["Zibai", "Linnea"]
+    assert gi72_lineup["reruns"] == ["Furina & Valeriy", "Zibai", "Linnea"]
+
+    games = load_games(ROOT / "config" / "games.json")
+    stale_rec = {
+        "data": {
+            "version": "7.2",
+            "banners": {
+                "phase1": ["Mitya", "[[Furina]] & Valeriy"],
+                "phase2": ["Zibai", "Linnea"],
+                "reruns": ["[[Furina]] & Valeriy", "Zibai", "Linnea"],
+            },
+            "banners_settled": ["phase1", "phase2", "reruns"],
+        },
+        "prov": {
+            "b_phase1": [schedule.PRIORITY["gachawiki"], 1],
+            "b_phase2": [schedule.PRIORITY["gachawiki"], 1],
+            "b_reruns": [schedule.PRIORITY["gachawiki"], 1],
+        },
+    }
+    healed = schedule.merge(games["genshin"], "7.2", [], stale_rec, {}, {}, 1792770633, wiki=None)
+    assert healed["banners"]["phase1"] == ["Mitya", "Furina & Valeriy"]
+    assert healed["banners"]["reruns"] == ["Furina & Valeriy", "Zibai", "Linnea"]
+    rendered_gi72 = cards.banners_block(games["genshin"], healed)
+    assert "[[Furina]]" not in rendered_gi72 and "[[" not in rendered_gi72 and "]]" not in rendered_gi72
+    assert "※ Re-runs:" not in rendered_gi72
+    assert "\n\n\n" not in rendered_gi72
+    assert "✦ First Half/Phase: Mitya, Furina & Valeriy\n- 4 Star Characters: TBA" in rendered_gi72
+    assert "✦ Second Half/Phase: Zibai, Linnea\n- 4 Star Characters: TBA" in rendered_gi72
 
 
 if __name__ == "__main__":
