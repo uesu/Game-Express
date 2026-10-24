@@ -16334,7 +16334,51 @@ def test_prod_sync_workflow_and_tree_synchronizer_preserve_live_state_and_merge_
     except ValueError:
         pass
 
-    # 5. Workflow file invariants (checked in dev repo where sync_prod.yml resides)
+    # 5. News-Express companion tree sync & standalone script generator
+    ne_script_src = sync_mod.build_news_express_sync_script()
+    assert 'DEFAULT_SOURCE_REPO = "uesu/News-Express"' in ne_script_src
+    assert 'DEFAULT_TARGET_REPOS = ("uesu/7jkxmy9nvbc", "uesu/wvkhabh2s22")' in ne_script_src
+    compile(ne_script_src, "ne_sync_prod.py", "exec")
+
+    with tempfile.TemporaryDirectory(prefix="ne-sync-test-") as ne_tmp:
+        ne_src = Path(ne_tmp) / "ne_src"
+        ne_dst = Path(ne_tmp) / "ne_dst"
+        (ne_src / "testing area").mkdir(parents=True)
+        (ne_src / "tests").mkdir(parents=True)
+        (ne_src / ".github" / "workflows").mkdir(parents=True)
+        (ne_src / ".github" / "scripts").mkdir(parents=True)
+        (ne_src / "docs").mkdir(parents=True)
+        (ne_src / "testing area" / "reddit_main_v3.py").write_text("# v3\n", encoding="utf-8")
+        (ne_src / "tests" / "test_smoke.py").write_text("# smoke\n", encoding="utf-8")
+        (ne_src / ".github" / "workflows" / "reddit_monitor.yml").write_text("name: r\n", encoding="utf-8")
+        (ne_src / ".github" / "workflows" / "sync_prod.yml").write_text("name: sync\n", encoding="utf-8")
+        (ne_src / "requirements.txt").write_text("aiohttp\n", encoding="utf-8")
+        (ne_src / "README.md").write_text("# dev readme\n", encoding="utf-8")
+        (ne_src / "docs" / "CHANGELOG.md").write_text("# changelog\n", encoding="utf-8")
+
+        ne_dst.mkdir(parents=True)
+        ne_caches = {
+            "posted_reddit.json": b'["sub_1"]\n',
+            "pending_reddit.json": b'{"sub_2": {}}\n',
+            "proxy_health.json": b'{"vxreddit": {}}\n',
+            "posted_tweets.json": b'["999"]\n',
+            "posted_messages.json": b'{"sub_1": {}}\n',
+        }
+        for cname, cbytes in ne_caches.items():
+            (ne_dst / cname).write_bytes(cbytes)
+
+        ne_res = sync_mod.sync_news_tree(ne_src, ne_dst, include_workflows=True)
+        assert sorted(ne_res["preserved"]) == sorted(ne_caches.keys())
+        for cname, cbytes in ne_caches.items():
+            assert (ne_dst / cname).read_bytes() == cbytes
+        assert (ne_dst / "testing area" / "reddit_main_v3.py").is_file()
+        assert (ne_dst / "tests" / "test_smoke.py").is_file()
+        assert (ne_dst / ".github" / "workflows" / "reddit_monitor.yml").is_file()
+        assert not (ne_dst / ".github" / "workflows" / "sync_prod.yml").exists()
+        assert not (ne_dst / "README.md").exists()
+        assert not (ne_dst / "docs").exists()
+
+    # 6. Workflow file invariants (checked in dev repo where sync_prod.yml resides)
     wf_path = ROOT / ".github" / "workflows" / "sync_prod.yml"
     if wf_path.is_file():
         wf_text = wf_path.read_text(encoding="utf-8")
