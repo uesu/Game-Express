@@ -13215,7 +13215,8 @@ def test_reddit_fleet_ordering_tiering_and_exclusions():
     assert DEFAULT_REDDIT[:9] == active_healthy_tier
     assert DEFAULT_REDDIT[9:] == partial_and_legacy_tail
     assert frozenset(partial_and_legacy_tail[:7]) | {"https://redlib.vanillax.me"} == REDDIT_LISTING_ONLY
-    assert REDDIT_SUB_LISTING_ONLY == frozenset({"https://redlib.ducks.party"})
+    expected_sub_only = frozenset({"https://redlib.ducks.party"})
+    assert expected_sub_only == REDDIT_SUB_LISTING_ONLY
     assert max(DEFAULT_REDDIT.index(h) for h in active_healthy_tier) < min(
         DEFAULT_REDDIT.index(h) for h in partial_and_legacy_tail
     )
