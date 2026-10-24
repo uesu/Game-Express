@@ -96,7 +96,7 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 | `tests/test_schedule_epithet_and_settled.py` · `tests/test_gachawiki_placeholder.py` | the 2026-10-08 schedule regressions (the first also runs in a checkout with no dependencies installed) and the ZZZ 3.3 "Agent" placeholder guard. Every test file has a plain runner and **every one is a CI gate** — `test_ci_and_the_python_bump_gate_run_every_offline_test_file` fails the moment a new file is not wired into `ci.yml` and the python-bump gate |
 | `docs/` | the manual, indexed in `docs/README.md`: `CONFIGURATION`, `ACCURACY`, `SOURCES`, `BANNER_DATABASE`, `SCHEDULER`, `ROLLOUT`, `TESTING`, `TROUBLESHOOTING`, `SECURITY`, `TIMESTAMP-PATTERNS`, `DEPENDABOT`, `PYTHON_VERSION`, `PROD-REPO-SETUP`, `CREDITS` |
 | `docs/changelog/` | `CHANGELOG.md` (1.8.0 →) + `CHANGELOG_ARCHIVE.md` (1.0.0 – 1.7.0) + an index; the full history lives here — the README's Changelog section is a pointer to it. |
-| `.github/workflows/` | `monitor.yml` (production), `ci.yml` (tests + advisory job), `python_version_bump.yml` |
+| `.github/workflows/` | `monitor.yml` (production), `ci.yml` (tests + advisory job), `python_version_bump.yml`, `sync_prod.yml` (dev → prod sync) |
 
 ---
 

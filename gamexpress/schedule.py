@@ -1666,7 +1666,7 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
     data = dict(prev)
     data["version"] = version
     if isinstance(data.get("banners"), dict):
-        healed_banners: dict[str, Any] = {}
+        healed_banners: dict[str, object] = {}
         for b_key, b_vals in data["banners"].items():
             if isinstance(b_vals, list):
                 healed_banners[b_key] = [

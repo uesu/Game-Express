@@ -481,6 +481,31 @@ Discord" and "state committed", and cancelling there allows a re-post.
 Prod will drift from dev in two data files: the workflow keeps committing `state/state.json`
 and `config/program_announcements.json`. So sync code **into** prod, never the reverse.
 
+### Option A — Automated GitHub Actions sync (`.github/workflows/sync_prod.yml`, recommended)
+
+Every push to `main` (and any manual **Actions → Sync to Production (8mqzv4k2n7c) → Run workflow**
+dispatch) automatically validates the full offline test suite and runs `.github/scripts/sync_prod.py`
+to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, `config/games.json`,
+`config/overrides.json`, `.github/workflows/{ci,monitor,python_version_bump}.yml`,
+`.github/dependabot.yml`, `.github/zizmor.yml`, `.gitignore`, `requirements.txt`, `ruff.toml`,
+`state/.gitkeep`) to `uesu/8mqzv4k2n7c`:
+
+- **Live state is untouchable:** `state/state.json` is never created, overwritten, staged, or deleted.
+- **Program announcement seeds are union-merged:** `config/program_announcements.json` preserves any
+  tweet IDs discovered live by the production monitor while adding/updating entries from dev.
+- **Dev-only files stay in dev:** `docs/`, `README.md`, `AGENTS.md`, `PRIVACY_POLICY.md`,
+  `TERMS_OF_SERVICE.md`, `.env.example`, `previews/`, `archive/`, and `.github/workflows/sync_prod.yml`
+  are never copied to production.
+- **Zero collision with 5-minute monitor runs:** `cancel-in-progress: false` queues concurrent syncs,
+  and if a 5-minute monitor state commit lands mid-push, `sync_prod.py` fetches the fresh remote tip,
+  resets to `FETCH_HEAD`, and re-applies the sync on top of the updated `state/state.json`.
+- **One-time credential check:** `sync_prod.yml` uses `secrets.PROD_SYNC_PAT` if set, or falls back to
+  `secrets.BUMP_PAT`. Make sure that token has **Contents: Read and write** and **Workflows: Read and
+  write** access to `uesu/8mqzv4k2n7c` (or override the target repository name via the `PROD_REPO`
+  repository variable).
+
+### Option B — Manual CLI sync fallback
+
 ```bash
 # in dev, on green main
 cd /path/to/Game-Express && git checkout main && git pull
