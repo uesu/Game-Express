@@ -282,6 +282,7 @@ that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA
   the new weapons, W-Engines, light cones, disc drives, relic sets and echoes. Later builds use
   a retained bounded kit baseline to show changed blocks, with an exact **Full kit** and
   **Revision diff** source link per item.
+- **Revision discovery.** Gachabase Markdown and server-rendered HTML both identify changed existing items; unreadable pages warn and fall back to nanoka’s new/retained IDs.
 - **Content-driven pages.** Beta cards can use five pages, ten or more, according to the
   readable content in each batch; there is no fixed beta page cap. Long equipment effects,
   character text, parameter rows and revision changes continue in order on validated pages.

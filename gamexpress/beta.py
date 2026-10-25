@@ -43,7 +43,9 @@ import asyncio
 import difflib
 import logging
 import re
+from html.parser import HTMLParser
 from typing import Any
+from urllib.parse import urljoin, urlsplit
 
 from .cards import beta_payloads_with_map
 from .config import Game
@@ -687,12 +689,105 @@ def _normalize_changelog(markdown: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text)
 
 
-def parse_changelog(markdown: str) -> list[dict]:
+class _ChangelogHTML(HTMLParser):
+    """Read server-rendered revision headings/cards without executing hydration scripts."""
+
+    def __init__(self, base_url: str):
+        super().__init__(convert_charrefs=True)
+        self.base_url = base_url
+        self.revisions: list[dict] = []
+        self.section = ""
+        self.capture = ""
+        self.parts: list[str] = []
+        self.href = ""
+        self.image = ""
+        self.hidden = 0
+        self.body: list[str] = []
+        self.active = False
+
+    def _link(self, href: str) -> str:
+        try:
+            url = urljoin(self.base_url, href)
+            parsed = urlsplit(url)
+            origin = urlsplit(self.base_url)
+        except ValueError:
+            return ""
+        if parsed.scheme not in {"https", "http"} or parsed.netloc != origin.netloc:
+            return ""
+        return url
+
+    def handle_starttag(self, tag, attrs):
+        if tag in {"script", "style"}:
+            self.hidden += 1
+        if self.hidden:
+            return
+        attrs = dict(attrs)
+        if tag in {"h2", "h3", "a"}:
+            self.capture, self.parts = tag, []
+            self.href = self._link(attrs.get("href", "")) if tag == "a" else ""
+            self.image = ""
+        elif tag == "img" and self.capture == "a":
+            self.image = attrs.get("src", "")
+
+    def handle_data(self, data):
+        if self.hidden:
+            return
+        if self.capture:
+            self.parts.append(data)
+        elif self.active:
+            self.body.append(data)
+
+    def _finish_revision(self):
+        if self.active:
+            self.revisions[-1]["no_changes"] = bool(re.search(
+                r"\bno tracked changes detected\b", " ".join(self.body), re.I))
+        self.body = []
+
+    def handle_endtag(self, tag):
+        if tag in {"script", "style"} and self.hidden:
+            self.hidden -= 1
+            return
+        if self.hidden or tag != self.capture:
+            return
+        text = re.sub(r"\s+", " ", "".join(self.parts)).strip()
+        self.capture = ""
+        if tag == "h2":
+            self._finish_revision()
+            match = _REV_RE.fullmatch("## " + text)
+            self.section = ""
+            self.active = bool(match)
+            if match:
+                self.revisions.append({"label": match.group("label").strip(),
+                    "date": (match.group("date") or "").strip(), "entries": [], "no_changes": False})
+        elif tag == "h3":
+            self.section = text
+        elif tag == "a" and self.active and self.href:
+            path = urlsplit(self.href).path
+            entries = self.revisions[-1]["entries"]
+            if path.startswith("/diff/"):
+                # Pair only the same item/category; an unrelated link must not poison a card.
+                if entries and path.removeprefix("/diff") == urlsplit(entries[-1]["url"]).path.removesuffix("/beta"):
+                    entries[-1]["diff"] = self.href
+            elif _ITEM_ID_RE.match(path) and path.endswith("/beta") and text:
+                entries.append({"name": text, "url": self.href, "diff": "",
+                                "image": self.image, "section": self.section})
+
+    def close(self):
+        super().close()
+        self._finish_revision()
+
+
+def parse_changelog(markdown: str, *, base_url: str = "") -> list[dict]:
     """Parse a gachabase beta changelog page into revisions.
 
     -> [{'label', 'date', 'entries': [{'name', 'url', 'diff', 'image', 'section'}]}]
     Newest revision first, exactly as the page lists them.
     """
+    if re.search(r"<(?:!doctype|html|h2)\b", markdown or "", re.I):
+        parser = _ChangelogHTML(base_url)
+        parser.feed(markdown)
+        parser.close()
+        return parser.revisions
     text = _normalize_changelog(markdown)
     if not text:
         return []
@@ -1806,7 +1901,10 @@ async def _changelog_revisions(ctx, game: Game) -> list[dict]:
     if not text:
         ctx.warnings.append(f"{game.short} beta: changelog unavailable; using the manifest safely")
         return []
-    return parse_changelog(text)
+    revisions = parse_changelog(text, base_url=ch_url)
+    if not revisions:
+        ctx.warnings.append(f"{game.short} beta: changelog unreadable; using the manifest safely")
+    return revisions
 
 
 def _revision_build(value: str) -> int | None:

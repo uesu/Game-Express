@@ -626,3 +626,10 @@ Reserve all three calls inside local/shared budgets. Never use the mutable curre
 an older manifest build, use release data, or invent an Encore historical cursor. Retain provider
 metadata and avoid cross-provider inline diffs. Disabled and healthy primary paths add zero
 Encore requests. See docs/SOURCES.md for the observed contract and limitations.
+
+### Gachabase response formats
+
+Accept Markdown and server-rendered HTML changelogs. HTML revision headings and item/diff links
+must preserve source order and categories; ignore scripts/styles/navigation and foreign links.
+An unreadable response warns and uses the existing safe manifest fallback; never call it an
+explicit quiet revision. Do not add requests or dependencies just to convert HTML to Markdown.

@@ -17990,5 +17990,26 @@ def test_feature5_variable_page_counts_resume_after_ten_confirmed_pages():
             exercise(count, tmp)
 
 
+
+def test_feature5_gachabase_html_revisions_and_changed_existing_ids():
+    from gamexpress import beta
+    html = (Path(__file__).parent / "fixtures/beta/gachabase_changelog.html").read_text()
+    revisions = beta.parse_changelog(html, base_url="https://gi.gachabase.net/changelog/beta?lang=en")
+    assert [r["label"] for r in revisions] == ["v7.1.53 Rev. 48845164", "v7.1.52 Rev. 48704485", "v7.1.51 Rev. 48589389"]
+    current = revisions[0]
+    assert len(current["entries"]) == 2 and not current["no_changes"]
+    entry = current["entries"][0]
+    assert entry["name"] == "Vodyanitsa & Friend"
+    assert entry["section"] == "Characters"
+    assert entry["url"] == "https://gi.gachabase.net/characters/10000140/vodyanitsa/beta?lang=en"
+    assert "&cur=" in entry["diff"] and entry["image"].startswith("https://")
+    assert current["entries"][1]["section"] == "Weapons"
+    assert current["entries"][1]["diff"] == ""  # mismatched diff cannot attach
+    assert revisions[1]["entries"] == [] and not revisions[1]["no_changes"]
+    assert revisions[2]["no_changes"] and revisions[2]["date"] == "29th September 2026"
+    chars, _ = beta._candidate_entries("gi", beta.NANOKA_KINDS["gi"], current["entries"], {}, set(), set(), set())
+    assert [beta._entry_id(e) for e in chars] == ["10000140"]
+    assert beta.parse_changelog("<html><h1>Access denied</h1></html>") == []
+
 if __name__ == "__main__":
     sys.exit(main())

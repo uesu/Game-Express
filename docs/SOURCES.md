@@ -615,7 +615,7 @@ endpoints and existing caches only (never headless browsers or HTML scraping):
 
 ## Beta kit & revision-diff sources (2026-10-24)
 
-Feature 5 (`BETA_ENABLED=1`) reads **only** structured JSON/markdown from community
+Feature 5 (`BETA_ENABLED=1`) reads structured JSON plus Markdown or server-rendered changelog HTML from community
 databases that publish beta revisions. No HTML scraping, no headless browser, no
 authentication, and no endpoint that is not already public. Verified 2026-10-24; the
 blank-heading / hotfix behavior and Sunbringer `19850203` source-link shape were rechecked
@@ -624,7 +624,7 @@ blank-heading / hotfix behavior and Sunbringer `19850203` source-link shape were
 | Purpose | Endpoint | Shape |
 |---|---|---|
 | Revision probe | `https://static.nanoka.cc/manifest.json` | ~1 KiB. Per game: `latest`, ordered `available`, `live`, and `new` → `character` / `weapon` / `lightcone` / `relicset` / `equipment` / `echo` ids. The runner walks retained builds in order, so an observed beta hotfix is not skipped |
-| Revision contents | `https://zzz.gachabase.net/changelog/beta?lang=en` (also `gi.` / `hsr.`) | Markdown. `## vX.Y.Z Rev. N \| <date>` headings, `### Agents` / `### W-Engines` / `### Drive Discs` sections, then one `[![img]name](detail) [See Changes](diff)` entry per touched item. An explicit `No tracked changes detected` heading is a silent cursor advance; an otherwise blank heading only probes prior snapshots plus manifest-new ids |
+| Revision contents | `https://zzz.gachabase.net/changelog/beta?lang=en` (also `gi.` / `hsr.`) | Markdown or server-rendered HTML (`h2` revision headings, `h3` categories, item/diff links); scripts are ignored and relative links resolve only to the configured source origin. Markdown: `## vX.Y.Z Rev. N \| <date>` headings, `### Agents` / `### W-Engines` / `### Drive Discs` sections, then one `[![img]name](detail) [See Changes](diff)` entry per touched item. An explicit `No tracked changes detected` heading is a silent cursor advance; an otherwise blank heading only probes prior snapshots plus manifest-new ids |
 | Before/after diff | `https://zzz.gachabase.net/diff/agents/1601/sunbringer?prev=beta_3.4.1_19842923&cur=beta_3.4.1_19850203&lang=en` | Linked from a changelog entry or deterministically surfaced from a retained before/after build; it is **not fetched** by the monitor — readable structured JSON snapshots create the card's inline diff |
 | Character kit | `https://static.nanoka.cc/<game>/<revision>/en/character/<id>.json` | One bounded GET per newly revealed or already-snapshotted candidate. `<game>` ∈ `gi` / `hsr` / `zzz` / `ww`; `<revision>` is the selected manifest build (e.g. `3.4.1+19850203`) |
 | Weapon / W-Engine / light cone | `https://static.nanoka.cc/<game>/<revision>/en/{weapon,lightcone}/<id>.json` | Stats + refinement effect text |

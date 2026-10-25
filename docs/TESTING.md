@@ -479,3 +479,8 @@ A synthetic future `4.0.1` lifecycle test starts from live `3.7`, holds stale En
 and round-trips settlement through disk to prove repeat runs stay quiet. Released Hsin/Suoming
 IDs are not requested when absent from manifest new IDs and retained snapshots. This tests
 version-independent behavior; the fixture reuses Lily's captured kit and is not real 4.0 data.
+
+Gachabase HTML regression: `test_feature5_gachabase_html_revisions_and_changed_existing_ids`
+uses a reduced SSR fixture to cover changed existing IDs, relative links/entities, category and
+diff pairing, script/style exclusion, blank versus explicit quiet revisions, and error pages.
+Public-source smoke checks are separate read-only checks, never part of the offline suite.

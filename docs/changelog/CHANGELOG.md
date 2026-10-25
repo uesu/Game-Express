@@ -1,5 +1,11 @@
 # Changelog — current entries
 
+## 2026-10-25 — Gachabase HTML revision discovery
+
+- Fix a live response-format mismatch: gachabase returns server-rendered HTML to the monitor, while the original parser accepted only Markdown. Read both formats so changed existing IDs are discovered instead of silently falling back to manifest-new IDs.
+- Preserve revision order, dates, categories, same-item diff links and explicit quiet markers; ignore scripts/styles, navigation and foreign links. Warn on unreadable changelogs. No extra HTTP calls, dependencies, settings or changes to features 1–4.
+- Add a reduced public-layout fixture and offline regression; recheck live GI/HSR/ZZZ changelogs and nanoka/Encore rendering without Discord writes.
+
 ## 2026-10-25 — Future Encore build transition coverage
 
 - Verify a synthetic 4.0 resource-version transition, stale fallback hold, matching retry, valid cards and durable quiet settlement. Clarify that released characters remaining in the Encore beta catalog are not automatically new beta characters. No runtime, configuration or benchmark behavior changed.

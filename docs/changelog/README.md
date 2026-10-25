@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Future Encore build transition coverage](CHANGELOG.md#2026-10-25--future-encore-build-transition-coverage).
+Latest: [Gachabase HTML revision discovery](CHANGELOG.md#2026-10-25--gachabase-html-revision-discovery).
+
+Previous: [Future Encore build transition coverage](CHANGELOG.md#2026-10-25--future-encore-build-transition-coverage).
 
 Previous: [Content-driven beta pages without display truncation](CHANGELOG.md#2026-10-25--content-driven-beta-pages-without-display-truncation).
 
