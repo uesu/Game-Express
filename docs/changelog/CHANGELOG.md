@@ -1,5 +1,11 @@
 # Changelog — current entries
 
+## 2026-10-25 — Encore beta API fallback for WuWa
+
+- Correct the earlier research-only assessment: Encore’s frontend/API support explicit `?v=Beta`, omitted from the supplied OpenAPI export. Confirm Hsin and Suoming details plus current beta metadata and capture relevant public API fields for offline tests.
+- Use Encore only for missing/unreadable current nanoka WuWa character/weapon details, with exact resource-version matching, stable metadata before/after, item-ID validation and existing local/shared request bounds. Link fallback items to Encore beta pages, retain provider/build metadata, and suppress cross-provider inline direction. Historical discovery remains nanoka-driven; no new settings or dependencies.
+- Render published Lv.10 skill values, six chain nodes, stat bonuses, explicit Lv.90 properties and labelled weapon refinement values. Retain unavailable-value labels and existing image validation/locking. Document active-source credits and the observed API contract and limits. Earlier dated research conclusions below are historical and superseded by this live verification.
+
 ## 2026-10-25 — Truthful bounded beta comparisons and source credits
 
 - Add a full-content digest alongside bounded readable snapshots. Unchanged long descriptions no longer produce false cards; changes beyond the stored text limit produce a labelled full current snapshot. Legacy records without a full digest rebaseline once without invented before/after values.

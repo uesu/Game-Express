@@ -11,7 +11,9 @@ WHAT IT DOES
     `[CHANGED]` snapshot, an unreadable item is deferred, and a direction tag only
     appears when before/after values and the mechanic wording make it unambiguous.
     Blank hotfix headings probe only known/new IDs; explicit upstream no-change
-    headings advance silently without an empty Discord post.
+    headings advance silently without an empty Discord post. Missing current WuWa
+    character/weapon details can use Encore's explicitly selected beta API after
+    matching resource-version and stable-build checks within the same request budget.
 
 DESIGN GUARANTEES
     * Disabled by default: `BETA_ENABLED=1` is an explicit opt-in. Per-game opt-in
@@ -48,6 +50,7 @@ from .config import Game
 from .discord import webhook_fingerprint
 from .models import BetaCharacter, BetaEquipment, BetaPatch, BetaSectionEntry
 from .state import stable_hash
+from .textutil import html_to_text
 
 log = logging.getLogger("gamexpress.beta")
 
@@ -806,6 +809,127 @@ async def _listing(fetcher, ns: str, version: str, kind: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+# Encore's frontend uses this beta selector (not included in its OpenAPI export).
+ENCORE_API = "https://api-v2.encore.moe/api/en"
+
+
+def _encore_text(value: Any) -> str:
+    if isinstance(value, dict):
+        value = value.get("Content")
+    if not isinstance(value, str):
+        return ""
+    return _clean(html_to_text(value)[0])
+
+
+def _encore_metadata(value: Any) -> tuple[str, str, str] | None:
+    if not isinstance(value, list) or not value or not isinstance(value[0], dict):
+        return None
+    row = value[0]
+    fields = tuple(str(row.get(key) or "") for key in ("GameVer", "ResVer", "Changelist"))
+    if (not all(re.fullmatch(r"\d+(?:\.\d+){1,3}", part) for part in fields[:2])
+            or not re.fullmatch(r"\d+", fields[2])):
+        return None
+    return fields
+
+
+def _encore_rows(value: Any) -> list[dict]:
+    return [row for row in value if isinstance(row, dict)] if isinstance(value, list) else []
+
+
+def _encore_properties(data: dict) -> list[str]:
+    lines = []
+    for prop in _encore_rows(data.get("Properties")):
+        if not isinstance(prop, dict):
+            continue
+        name = _encore_text(prop.get("Name"))
+        # Use only an explicitly published Lv.90 value; never relabel a Lv.1 fallback.
+        for row in _encore_rows(prop.get("GrowthValues")):
+            if not isinstance(row, dict) or str(row.get("Level", row.get("level"))) != "90":
+                continue
+            value = row.get("Value", row.get("value"))
+            if name and value is not None:
+                lines.append(f"{name} {_num(value) if isinstance(value, (int, float)) else _encore_text(value)}")
+            break
+    return lines
+
+
+def _encore_character(data: dict) -> dict:
+    sections = []
+    for skill in _encore_rows(data.get("Skills")):
+        if not isinstance(skill, dict):
+            continue
+        name = _encore_text(skill.get("SkillName"))
+        if not name:
+            continue
+        category = _encore_text(skill.get("SkillType")) or "Skill"
+        lines = _lines(_encore_text(skill.get("SkillDescribe")))
+        params = []
+        for row in _encore_rows(skill.get("SkillAttributes")):
+            if not isinstance(row, dict):
+                continue
+            label = _encore_text(row.get("attributeName"))
+            values = row.get("values")
+            level = SKILL_LEVEL["ww"]
+            if not label or not isinstance(values, list) or len(values) < level:
+                continue
+            shown = _encore_text(values[level - 1])
+            if not shown:
+                continue
+            lines.append(f"{label} (Lv. {level}): {shown}")
+            if re.fullmatch(r"-?\d+(?:\.\d+)?%?", shown):
+                params.append({"name": label, "value": float(shown.rstrip("%")), "text": shown})
+        if lines:
+            sections.append(BetaSectionEntry(title=f"{category}: {name}", category=category,
+                                             lines=lines, params=params,
+                                             values_label=f"Lv. {SKILL_LEVEL['ww']}" if params else ""))
+    for index, node in enumerate(_encore_rows(data.get("SkillTree")), 1):
+        if not isinstance(node, dict):
+            continue
+        name = _encore_text(node.get("PropertyNodeTitle"))
+        desc = _encore_text(node.get("PropertyNodeDescribe"))
+        if name and desc:
+            sections.append(BetaSectionEntry(title=f"Stat Bonus {index} — {name}", category="Stat Bonus", lines=_lines(desc)))
+    for node in _encore_rows(data.get("ResonantChain")):
+        if not isinstance(node, dict):
+            continue
+        name = _encore_text(node.get("NodeName"))
+        index = node.get("GroupIndex")
+        if not isinstance(index, int) or not 1 <= index <= 6:
+            continue
+        desc = _encore_text(_ww_fill_params(node.get("AttributesDescription"),
+                                           node.get("AttributesDescriptionParams")))
+        if name and desc:
+            sections.append(BetaSectionEntry(title=f"Sequence Node {index} — {name}",
+                                             category="Resonance Chain", lines=_lines(desc)))
+    stats = _encore_properties(data)
+    return {"element": _encore_text(data.get("ElementName")),
+            "role": _encore_text(data.get("WeaponTypeName")), "sections": sections,
+            "stats_lines": [f"Lv. 90 — {' · '.join(stats)}"] if stats else []}
+
+
+def _encore_detail(data: Any, kind: str, item_id: str, revision: tuple[str, str, str]) -> dict | None:
+    if not isinstance(data, dict):
+        return None
+    if str(data.get("Id") if kind == "character" else data.get("ItemId")) != item_id:
+        return None
+    name = _encore_text(data.get("Name") if kind == "character" else data.get("WeaponName"))
+    if not name:
+        return None
+    try:
+        rarity = int(data.get("QualityId"))
+    except (TypeError, ValueError):
+        return None
+    if rarity not in range(1, 6):
+        return None
+    normalized = {"name": name, "rarity": rarity, "_encore": data,
+                  "_encore_revision": list(revision)}
+    if kind == "character" and not _encore_character(data)["sections"]:
+        return None
+    if kind == "weapon" and not _encore_text(data.get("Desc")):
+        return None
+    return normalized
+
+
 # --------------------------------------------------------------------------- ZZZ kit
 _ZZZ_CATEGORY_LABELS = {
     "basic": "Basic Attack",
@@ -1326,6 +1450,8 @@ def _ww_fill_params(text: Any, params: Any) -> str:
 
 
 def _ww_character(data: dict) -> dict:
+    if "_encore" in data:
+        return _encore_character(data["_encore"])
     sections: list[BetaSectionEntry] = []
     trees = data.get("skill_trees") or {}
     for node_key in sorted((trees or {}), key=lambda k: int(k) if str(k).isdigit() else 0):
@@ -1432,7 +1558,15 @@ def _equip_from_detail(ns: str, kind: str, data: dict, listing: dict) -> dict:
     lines: list[str] = []
     sub_type = ""
 
-    if ns == "zzz" and kind == "weapon":
+    if ns == "ww" and kind == "weapon" and "_encore" in data:
+        raw = data["_encore"]
+        stats_line = " · ".join(_encore_properties(raw))
+        if stats_line:
+            stats_line = f"Lv. 90 — {stats_line}"
+        effect_title = _encore_text(raw.get("ResonName"))
+        lines = ["-# Effect values shown for refinements 1–5."] + _lines(_encore_text(raw.get("Desc")))
+        sub_type = _encore_text(raw.get("WeaponTypeName"))
+    elif ns == "zzz" and kind == "weapon":
         rp = data.get("rand_property") or {}
         atk = listing.get("atk")
         if atk:
@@ -1947,6 +2081,8 @@ def _snapshot_record(item, data: dict, kind: str, revision: str, now: int) -> di
 
 
 def _snapshot_comparison(previous: dict, current: dict) -> str:
+    if previous.get("provider", "nanoka") != current.get("provider", "nanoka"):
+        return "snapshot"
     if previous.get("content_signature") == current["content_signature"]:
         return "equal"
     # Old snapshots did not record what was clipped. Rebaseline once without claiming
@@ -2110,6 +2246,8 @@ def _data_image_candidates(ns: str, role: str, item_id: str, data: dict, listing
 
 
 def _safe_entry_name(entry: dict, data: dict, listing: dict | None, item_id: str) -> str:
+    if "_encore" in data:
+        return _clean(data.get("name")) or f"ID {item_id}"
     entry_name = str(entry.get("name") or "").strip()
     if entry_name.lower().startswith("id:") or _is_key(entry_name):
         entry_name = ""
@@ -2219,6 +2357,36 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
     requests = 2 if _changelog_url(game) else 1
     char_new, char_changed, equip_count = 0, 0, 0
     listing_cache: dict[str, dict] = {}
+    encore_revision = None
+
+    async def encore_fallback(kind: str, item_id: str) -> dict | None:
+        nonlocal requests, encore_revision
+        # Encore exposes a mutable current beta view, not the ordered nanoka archive.
+        # Never use it to reconstruct an older build or issue an unbudgeted request.
+        if ns != "ww" or kind not in ("character", "weapon") or version != m_game.get("latest"):
+            return None
+        if requests + 3 > budget["max_requests"] or not _take_shared_request(budget, 3):
+            return None
+        requests += 3
+        metadata_url = f"{ENCORE_API}/new?v=Beta"
+        before = _encore_metadata(await ctx.fetcher.get_json(
+            metadata_url, source="beta-encore", retries=1))
+        if before is None or before[1] != version:
+            return None
+        if encore_revision is not None and before != encore_revision:
+            ctx.warnings.append(f"{game.short} beta: Encore build changed between items; deferred")
+            return None
+        raw = await ctx.fetcher.get_json(
+            f"{ENCORE_API}/{kind}/{item_id}?ver=latest&v=Beta", source="beta-encore", retries=1)
+        after = _encore_metadata(await ctx.fetcher.get_json(
+            metadata_url, source="beta-encore", retries=1))
+        if after != before:
+            ctx.warnings.append(f"{game.short} beta: Encore build changed while reading; deferred")
+            return None
+        normalized = _encore_detail(raw, kind, item_id, before)
+        if normalized:
+            encore_revision = before
+        return normalized
 
     for entry in char_entries:
         item_id = _entry_id(entry)
@@ -2243,12 +2411,15 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             continue
         data = await _detail(ctx.fetcher, ns, version, kinds["new_keys"]["character"], item_id)
         requests += 1
+        builder = _CHARACTER_BUILDERS.get(ns)
+        built = builder(data) if data and builder else None
+        if not built or not built.get("sections"):
+            data = await encore_fallback("character", item_id)
+            built = builder(data) if data and builder else None
         if not data:
             ctx.warnings.append(f"{game.short} beta: no kit data for id {item_id}; deferred")
             patch.more = True
             continue
-        builder = _CHARACTER_BUILDERS.get(ns)
-        built = builder(data) if builder else None
         if not built or not built.get("sections"):
             ctx.warnings.append(f"{game.short} beta: kit data for id {item_id} is not readable yet; deferred")
             patch.more = True
@@ -2264,6 +2435,9 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             _item_page_url(ns, "character", item_id, name)
         diff_url = (str(entry.get("diff") or "") or
                     _generated_diff_url(ns, "character", item_id, name, previous_revision, version))
+        if "_encore" in data:
+            page_url = f"https://encore.moe/character/{item_id}?lang=en&v=Beta"
+            diff_url = ""
         candidates = _data_image_candidates(ns, "character", item_id, data)
         image_entry = {"id": snap_key, "image": entry.get("image"), "candidates": candidates}
         image_cost = _image_preflight_cost(image_entry, locked, image_cache)
@@ -2283,6 +2457,8 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             page_url=page_url, is_new=is_new,
         )
         patch.snapshots[snap_key] = _character_snapshot(full, version, ctx.now)
+        if "_encore" in data:
+            patch.snapshots[snap_key].update(provider="encore", provider_revision=data["_encore_revision"])
         known_snapshots[snap_key] = patch.snapshots[snap_key]
         patch.item_keys.append(_entry_key(ns, "character", item_id))
         if previous is None:
@@ -2338,14 +2514,26 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
         data = await _detail(ctx.fetcher, ns, version, detail_kind, item_id)
         requests += 1
         if not data:
+            data = await encore_fallback(detail_kind, item_id)
+        if not data:
             ctx.warnings.append(f"{game.short} beta: no {role} data for id {item_id}; deferred")
             patch.more = True
             continue
         fields = _equip_from_detail(ns, detail_kind, data,
                                     listing_entry if isinstance(listing_entry, dict) else {})
         if not fields.get("lines") and not fields.get("stats_line"):
-            patch.item_keys.append(_entry_key(ns, role, item_id))
-            continue
+            if "_encore" not in data:
+                fallback = await encore_fallback(detail_kind, item_id)
+                if fallback:
+                    data = fallback
+                    fields = _equip_from_detail(ns, detail_kind, data, {})
+            if not fields.get("lines") and not fields.get("stats_line"):
+                if ns == "ww" and role == "weapon":
+                    patch.more = True
+                    ctx.warnings.append(f"{game.short} beta: unreadable {role} id {item_id}; deferred")
+                else:
+                    patch.item_keys.append(_entry_key(ns, role, item_id))
+                continue
         rarity = None
         if isinstance(listing_entry, dict):
             try:
@@ -2372,6 +2560,10 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             _item_page_url(ns, role, item_id, name)
         diff_url = (str(entry.get("diff") or "") or
                     _generated_diff_url(ns, role, item_id, name, previous_revision, version))
+        if "_encore" in data:
+            page_url = f"https://encore.moe/weapon/{item_id}?lang=en&v=Beta"
+            diff_url = ""
+            rarity = data.get("rarity")
         current = BetaEquipment(
             id=snap_key, name=name, category_label=str(kinds[role]["label"]), rarity=rarity,
             sub_type=str(fields.get("sub_type") or ""), tag="[NEW]" if is_new else "[CHANGED]",
@@ -2380,6 +2572,8 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             diff_url=diff_url, page_url=page_url,
         )
         patch.snapshots[snap_key] = _equipment_snapshot(current, version, ctx.now, role)
+        if "_encore" in data:
+            patch.snapshots[snap_key].update(provider="encore", provider_revision=data["_encore_revision"])
         known_snapshots[snap_key] = patch.snapshots[snap_key]
         patch.item_keys.append(_entry_key(ns, role, item_id))
         if previous is None:

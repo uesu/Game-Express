@@ -17647,5 +17647,136 @@ def test_feature5_replaced_blocks_preserve_surplus_removed_lines():
     assert any("Removed: ~~HP 200~~" in line for line in result.lines)
 
 
+
+def test_feature5_encore_beta_fallback_reads_matching_build_and_keeps_budget():
+    from gamexpress import beta as beta_mod
+
+    manifest = {"ww": {"latest": "3.8.1", "available": ["3.7", "3.8.1"],
+                       "new": {"character": [1512], "weapon": [21030076], "echo": []}}}
+    metadata = [{"GameVer": "3.8.0", "ResVer": "3.8.1", "Changelist": "9162983"}]
+
+    class EncoreFetcher:
+        def __init__(self, mode="matching"):
+            self.calls = []
+            self.mode = mode
+            self.meta_reads = 0
+
+        async def get_json(self, url, **_kwargs):
+            self.calls.append(url)
+            if url.startswith("https://api-v2.encore.moe/api/en"):
+                assert "v=Beta" in url
+                if "/new?" in url:
+                    self.meta_reads += 1
+                    if self.mode == "mismatch":
+                        return [{**metadata[0], "ResVer": "3.9.1"}]
+                    if self.mode == "changing" and self.meta_reads % 2 == 0:
+                        return [{**metadata[0], "Changelist": "9162984"}]
+                    if self.mode == "between_items" and self.meta_reads > 2:
+                        return [{**metadata[0], "Changelist": "9162984"}]
+                    if self.mode == "malformed":
+                        return {"message": "unavailable"}
+                    return metadata
+                raw = _beta_json("encore_lily_live.json" if "/character/" in url
+                                 else "encore_weapon_live.json")
+                if self.mode == "wrong_id":
+                    raw["Id" if "/character/" in url else "ItemId"] = 1
+                if self.mode == "bad_data":
+                    raw["Skills"] = 1
+                    raw["SkillTree"] = {}
+                    raw["ResonantChain"] = 1
+                    raw["Properties"] = 1
+                    raw["Desc"] = []
+                return raw
+            if url.endswith("/weapon.json"):
+                return {"21030076": {"en": {"name": "Stale primary name"}, "rank": 4}}
+            if self.mode == "healthy":
+                if "/character/" in url:
+                    return _beta_json("ww_character_1512.json")
+                if "/weapon/" in url:
+                    return _beta_json("ww_weapon_21030076_live.json")["data"]
+            return None
+
+        async def verify_media(self, url):
+            self.calls.append(url)
+            return False
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fetcher = EncoreFetcher()
+        ctx = _beta_ctx(Path(tmp)/"state.json", fetcher, BETA_ENABLED="1", games=["wuwa"])
+        budget = beta_mod._budget(ctx)
+        budget["_shared_requests_left"] = 20
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, budget))
+        assert len(patch.characters) == len(patch.equipment) == 1
+        assert len(fetcher.calls) == 9  # two details, one listing, two bracketed Encore reads
+        assert budget["_shared_requests_left"] == 11
+        character = patch.characters[0]
+        assert character.name == "Lily" and character.rarity == 5
+        assert "encore.moe/character/1512" in character.page_url and "v=Beta" in character.page_url
+        assert character.diff_url == "" and character.image_url == ""
+        body = "\n".join(line for section in character.sections for line in section.lines)
+        assert "74.28%" in body and "(Lv. 10)" in body
+        assert "Sequence Node 6" in "\n".join(section.title for section in character.sections)
+        assert "<span" not in body and "<size" not in body
+        weapon = patch.equipment[0]
+        assert weapon.name == "Lullaby" and "412.50" in weapon.stats_line
+        assert "77.04%" in weapon.stats_line and "Lv. 90" in weapon.stats_line
+        assert "refinements 1–5" in weapon.lines[0]
+        assert "{7}" not in "\n".join(weapon.lines) and "[value unavailable]" in "\n".join(weapon.lines)
+        assert "encore.moe/weapon/21030076" in weapon.page_url and weapon.diff_url == ""
+        assert all(snap["provider"] == "encore" for snap in patch.snapshots.values())
+        assert all(snap["provider_revision"] == ["3.8.0", "3.8.1", "9162983"]
+                   for snap in patch.snapshots.values())
+        payloads = cards.beta_payloads(GAMES["wuwa"], patch, None, None)
+        assert payloads and all(not cards.validate_payload(payload) for payload in payloads)
+        # The primary source remains sufficient: no Encore HTTP at all on the healthy path.
+        fetcher = EncoreFetcher("healthy")
+        ctx.fetcher = fetcher
+        healthy = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, beta_mod._budget(ctx)))
+        assert healthy.characters and healthy.equipment
+        assert not any("encore" in url for url in fetcher.calls)
+        # Provider switches never manufacture inline buffs/nerfs from schema differences.
+        old = next(iter(patch.snapshots.values()))
+        assert beta_mod._snapshot_comparison(old, {**old, "provider": "nanoka"}) == "snapshot"
+        for mode in ("mismatch", "changing", "malformed", "wrong_id", "bad_data"):
+            ctx.fetcher = EncoreFetcher(mode)
+            held = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, beta_mod._budget(ctx)))
+            assert held.more and not held.characters and not held.equipment, mode
+        ctx.fetcher = EncoreFetcher("between_items")
+        changing_batch = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest,
+                                                          beta_mod._budget(ctx)))
+        assert len(changing_batch.characters) == 1 and not changing_batch.equipment
+        assert changing_batch.more
+        # Neither local nor shared request ceilings allow a partial unverified fallback.
+        for cap, shared in ((3, 20), (20, 1)):
+            ctx.fetcher = EncoreFetcher()
+            budget = {**beta_mod._budget(ctx), "max_requests": cap, "_shared_requests_left": shared}
+            held = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, budget))
+            assert held.more and not held.characters and not held.equipment
+            assert not any("encore" in url for url in ctx.fetcher.calls)
+        # Encore's current view must not reconstruct a retained older manifest build.
+        ctx.state.beta_record("wuwa")["source_version"] = "3.6"
+        old_manifest = {"ww": {**manifest["ww"], "latest": "3.8.1", "available": ["3.6", "3.7", "3.8.1"]}}
+        ctx.fetcher = EncoreFetcher()
+        held = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], old_manifest, beta_mod._budget(ctx)))
+        assert held.source_version == "3.7" and held.more and not held.characters
+        assert not any("encore" in url for url in ctx.fetcher.calls)
+
+
+def test_feature5_encore_hsin_suoming_captured_beta_kits():
+    from gamexpress import beta as beta_mod
+
+    for name, item_id in (("hsin", "1311"), ("suoming", "1312")):
+        raw = _beta_json(f"encore_{name}_live.json")
+        data = beta_mod._encore_detail(raw, "character", item_id, ("3.8.0", "3.8.1", "9162983"))
+        built = beta_mod._ww_character(data)
+        assert data["name"].lower() == name
+        assert len([s for s in built["sections"] if s.category == "Resonance Chain"]) == 6
+        assert len(built["sections"]) >= 16
+        assert any(s.params for s in built["sections"])
+        assert "<span" not in str(built) and "<color" not in str(built)
+        assert any("Lv. 90" in line for line in built["stats_lines"])
+        assert beta_mod._encore_detail(raw, "character", "9999", ("3.8.0", "3.8.1", "9162983")) is None
+
+
 if __name__ == "__main__":
     sys.exit(main())

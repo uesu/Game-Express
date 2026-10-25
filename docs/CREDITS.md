@@ -23,8 +23,9 @@ What each endpoint actually serves, and why it was chosen or rejected, is in
 |---|---|---|
 | [nanoka.cc](https://nanoka.cc/) | Ordered build manifest, structured kits and equipment, asset URLs | `BETA_ENABLED=1` |
 | [gachabase.net](https://gachabase.net/) | Beta changelog and source comparison links | `BETA_ENABLED=1` |
+| [Encore / alt3ri](https://encore.moe/) | Matching current WuWa beta character/weapon fallback via `?v=Beta` | Missing/unreadable nanoka detail; same request budget |
 
-Feature 5 reads **only** two community databases, and only when an operator opts in:
+Feature 5 reads these community databases only when an operator opts in:
 
 - **[nanoka.cc](https://nanoka.cc/)** (`gi.`, `hsr.`, `zzz.`, `ww.` sub-domains) — the revision
   manifest (`static.nanoka.cc/manifest.json`) and the structured per-revision JSON exports this
@@ -36,7 +37,7 @@ Feature 5 reads **only** two community databases, and only when an operator opts
   (`/diff/<kind>/<id>/<slug>?prev=…&cur=…`). When a hotfix heading is blank, Game-Express compares
   its bounded prior nanoka snapshot for only already-tracked/new IDs rather than scraping the UI.
 
-Neither host is contacted while `BETA_ENABLED` is off. The monitor does not scrape either site's
+None of these beta hosts is contacted while `BETA_ENABLED` is off. The monitor does not scrape either site's
 HTML UI and does not re-host their images — cards link to the URLs those databases publish.
 
 ### News, schedules, codes and fallback sources
@@ -114,7 +115,7 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 
 ### Additional source research supplied for feature 5
 
-- **[Encore](https://encore.moe/)** / **[alt3ri](https://github.com/alt3ri)** — [about and upstream acknowledgements](https://encore.moe/about), [API v2 reference](https://api-v2.encore.moe/_docs/scalar), [new content](https://encore.moe/new), [game notices](https://encore.moe/gamenotice), [characters](https://encore.moe/character), [weapons](https://encore.moe/weapon) and [echoes](https://encore.moe/echo). The supplied OpenAPI schema documents current resources; it does not specify a beta discriminator or ordered revision history, so it is not an automatic beta fallback.
+- **[Encore](https://encore.moe/)** / **[alt3ri](https://github.com/alt3ri)** — [about and upstream acknowledgements](https://encore.moe/about), [API v2 reference](https://api-v2.encore.moe/_docs/scalar), [new content](https://encore.moe/new), [game notices](https://encore.moe/gamenotice), [characters](https://encore.moe/character), [weapons](https://encore.moe/weapon) and [echoes](https://encore.moe/echo). The live frontend and API expose beta resources with `?v=Beta`, omitted from the supplied OpenAPI export. Encore now supplies a bounded current-build character/weapon fallback; [the source contract and limitations](SOURCES.md#encore-beta-api-fallback-for-wuwa) explain version checks, attribution and historical limits.
 - **[Arikatsu/WutheringWaves_Data](https://github.com/Arikatsu/WutheringWaves_Data)** (formerly `WW_Data`), **[alt3ri/WW_Asset](https://github.com/alt3ri/WW_Asset)** and **[WW_Asset_Webp](https://github.com/alt3ri/WW_Asset_Webp)** — data and asset references acknowledged by Encore. The inspected data README describes release 3.7; release assets alone do not establish beta revisions.
 - Encore additionally acknowledges **[Arikatsu](https://github.com/Arikatsu)**, **[Adam](https://github.com/NotFakeAdam)**, **[Hiro420](https://github.com/Hiro420)**, **[Hakush.in](https://hakush.in/)**, **[KuroBBS](https://wiki.kurobbs.com/mc/home)** and its community. These are Encore's acknowledgements, not claims that Game-Express uses every project.
 - **[Wuthery/kuro.py](https://github.com/Wuthery/kuro.py)** ([PyPI](https://pypi.org/project/kuro.py/)) — KuroBBS/game-account API wrapper, not an ordered beta feed.

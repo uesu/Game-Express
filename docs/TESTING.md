@@ -451,3 +451,15 @@ text stays quiet, suffix-only changes remain visible, legacy records rebaseline 
 and rendered payloads remain valid. `test_feature5_replaced_blocks_preserve_surplus_removed_lines`
 covers removal of surplus old stat/equipment lines within a replacement block. Both reproduced
 failures before repair; the existing numeric-direction tests continue to cover complete baselines.
+
+### Encore beta fallback regression coverage
+
+Captured `encore_{hsin,suoming,lily,weapon}_live.json` fixtures retain relevant API fields and
+source URLs/build metadata (2026-10-25). Unused fields are removed; property rows retain only
+Lv.1 and Lv.90. Tests cover actual bounded build fallback for character/weapon, valid payloads,
+Lv.10 array selection, HTML cleanup, chain text, unavailable values, correct beta links and
+provider metadata, healthy primary zero-extra-call behavior, version mismatch, changing build,
+malformed metadata, wrong item identity, older revision rejection and both request ceilings.
+The actual-build regression failed against c54da29 before the adapter was present. Hsin and
+Suoming fixtures demonstrate readable beta API skills/attributes and all six chain nodes;
+they do not reconstruct their historical beta revisions.

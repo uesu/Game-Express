@@ -586,6 +586,12 @@ If changed content exceeds retained limits, or a legacy snapshot lacks a full-co
 the next inspected revision uses a labelled full `[CHANGED]` snapshot without invented inline
 direction. Retained text limits and state pruning stay bounded.
 
+WuWa also has a bounded Encore API beta detail fallback for missing/unreadable current-build
+characters and weapons. It uses explicit `?v=Beta`, an exact `ResVer` match and unchanged
+`GameVer`/`ResVer`/`Changelist` before/after the detail read. It consumes up to three calls per
+fallback under existing limits and adds no setting. Healthy nanoka data needs no extra calls.
+See [the source contract](SOURCES.md#encore-beta-api-fallback-for-wuwa) for historical and media limits.
+
 `BETA_ENABLED` is **off by default**. Disabled, the feature makes **zero** requests and
 adds nothing to `state/state.json`. It never posts to a schedule or codes channel:
 routing is dedicated (`DISCORD_WEBHOOK_BETA_<GAME>` > `DISCORD_WEBHOOK_BETA` >

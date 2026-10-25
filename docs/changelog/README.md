@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Truthful bounded beta comparisons and source credits](CHANGELOG.md#2026-10-25--truthful-bounded-beta-comparisons-and-source-credits).
+Latest: [Encore beta API fallback for WuWa](CHANGELOG.md#2026-10-25--encore-beta-api-fallback-for-wuwa).
+
+Previous: [Truthful bounded beta comparisons and source credits](CHANGELOG.md#2026-10-25--truthful-bounded-beta-comparisons-and-source-credits).
 
 Previous: [Live beta equipment schemas and restart-safe batches](CHANGELOG.md#2026-10-25--live-beta-equipment-schemas-and-restart-safe-batches).
 

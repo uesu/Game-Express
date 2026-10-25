@@ -648,13 +648,43 @@ also keeps that manifest id explicitly rather than reparsing it from the human-f
 `ww.nanoka.cc/character/<id>/`, `weapon/<id>/` or `relic/<id>/` URL; this keeps new WuWa
 characters, weapons and echoes on the same bounded detail/delivery path as the other games.
 
-The supplied **encore.moe API v2** OpenAPI reference was re-reviewed on 2026-10-25. It documents
-current `/{lang}/character`, `weapon`, `echo` and `/new` resources (the latter exposes
-`GameVer`, `ResVer` and `Changelist` fields), but does not document whether a record is beta,
-an ordered historical build list, a stable beta revision cursor, or item-level before/after data.
-It is therefore **not polled** for feature 5: using it as a revision source could confuse a live
-update with a beta build or invent a hotfix diff. The existing ordered nanoka manifest remains the
-bounded WuWa discovery source until Encore documents an equivalent beta/revision contract.
+### Encore beta API fallback for WuWa
+
+Encore **does expose beta data**. The supplied OpenAPI export omits the `v` selector;
+inspection of the live site's frontend and API on 2026-10-25 confirmed:
+
+- `https://api-v2.encore.moe/api/en/new?v=Beta` returns `GameVer`, `ResVer` and
+  `Changelist`, followed by new-content IDs.
+- `.../character/<id>?ver=latest&v=Beta` returns character skills, level values, stat
+  bonuses, resonance chains and properties; `.../weapon/<id>?ver=latest&v=Beta` returns
+  weapon effects/refinement values and properties. Hsin (`1311`) and Suoming (`1312`)
+  were confirmed in the beta character list and detail responses. The inspected current
+  beta metadata was `3.8.0` / `3.8.1` / `9162983`; this is observation evidence, not a fixed
+  value in code.
+
+Feature 5 uses this API **only as a missing/unreadable character or weapon detail fallback**
+for the manifest's current WuWa build. Nanoka still selects ordered revisions and IDs. Each
+fallback reserves up to three calls in both existing request limits: beta metadata, detail,
+then beta metadata again. `ResVer` must exactly equal the selected current nanoka version;
+all three metadata fields must remain unchanged across the read, and the returned item ID
+must match. An older retained revision, mismatched/unavailable metadata, changed build, invalid
+item or exhausted budget leaves the item deferred. A healthy nanoka detail makes zero Encore
+requests. No release endpoint or unqualified API fallback is used.
+
+Character attributes use the published Lv.10 array position; properties use explicit Lv.90
+rows only. Weapon effects retain the API's refinement 1–5 values and label them accordingly.
+Unpublished parameters remain marked unavailable. HTML is converted to readable text. Each
+fallback item links to its Encore beta page and retains provider/build metadata in its bounded
+snapshot. A provider switch produces a full labelled snapshot rather than a misleading diff
+between different schemas. Media still uses the existing verified/locked path; Encore's raw
+asset paths are not guessed into splash-art URLs.
+
+This complements the nanoka timeline. It does not independently poll every Encore changelist,
+reconstruct historical Encore builds, provide an echo fallback, or claim that matching resource
+versions make two publishers' data identical. Metadata bracketing is a best-effort consistency
+check of the mutable current API, not an atomic historical snapshot. Earlier documentation
+classifying Encore as research-only was based on the incomplete OpenAPI export and is superseded
+by this observed beta selector and bounded integration.
 
 What is deliberately **not** done:
 

@@ -608,3 +608,13 @@ If changed content exceeds retained limits, or a legacy snapshot lacks a full-co
 the next inspected revision uses a labelled full `[CHANGED]` snapshot without invented inline
 direction. Retained text limits and state pruning stay bounded.
 Do not compare clipped prior text with full new text as an exact diff.
+
+### Encore current-beta detail fallback
+
+Encore supports beta through `?v=Beta` (verified live frontend/API; absent from its supplied
+OpenAPI export). For WuWa only, missing/unreadable current nanoka character/weapon detail may
+use the API with exact `ResVer` matching and identical GameVer/ResVer/Changelist before/after.
+Reserve all three calls inside local/shared budgets. Never use the mutable current beta for
+an older manifest build, use release data, or invent an Encore historical cursor. Retain provider
+metadata and avoid cross-provider inline diffs. Disabled and healthy primary paths add zero
+Encore requests. See docs/SOURCES.md for the observed contract and limitations.

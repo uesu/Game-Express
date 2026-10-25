@@ -298,6 +298,9 @@ that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA
   `BETA_MIN_POLL_MINUTES` (default `30`) and `BETA_MAX_CHARACTERS` /
   `BETA_MAX_CHANGES` / `BETA_MAX_EQUIPMENT` / `BETA_MAX_REQUESTS` bound polling, cards and
   requests. Disabled, the feature makes **zero** requests.
+- **WuWa beta fallback.** If nanoka lacks a readable current-build character or weapon,
+  Encore’s `?v=Beta` API can supply it after matching resource-version and stable-build checks.
+  It shares the existing request budget; [source details](docs/SOURCES.md#encore-beta-api-fallback-for-wuwa).
 - **HNA and ANANTA are excluded** until they ship — `BETA_GAMES` defaults to the four released
   games and `all` resolves to the same four.
 - **It stops on its own.** A verified splash-art URL is locked in state and never re-fetched.

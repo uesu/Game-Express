@@ -932,7 +932,7 @@ BETA_RESOURCE_LINKS = {
     "genshin": "Resource: [gachabase](https://gi.gachabase.net/changelog/beta?lang=en) / [nanoka](https://gi.nanoka.cc/diff)",
     "starrail": "Resource: [gachabase](https://hsr.gachabase.net/changelog/beta?lang=en) / [nanoka](https://hsr.nanoka.cc/diff)",
     "zzz": "Resource: [gachabase](https://zzz.gachabase.net/changelog/beta?lang=en) / [nanoka](https://zzz.nanoka.cc/diff)",
-    "wuwa": "Resource: [nanoka](https://ww.nanoka.cc/diff) / [database](https://ww.nanoka.cc/)",
+    "wuwa": "Resource: [nanoka](https://ww.nanoka.cc/diff) / [Encore beta](https://encore.moe/new?v=Beta)",
 }
 BETA_NEW_CHAR_HEADERS = {
     "zzz": "### ✦ New Agents",
