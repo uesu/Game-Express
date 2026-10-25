@@ -472,6 +472,7 @@ async def run_enabled_beta_harness(games: dict[str, Game]) -> dict:
     payloads, _char_map = beta.beta_payloads_with_map(edge_game, resume_patch, edge_ctx.settings, None)
     _assert(len(payloads) >= 3, "edge fixture must render at least three pages")
     revision, batch = beta._batch_record(edge_record, resume_patch, edge_ctx.now)
+    batch["signature"] = stable_hash(payloads)
     batch["messages"] = ["prior-page-1"]
     revision["messages"] = ["prior-page-1"]
     edge_webhook.responses(*[SendResult(True, 200, message_id=f"edge-{i}") for i in range(2, len(payloads) + 1)])

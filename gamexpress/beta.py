@@ -122,14 +122,14 @@ def _is_key(value: str) -> bool:
         return True
     if v.startswith("UI_") or v.startswith("Skill_") or v.startswith("SpriteOutput/"):
         return True
-    return bool(_KEY_RE.match(v) and "_" in v and not " " in v)
+    return bool(_KEY_RE.match(v) and "_" in v and " " not in v)
 
 
 def _clean(value: Any) -> str:
     """Collapse a scraped string into one clean line (or '' when it is noise)."""
-    if value is None:
+    if value is None or isinstance(value, (dict, list, tuple)):
         return ""
-    text = str(value)
+    text = re.sub(r"</?(?:color(?:=[^>]*)?|unbreak)>", "", str(value), flags=re.I)
     if _is_key(text):
         return ""
     text = text.replace("\\n", "\n").replace("\r", " ")
@@ -1236,7 +1236,7 @@ def _gi_character(data: dict) -> dict:
                     continue
                 values: list[tuple[int, float, str]] = []
 
-                def fill(match: re.Match) -> str:
+                def fill(match: re.Match, params=params, values=values) -> str:
                     idx = int(match.group(1)) - 1
                     if idx < 0 or idx >= len(params):
                         return match.group(0)
@@ -1433,7 +1433,6 @@ def _equip_from_detail(ns: str, kind: str, data: dict, listing: dict) -> dict:
     sub_type = ""
 
     if ns == "zzz" and kind == "weapon":
-        bp = data.get("base_property") or {}
         rp = data.get("rand_property") or {}
         atk = listing.get("atk")
         if atk:
@@ -1458,25 +1457,43 @@ def _equip_from_detail(ns: str, kind: str, data: dict, listing: dict) -> dict:
             lines.append(f"4-Piece: {d4}")
     elif ns == "hsr" and kind == "lightcone":
         stats_table = data.get("stats") or {}
-        last = None
-        for key in sorted(stats_table, key=lambda k: int(k) if str(k).isdigit() else -1):
-            if isinstance(stats_table[key], dict):
-                last = stats_table[key]
-        if isinstance(last, dict):
-            hp, atk, df = last.get("base_hp"), last.get("base_attack"), last.get("base_defence")
-            if hp is not None and atk is not None:
-                stats_line = f"Lv. 80 — HP {_num(hp)} · ATK {_num(atk)}"
-                if df is not None:
-                    stats_line += f" · DEF {_num(df)}"
+        if isinstance(stats_table, list):
+            rows = [row for row in stats_table if isinstance(row, dict)]
+            last = max(rows, key=lambda row: int(row.get("max_level") or 0), default={})
+            level = int(last.get("max_level") or 0)
+            parts = []
+            for label, key in (("HP", "hp"), ("ATK", "attack"), ("DEF", "defence")):
+                base, growth = last.get(f"base_{key}"), last.get(f"base_{key}_add")
+                if base is not None and growth is not None and level:
+                    value = int(round(float(base) + float(growth) * (level - 1)))
+                    parts.append(f"{label} {value}")
+            if parts:
+                stats_line = f"Lv. {level} — " + " · ".join(parts)
+        else:
+            # Older fixture/export shape contains already evaluated level stats.
+            last = None
+            for key in sorted(stats_table, key=lambda k: int(k) if str(k).isdigit() else -1):
+                if isinstance(stats_table[key], dict):
+                    last = stats_table[key]
+            if isinstance(last, dict):
+                hp, atk, df = last.get("base_hp"), last.get("base_attack"), last.get("base_defence")
+                if hp is not None and atk is not None:
+                    stats_line = f"Lv. 80 — HP {_num(hp)} · ATK {_num(atk)}"
+                    if df is not None:
+                        stats_line += f" · DEF {_num(df)}"
         ref = data.get("refinements") or {}
         if isinstance(ref, dict):
             effect_title = _clean(ref.get("name"))
-            lines = _lines(ref.get("desc"))
+            params = ((ref.get("level") or {}).get("1") or {}).get("param_list")
+            desc, _ = substitute_params(_clean(ref.get("desc")), params)
+            lines = _lines(desc)
     elif ns == "hsr" and kind == "relicset":
         sets = data.get("require_num") or data.get("set") or {}
         for num in sorted(sets, key=lambda k: int(k) if str(k).isdigit() else 0):
             entry = sets[num]
             desc = _clean((entry or {}).get("desc") if isinstance(entry, dict) else entry)
+            if isinstance(entry, dict):
+                desc, _ = substitute_params(desc, entry.get("param_list"))
             if desc:
                 lines.append(f"{num}-Piece: {desc}")
     elif ns == "gi" and kind == "weapon":
@@ -1486,8 +1503,10 @@ def _equip_from_detail(ns: str, kind: str, data: dict, listing: dict) -> dict:
             if isinstance(prop, dict) and "BASE_ATTACK" in str(prop.get("prop_type") or ""):
                 main = prop
                 break
-        if isinstance(main, dict):
-            stats_line = f"Base ATK {_num(main.get('init_value'))}"
+        if listing.get("atk") is not None:
+            stats_line = f"Base ATK {_num(listing['atk'])}"
+        elif isinstance(main, dict):
+            stats_line = f"Lv. 1 Base ATK {_num(main.get('init_value'))}"
         ref = (data.get("refinement") or {}).get("1") or {}
         if isinstance(ref, dict):
             effect_title = _clean(ref.get("name"))
@@ -1502,7 +1521,9 @@ def _equip_from_detail(ns: str, kind: str, data: dict, listing: dict) -> dict:
                 lines.append(f"{name}: {desc}" if name else desc)
     elif ns == "ww" and kind == "weapon":
         effect_title = _clean(data.get("effect_name"))
-        lines = _lines(data.get("effect"))
+        params = [row[0] if isinstance(row, list) and row else row
+                  for row in data.get("param") or []]
+        lines = _lines(_ww_fill_params(data.get("effect"), params))
         stats_table = data.get("stats") or {}
         block = None
         for key in sorted(stats_table, key=lambda k: int(k) if str(k).isdigit() else -1):
@@ -1514,7 +1535,12 @@ def _equip_from_detail(ns: str, kind: str, data: dict, listing: dict) -> dict:
                 parts = []
                 for stat in top:
                     if isinstance(stat, dict):
-                        parts.append(f"{stat.get('name')} {_num(stat.get('value'), 2)}")
+                        value = stat.get("value")
+                        if stat.get("is_percent"):
+                            shown = _num(float(value) / 100, 2) + "%"
+                        else:
+                            shown = _num(value, 2)
+                        parts.append(f"{stat.get('name')} {shown}")
                 if parts:
                     stats_line = " · ".join(parts)
     elif ns == "ww" and kind == "echo":
@@ -1531,6 +1557,11 @@ def _equip_from_detail(ns: str, kind: str, data: dict, listing: dict) -> dict:
                 if desc:
                     lines.append(f"{gname} {num}-Piece: {desc}" if gname else f"{num}-Piece: {desc}")
 
+    # An incomplete upstream parameter table must not publish raw backend tokens.
+    unresolved = re.compile(r"#\d+\[[A-Za-z]\]%?|\{\d+\}")
+    if any(unresolved.search(line) for line in lines):
+        lines = [unresolved.sub("[value unavailable]", line) for line in lines]
+        lines.append("-# Some values are unavailable in this revision's source data.")
     return {"stats_line": stats_line, "effect_title": effect_title, "lines": lines,
             "sub_type": sub_type}
 
@@ -1678,6 +1709,11 @@ def _available_beta_versions(m_game: dict) -> list[str]:
 
 def _next_data_version(record: dict, m_game: dict) -> str:
     """Walk a beta revision at a time; a first run intentionally starts at the current build."""
+    # Finish the durable in-flight build even if the provider publishes another one.
+    for revision in (record.get("revisions") or {}).values():
+        if (isinstance(revision, dict) and revision.get("status") in ("partial", "ambiguous")
+                and revision.get("source_version")):
+            return str(revision["source_version"])
     versions = _available_beta_versions(m_game)
     latest = str(m_game.get("latest") or "").strip()
     if not versions or not latest:
@@ -2050,7 +2086,8 @@ def _safe_entry_name(entry: dict, data: dict, listing: dict | None, item_id: str
     entry_name = str(entry.get("name") or "").strip()
     if entry_name.lower().startswith("id:") or _is_key(entry_name):
         entry_name = ""
-    listing_name = _clean((listing or {}).get("en") if isinstance(listing, dict) else "")
+    localized = (listing or {}).get("en") if isinstance(listing, dict) else ""
+    listing_name = _clean(localized.get("name") if isinstance(localized, dict) else localized)
     data_name = _clean(data.get("name")) if isinstance(data, dict) else ""
     return entry_name or listing_name or data_name or f"ID {item_id}"
 
@@ -2369,6 +2406,13 @@ async def run(ctx) -> None:
         if patch is None:
             continue
         if patch.no_changes and not patch.characters and not patch.equipment:
+            pending = (record.get("revisions") or {}).get(patch.rev_id) or {}
+            if pending.get("status") == "ambiguous" or any(
+                batch.get("status") != "posted" and batch.get("messages")
+                for batch in (pending.get("batches") or {}).values()
+            ):
+                ctx.warnings.append(f"{game.short} beta: unfinished delivery became quiet; held for reconciliation")
+                continue
             if not ephemeral:
                 _settle_beta_patch(ctx, record, patch, status="silent")
                 ctx.state.save()
@@ -2417,6 +2461,7 @@ def _batch_record(record: dict, patch: BetaPatch, now: int) -> tuple[dict, dict]
     """Get the per-batch resume record; older one-list state remains harmless."""
     revisions = record.setdefault("revisions", {})
     revision = revisions.setdefault(patch.rev_id, {"status": "partial", "ts": now, "messages": []})
+    revision.setdefault("source_version", patch.source_version)
     batches = revision.setdefault("batches", {})
     batch_key = patch.batch_id or stable_hash([patch.rev_id, patch.item_keys])
     batch = batches.setdefault(batch_key, {"status": "partial", "ts": now, "messages": []})
@@ -2463,6 +2508,15 @@ async def _deliver(ctx, game: Game, patch: BetaPatch, record: dict, ephemeral: b
         from .cards import mark_test
         payloads = [mark_test(payload) for payload in payloads]
 
+    batch_key = patch.batch_id or stable_hash([patch.rev_id, patch.item_keys])
+    for old_revision in (record.get("revisions") or {}).values():
+        for old_key, old_batch in (old_revision.get("batches") or {}).items():
+            if (old_batch.get("status") != "posted" and
+                    (old_batch.get("messages") or old_batch.get("ambiguous")) and
+                    (old_revision is not (record.get("revisions") or {}).get(patch.rev_id)
+                     or old_key != batch_key)):
+                ctx.warnings.append(f"{game.short} beta: unfinished batch changed; held for reconciliation")
+                return
     revision, batch = _batch_record(record, patch, ctx.now)
     # A timeout after Discord accepted the POST cannot be distinguished from a true failed POST.
     # Persisting it as ambiguous is deliberately a circuit breaker, not just a label: a later
@@ -2477,6 +2531,11 @@ async def _deliver(ctx, game: Game, patch: BetaPatch, record: dict, ephemeral: b
     if len(messages) > len(payloads):
         ctx.warnings.append(f"{game.short} beta: stored batch state is inconsistent; held to prevent duplicates")
         return
+    signature = stable_hash(payloads)
+    if messages and batch.get("signature") != signature:
+        ctx.warnings.append(f"{game.short} beta: partial payload changed or has no signature; held for reconciliation")
+        return
+    batch["signature"] = signature
     sent = 0
     for idx in range(len(messages), len(payloads)):
         result = await ctx.webhook.send(hook, payloads[idx], stop_on_ambiguous=True)

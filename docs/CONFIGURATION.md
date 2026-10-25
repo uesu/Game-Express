@@ -687,3 +687,12 @@ webhook-versus-bot latency benchmark was performed.
 References: [1](https://docs.discord.com/developers/topics/rate-limits),
 [5](https://github.com/discord/discord-api-docs/blob/main/developers/topics/rate-limits.mdx),
 [10](https://discord.com/developers/docs/resources/webhook).
+
+### Beta partial-delivery reconciliation
+
+A beta batch stores its exact payload signature and source version with confirmed page IDs.
+On restart, finish that source version before newer manifest builds. If content, media,
+settings or batch membership changes after a page was confirmed, delivery holds for operator
+reconciliation. Legacy partial batches without a signature also hold; do not clear their
+message IDs automatically. Inspect the actual Discord messages and retained source build
+before repairing state. Quiet source output cannot settle an unfinished delivery.

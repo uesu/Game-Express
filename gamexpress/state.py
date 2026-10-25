@@ -273,7 +273,12 @@ class State:
                             continue
                         local_msgs = list(local_batch.get("messages") or [])
                         peer_msgs = list(peer_batch.get("messages") or [])
-                        if peer_msgs[:len(local_msgs)] == local_msgs and len(peer_msgs) > len(local_msgs):
+                        if ((local_msgs or peer_msgs) and
+                                local_batch.get("signature") != peer_batch.get("signature")):
+                            local_batch["ambiguous"] = True
+                            cur_r["status"] = "ambiguous"
+                            changed = True
+                        elif peer_msgs[:len(local_msgs)] == local_msgs and len(peer_msgs) > len(local_msgs):
                             local_batch.update(copy.deepcopy(peer_batch))
                             changed = True
                         elif local_msgs[:len(peer_msgs)] != peer_msgs:

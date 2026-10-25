@@ -427,3 +427,18 @@ while keeping definite pre-send connection errors, `429` rate-limit backoff, exp
 No state reset or old-post edits.
 Discord controls thumbnail cropping; neither header measurements, HTML previews
 nor passing offline tests prove live media decoding/readability or delivery.
+
+### Captured live beta equipment and restart regressions
+
+`test_feature5_captured_live_equipment_schemas_render_values_without_tokens` uses
+`tests/fixtures/beta/*_live.json`, captured from the recorded public source URLs on
+2026-10-25. Fixtures retain relevant source fields (large unrelated fields and intermediate
+WuWa levels are omitted). It checks HSR promotion lists and refinement/set parameters,
+Genshin published weapon ATK, WuWa percentage units and missing-parameter labels, and nested
+localized names. These are offline regressions, not proof of live Discord rendering.
+
+`test_feature5_partial_delivery_holds_changed_payload_and_batch_after_restart` reloads a
+real temporary state file after one confirmed page and one failed page. It checks that a
+newer manifest cannot skip the unfinished source build and that changed content or batch
+membership cannot reuse the old page cursor. Peer merge tests also reject conflicting
+payload signatures.

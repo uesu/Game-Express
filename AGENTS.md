@@ -591,3 +591,12 @@ Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
   `- {"hna", "ananta"}` subtraction in `load_settings`).
 - **Tests stay offline.** New parsers get a fixture under `tests/fixtures/beta/`; nothing in the
   suite may touch the network.
+
+### Beta partial-delivery reconciliation
+
+A beta batch stores its exact payload signature and source version with confirmed page IDs.
+On restart, finish that source version before newer manifest builds. If content, media,
+settings or batch membership changes after a page was confirmed, delivery holds for operator
+reconciliation. Legacy partial batches without a signature also hold; do not clear their
+message IDs automatically. Inspect the actual Discord messages and retained source build
+before repairing state. Quiet source output cannot settle an unfinished delivery.

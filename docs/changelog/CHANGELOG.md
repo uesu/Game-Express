@@ -1,5 +1,11 @@
 # Changelog — current entries
 
+## 2026-10-25 — Live beta equipment schemas and restart-safe batches
+
+- Capture current public Light Cone, relic, Genshin weapon and WuWa weapon fields in offline regressions. Handle HSR list-based promotion stats, substitute equipment parameters, normalize source formatting tags and nested localized equipment names, and display WuWa percentage units correctly. Label missing source parameters instead of inventing values.
+- Preserve an unfinished beta source build across manifest advances. Persist a payload signature with page progress; hold changed or legacy unsigned partial payloads and conflicting peer signatures for operator reconciliation. A changed candidate batch or newly quiet source cannot silently bypass a partial delivery.
+- Existing default-off routing, five-second page pacing, image preflight, and schedule/codes/news/maintenance behavior remain covered by the repository suites. Live source reads are separate from offline fixture evidence; no Discord posting is part of these checks.
+
 ## 2026-10-25 — Enabled-beta full-pipeline harness and safe multi-page hand-off
 
 - **Full enabled-feature harness (`gamexpress/beta_harness.py`, `gamexpress/__main__.py`, `tests/test_smoke.py`):** replace the earlier renderer-only interpretation of `python -m gamexpress benchmark --beta-enabled` with a deterministic **actual `BETA_ENABLED=1` monitor pass**. It covers all released beta games (GI, HSR, ZZZ and WuWa) through manifest/changelog or manifest fallback discovery, each namespace parser, character + weapon + relic/echo baselines, image preflight, Components V2 validation, webhook delivery, state settlement, retained revisions, deduplication and an explicit quiet revision. The JSON report separates this semantic evidence in `beta_enabled_fixture.pipeline` from the eight supplemental renderer microbenchmark rows in `render_microbenchmarks`.

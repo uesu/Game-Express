@@ -1,5 +1,7 @@
 # Changelog
 
+Latest: [Live beta equipment schemas and restart-safe batches](CHANGELOG.md#2026-10-25--live-beta-equipment-schemas-and-restart-safe-batches).
+
 Every Game-Express change, newest first. The log used to live at the bottom of the project
 README; it now lives here so the README can stay a manual instead of a history book.
 

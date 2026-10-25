@@ -16855,7 +16855,6 @@ def test_feature5_a_published_revision_is_never_published_twice():
     manifest = _beta_json("nanoka_manifest.json")
     fetcher = _RecordingFetcher(_beta_files())
     with tempfile.TemporaryDirectory() as tmp:
-        state = State.load(Path(tmp) / "state.json")
         ctx = _beta_ctx(Path(tmp) / "state.json", fetcher, BETA_ENABLED="1", games=["zzz"])
         budget = {"min_poll_min": 0, "max_chars": 4, "max_changed": 8,
                   "max_equip": 12, "max_requests": 48}
@@ -16946,6 +16945,11 @@ def test_feature5_state_round_trips_and_peer_merges_beta_records():
         merged = left.beta_record("zzz")["revisions"]["batch"]
         assert merged["processed"] == ["character:zzz:1601", "weapon:zzz:14160"]
         assert merged["batches"]["a"]["messages"] == ["10", "11"]
+        merged["batches"]["a"]["signature"] = "local-payload"
+        right.beta_record("zzz")["revisions"]["batch"]["batches"]["a"]["signature"] = "other-payload"
+        left.merge_peer(right.data, include_beta=True)
+        assert merged["status"] == "ambiguous"
+        assert merged["batches"]["a"]["ambiguous"] is True
 
 
 def test_feature5_prune_bounds_the_beta_state_file():
@@ -16970,7 +16974,6 @@ def test_feature5_prune_bounds_the_beta_state_file():
 def test_feature5_runs_end_to_end_without_a_webhook_and_reports_it():
     from gamexpress import beta as beta_mod
 
-    manifest = _beta_json("nanoka_manifest.json")
     fetcher = _RecordingFetcher(_beta_files())
     with tempfile.TemporaryDirectory() as tmp:
         ctx = _beta_ctx(Path(tmp) / "state.json", fetcher, BETA_ENABLED="1", games=["zzz"])
@@ -17064,6 +17067,7 @@ def test_feature5_enabled_run_delivers_one_fixture_character_for_every_released_
 def test_feature5_multi_page_delivery_waits_exactly_five_seconds_and_resumes_safely():
     """The mandatory five-second beta gap is only between successful newly-sent pages."""
     from gamexpress import beta as beta_mod
+    from gamexpress.state import stable_hash
 
     lines = [f"Pacing fixture line {i}: a deliberately long beta-kit description." for i in range(220)]
     patch = BetaPatch(
@@ -17128,6 +17132,7 @@ def test_feature5_multi_page_delivery_waits_exactly_five_seconds_and_resumes_saf
         resume_webhook = Recorder()
         resume_ctx, resume_gaps = asyncio.run(build_ctx(Path(tmp) / "resume.json", resume_webhook))
         revision, batch = beta_mod._batch_record(resume_ctx.state.beta_record("zzz"), patch, resume_ctx.now)
+        batch["signature"] = stable_hash(payloads)
         batch["messages"] = ["already-posted-page-1"]
         revision["messages"] = ["already-posted-page-1"]
         asyncio.run(beta_mod._deliver(resume_ctx, GAMES["zzz"], patch,
@@ -17152,6 +17157,80 @@ def test_feature5_multi_page_delivery_waits_exactly_five_seconds_and_resumes_saf
         asyncio.run(beta_mod._deliver(ambiguous_ctx, GAMES["zzz"], patch, ambiguous_record, ephemeral=False))
         assert len(ambiguous_webhook.sent) == 1
         assert any("prior ambiguous Discord outcome is held" in warning for warning in ambiguous_ctx.warnings)
+
+
+def test_feature5_partial_delivery_holds_changed_payload_and_batch_after_restart():
+    from gamexpress import beta
+    from gamexpress.state import stable_hash
+
+    patch = BetaPatch(
+        game_key="zzz", beta_version="3.4.1", rev_label="v3.4.1", rev_id="resume-guard",
+        source_version="3.4.1+19836465", batch_id="first", item_keys=["character:zzz:1661"],
+        characters=[BetaCharacter(id="zzz:1661", name="Robin", rarity=5,
+            sections=[BetaSectionEntry(title="Basic Attack", category="Skill", lines=[
+                f"Line {i}: Deals 50% damage with this deliberately long attack description."
+                for i in range(100)])])],
+    )
+    class Webhook:
+        def __init__(self):
+            self.sent = []
+        async def send(self, hook, payload, **kw):
+            self.sent.append(payload)
+            return (SendResult(True, 200, message_id="confirmed") if len(self.sent) == 1
+                    else SendResult(False, 500))
+    async def sleep(_seconds):
+        pass
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "state.json"
+        ctx = _beta_ctx(path, _RecordingFetcher({}), BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        ctx.sleep = sleep
+        ctx.webhook = Webhook()
+        record = ctx.state.beta_record("zzz")
+        asyncio.run(beta._deliver(ctx, GAMES["zzz"], patch, record, False))
+        assert len(ctx.webhook.sent) == 2
+        ctx.state = State.load(path)
+        record = ctx.state.beta_record("zzz")
+        assert beta._next_data_version(record, {
+            "latest": "3.4.1+19850203", "available": [patch.source_version, "3.4.1+19850203"]
+        }) == patch.source_version
+        before = stable_hash(record)
+        patch.characters[0].sections[0].lines[0] = "Changed source text since page one."
+        asyncio.run(beta._deliver(ctx, GAMES["zzz"], patch, record, False))
+        assert len(ctx.webhook.sent) == 2
+        assert stable_hash(record) == before
+        assert any("payload changed" in warning for warning in ctx.warnings)
+        patch.batch_id = "different-items"
+        asyncio.run(beta._deliver(ctx, GAMES["zzz"], patch, record, False))
+        assert len(ctx.webhook.sent) == 2
+        assert any("unfinished batch" in warning for warning in ctx.warnings)
+
+
+def test_feature5_captured_live_equipment_schemas_render_values_without_tokens():
+    from gamexpress import beta
+    assert beta._safe_entry_name({}, {"name": "EquipmentSuit_34300_name"}, {
+        "en": {"name": "EquipmentSuit_34300_name", "desc2": "DEF +16%."}
+    }, "34300") == "ID 34300"
+    assert beta._safe_entry_name({}, {}, {"en": {"name": "Readable Set"}}, "42") == "Readable Set"
+    for ns, kind, item_id, expected in (
+        ("hsr", "lightcone", 22009, "Lv. 80 — HP 847 · ATK 476 · DEF 397"),
+        ("hsr", "relicset", 329, ""),
+        ("gi", "weapon", 14525, "Base ATK 542"),
+        ("ww", "weapon", 21030076, "ATK 412.5 · Energy Regen 77.04%"),
+    ):
+        fixture = _beta_json(f"{ns}_{kind}_{item_id}_live.json")
+        fields = beta._equip_from_detail(ns, kind, fixture["data"], fixture["listing"])
+        assert fields["stats_line"] == expected
+        body = "\n".join(fields["lines"])
+        assert "<color" not in body and "<unbreak>" not in body
+        assert "#1[i]" not in body and "{0}" not in body and "{7}" not in body
+        if ns == "hsr" and kind == "lightcone":
+            assert "6%" in body and "12%" in body
+        if ns == "hsr" and kind == "relicset":
+            assert "6%" in body and body.count("40%") == 2
+        if ns == "ww":
+            assert "12%" in body and "[value unavailable]" in body
+            assert "source data" in body
 
 
 def test_feature5_is_skipped_entirely_when_not_enabled():
