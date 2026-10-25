@@ -618,30 +618,42 @@ routing is dedicated (`DISCORD_WEBHOOK_BETA_<GAME>` > `DISCORD_WEBHOOK_BETA` >
 Where the data comes from (`gamexpress/beta.py`, see [SOURCES.md](SOURCES.md#beta-kit--revision-diff-sources-2026-10-24)):
 
 - **`https://static.nanoka.cc/manifest.json`** — one small JSON naming each game's `latest`,
-  ordered `available` data builds, and ids that are new in the current beta. The runner walks
-  one retained build at a time rather than silently jumping past a hotfix. Its internally generated
-  fallback retains that exact numeric id instead of reparsing a public URL, which keeps WuWa's
-  singular `character` / `weapon` / `relic` paths deliverable alongside the other games.
+  `live`, ordered `available` data builds, and ids that are new in the current beta. Candidate
+  builds at or behind the game's live `major.minor` cycle (resolved from manifest `live`/`hotfix`,
+  version config, and confirmed past schedule maintenance) are skipped immediately before any
+  changelog or detail request, preventing finished/live betas from posting. Active builds walk
+  one retained step at a time rather than jumping past a hotfix.
 - **the game's beta changelog** — `https://<game>.gachabase.net/changelog/beta?lang=en`
-  for GI / HSR / ZZZ; its matching revision supplies item/diff links. If a hotfix heading has
-  no listed entries, the runner probes only manifest-new and already-snapshotted ids; it does
-  **not** fan out across every character. Wuthering Waves has no structured changelog endpoint,
-  so it remains manifest-driven; its `ww.nanoka.cc/diff` URL is a human resource link, never a
-  poll target.
-- **`https://static.nanoka.cc/<game>/<revision>/en/<kind>/<id>.json`** — the kit / weapon /
-  set detail. The latest successful full snapshot becomes the next revision's baseline; all
-  detail reads, including bounded resume batches, remain under `BETA_MAX_REQUESTS`.
+  for GI / HSR / ZZZ; its matching revision supplies item/diff links and CN-lag advisories.
+  HTTP 403 / access-denied blocks degrade cleanly to nanoka's manifest without warning spam.
+  If a hotfix heading has no listed entries, the runner probes only manifest-new and
+  already-snapshotted ids; it does **not** fan out across every character. Wuthering Waves has
+  no structured changelog endpoint, so it remains manifest-driven; its `ww.nanoka.cc/diff` URL
+  is a human resource link, never a poll target.
+- **`https://static.nanoka.cc/<game>/<revision>/{en,zh}/<kind>/<id>.json`** — the kit / weapon /
+  set detail. English (`en`) is read first; Chinese (`zh`) is queried within the same bounded
+  `BETA_MAX_REQUESTS` ceiling only when EN shows lag markers (`???`, `[TBD]`, `/-`), an upstream
+  changelog warns to double-check Chinese, or an EN revision appears unchanged against the prior
+  snapshot while CN updated its multipliers.
 
 Safety invariants:
 
 - **No invented numbers and no guessed direction.** Values come straight from the structured
-  export. With a retained before/after baseline, clear cases may use `[BUFF]` / `[NERF]`
-  (for example, a damage multiplier rising or a cooldown falling); ambiguous mechanics remain
-  `[CHANGED]`, wording-only changes `[TEXT FIX]`, and type/category moves `[ADJUSTMENT]`.
-  Without a baseline the card is a full `[CHANGED]` snapshot, never a fabricated diff.
-- **Image lock.** A verified splash-art URL is stored in
-  `state["beta"][game]["locked_images"]` and reused. A locked image is never re-verified,
-  so a finished card stops generating traffic entirely.
+  export, with raw client markup (`<IconMap:...>`, `<size=...>`, `<SapTag=...>`, `<te href=...>`,
+  console layout fallbacks, and unresolved `{0}` / `#{...}` placeholders) stripped cleanly.
+  With a retained before/after baseline, clear cases may use `[BUFF]` / `[NERF]` (for example,
+  a damage multiplier rising or a cooldown falling), structurally rewritten or renamed slot
+  skills surface as `[REWORK]`, ambiguous mechanics remain `[CHANGED]`, wording-only changes
+  `[TEXT FIX]`, and type/category moves `[ADJUSTMENT]`. Without a baseline the card is a full
+  `[NEW]` / `[CHANGED]` snapshot, never a fabricated diff.
+- **Image & gallery lock.** Verified splash-art, weapon/LC/W-Engine icons, 6-icon HSR Eidolon
+  galleries, and multi-piece Planar/Relic/Artifact/Drive Disc galleries are stored in
+  `state["beta"][game]["locked_images"]` and reused. Locked URLs are never re-verified, so a
+  settled item stops generating media traffic.
+- **Format-epoch migration (`BETA_FORMAT_EPOCH = 2`).** Pre-epoch-2 persisted beta records are
+  cleared once (while holding any ambiguous circuit-breaker batch and preserving route metadata,
+  and ignoring older-epoch peer snapshots on failover merge) so protected production state can
+  repost active betas cleanly in Prime Formatting Style without re-posting on later runs.
 - **Idempotent, resumable build batches.** State stores the exact source build, a bounded full
   snapshot per item, and a per-batch message cursor. Large revisions resume their next bounded
   item batch rather than duplicating an earlier page. An ambiguous Discord outcome is a persisted
