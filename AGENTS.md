@@ -544,6 +544,15 @@ and mocked/derived protocol counts (`short(off)=1 msg / 1 media GET / 1 POST`,
 `long>7000(off)=1 excerpt msg / 1 media GET / 1 POST`,
 `long>7000(expand_full=1)=4 msgs / 18 media GETs / 4 POSTs (+3.6s min pacing)`).
 
+For the all-game enabled feature-5 renderer check, also run
+`.venv/bin/python -m gamexpress benchmark --iterations 300 --beta-enabled` (or `--json`). It
+constructs an isolated in-memory `BETA_ENABLED=1` settings object for `genshin`, `starrail`,
+`zzz`, and `wuwa`, validates new-kit plus retained-revision payloads and per-item galleries for
+all four (8 cases / 16 payloads), then reports zero source HTTP, webhook and state activity. It
+must never flip the real environment, poll live beta sources or replace the fixture-backed parser,
+hotfix, request-budget and delivery-resume tests. Without this flag, retain the 12-case
+default-off benchmark exactly as above.
+
 
 ## Beta kit & revision-diff cards (feature 5, 2026-10-24)
 
@@ -572,7 +581,9 @@ Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
 - **Walk builds; do not jump them.** Use manifest `available` to select the next retained
   static build. A blank changelog is not proof of no changes: recheck only manifest-new and
   already-snapshotted ids. Only an explicit upstream `No tracked changes detected` can advance
-  silently, and not on a cold opt-in (which must still publish the current reveal).
+  silently, and not on a cold opt-in (which must still publish the current reveal). A manifest
+  fallback must retain its explicit numeric id; never depend on public URL grammar — WuWa's
+  intentional singular `character` / `weapon` paths are not gachabase's plural paths.
 - **Keep the image lock.** A resolved image goes into
   `state["beta"][game]["locked_images"][id]` and is reused; a locked image is never re-verified.
   That lock is what stops a published card from polling forever.

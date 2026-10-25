@@ -604,7 +604,9 @@ Where the data comes from (`gamexpress/beta.py`, see [SOURCES.md](SOURCES.md#bet
 
 - **`https://static.nanoka.cc/manifest.json`** — one small JSON naming each game's `latest`,
   ordered `available` data builds, and ids that are new in the current beta. The runner walks
-  one retained build at a time rather than silently jumping past a hotfix.
+  one retained build at a time rather than silently jumping past a hotfix. Its internally generated
+  fallback retains that exact numeric id instead of reparsing a public URL, which keeps WuWa's
+  singular `character` / `weapon` / `relic` paths deliverable alongside the other games.
 - **the game's beta changelog** — `https://<game>.gachabase.net/changelog/beta?lang=en`
   for GI / HSR / ZZZ; its matching revision supplies item/diff links. If a hotfix heading has
   no listed entries, the runner probes only manifest-new and already-snapshotted ids; it does
@@ -634,6 +636,18 @@ Safety invariants:
 - **Bounded pages.** Long kits split into sequential Components V2 containers, each
   independently inside Discord's 4,000-character and 40-component limits, labelled
   `Page n/N`.
+
+### Offline enabled-beta render benchmark
+
+Use `python -m gamexpress benchmark --iterations 300 --beta-enabled` to cover the enabled card
+surface without opting in a real monitor. The benchmark constructs an isolated in-memory
+`BETA_ENABLED=1` / `BETA_GAMES=genshin,starrail,zzz,wuwa` settings object, then renders and
+validates synthetic new-kit **and** retained-baseline revision cards for all four released beta
+games. Its JSON report records `beta_enabled_fixture.games` plus zero source HTTP requests,
+Discord webhook posts and state writes. It never changes the process environment or production
+settings. The normal benchmark stays a 12-case default-off news/parity benchmark; this flag adds
+eight beta rendering cases. It is a renderer/payload-boundary check, not a replacement for the
+captured all-game parser, build-walking, request-ledger and delivery-resume regression tests.
 
 ## Discord webhook versus bot delivery
 

@@ -745,6 +745,16 @@ def parse_changelog(markdown: str) -> list[dict]:
 
 
 def _entry_id(entry: dict) -> str:
+    """Read an item id from a source URL or an explicit internal fallback field.
+
+    Changelog entries carry their id in a public detail URL. Manifest/snapshot fallback entries
+    already have the exact id, however, and WuWa's public `character` / `weapon` singular paths
+    are intentionally not coupled to the gachabase-style URL regex. Prefer that numeric fallback
+    rather than silently dropping a valid manifest candidate.
+    """
+    explicit = str(entry.get("id") or "").strip()
+    if explicit.isdigit():
+        return explicit
     m = _ITEM_ID_RE.search(entry.get("url") or "")
     return m.group(1) if m else ""
 
@@ -1739,8 +1749,11 @@ def _fallback_entry(ns: str, role: str, item_id: str) -> dict:
         url = f"https://ww.nanoka.cc/{role}/{item_id}/"
     else:
         url = f"https://{ns}.gachabase.net/{path}/{item_id}/{item_id}/beta?lang=en"
-    return {"name": "", "url": url, "diff": "", "image": "", "section": "", "role": role,
-            "synthetic": True}
+    # Do not recover this id by reparsing the human-facing URL: WuWa intentionally uses
+    # singular `character` / `weapon` paths, whereas gachabase uses plural paths. Keeping the
+    # manifest id explicit makes every namespace's bounded fallback equally deliverable.
+    return {"id": str(item_id), "name": "", "url": url, "diff": "", "image": "", "section": "",
+            "role": role, "synthetic": True}
 
 
 def _entry_key(ns: str, role: str, item_id: str) -> str:

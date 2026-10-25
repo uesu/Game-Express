@@ -301,6 +301,11 @@ that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA
 - **It stops on its own.** A verified splash-art URL is locked in state and never re-fetched.
   Per-revision batches persist their own resume cursor, so a bounded batch continues without a
   duplicate page; once all batches settle, that revision generates no further traffic.
+- **Offline enabled-feature check.** `python -m gamexpress benchmark --beta-enabled` keeps the
+  production default off, but creates an isolated `BETA_ENABLED=1` setting to render and validate
+  both a new-kit and retained-revision card for **GI, HSR, ZZZ and WuWa**. It makes no source HTTP
+  request, Discord webhook post or state write; it complements, rather than replaces, the fixture
+  tests for source parsing and revision walking.
 
 Full setup, variables and safeguards:
 **[docs/CONFIGURATION.md → Beta kit & revision-diff cards](docs/CONFIGURATION.md#beta-kit--revision-diff-cards-feature-5--explicit-opt-in-default-off)**.
@@ -588,9 +593,9 @@ For local runs and debugging: `python -m gamexpress <command>`
 | `check-webhooks [--kind …] [--game …]` | one "connected" card per unique webhook (no ping) |
 | `test-card [--kind …] [--game …] [--ping] [--unlaunched]` | post the sample cards, labelled 🧪 TEST. `--unlaunched` keeps only the games with `"released": false` |
 | `speculate [--game …] [--verbose] [--now <unix>]` | read-only: what the bot would predict for each game's next version, the confidence, and the real dates it is anchored on |
-| `benchmark [--iterations N] [--json]` | offline microbenchmark for timestamp formatting/scanning and short vs multi-page news rendering |
+| `benchmark [--iterations N] [--json] [--beta-enabled]` | offline microbenchmark for timestamp formatting/scanning and short vs multi-page news rendering; `--beta-enabled` adds isolated enabled-beta new/revision render checks for GI, HSR, ZZZ and WuWa (no network/webhook/state activity) |
 
-Flags: `--dry-run --only --game --repost --kind --ping --out --unlaunched --verbose --now`.
+Flags: `--dry-run --only --game --repost --kind --ping --out --unlaunched --verbose --now --beta-enabled`.
 
 ---
 

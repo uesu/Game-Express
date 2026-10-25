@@ -471,9 +471,110 @@ def cmd_validate(_args) -> int:
     return 0 if ok else 1
 
 
+# The standard benchmark deliberately keeps its default-off news baseline unchanged.  This
+# compact in-memory set is the opt-in companion: it drives the actual beta card renderer with
+# BETA_ENABLED=1 semantics for every released beta game, without needing a source request,
+# webhook, state file, or test fixture installed beside the application.
+_BETA_BENCHMARK_GAME_KEYS = ("genshin", "starrail", "zzz", "wuwa")
+
+
+def _beta_benchmark_patches(games: dict):
+    """Deterministic new-kit and retained-revision render cases for every beta game.
+
+    These are intentionally synthetic renderer fixtures, not source captures or beta claims.
+    Parser/discovery/revision-walking coverage remains in the offline smoke fixtures; this helper
+    gives the benchmark a portable enabled-feature render/validation path too.
+    """
+    from .models import BetaCharacter, BetaEquipment, BetaPatch, BetaSectionEntry
+
+    labels = {
+        "genshin": ("Benchmark Traveler", "Sword", "Weapons"),
+        "starrail": ("Benchmark Trailblazer", "Light Cone", "Light Cones"),
+        "zzz": ("Benchmark Agent", "W-Engine", "W-Engines"),
+        "wuwa": ("Benchmark Resonator", "Weapon", "Weapons"),
+    }
+    cases: dict[str, dict[str, BetaPatch]] = {}
+    for key in _BETA_BENCHMARK_GAME_KEYS:
+        game = games.get(key)
+        if game is None or not game.beta:
+            raise ValueError(f"beta benchmark game is not configured: {key}")
+        name, equipment_name, equipment_label = labels[key]
+        root = f"https://example.com/game-express-benchmark/{key}"
+        new_character = BetaCharacter(
+            id=f"{key}:benchmark-new", name=name, rarity=5, element="Benchmark", role="Test",
+            subtext="-# Offline BETA_ENABLED=1 benchmark fixture — not a real beta entry.",
+            stats_lines=["Lv. 90 — HP 12000 · ATK 800 · DEF 700"],
+            sections=[
+                BetaSectionEntry(
+                    title="Basic Attack: Benchmark Strike", category="Basic Attack", tag="[NEW]",
+                    lines=[
+                        "Deals Benchmark DMG equal to 100% of ATK.",
+                        "Restores 10 energy when the target is defeated.",
+                    ],
+                    params=[{"name": "DMG Multiplier", "value": 100, "text": "100%"}],
+                    values_label="Lv. 10",
+                ),
+                BetaSectionEntry(
+                    title="Core Passive: Benchmark Loop", category="Core Passive", tag="[NEW]",
+                    lines=["After using the skill, gain 1 stack of Benchmark State for 10s."],
+                ),
+            ],
+            image_url=f"{root}/new-character.webp", page_url=f"{root}/new-character",
+            is_new=True,
+        )
+        new_equipment = BetaEquipment(
+            id=f"{key}:benchmark-new-equipment", name=f"Benchmark {equipment_name}",
+            category_label=equipment_label, rarity=5, tag="[NEW]", stats_line="Base ATK 700",
+            effect_title="Benchmark Effect", lines=["Increases the user's Benchmark DMG by 20%."],
+            image_url=f"{root}/new-equipment.webp", page_url=f"{root}/new-equipment",
+        )
+        revised_character = BetaCharacter(
+            id=f"{key}:benchmark-revision", name=name, rarity=5, element="Benchmark", role="Test",
+            subtext="-# Retained-baseline revision fixture — only changed source blocks are shown.",
+            stats_lines=["Lv. 90 — HP 12000 · ATK 800 · DEF 700"],
+            sections=[
+                BetaSectionEntry(
+                    title="Basic Attack: Benchmark Strike", category="Basic Attack", tag="[BUFF]",
+                    lines=["**[BUFF]** Direct DMG multiplier increased from ~~**100%**~~ → **120%**."],
+                    params=[{"name": "DMG Multiplier", "value": 120, "text": "120%"}],
+                    values_label="Lv. 10",
+                ),
+                BetaSectionEntry(
+                    title="Core Passive: Benchmark Loop", category="Core Passive", tag="[TEXT FIX]",
+                    lines=["**[TEXT FIX]** Wording updated with no inferred mechanical direction."],
+                ),
+            ],
+            image_url=f"{root}/revision-character.webp", page_url=f"{root}/revision-character",
+            diff_url=f"{root}/revision-character-diff", is_new=False,
+        )
+        revised_equipment = BetaEquipment(
+            id=f"{key}:benchmark-revision-equipment", name=f"Benchmark {equipment_name}",
+            category_label=equipment_label, rarity=5, tag="[CHANGED]",
+            lines=["**[CHANGED]** Effect wording changed from ~~20%~~ → **24%**."],
+            image_url=f"{root}/revision-equipment.webp", page_url=f"{root}/revision-equipment",
+            diff_url=f"{root}/revision-equipment-diff",
+        )
+        cases[key] = {
+            "new": BetaPatch(
+                game_key=key, beta_version="0.0", rev_label="v0.0 Rev. 00000000 — offline benchmark",
+                rev_id=f"benchmark-new-{key}", characters=[new_character], equipment=[new_equipment],
+            ),
+            "revision": BetaPatch(
+                game_key=key, beta_version="0.0", rev_label="v0.0 Rev. 00000001 — offline benchmark",
+                rev_id=f"benchmark-revision-{key}", characters=[revised_character],
+                equipment=[revised_equipment],
+            ),
+        }
+    return cases
+
+
 def cmd_benchmark(args) -> int:
-    """Reproducible offline micro-benchmark for disabled bypass, timestamp scanning,
-    human vs Discord epoch formatting, and expanded long-article pagination."""
+    """Reproducible offline micro-benchmark for news rendering and optional beta rendering.
+
+    `--beta-enabled` is deliberately local to this command: it creates an in-memory
+    `BETA_ENABLED=1` setting for all four released beta games, renders/validates new-kit and
+    retained-revision cards, and never constructs a fetcher, webhook client, or state writer.
+    """
     import platform
     import statistics
     import subprocess
@@ -503,7 +604,10 @@ def cmd_benchmark(args) -> int:
 
     games = load_games()
     iters = max(20, int(getattr(args, "iterations", 200) or 200))
+    beta_enabled_fixture = bool(getattr(args, "beta_enabled", False))
     cmd_str = f"python -m gamexpress benchmark --iterations {iters}"
+    if beta_enabled_fixture:
+        cmd_str += " --beta-enabled"
 
     short_body = (
         "Dear Proxies,\n"
@@ -657,6 +761,58 @@ def cmd_benchmark(args) -> int:
                                 seen.append(u)
         return seen
 
+    # The production feature remains disabled unless the operator enables it.  This opt-in
+    # benchmark mode uses a separate mapping rather than mutating `os.environ`, so its all-game
+    # BETA_ENABLED=1 render check cannot leak into a real monitor command in the same process.
+    beta_enabled_report: dict = {
+        "enabled": beta_enabled_fixture,
+        "scope": list(_BETA_BENCHMARK_GAME_KEYS),
+        "in_memory_only": True,
+        "source_requests": 0,
+        "webhook_posts": 0,
+        "state_writes": 0,
+        "games": {},
+    }
+    if beta_enabled_fixture:
+        from .cards import beta_payloads
+
+        benchmark_settings = load_settings({
+            "BETA_ENABLED": "1",
+            "BETA_GAMES": ",".join(_BETA_BENCHMARK_GAME_KEYS),
+        })
+        assert benchmark_settings.beta_enabled is True
+        assert benchmark_settings.beta_games == set(_BETA_BENCHMARK_GAME_KEYS)
+        cases = _beta_benchmark_patches(games)
+        beta_enabled_report["settings"] = {
+            "BETA_ENABLED": "1",
+            "BETA_GAMES": list(_BETA_BENCHMARK_GAME_KEYS),
+        }
+        for key in _BETA_BENCHMARK_GAME_KEYS:
+            per_game: dict[str, dict] = {}
+            for case_name, patch_obj in cases[key].items():
+                payloads = beta_payloads(games[key], patch_obj, benchmark_settings, Ping())
+                problems = [problem for payload in payloads for problem in validate_payload(payload)]
+                assert payloads and not problems, f"beta benchmark {key}/{case_name}: {problems}"
+                rendered = json.dumps(payloads, ensure_ascii=False)
+                expected_tag = "[NEW]" if case_name == "new" else "[BUFF]"
+                assert expected_tag in rendered, f"beta benchmark {key}/{case_name} lost {expected_tag}"
+                media_urls = _media_urls(payloads)
+                # One character gallery and one equipment gallery prove that the per-item media
+                # layout stays valid in both a new reveal and a retained-baseline revision.
+                assert len(media_urls) == 2, f"beta benchmark {key}/{case_name} lost item galleries"
+                per_game[case_name] = {
+                    "payloads": len(payloads),
+                    "validated": True,
+                    "distinct_item_galleries": len(media_urls),
+                    "required_tag": expected_tag,
+                }
+                results.append(_measure(
+                    f"beta_enabled_{key}_{case_name}_render",
+                    lambda game=games[key], fixture=patch_obj: beta_payloads(
+                        game, fixture, benchmark_settings, Ping()),
+                ))
+            beta_enabled_report["games"][key] = per_game
+
     request_counts = {
         "basis": "derived_from_rendered_payloads_not_live_http",
         "short_default_off": {
@@ -800,6 +956,7 @@ def cmd_benchmark(args) -> int:
         "main_comparison_mode": main_comparison_mode,
         "timestamp_converter_calls_when_off": ts_calls,
         "request_counts": request_counts,
+        "beta_enabled_fixture": beta_enabled_report,
         "benchmarks": results,
     }
     if getattr(args, "json", False):
@@ -820,6 +977,18 @@ def cmd_benchmark(args) -> int:
         f"main_live_code_equal={main_live_code_equal} ({main_comparison_mode}) | "
         f"timestamp_parser_calls={ts_calls} | extra_feature_http_or_webhook=0"
     )
+    if beta_enabled_fixture:
+        beta_games = ", ".join(_BETA_BENCHMARK_GAME_KEYS)
+        beta_pages = sum(
+            row[case]["payloads"]
+            for row in beta_enabled_report["games"].values()
+            for case in ("new", "revision")
+        )
+        print(
+            f"Beta-enabled fixture checks: BETA_ENABLED=1 local-only | games={beta_games} | "
+            f"new+revision cases=8 / {beta_pages} validated payload(s) | "
+            "source HTTP=0 | webhook POST=0 | state writes=0"
+        )
     print(
         f"Derived protocol counts (mocked/offline, not live network): "
         f"short(off)={request_counts['short_default_off']['payloads']} msg / "
@@ -876,6 +1045,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="speculate: pretend it is this unix time (for checking a past prediction)")
     p.add_argument("--iterations", type=int, default=200, help="benchmark: timed repetitions per case")
     p.add_argument("--json", action="store_true", help="benchmark: output machine-readable JSON")
+    p.add_argument("--beta-enabled", action="store_true",
+                   help="benchmark: add local BETA_ENABLED=1 new/revision render checks for GI, HSR, ZZZ and WuWa; no network, webhook or state writes")
     args = p.parse_args(argv)
     if args.dry_run:
         os.environ["DRY_RUN"] = "1"

@@ -8905,8 +8905,49 @@ def test_reproducible_offline_benchmark_command_and_bypass_invariants():
     assert data["default_medium_messages"] == 2
     assert data["timestamp_converter_calls_when_off"] == 0
     assert data["request_counts"]["basis"] == "derived_from_rendered_payloads_not_live_http"
+    # The historic default benchmark stays exactly default-off: beta cases are opt-in so its
+    # 12 long-standing timing rows and stored news baselines remain directly comparable.
+    assert data["beta_enabled_fixture"]["enabled"] is False
+    assert data["beta_enabled_fixture"]["games"] == {}
     assert len(data["benchmarks"]) == 12
     assert all(b["median_us"] >= 0 and b["iterations"] == 20 for b in data["benchmarks"])
+
+
+def test_reproducible_beta_enabled_benchmark_covers_all_released_beta_games_offline():
+    """The opt-in benchmark is BETA_ENABLED=1 only in memory; no monitor side effect occurs."""
+    import contextlib
+    import io
+
+    before = os.environ.get("BETA_ENABLED")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc = gxmain.main(["benchmark", "--iterations", "20", "--beta-enabled", "--json"])
+    assert rc == 0
+    assert os.environ.get("BETA_ENABLED") == before
+    data = json.loads(out.getvalue())
+    beta = data["beta_enabled_fixture"]
+    assert beta["enabled"] is True
+    assert beta["settings"] == {
+        "BETA_ENABLED": "1",
+        "BETA_GAMES": ["genshin", "starrail", "zzz", "wuwa"],
+    }
+    assert beta["in_memory_only"] is True
+    assert (beta["source_requests"], beta["webhook_posts"], beta["state_writes"]) == (0, 0, 0)
+    assert set(beta["games"]) == {"genshin", "starrail", "zzz", "wuwa"}
+    for game, cases in beta["games"].items():
+        assert set(cases) == {"new", "revision"}, game
+        assert cases["new"] == {
+            "payloads": 2, "validated": True, "distinct_item_galleries": 2,
+            "required_tag": "[NEW]",
+        }
+        assert cases["revision"] == {
+            "payloads": 2, "validated": True, "distinct_item_galleries": 2,
+            "required_tag": "[BUFF]",
+        }
+    beta_rows = [row for row in data["benchmarks"] if row["case"].startswith("beta_enabled_")]
+    assert len(beta_rows) == 8
+    assert len(data["benchmarks"]) == 20
+    assert all(row["iterations"] == 20 and row["median_us"] >= 0 for row in beta_rows)
 
 
 def test_webhook_ambiguous_response_auth_key_redaction_and_video_preview_html():
@@ -16879,6 +16920,87 @@ def test_feature5_runs_end_to_end_without_a_webhook_and_reports_it():
         assert ctx.errors == []
         assert any("missing dedicated webhook" in w for w in ctx.warnings), ctx.warnings
         assert "DISCORD_WEBHOOK_BETA_ZZZ" in " ".join(ctx.warnings)
+
+
+def test_feature5_enabled_run_delivers_one_fixture_character_for_every_released_beta_game():
+    """A manifest fallback must remain deliverable for GI/HSR/ZZZ *and* singular-path WuWa."""
+    from gamexpress import beta as beta_mod
+
+    manifest = {
+        "gi": {"latest": "7.1.53", "available": ["7.1.53"],
+               "new": {"character": [10000136], "weapon": [], "artifact": []}},
+        "hsr": {"latest": "4.6.54", "available": ["4.6.54"],
+                "new": {"character": [1511], "lightcone": [], "relicset": []}},
+        "zzz": {"latest": "3.4.1+19836465", "available": ["3.4.1+19836465"],
+                "new": {"character": [1601], "weapon": [], "equipment": []}},
+        "ww": {"latest": "3.8.1", "available": ["3.8.1"],
+               "new": {"character": [1512], "weapon": [], "echo": []}},
+    }
+    character_data = {
+        "/gi/": _beta_json("gi_character_10000136.json"),
+        "/hsr/": _beta_json("hsr_character_1511.json"),
+        "/zzz/": _beta_json("zzz_character_1601.json"),
+        "/ww/": _beta_json("ww_character_1512.json"),
+    }
+
+    class FourGameFetcher:
+        def __init__(self):
+            self.calls = []
+
+        async def get_json(self, url, **_kw):
+            self.calls.append(("json", url))
+            if url.endswith("/manifest.json"):
+                return manifest
+            if "/character/" in url:
+                for namespace, data in character_data.items():
+                    if namespace in url:
+                        return data
+            return None
+
+        async def get_text(self, url, **_kw):
+            self.calls.append(("text", url))
+            return ""  # no changelog entries: exercise each game's manifest fallback.
+
+        async def verify_media(self, url):
+            self.calls.append(("media", url))
+            return True
+
+    # The explicit id is authoritative for every manifest fallback role. In particular, WW's
+    # human-facing paths are singular (`/character/`, `/weapon/`), unlike the gachabase regex.
+    for role in ("character", "weapon", "relic"):
+        assert beta_mod._entry_id(beta_mod._fallback_entry("ww", role, "1512")) == "1512"
+
+    keys = ["genshin", "starrail", "zzz", "wuwa"]
+    with tempfile.TemporaryDirectory() as tmp:
+        fetcher = FourGameFetcher()
+        ctx = _beta_ctx(
+            Path(tmp) / "state.json", fetcher, BETA_ENABLED="1",
+            BETA_GAMES="genshin,starrail,zzz,wuwa", DISCORD_WEBHOOK_BETA=HOOK, games=keys,
+        )
+        # `_beta_ctx` deliberately supplies a dry-run webhook client. This takes the actual
+        # render/delivery/state-settlement path without a Discord request.
+        asyncio.run(beta_mod.run(ctx))
+        assert ctx.errors == []
+        assert len(ctx.report) == 4
+        assert all(any(game.short in row for row in ctx.report) for game in (GAMES[k] for k in keys))
+        for key, source_version, snapshot in (
+            ("genshin", "7.1.53", "gi:10000136"),
+            ("starrail", "4.6.54", "hsr:1511"),
+            ("zzz", "3.4.1+19836465", "zzz:1601"),
+            ("wuwa", "3.8.1", "ww:1512"),
+        ):
+            record = ctx.state.beta_record(key)
+            assert record["source_version"] == source_version
+            assert snapshot in record["snapshots"], key
+            assert record["revisions"][record["latest_rev"]]["status"] == "posted", key
+
+        # One shared manifest, three configured changelog probes, four character details and
+        # the three static-art conventions known for GI/HSR/ZZZ: bounded successful work across
+        # every released beta game. WW has no guessed art URL, so it cleanly omits the gallery.
+        assert sum(kind == "json" for kind, _url in fetcher.calls) == 5
+        assert sum(kind == "text" for kind, _url in fetcher.calls) == 3
+        assert sum(kind == "media" for kind, _url in fetcher.calls) == 3
+        assert any("/ww/3.8.1/en/character/1512.json" in url for _kind, url in fetcher.calls)
 
 
 def test_feature5_is_skipped_entirely_when_not_enabled():

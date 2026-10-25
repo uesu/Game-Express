@@ -328,6 +328,24 @@ policy, `long=12,348c` + `18` media), default-off parity & timestamp-parser bypa
 checks, separated derived/mocked protocol counts vs measured local CPU timings
 (`median`/`mean`/`p95` µs), and higher expanded-mode media/webhook/pacing costs.
 
+To exercise feature 5 while preserving its production default, add `--beta-enabled`:
+
+```bash
+.venv/bin/python -m gamexpress benchmark --iterations 300 --beta-enabled --json
+```
+
+That flag constructs a separate in-memory `BETA_ENABLED=1`,
+`BETA_GAMES=genshin,starrail,zzz,wuwa` settings object. It renders and validates one synthetic
+new-kit card and one retained-baseline revision card for each released beta game (**8 cases / 16
+payloads** at the current fixtures), including the per-item character/equipment galleries. It
+records the four game keys and zero source HTTP requests, webhook posts and state writes in
+`beta_enabled_fixture`; it does **not** opt in the monitor, mutate the process environment, query
+a live database, send Discord traffic or stand in for the captured parser/discovery/hotfix tests.
+A separate offline dry-run regression runs each real fixture through the shared manifest → detail →
+render → delivery-settlement route, including WuWa's singular public fallback URL; it confirms that
+all four released games can create a posted-in-memory baseline without external Discord traffic.
+The default command remains the existing 12-case default-off news benchmark.
+
 
 
 ### Latest layout corrections: 7,000 eligibility / final-container controls

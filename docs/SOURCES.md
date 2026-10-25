@@ -643,7 +643,18 @@ Per-game namespaces and labels are declared in `config/games.json` (`beta.nanoka
 
 **Wuthering Waves** has no gachabase site, so its revision comes from the manifest's
 `new` lists alone. That is the correct scope there: the manifest says exactly what is
-new in `latest`, and there is no public per-revision diff to summarise.
+new in `latest`, and there is no public per-revision diff to summarise. Each internal fallback
+also keeps that manifest id explicitly rather than reparsing it from the human-facing singular
+`ww.nanoka.cc/character/<id>/`, `weapon/<id>/` or `relic/<id>/` URL; this keeps new WuWa
+characters, weapons and echoes on the same bounded detail/delivery path as the other games.
+
+The supplied **encore.moe API v2** OpenAPI reference was re-reviewed on 2026-10-25. It documents
+current `/{lang}/character`, `weapon`, `echo` and `/new` resources (the latter exposes
+`GameVer`, `ResVer` and `Changelist` fields), but does not document whether a record is beta,
+an ordered historical build list, a stable beta revision cursor, or item-level before/after data.
+It is therefore **not polled** for feature 5: using it as a revision source could confuse a live
+update with a beta build or invent a hotfix diff. The existing ordered nanoka manifest remains the
+bounded WuWa discovery source until Encore documents an equivalent beta/revision contract.
 
 What is deliberately **not** done:
 
