@@ -752,7 +752,5 @@ Historical records are preserved in
   online, [FxEmbed / FxTwitter](https://github.com/FxEmbed/FxEmbed), and
   [BetterTwitFix / vxTwitter](https://github.com/dylanpdx/BetterTwitFix). The full list, with
   active beta sources, tools, research references and licences: **[docs/CREDITS.md](docs/CREDITS.md)**.
-- **Special thanks:** **[Arena AI](https://arena.ai/company/about)** ([@arena on X](https://x.com/arena?lang=en))
-  for making these engineering additions, upstream audits, and reliability upgrades possible.
 - **Sibling project:** [News-Express](https://github.com/uesu/News-Express) — same design,
   different beat.
