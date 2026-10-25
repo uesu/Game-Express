@@ -1,5 +1,11 @@
 # Changelog — current entries
 
+## 2026-10-25 — Beta Prime Formatting Style, active-beta gating, media galleries, and CN/CHS cross-check
+
+- Gate beta discovery against each game's live version cycle (manifest `live`/`hotfix`, version config, and confirmed past maintenance schedules) so finished or already-live betas (e.g. GI `7.1.53` on live `7.1`, HSR `4.6.54` on live `4.6`) skip immediately with zero changelog or detail requests while active betas (e.g. ZZZ `3.4.1`, WuWa `3.8.1`) publish normally. Handle gachabase HTTP 403 / access-denied blocks cleanly without warning spam.
+- Upgrade beta Discord Components V2 rendering to Prime Formatting Style across GI, HSR, ZZZ, and WuWa: full game-name patch headers, structured character/equipment metadata headers, synthesized **Kit Overview** summaries, nested `* **[TAG]**` skill bullets with `[REWORK]` slot-rename/rewrite detection, deduplicated inline `**(Keyword)**` definitions, zero `>` blockquotes, zero `*(cont.)*` continuation headers, and clean `-# <Game Name> <Version> Beta • Page n/N` footers.
+- Strip client markup and unresolved formula placeholders across all namespaces (`<IconMap:...>`, `<size=...>`, `<SapTag=...>`, `<te href=...>`, console/fallback layout tags, `{0}`/`#{...}`/`{CAL:...}`), resolve verified `static.nanoka.cc` character/weapon/LC/W-Engine art plus multi-item galleries (6-icon HSR Eidolons, Planar Ornaments, Relics, Artifacts, Drive Discs) with persisted gallery locks, cross-check `/zh/` when EN lags behind CN/CHS, and bump `BETA_FORMAT_EPOCH = 2` for a one-time state reset across protected production records and peer merges. Features 1–4 remain untouched.
+
 ## 2026-10-25 — Encore secondary beta API backup
 
 - Extend the existing current-build WuWa character/weapon fallback with Encore's documented legacy `https://api.encore.moe/en` server after an unusable primary response. Both endpoints' current beta metadata and normalized Lily/Lullaby output were compared directly.

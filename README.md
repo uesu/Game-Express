@@ -256,44 +256,56 @@ that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA
 
 ```
 ┌─────────────────────────────────────────────────────────────
-│ ## [ZZZ - 3.4.1 Beta] Patch Notes: v3.4.1 Rev. 19834130
+│ ## [Zenless Zone Zero - 3.4 Beta] Patch Notes: v3.4.1 Rev. 19834130
 │ Resource: [gachabase](https://zzz.gachabase.net/changelog/beta?lang=en) / [nanoka](https://zzz.nanoka.cc/diff)
 │ ─────────────
-│ ### ✦ New Agents
 │ [ splash art ]
-│ # ★5 • Robin • Ether • Defense
-│ -# …                                  ← character line
-│ **Base Stats**
-│ > Lv. 60 — HP 8754 · ATK 750 · DEF 706
-│ > CRIT Rate 5% · CRIT DMG 50% · Impact 90
-│ ### Core Passive & Additional Ability
-│ **Core Passive:** — [CHANGED]
-│ > When Robin uses certain skills, she grants all squad members a [Robin Shield] …
-│ ### Mechanic Definitions
-│ > - **Aftershock:** …
+│ ## Robin
+│ **Attribute:** Ether | **Specialty:** Defense | **Rarity:** 5-Star (S-Rank)
+│ **Base Stats (Lv. 60):** HP 8,754 | ATK 750 | DEF 706 | Impact 90 | CRIT Rate 5% | CRIT DMG 50%
+│ **Kit Overview:** Robin is an Ether Defense Agent whose kit revolves around [Robin Shield],
+│   [Aftershock], pairing squad utility with responsive follow-up triggers.
+│
+│ ## Core Passive & Additional Ability
+│ * **[CHANGED] Core Passive:**
+│   * Grants all squad members a [Robin Shield] equal to **24%** MAX HP …
+│   * **(Aftershock)**: Triggered off-field when active squad members land Heavy Attacks …
 │ ─────────────
-│ <a:starwardsleepywink:…> **Citlali News**   [ <a:starwardyayy:…> ]
-│ -# Citlali Mains • Zenless Zone Zero 3.4.1 Beta • Page 1/3
+│ -# Zenless Zone Zero 3.4.1 Beta • Page 1/3           [ Citlali News ↗ ]
 └─────────────────────────────────────────────────────────────
 ```
 
-- **What it posts.** The first observed build gives every beta-new character a full kit overview
-  — all readable skill text and values, mindscape / constellation / resonance-chain text, plus
-  the new weapons, W-Engines, light cones, disc drives, relic sets and echoes. Later builds use
-  a retained bounded kit baseline to show changed blocks, with an exact **Full kit** and
-  **Revision diff** source link per item.
-- **Revision discovery.** Gachabase Markdown and server-rendered HTML both identify changed existing items; unreadable pages warn and fall back to nanoka’s new/retained IDs.
+- **Active-beta gating.** Before fetching changelogs or item JSONs, the monitor compares each
+  game's candidate beta build against its live cycle (manifest `live`/`hotfix`, version config,
+  and confirmed past schedule maintenance). Finished or already-live beta builds (for example,
+  `7.1.53` when `7.1` is live, or `4.6.54` when `4.6` is live) are skipped immediately with
+  zero changelog/detail traffic.
+- **What it posts (Prime Formatting Style).** Newly observed active betas render clean Components V2
+  cards without blockquotes or continuation headers: a synthesized **Kit Overview**, structured
+  metadata headers (element/attribute, path/weapon/specialty, rarity, formatted Lv. max stats and
+  stat bonuses), nested `* **[TAG]**` skill/mechanic bullets with bracketed `[State]` terms and
+  inline `**(Keyword)**` definitions, single-item splash/weapon media plus multi-item galleries
+  (such as 6-icon HSR Eidolons and multi-piece Planar/Relic/Artifact/Drive Disc sets), and later
+  revision diffs (`[BUFF]`, `[NERF]`, `[CHANGED]`, `[ADJUSTMENT]`, `[REWORK]`, `[TEXT FIX]`).
+- **Revision discovery & bilingual CN/CHS cross-check.** Gachabase Markdown and server-rendered
+  HTML both identify changed existing items; HTTP 403 / access-denied responses fall back cleanly
+  to nanoka's active-beta manifest without warning spam. When an EN beta build lags behind CN
+  (`???`, `[TBD]`, `/-` incomplete ratios, unchanged EN parameters on a new revision, or an
+  upstream changelog note advising to double-check Chinese), the monitor cross-checks `/zh/`
+  within the bounded request ceiling and reconciles authoritative CN values cleanly.
 - **Content-driven pages.** Beta cards can use five pages, ten or more, according to the
   readable content in each batch; there is no fixed beta page cap. Long equipment effects,
-  character text, parameter rows and revision changes continue in order on validated pages.
-  Only page one pings. Request/item budgets still bound source work across resumable batches.
+  character text, parameter rows and revision changes continue seamlessly on validated pages
+  without `*(cont.)*` banners. Only page one pings. Request/item budgets still bound source work
+  across resumable batches.
 - **Actual inline diffs, without guessing.** When an old and new value are both present, the card
-  renders the source text intact around an inline diff such as `~~**200%**~~ → **240%**`.
-  `[BUFF]` / `[NERF]` are emitted only for a small set of unambiguous mechanics (for example,
-  higher damage or lower cooldown); ambiguous, wording-only, renamed and reclassified changes
-  stay `[CHANGED]` / `[TEXT FIX]` / `[ADJUSTMENT]`. A cold start never fabricates a baseline.
-  Full-content digests keep unchanged long kits quiet; clipped or legacy baselines use a
-  labelled full snapshot when exact comparison is unavailable.
+  renders the source text intact around an inline diff such as `~~200%~~ → **240%**`, while
+  structurally rewritten or renamed slot skills surface as `[REWORK]` with `~~previous~~` context.
+  `[BUFF]` / `[NERF]` are emitted only for unambiguous mechanics (for example, higher damage or
+  lower cooldown); ambiguous, wording-only, and category moves stay `[CHANGED]` / `[TEXT FIX]` /
+  `[ADJUSTMENT]`. A cold start never fabricates a baseline. Full-content digests keep unchanged
+  long kits quiet; clipped or legacy baselines use a labelled full snapshot when exact comparison
+  is unavailable.
 - **Hotfix-safe and quiet-safe.** Static `available` builds are walked in order, so a run does
   not jump over a v2/v3 hotfix. If a changelog revision is blank, only already-snapshotted and
   manifest-new IDs are rechecked; an explicit “No tracked changes detected” revision advances

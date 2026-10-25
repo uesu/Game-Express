@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Encore secondary beta API backup](CHANGELOG.md#2026-10-25--encore-secondary-beta-api-backup).
+Latest: [Beta Prime Formatting Style, active-beta gating, media galleries, and CN/CHS cross-check](CHANGELOG.md#2026-10-25--beta-prime-formatting-style-active-beta-gating-media-galleries-and-cnchs-cross-check).
+
+Previous: [Encore secondary beta API backup](CHANGELOG.md#2026-10-25--encore-secondary-beta-api-backup).
 
 Previous: [Gachabase HTML revision discovery](CHANGELOG.md#2026-10-25--gachabase-html-revision-discovery).
 
@@ -41,6 +43,7 @@ nothing is renumbered after the fact.
 
 | Entry | Date | Headline |
 |---|---|---|
+| [2026-10-25](CHANGELOG.md#2026-10-25--beta-prime-formatting-style-active-beta-gating-media-galleries-and-cnchs-cross-check) | 2026-10-25 | polish feature-5 beta cards across GI, HSR, ZZZ and WuWa: active-beta gating against live cycles, Prime Formatting Style (synthesized kit overview, metadata header, nested `* **[TAG]**` bullets, `[REWORK]` slot-rename/rewrite diffs, zero blockquotes/`*(cont.)*` headers, clean `-# <Game> <Ver> Beta • Page n/N` footer), markup/placeholder stripping, verified `static.nanoka.cc` art + multi-icon galleries, clean gachabase HTTP 403 fallback, `/zh/` CN cross-check, and one-time `BETA_FORMAT_EPOCH = 2` state reset |
 | [2026-10-25](CHANGELOG.md#2026-10-25--enabled-beta-full-pipeline-harness-and-safe-multi-page-hand-off) | 2026-10-25 | replace the renderer-only interpretation of `benchmark --beta-enabled` with a deterministic, all-four-game actual `BETA_ENABLED=1` monitor harness; record semantic pipeline evidence separately from supplemental renderer timings; and apply a fixed, restart-safe five-second wait between successful beta pages only |
 | [2026-10-25](CHANGELOG.md#2026-10-25--beta-revision-diff-hardening-full-kit-baselines-hotfix-safe-build-walking-exact-inline-values-and-quiet-revision-safety) | 2026-10-25 | harden feature-5 beta cards: retain readable full-kit baselines for honest `~~old~~ → **new**` diffs, conservative `[BUFF]` / `[NERF]` direction tags, ordered static-build walking, blank-hotfix fallback (including ZZZ `3.4.1 Rev. 19850203` Sunbringer source links), explicit quiet-build silent advance, resumable bounded batches, static art fallback locks, parameter-template cleanup across HSR / GI / WW, and WuWa singular-path manifest fallback delivery |
 | [2026-10-24](CHANGELOG.md#2026-10-24--beta-kit--revision-diff-cards-feature-5-off-by-default-dedicated-per-game-channels-and-bounded-beta-polling) | 2026-10-24 | add beta kit & revision-diff cards as feature 5 (`BETA_ENABLED`, off by default): full new-character kits with real numbers, new weapons / W-Engines / light cones / disc drives / relic and echo sets, and `[CHANGED]` entries for older characters a revision touched; dedicated `DISCORD_WEBHOOK_BETA_<GAME>` routing with no catch-all, `PING_BETA*` ping isolation, bounded polling (`BETA_MIN_POLL_MINUTES`, `BETA_MAX_*`) over `nanoka.cc` + `gachabase.net`, image locking, revision idempotence and peer merge |
