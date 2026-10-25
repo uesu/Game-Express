@@ -1,5 +1,9 @@
 # Changelog — current entries
 
+## 2026-10-25 — Future Encore build transition coverage
+
+- Verify a synthetic 4.0 resource-version transition, stale fallback hold, matching retry, valid cards and durable quiet settlement. Clarify that released characters remaining in the Encore beta catalog are not automatically new beta characters. No runtime, configuration or benchmark behavior changed.
+
 ## 2026-10-25 — Content-driven beta pages without display truncation
 
 - Support beta batches with five, ten or more pages according to readable content. Split long equipment effects instead of truncating them, render every parameter row and preserve all changed/removed skill, stat and equipment lines. Remove the prior compact-diff display caps; source request/item budgets and bounded snapshot retention remain unchanged.

@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Content-driven beta pages without display truncation](CHANGELOG.md#2026-10-25--content-driven-beta-pages-without-display-truncation).
+Latest: [Future Encore build transition coverage](CHANGELOG.md#2026-10-25--future-encore-build-transition-coverage).
+
+Previous: [Content-driven beta pages without display truncation](CHANGELOG.md#2026-10-25--content-driven-beta-pages-without-display-truncation).
 
 Previous: [Encore beta API fallback for WuWa](CHANGELOG.md#2026-10-25--encore-beta-api-fallback-for-wuwa).
 

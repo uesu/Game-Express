@@ -658,7 +658,8 @@ inspection of the live site's frontend and API on 2026-10-25 confirmed:
 - `.../character/<id>?ver=latest&v=Beta` returns character skills, level values, stat
   bonuses, resonance chains and properties; `.../weapon/<id>?ver=latest&v=Beta` returns
   weapon effects/refinement values and properties. Hsin (`1311`) and Suoming (`1312`)
-  were confirmed in the beta character list and detail responses. The inspected current
+  were confirmed in the beta character list and detail responses. Both are released characters;
+  presence in that full catalog does not make them new beta announcements. The inspected current
   beta metadata was `3.8.0` / `3.8.1` / `9162983`; this is observation evidence, not a fixed
   value in code.
 

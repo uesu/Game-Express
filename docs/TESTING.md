@@ -473,3 +473,9 @@ malformed metadata, wrong item identity, older revision rejection and both reque
 The actual-build regression failed against c54da29 before the adapter was present. Hsin and
 Suoming fixtures demonstrate readable beta API skills/attributes and all six chain nodes;
 they do not reconstruct their historical beta revisions.
+
+A synthetic future `4.0.1` lifecycle test starts from live `3.7`, holds stale Encore
+`3.8.1`, retries the same manifest after a matching update, validates the rendered payloads,
+and round-trips settlement through disk to prove repeat runs stay quiet. Released Hsin/Suoming
+IDs are not requested when absent from manifest new IDs and retained snapshots. This tests
+version-independent behavior; the fixture reuses Lily's captured kit and is not real 4.0 data.

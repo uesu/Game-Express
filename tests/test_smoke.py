@@ -17762,6 +17762,62 @@ def test_feature5_encore_beta_fallback_reads_matching_build_and_keeps_budget():
         assert not any("encore" in url for url in ctx.fetcher.calls)
 
 
+def test_feature5_encore_future_beta_waits_for_matching_build_and_settles():
+    """Synthetic 4.0: source labels move, released catalog entries are not new IDs."""
+    from gamexpress import beta as beta_mod
+
+    manifest = {"ww": {"live": "3.7", "latest": "4.0.1",
+                       "available": ["3.7", "4.0.1"],
+                       "new": {"character": [1512], "weapon": [], "echo": []}}}
+
+    class Fetcher:
+        current = "3.8.1"
+
+        def __init__(self):
+            self.calls = []
+
+        async def get_json(self, url, **_kwargs):
+            self.calls.append(url)
+            if url.startswith(beta_mod.ENCORE_API):
+                assert "v=Beta" in url
+                if "/new?" in url:
+                    return [{"GameVer": "4.0.0", "ResVer": self.current,
+                             "Changelist": "9999999"}]
+                assert "/character/1512?" in url
+                return _beta_json("encore_lily_live.json")
+            return None
+
+        async def verify_media(self, _url):
+            return False
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "state.json"
+        fetcher = Fetcher()
+        ctx = _beta_ctx(path, fetcher, BETA_ENABLED="1", games=["wuwa"])
+        ctx.state.beta_record("wuwa")["source_version"] = "3.7"
+        held = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest,
+                                               beta_mod._budget(ctx)))
+        assert held.source_version == "4.0.1" and held.more and not held.characters
+        assert ctx.state.beta_record("wuwa")["source_version"] == "3.7"
+        assert not any("/character/1512?" in url for url in fetcher.calls)
+        # Same manifest retries once Encore catches up; no hardcoded future version.
+        fetcher.current = "4.0.1"
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest,
+                                                beta_mod._budget(ctx)))
+        assert patch.source_version == "4.0.1" and not patch.more
+        assert len(patch.characters) == 1 and patch.characters[0].name == "Lily"
+        assert not any("1311" in url or "1312" in url for url in fetcher.calls)
+        payloads = cards.beta_payloads(GAMES["wuwa"], patch, None, None)
+        assert payloads and all(not cards.validate_payload(p) for p in payloads)
+        beta_mod._settle_beta_patch(ctx, ctx.state.beta_record("wuwa"), patch, status="posted")
+        ctx.state.save()
+        ctx.state = State.load(path)
+        fetcher.calls.clear()
+        assert asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest,
+                                               beta_mod._budget(ctx))) is None
+        assert fetcher.calls == []
+
+
 def test_feature5_encore_hsin_suoming_captured_beta_kits():
     from gamexpress import beta as beta_mod
 
