@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 import aiohttp
@@ -50,6 +51,10 @@ class Ctx:
     media: dict = field(default_factory=dict)       # game key -> version -> program announcement
     banners: dict = field(default_factory=dict)     # game key -> list of 5★ rate-up banners
     reddit: RedditClient | None = None
+    # Optional async collaborator for deterministic feature-delivery tests.  Production leaves
+    # it unset so feature code uses asyncio.sleep; dry-run harnesses can record the intended
+    # wait without idling a test suite.
+    sleep: Callable[[float], Awaitable[object]] | None = None
 
 
 async def gather_versions(ctx: Ctx) -> None:

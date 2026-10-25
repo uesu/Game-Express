@@ -8908,13 +8908,14 @@ def test_reproducible_offline_benchmark_command_and_bypass_invariants():
     # The historic default benchmark stays exactly default-off: beta cases are opt-in so its
     # 12 long-standing timing rows and stored news baselines remain directly comparable.
     assert data["beta_enabled_fixture"]["enabled"] is False
-    assert data["beta_enabled_fixture"]["games"] == {}
+    assert data["beta_enabled_fixture"]["pipeline"] is None
+    assert data["beta_enabled_fixture"]["render_microbenchmarks"] == {}
     assert len(data["benchmarks"]) == 12
     assert all(b["median_us"] >= 0 and b["iterations"] == 20 for b in data["benchmarks"])
 
 
 def test_reproducible_beta_enabled_benchmark_covers_all_released_beta_games_offline():
-    """The opt-in benchmark is BETA_ENABLED=1 only in memory; no monitor side effect occurs."""
+    """The opt-in benchmark runs the full enabled monitor harness entirely in memory."""
     import contextlib
     import io
 
@@ -8926,15 +8927,49 @@ def test_reproducible_beta_enabled_benchmark_covers_all_released_beta_games_offl
     assert os.environ.get("BETA_ENABLED") == before
     data = json.loads(out.getvalue())
     beta = data["beta_enabled_fixture"]
-    assert beta["enabled"] is True
-    assert beta["settings"] == {
+    assert beta["enabled"] is True and beta["in_memory_only"] is True
+    pipeline = beta["pipeline"]
+    assert pipeline["mode"] == "deterministic BETA_ENABLED=1 full pipeline"
+    assert pipeline["settings"] == {
         "BETA_ENABLED": "1",
         "BETA_GAMES": ["genshin", "starrail", "zzz", "wuwa"],
     }
-    assert beta["in_memory_only"] is True
-    assert (beta["source_requests"], beta["webhook_posts"], beta["state_writes"]) == (0, 0, 0)
-    assert set(beta["games"]) == {"genshin", "starrail", "zzz", "wuwa"}
-    for game, cases in beta["games"].items():
+    # Source/webhook/state collaborators are deliberately exercised, but they are entirely
+    # in-memory doubles: no live monitor mutation or local state file is possible.
+    assert (pipeline["live_source_requests"], pipeline["live_webhook_posts"],
+            pipeline["physical_state_writes"]) == (0, 0, 0)
+    assert pipeline["fixture_source_calls"] > 0
+    assert pipeline["fixture_webhook_posts"] > 0
+    assert pipeline["state_save_transitions"] > 0
+    assert pipeline["payloads_validated"] is True
+    assert pipeline["dedup_replay_posts"] == 0
+
+    keys = {"genshin", "starrail", "zzz", "wuwa"}
+    assert set(pipeline["initial_full_kit"]) == keys
+    assert set(pipeline["retained_revision"]) == keys
+    for game in keys:
+        initial = pipeline["initial_full_kit"][game]
+        revised = pipeline["retained_revision"][game]
+        # The real source -> parser -> renderer -> delivery path publishes a deliberately long
+        # full kit and all three item types, then retains and diffs a later source revision.
+        assert initial["status"] == "posted" and initial["pages"] >= 2 and initial["snapshots"] >= 3
+        assert revised["status"] == "posted" and revised["pages"] >= 1
+        assert revised["retained_revisions"] >= 2
+    assert pipeline["quiet_revision"] == {
+        "game": "zzz", "posts": 0, "status": "silent", "character_detail_reads": 0,
+    }
+    pacing = pipeline["delivery_pacing"]
+    assert pacing["gap_seconds"] == 5
+    assert pacing["initial_recorded_gaps"] > 0 and pacing["revision_recorded_gaps"] > 0
+    assert pacing["failed_first_page_gaps"] == 0
+    assert pacing["ambiguous_first_page_gaps"] == 0 and pacing["ambiguous_outcome_held"] is True
+    assert pacing["ambiguous_replay_blocked"] is True
+    assert pacing["resume_started_with_send"] is True
+    assert pacing["resume_recorded_gaps"] >= 1 and pacing["resume_has_no_trailing_gap"] is True
+
+    # Renderer timings remain a supplemental microbenchmark, not the feature proof above.
+    assert set(beta["render_microbenchmarks"]) == keys
+    for game, cases in beta["render_microbenchmarks"].items():
         assert set(cases) == {"new", "revision"}, game
         assert cases["new"] == {
             "payloads": 2, "validated": True, "distinct_item_galleries": 2,
@@ -16575,6 +16610,29 @@ def test_feature5_manifest_reads_new_ids_per_game():
     }) == "3.5.1+1"
 
 
+def test_feature5_candidate_roles_and_snapshots_do_not_alias_same_numeric_id():
+    """An upstream numeric id is not a safe cross-kind identity by itself."""
+    from gamexpress.beta import _candidate_entries, _snapshot_key_for
+
+    entries = [
+        {"id": "42", "url": "https://gi.gachabase.net/weapons/42/harness/beta"},
+        {"id": "42", "url": "https://gi.gachabase.net/artifacts/42/harness/beta"},
+    ]
+    chars, equipment = _candidate_entries(
+        "gi", {}, entries, {}, set(), {"42"}, {"42"})
+    assert chars == []
+    assert {(entry["role"], entry["id"]) for entry in equipment} == {("weapon", "42"), ("relic", "42")}
+
+    # Existing normal records retain the compact legacy key.  The competing role gets a typed
+    # key, and a later no-changelog fallback can recover that typed snapshot's original id.
+    snapshots = {"gi:42": {"kind": "weapon", "data": {"id": "gi:42"}}}
+    assert _snapshot_key_for(snapshots, "gi", "weapon", "42") == "gi:42"
+    assert _snapshot_key_for(snapshots, "gi", "relic", "42") == "gi:relic:42"
+    snapshots["gi:relic:42"] = {"kind": "relic", "data": {"id": "gi:relic:42"}}
+    _chars, fallback_equipment = _candidate_entries("gi", {}, [], snapshots, set(), set(), set())
+    assert {(entry["role"], entry["id"]) for entry in fallback_equipment} == {("weapon", "42"), ("relic", "42")}
+
+
 def test_feature5_zzz_kit_renders_every_section_with_its_numbers():
     from gamexpress.beta import _zzz_character
 
@@ -17001,6 +17059,99 @@ def test_feature5_enabled_run_delivers_one_fixture_character_for_every_released_
         assert sum(kind == "text" for kind, _url in fetcher.calls) == 3
         assert sum(kind == "media" for kind, _url in fetcher.calls) == 3
         assert any("/ww/3.8.1/en/character/1512.json" in url for _kind, url in fetcher.calls)
+
+
+def test_feature5_multi_page_delivery_waits_exactly_five_seconds_and_resumes_safely():
+    """The mandatory five-second beta gap is only between successful newly-sent pages."""
+    from gamexpress import beta as beta_mod
+
+    lines = [f"Pacing fixture line {i}: a deliberately long beta-kit description." for i in range(220)]
+    patch = BetaPatch(
+        game_key="zzz", beta_version="0.0", rev_label="v0.0 Rev. pacing", rev_id="pacing",
+        characters=[BetaCharacter(
+            id="zzz:pacing", name="Pacing Agent", rarity=5, element="Ether", role="Attack",
+            sections=[BetaSectionEntry(title="Basic Attack: Pacing", category="Basic Attack",
+                                       tag="[NEW]", lines=lines)], is_new=True,
+        )],
+        item_keys=["character:zzz:pacing"], batch_id="pacing",
+    )
+
+    class Recorder:
+        def __init__(self, responses=()):
+            self.responses = list(responses)
+            self.events = []
+            self.sent = []
+
+        async def send(self, _hook, payload, **_kw):
+            self.events.append("send")
+            self.sent.append(payload)
+            if self.responses:
+                return self.responses.pop(0)
+            return SendResult(True, 200, message_id=f"p{len(self.sent)}")
+
+    async def build_ctx(tmp_path, webhook):
+        ctx = _beta_ctx(tmp_path, _RecordingFetcher({}), BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        ctx.webhook = webhook
+        gaps = []
+
+        async def sleep(seconds):
+            gaps.append(seconds)
+            webhook.events.append("sleep")
+
+        ctx.sleep = sleep
+        return ctx, gaps
+
+    with tempfile.TemporaryDirectory() as tmp:
+        # The actual renderer (not a payload stub) must give the delivery loop three or more pages.
+        probe_ctx, _probe_gaps = asyncio.run(build_ctx(Path(tmp) / "probe.json", Recorder()))
+        payloads, _ = cards.beta_payloads_with_map(GAMES["zzz"], patch, probe_ctx.settings, None)
+        assert len(payloads) >= 3
+
+        ok_webhook = Recorder()
+        ctx, gaps = asyncio.run(build_ctx(Path(tmp) / "ok.json", ok_webhook))
+        asyncio.run(beta_mod._deliver(ctx, GAMES["zzz"], patch, ctx.state.beta_record("zzz"), ephemeral=False))
+        assert len(ok_webhook.sent) == len(payloads)
+        assert gaps == [5] * (len(payloads) - 1)
+        assert ok_webhook.events == [entry for i in range(len(payloads))
+                                     for entry in (("send", "sleep") if i + 1 < len(payloads) else ("send",))]
+
+        # No successful first page -> no delay and no accidental page-two request.
+        failed_webhook = Recorder([SendResult(False, 500, error="fixture failure")])
+        failed_ctx, failed_gaps = asyncio.run(build_ctx(Path(tmp) / "failed.json", failed_webhook))
+        asyncio.run(beta_mod._deliver(failed_ctx, GAMES["zzz"], patch,
+                                      failed_ctx.state.beta_record("zzz"), ephemeral=False))
+        assert len(failed_webhook.sent) == 1 and failed_gaps == []
+
+        # A prior-run page is already durable, so page two starts immediately. The only waits are
+        # after pages this invocation sends and before another still-unsent page.
+        resume_webhook = Recorder()
+        resume_ctx, resume_gaps = asyncio.run(build_ctx(Path(tmp) / "resume.json", resume_webhook))
+        revision, batch = beta_mod._batch_record(resume_ctx.state.beta_record("zzz"), patch, resume_ctx.now)
+        batch["messages"] = ["already-posted-page-1"]
+        revision["messages"] = ["already-posted-page-1"]
+        asyncio.run(beta_mod._deliver(resume_ctx, GAMES["zzz"], patch,
+                                      resume_ctx.state.beta_record("zzz"), ephemeral=False))
+        assert len(resume_webhook.sent) == len(payloads) - 1
+        assert resume_gaps == [5] * (len(payloads) - 2)
+        assert resume_webhook.events[0] == "send" and resume_webhook.events[-1] == "send"
+
+        # An indeterminate POST is not a normal retry. Re-entering the same monitor must hold
+        # its cursor until an operator reconciles Discord, rather than turning uncertainty into
+        # a duplicate page-one post.
+        ambiguous_webhook = Recorder([SendResult(False, 0, error="timeout after POST", ambiguous=True)])
+        ambiguous_path = Path(tmp) / "ambiguous.json"
+        ambiguous_ctx, ambiguous_gaps = asyncio.run(build_ctx(ambiguous_path, ambiguous_webhook))
+        ambiguous_record = ambiguous_ctx.state.beta_record("zzz")
+        asyncio.run(beta_mod._deliver(ambiguous_ctx, GAMES["zzz"], patch, ambiguous_record, ephemeral=False))
+        assert len(ambiguous_webhook.sent) == 1 and ambiguous_gaps == []
+        # Reload the persisted cursor as a real scheduler restart would, then prove the second
+        # process still does not re-POST the uncertain first page.
+        ambiguous_ctx.state = State.load(ambiguous_path)
+        ambiguous_record = ambiguous_ctx.state.beta_record("zzz")
+        asyncio.run(beta_mod._deliver(ambiguous_ctx, GAMES["zzz"], patch, ambiguous_record, ephemeral=False))
+        assert len(ambiguous_webhook.sent) == 1
+        assert any("prior ambiguous Discord outcome is held" in warning for warning in ambiguous_ctx.warnings)
 
 
 def test_feature5_is_skipped_entirely_when_not_enabled():

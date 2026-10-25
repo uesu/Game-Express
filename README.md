@@ -300,12 +300,17 @@ that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA
   games and `all` resolves to the same four.
 - **It stops on its own.** A verified splash-art URL is locked in state and never re-fetched.
   Per-revision batches persist their own resume cursor, so a bounded batch continues without a
-  duplicate page; once all batches settle, that revision generates no further traffic.
-- **Offline enabled-feature check.** `python -m gamexpress benchmark --beta-enabled` keeps the
-  production default off, but creates an isolated `BETA_ENABLED=1` setting to render and validate
-  both a new-kit and retained-revision card for **GI, HSR, ZZZ and WuWa**. It makes no source HTTP
-  request, Discord webhook post or state write; it complements, rather than replaces, the fixture
-  tests for source parsing and revision walking.
+  duplicate page; once all batches settle, that revision generates no further traffic. After a
+  successful multi-page beta card, the monitor waits **five seconds before the next page only**
+  (never after the final page); a restart resumes its first unsent page immediately.
+- **Offline enabled-feature harness.** `python -m gamexpress benchmark --beta-enabled` keeps the
+  production default off, but runs an isolated `BETA_ENABLED=1` monitor pass for **GI, HSR, ZZZ
+  and WuWa** through manifest/changelog discovery, every namespace parser, image preflight,
+  Components V2 validation, multi-page delivery/pacing, retained revisions, deduplication, quiet
+  revisions, and failed/ambiguous/resume delivery paths. Its collaborators are in-memory only:
+  it makes **zero live** source HTTP requests, Discord posts and physical state writes while still
+  proving state-save transitions. Renderer timings are a supplemental section of the report, not
+  the feature test itself.
 
 Full setup, variables and safeguards:
 **[docs/CONFIGURATION.md → Beta kit & revision-diff cards](docs/CONFIGURATION.md#beta-kit--revision-diff-cards-feature-5--explicit-opt-in-default-off)**.
@@ -593,7 +598,7 @@ For local runs and debugging: `python -m gamexpress <command>`
 | `check-webhooks [--kind …] [--game …]` | one "connected" card per unique webhook (no ping) |
 | `test-card [--kind …] [--game …] [--ping] [--unlaunched]` | post the sample cards, labelled 🧪 TEST. `--unlaunched` keeps only the games with `"released": false` |
 | `speculate [--game …] [--verbose] [--now <unix>]` | read-only: what the bot would predict for each game's next version, the confidence, and the real dates it is anchored on |
-| `benchmark [--iterations N] [--json] [--beta-enabled]` | offline microbenchmark for timestamp formatting/scanning and short vs multi-page news rendering; `--beta-enabled` adds isolated enabled-beta new/revision render checks for GI, HSR, ZZZ and WuWa (no network/webhook/state activity) |
+| `benchmark [--iterations N] [--json] [--beta-enabled]` | offline microbenchmark for timestamp formatting/scanning and short vs multi-page news rendering; `--beta-enabled` additionally runs an isolated full enabled-beta pipeline harness for GI, HSR, ZZZ and WuWa (fixture collaborators only: no live network/webhook/disk write) and then reports supplemental beta renderer timings |
 
 Flags: `--dry-run --only --game --repost --kind --ping --out --unlaunched --verbose --now --beta-enabled`.
 

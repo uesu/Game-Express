@@ -471,10 +471,9 @@ def cmd_validate(_args) -> int:
     return 0 if ok else 1
 
 
-# The standard benchmark deliberately keeps its default-off news baseline unchanged.  This
-# compact in-memory set is the opt-in companion: it drives the actual beta card renderer with
-# BETA_ENABLED=1 semantics for every released beta game, without needing a source request,
-# webhook, state file, or test fixture installed beside the application.
+# The standard benchmark deliberately keeps its default-off news baseline unchanged.  The full
+# BETA_ENABLED=1 monitor harness lives in beta_harness.py; this compact in-memory set remains its
+# supplementary renderer timing companion for every released beta game.
 _BETA_BENCHMARK_GAME_KEYS = ("genshin", "starrail", "zzz", "wuwa")
 
 
@@ -569,11 +568,14 @@ def _beta_benchmark_patches(games: dict):
 
 
 def cmd_benchmark(args) -> int:
-    """Reproducible offline micro-benchmark for news rendering and optional beta rendering.
+    """Reproducible offline micro-benchmark plus an optional full enabled-beta harness.
 
-    `--beta-enabled` is deliberately local to this command: it creates an in-memory
-    `BETA_ENABLED=1` setting for all four released beta games, renders/validates new-kit and
-    retained-revision cards, and never constructs a fetcher, webhook client, or state writer.
+    `--beta-enabled` is deliberately local to this command. It first executes an in-memory
+    `BETA_ENABLED=1` monitor harness for Genshin, Star Rail, ZZZ, and WuWa: source discovery,
+    namespace parsing, image preflight, Components V2 validation, page delivery/pacing, state
+    settlement, retained revisions, deduplication, and quiet/failed/ambiguous paths. It then
+    records the smaller renderer timings separately. No live source, Discord, or state-file
+    mutation is possible in either part.
     """
     import platform
     import statistics
@@ -763,17 +765,18 @@ def cmd_benchmark(args) -> int:
 
     # The production feature remains disabled unless the operator enables it.  This opt-in
     # benchmark mode uses a separate mapping rather than mutating `os.environ`, so its all-game
-    # BETA_ENABLED=1 render check cannot leak into a real monitor command in the same process.
+    # BETA_ENABLED=1 full monitor exercise cannot leak into a real monitor command in the same
+    # process.  Renderer micro-timings remain useful, but are deliberately reported separately
+    # from the semantic full-pipeline proof below.
     beta_enabled_report: dict = {
         "enabled": beta_enabled_fixture,
         "scope": list(_BETA_BENCHMARK_GAME_KEYS),
         "in_memory_only": True,
-        "source_requests": 0,
-        "webhook_posts": 0,
-        "state_writes": 0,
-        "games": {},
+        "pipeline": None,
+        "render_microbenchmarks": {},
     }
     if beta_enabled_fixture:
+        from .beta_harness import run_enabled_beta_harness
         from .cards import beta_payloads
 
         benchmark_settings = load_settings({
@@ -782,11 +785,20 @@ def cmd_benchmark(args) -> int:
         })
         assert benchmark_settings.beta_enabled is True
         assert benchmark_settings.beta_games == set(_BETA_BENCHMARK_GAME_KEYS)
+
+        pipeline_started = time.perf_counter()
+        pipeline = asyncio.run(run_enabled_beta_harness(games))
+        pipeline["elapsed_ms"] = round((time.perf_counter() - pipeline_started) * 1000, 2)
+        # The harness itself asserts all of these, but leave the no-live-I/O contract visible
+        # at the command boundary as well.  A future collaborator must not turn this benchmark
+        # into a production mutation merely by changing its report wording.
+        assert pipeline["live_source_requests"] == 0
+        assert pipeline["live_webhook_posts"] == 0
+        assert pipeline["physical_state_writes"] == 0
+        assert pipeline["payloads_validated"] is True
+        beta_enabled_report["pipeline"] = pipeline
+
         cases = _beta_benchmark_patches(games)
-        beta_enabled_report["settings"] = {
-            "BETA_ENABLED": "1",
-            "BETA_GAMES": list(_BETA_BENCHMARK_GAME_KEYS),
-        }
         for key in _BETA_BENCHMARK_GAME_KEYS:
             per_game: dict[str, dict] = {}
             for case_name, patch_obj in cases[key].items():
@@ -811,7 +823,7 @@ def cmd_benchmark(args) -> int:
                     lambda game=games[key], fixture=patch_obj: beta_payloads(
                         game, fixture, benchmark_settings, Ping()),
                 ))
-            beta_enabled_report["games"][key] = per_game
+            beta_enabled_report["render_microbenchmarks"][key] = per_game
 
     request_counts = {
         "basis": "derived_from_rendered_payloads_not_live_http",
@@ -979,15 +991,25 @@ def cmd_benchmark(args) -> int:
     )
     if beta_enabled_fixture:
         beta_games = ", ".join(_BETA_BENCHMARK_GAME_KEYS)
-        beta_pages = sum(
-            row[case]["payloads"]
-            for row in beta_enabled_report["games"].values()
-            for case in ("new", "revision")
+        pipeline = beta_enabled_report["pipeline"] or {}
+        initial_pages = sum(row["pages"] for row in pipeline.get("initial_full_kit", {}).values())
+        revision_pages = sum(row["pages"] for row in pipeline.get("retained_revision", {}).values())
+        pacing = pipeline.get("delivery_pacing", {})
+        print(
+            f"Beta-enabled full pipeline: BETA_ENABLED=1 local-only | games={beta_games} | "
+            f"initial={initial_pages} page(s), retained-revision={revision_pages} page(s), "
+            f"quiet={pipeline.get('quiet_revision', {}).get('status')} | "
+            f"fixture source calls={pipeline.get('fixture_source_calls')} / webhook posts="
+            f"{pipeline.get('fixture_webhook_posts')} / state transitions="
+            f"{pipeline.get('state_save_transitions')} | live HTTP=0, live webhook=0, disk writes=0"
         )
         print(
-            f"Beta-enabled fixture checks: BETA_ENABLED=1 local-only | games={beta_games} | "
-            f"new+revision cases=8 / {beta_pages} validated payload(s) | "
-            "source HTTP=0 | webhook POST=0 | state writes=0"
+            f"Beta delivery safety: {pacing.get('gap_seconds')}s between successful pages; "
+            f"initial gaps={pacing.get('initial_recorded_gaps')}, revision gaps="
+            f"{pacing.get('revision_recorded_gaps')}, failed/ambiguous first-page gaps=0/0, "
+            f"resume immediate={pacing.get('resume_started_with_send')}, "
+            f"no trailing gap={pacing.get('resume_has_no_trailing_gap')}. "
+            "Renderer-only timings below are supplementary, not the feature test."
         )
     print(
         f"Derived protocol counts (mocked/offline, not live network): "
@@ -1046,7 +1068,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--iterations", type=int, default=200, help="benchmark: timed repetitions per case")
     p.add_argument("--json", action="store_true", help="benchmark: output machine-readable JSON")
     p.add_argument("--beta-enabled", action="store_true",
-                   help="benchmark: add local BETA_ENABLED=1 new/revision render checks for GI, HSR, ZZZ and WuWa; no network, webhook or state writes")
+                   help="benchmark: run the local full BETA_ENABLED=1 pipeline harness for GI, HSR, ZZZ and WuWa, plus renderer timings; no live network/webhook/disk writes")
     args = p.parse_args(argv)
     if args.dry_run:
         os.environ["DRY_RUN"] = "1"

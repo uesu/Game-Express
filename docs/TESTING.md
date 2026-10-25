@@ -335,16 +335,21 @@ To exercise feature 5 while preserving its production default, add `--beta-enabl
 ```
 
 That flag constructs a separate in-memory `BETA_ENABLED=1`,
-`BETA_GAMES=genshin,starrail,zzz,wuwa` settings object. It renders and validates one synthetic
-new-kit card and one retained-baseline revision card for each released beta game (**8 cases / 16
-payloads** at the current fixtures), including the per-item character/equipment galleries. It
-records the four game keys and zero source HTTP requests, webhook posts and state writes in
-`beta_enabled_fixture`; it does **not** opt in the monitor, mutate the process environment, query
-a live database, send Discord traffic or stand in for the captured parser/discovery/hotfix tests.
-A separate offline dry-run regression runs each real fixture through the shared manifest → detail →
-render → delivery-settlement route, including WuWa's singular public fallback URL; it confirms that
-all four released games can create a posted-in-memory baseline without external Discord traffic.
-The default command remains the existing 12-case default-off news benchmark.
+`BETA_GAMES=genshin,starrail,zzz,wuwa` context and runs the **actual enabled beta monitor path**
+for each released game: manifest/changelog or manifest fallback discovery, all four detail parsers,
+image preflight, Components V2 validation, multi-page send/state settlement, retained revision
+comparison, deduplication and explicit quiet-revision handling. The deterministic fixture also
+exercises failed and ambiguous first-page holds plus a resumed multi-page batch. Its injected
+sleeper records the exact five-second gaps required only between newly successful pages, so the
+suite does not idle five real seconds.
+
+Read `beta_enabled_fixture.pipeline` in JSON output for this semantic evidence: fixture source and
+webhook collaborator counts plus state-save transitions, while `live_source_requests`,
+`live_webhook_posts` and `physical_state_writes` are all zero. It does **not** opt in the monitor,
+mutate the process environment, query a live database, send Discord traffic or write a state file.
+`beta_enabled_fixture.render_microbenchmarks` separately retains the eight synthetic new/revision
+renderer timing cases (with per-item galleries); those timings supplement rather than replace the
+full feature harness. The default command remains the existing 12-case default-off news benchmark.
 
 
 

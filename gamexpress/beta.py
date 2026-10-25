@@ -31,10 +31,13 @@ DESIGN GUARANTEES
     * Idempotent: state records an exact source build and per-batch message cursor.
       A partial delivery resumes the same batch without re-posting, then advances only
       after all deferred items settle; ambiguous outcomes are held.
+    * Multi-page delivery: after each successful page, waits exactly five seconds before
+      the next page (never after the final page). Tests inject a recorder instead of idling.
 """
 
 from __future__ import annotations
 
+import asyncio
 import difflib
 import logging
 import re
@@ -54,6 +57,12 @@ log = logging.getLogger("gamexpress.beta")
 MANIFEST_URL = "https://static.nanoka.cc/manifest.json"
 STATIC_BASE = "https://static.nanoka.cc"
 LOCALE = "en"
+
+# Discord accepts multi-container Components V2 beta cards, but the source delivery guide
+# requires a calm five-second hand-off after one page succeeds and before the next begins.
+# Keep it fixed (rather than another production knob) so every beta destination behaves the
+# same way; a Ctx may inject a sleeper for deterministic offline coverage.
+BETA_PAGE_GAP_SECONDS = 5
 
 # nanoka namespace -> how that game names its things.
 NANOKA_KINDS: dict[str, dict[str, Any]] = {
@@ -1765,12 +1774,47 @@ def _snapshot_key(ns: str, item_id: str) -> str:
     return f"{ns}:{item_id}"
 
 
+def _typed_snapshot_key(ns: str, role: str, item_id: str) -> str:
+    """Collision-safe state key for an item whose legacy numeric key is occupied.
+
+    Most upstream ids are globally distinct, so preserving the original ``ns:id`` key keeps
+    existing state compact and backwards-compatible.  The APIs do not contractually guarantee
+    that a character, weapon, and relic can never share an integer, though.  Only the second
+    colliding role needs this typed form; it prevents one item's snapshot or locked art from
+    being mistaken for another's.
+    """
+    return f"{ns}:{role}:{item_id}"
+
+
+def _snapshot_key_for(snapshots: dict, ns: str, role: str, item_id: str) -> str:
+    """Choose a compatible key without letting cross-kind numeric ids alias each other."""
+    legacy = _snapshot_key(ns, item_id)
+    typed = _typed_snapshot_key(ns, role, item_id)
+    # Once a collision was written with a typed key, keep using it even if the old key remains.
+    if typed in snapshots:
+        return typed
+    existing = snapshots.get(legacy)
+    if isinstance(existing, dict) and str(existing.get("kind") or "") not in ("", role):
+        return typed
+    return legacy
+
+
+def _snapshot_item_id(key: object, snapshot: dict) -> str:
+    """Recover an id from old ``ns:id`` and collision-safe ``ns:role:id`` snapshots."""
+    data = snapshot.get("data") if isinstance(snapshot, dict) else None
+    candidate = str((data or {}).get("id") or key) if isinstance(data, dict) else str(key)
+    return candidate.rsplit(":", 1)[-1]
+
+
 def _candidate_entries(ns: str, kinds: dict, entries: list[dict], snapshots: dict,
                        new_char_ids: set[str], new_weapon_ids: set[str],
                        new_relic_ids: set[str]) -> tuple[list[dict], list[dict]]:
     """Changelog entries first; if it is empty, probe only tracked/new ids, never every unit."""
     chars: dict[str, dict] = {}
-    equipment: dict[str, dict] = {}
+    # Weapon/relic ids are not promised to share a global namespace.  Keeping their role in
+    # this local key means a changelog or manifest with both ``weapon:42`` and ``relic:42``
+    # gets two bounded probes rather than silently dropping one.
+    equipment: dict[tuple[str, str], dict] = {}
     for raw in entries:
         if not isinstance(raw, dict):
             continue
@@ -1780,28 +1824,37 @@ def _candidate_entries(ns: str, kinds: dict, entries: list[dict], snapshots: dic
             continue
         copy = dict(raw)
         copy["role"] = role
-        (chars if role == "character" else equipment).setdefault(item_id, copy)
+        if role == "character":
+            chars.setdefault(item_id, copy)
+        else:
+            equipment.setdefault((role, item_id), copy)
 
     # A newly revealed item is the only thing we must still discover if a changelog rendering
     # is partial.  A snapshot is the other bounded probe: it lets an empty hotfix page still
     # detect a change to a character that has already been posted.
-    for role, ids, target in (
-        ("character", new_char_ids, chars),
-        ("weapon", new_weapon_ids, equipment),
-        ("relic", new_relic_ids, equipment),
+    for role, ids in (
+        ("character", new_char_ids),
+        ("weapon", new_weapon_ids),
+        ("relic", new_relic_ids),
     ):
         for item_id in sorted(ids):
-            target.setdefault(item_id, _fallback_entry(ns, role, item_id))
+            fallback = _fallback_entry(ns, role, item_id)
+            if role == "character":
+                chars.setdefault(item_id, fallback)
+            else:
+                equipment.setdefault((role, item_id), fallback)
     if not entries:
         for key, snapshot in snapshots.items():
             if not isinstance(snapshot, dict) or not str(key).startswith(f"{ns}:"):
                 continue
             role = str(snapshot.get("kind") or "")
-            item_id = str(key).split(":", 1)[-1]
+            item_id = _snapshot_item_id(key, snapshot)
+            if not item_id:
+                continue
             if role == "character":
                 chars.setdefault(item_id, _fallback_entry(ns, role, item_id))
             elif role in ("weapon", "relic"):
-                equipment.setdefault(item_id, _fallback_entry(ns, role, item_id))
+                equipment.setdefault((role, item_id), _fallback_entry(ns, role, item_id))
     return list(chars.values()), list(equipment.values())
 
 
@@ -2061,6 +2114,10 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
         return None
 
     snapshots = record.get("snapshots") if isinstance(record.get("snapshots"), dict) else {}
+    # Include candidates staged into this patch as we build it.  That makes an uncommon
+    # character/weapon/relic numeric-id collision safe even before `_settle_beta_patch` writes
+    # the first item's baseline into the durable record.
+    known_snapshots = dict(snapshots)
     patch = BetaPatch(
         game_key=game.key, beta_version=_display_version(version), rev_label=rev_label,
         rev_id=rev_id, source_url=_changelog_url(game) or f"{STATIC_BASE}/{ns}/{version}",
@@ -2103,8 +2160,9 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
         item_id = _entry_id(entry)
         if not item_id:
             continue
-        snap_key = _snapshot_key(ns, item_id)
-        previous = _character_from_snapshot(snapshots.get(snap_key))
+        snap_key = _snapshot_key_for(known_snapshots, ns, "character", item_id)
+        previous_snapshot = known_snapshots.get(snap_key)
+        previous = _character_from_snapshot(previous_snapshot)
         is_new = item_id in new_char_ids and previous is None
         cap = budget["max_chars"] if is_new else budget["max_changed"]
         seen = char_new if is_new else char_changed
@@ -2137,7 +2195,7 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             raw_rank = 4
         rarity = raw_rank + 1 if ns == "zzz" and raw_rank in (3, 4) else max(1, min(5, raw_rank))
         name = _safe_entry_name(entry, data, None, item_id)
-        previous_revision = str((snapshots.get(snap_key) or {}).get("revision") or "")
+        previous_revision = str((previous_snapshot or {}).get("revision") or "")
         page_url = ("" if entry.get("synthetic") else str(entry.get("url") or "")) or \
             _item_page_url(ns, "character", item_id, name)
         diff_url = (str(entry.get("diff") or "") or
@@ -2161,6 +2219,7 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             page_url=page_url, is_new=is_new,
         )
         patch.snapshots[snap_key] = _character_snapshot(full, version, ctx.now)
+        known_snapshots[snap_key] = patch.snapshots[snap_key]
         patch.item_keys.append(_entry_key(ns, "character", item_id))
         if previous is None:
             full.sections = _clone_sections(full.sections, "[NEW]" if is_new else "[CHANGED]")
@@ -2173,7 +2232,7 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             if diff_sections:
                 full.sections = diff_sections
                 full.is_new = False
-                old_rev = str((snapshots.get(snap_key) or {}).get("revision") or "previous revision")
+                old_rev = str((previous_snapshot or {}).get("revision") or "previous revision")
                 full.subtext = (f"-# Revision diff against {old_rev}"
                                 + (f" • {unchanged} unchanged block(s) omitted" if unchanged else ""))
                 patch.characters.append(full)
@@ -2223,7 +2282,8 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
                 rarity = int(listing_entry.get("rank") or 0) or None
             except (TypeError, ValueError):
                 pass
-        snap_key = _snapshot_key(ns, item_id)
+        snap_key = _snapshot_key_for(known_snapshots, ns, role, item_id)
+        previous_snapshot = known_snapshots.get(snap_key)
         candidates = _data_image_candidates(ns, role, item_id, data,
                                              listing_entry if isinstance(listing_entry, dict) else None)
         image_entry = {"id": snap_key, "image": entry.get("image"), "candidates": candidates}
@@ -2233,10 +2293,11 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
                 and _take_shared_request(budget, image_cost)):
             image = await _resolve_image(ctx.fetcher, image_entry, locked, image_cache)
             requests += image_cost
-        previous = _equipment_from_snapshot(snapshots.get(snap_key))
-        is_new = (item_id in new_weapon_ids or item_id in new_relic_ids) and previous is None
+        previous = (_equipment_from_snapshot(previous_snapshot)
+                    if str((previous_snapshot or {}).get("kind") or "") == role else None)
+        is_new = item_id in (new_weapon_ids if role == "weapon" else new_relic_ids) and previous is None
         name = _safe_entry_name(entry, data, listing_entry, item_id)
-        previous_revision = str((snapshots.get(snap_key) or {}).get("revision") or "")
+        previous_revision = str((previous_snapshot or {}).get("revision") or "")
         page_url = ("" if entry.get("synthetic") else str(entry.get("url") or "")) or \
             _item_page_url(ns, role, item_id, name)
         diff_url = (str(entry.get("diff") or "") or
@@ -2249,6 +2310,7 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             diff_url=diff_url, page_url=page_url,
         )
         patch.snapshots[snap_key] = _equipment_snapshot(current, version, ctx.now, role)
+        known_snapshots[snap_key] = patch.snapshots[snap_key]
         patch.item_keys.append(_entry_key(ns, role, item_id))
         if previous is None:
             patch.equipment.append(current)
@@ -2361,6 +2423,21 @@ def _batch_record(record: dict, patch: BetaPatch, now: int) -> tuple[dict, dict]
     return revision, batch
 
 
+async def _wait_between_beta_pages(ctx, *, ephemeral: bool) -> None:
+    """Apply the required page hand-off without making normal dry-run tests sleep.
+
+    A real enabled monitor has no injected collaborator and therefore awaits asyncio.sleep(5).
+    Dry-run/test contexts intentionally skip a real wall-clock pause unless they supply `ctx.sleep`;
+    the deterministic feature harness supplies one and records every requested five-second gap.
+    """
+    sleeper = getattr(ctx, "sleep", None)
+    if sleeper is None:
+        if ephemeral:
+            return
+        sleeper = asyncio.sleep
+    await sleeper(BETA_PAGE_GAP_SECONDS)
+
+
 async def _deliver(ctx, game: Game, patch: BetaPatch, record: dict, ephemeral: bool) -> None:
     hook = ctx.settings.webhook("beta", game.key)
     if not hook:
@@ -2387,6 +2464,14 @@ async def _deliver(ctx, game: Game, patch: BetaPatch, record: dict, ephemeral: b
         payloads = [mark_test(payload) for payload in payloads]
 
     revision, batch = _batch_record(record, patch, ctx.now)
+    # A timeout after Discord accepted the POST cannot be distinguished from a true failed POST.
+    # Persisting it as ambiguous is deliberately a circuit breaker, not just a label: a later
+    # scheduler invocation must not resend page one and turn uncertainty into a duplicate. An
+    # operator can reconcile the message and clear/repair this tiny batch record explicitly.
+    if batch.get("ambiguous") or revision.get("status") == "ambiguous":
+        ctx.warnings.append(
+            f"{game.short} beta: prior ambiguous Discord outcome is held; reconcile the batch before retrying")
+        return
     messages = batch.setdefault("messages", [])
     # A corrupt/outdated state must never be allowed to skip a fresh payload by accident.
     if len(messages) > len(payloads):
@@ -2410,6 +2495,11 @@ async def _deliver(ctx, game: Game, patch: BetaPatch, record: dict, ephemeral: b
         if not ephemeral:
             ctx.state.save()
         sent += 1
+        # The successful message id is durable before waiting. If a runner dies in this gap,
+        # the next pass resumes at the next page rather than duplicating this one; it also must
+        # not replay a five-second gap that already belongs to a prior invocation.
+        if idx + 1 < len(payloads):
+            await _wait_between_beta_pages(ctx, ephemeral=ephemeral)
 
     if not ephemeral:
         batch["status"] = "posted"

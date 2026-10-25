@@ -629,25 +629,39 @@ Safety invariants:
   so a finished card stops generating traffic entirely.
 - **Idempotent, resumable build batches.** State stores the exact source build, a bounded full
   snapshot per item, and a per-batch message cursor. Large revisions resume their next bounded
-  item batch rather than duplicating an earlier page; an ambiguous Discord outcome is held.
-  An explicit upstream “No tracked changes detected” build advances silently (except on a cold
-  opt-in, which intentionally publishes the current reveal once).
+  item batch rather than duplicating an earlier page. An ambiguous Discord outcome is a persisted
+  circuit breaker across later runs—not an automatic retry—until an operator reconciles that
+  batch, so an uncertain page-one POST cannot become a duplicate. Snapshot/candidate identity is
+  role-aware if upstream numeric ids collide, preventing a character, weapon, and relic from
+  sharing an image lock or baseline. An explicit upstream “No tracked changes detected” build
+  advances silently (except on a cold opt-in, which intentionally publishes the current reveal
+  once).
 - **Fail-over aware.** `state["beta"]` merges across peers so a standby never double-posts.
-- **Bounded pages.** Long kits split into sequential Components V2 containers, each
-  independently inside Discord's 4,000-character and 40-component limits, labelled
-  `Page n/N`.
+- **Bounded pages and delivery gap.** Long kits split into sequential Components V2 containers,
+  each independently inside Discord's 4,000-character and 40-component limits, labelled
+  `Page n/N`. After a successful page, production waits a fixed **five seconds** before the next
+  unsent page. It never adds a trailing wait after the final page, and a restart begins its first
+  unsent page without replaying a previous-run gap. This is intentionally a fixed safety rule,
+  not an environment knob.
 
-### Offline enabled-beta render benchmark
+### Offline enabled-beta full-pipeline harness
 
-Use `python -m gamexpress benchmark --iterations 300 --beta-enabled` to cover the enabled card
-surface without opting in a real monitor. The benchmark constructs an isolated in-memory
-`BETA_ENABLED=1` / `BETA_GAMES=genshin,starrail,zzz,wuwa` settings object, then renders and
-validates synthetic new-kit **and** retained-baseline revision cards for all four released beta
-games. Its JSON report records `beta_enabled_fixture.games` plus zero source HTTP requests,
-Discord webhook posts and state writes. It never changes the process environment or production
-settings. The normal benchmark stays a 12-case default-off news/parity benchmark; this flag adds
-eight beta rendering cases. It is a renderer/payload-boundary check, not a replacement for the
-captured all-game parser, build-walking, request-ledger and delivery-resume regression tests.
+Use `python -m gamexpress benchmark --iterations 300 --beta-enabled` to exercise feature 5
+without opting in a real monitor. The command constructs an isolated in-memory
+`BETA_ENABLED=1` / `BETA_GAMES=genshin,starrail,zzz,wuwa` context and executes the actual
+manifest → changelog/manifest fallback → detail parser → image preflight → Components V2 renderer
+→ webhook delivery → state-settlement path for **all four** released beta games. It deliberately
+covers long multi-page full kits, character/weapon/relic baselines, retained-revision diffs,
+deduplication, an explicit quiet revision, a failed first page, an ambiguous first page plus its
+blocked replay, and a resume boundary. Its injected sleeper records every intended five-second
+page gap instead of making the suite wait.
+
+The JSON report is `beta_enabled_fixture.pipeline`: it records fixture collaborator calls and
+state-save transitions while asserting **zero live** source requests, Discord posts and physical
+state writes. `beta_enabled_fixture.render_microbenchmarks` keeps the eight synthetic new/revision
+renderer timing rows as a supplemental performance measurement. The command never changes the
+process environment or production settings; the normal default-off benchmark remains its original
+12 news/parity timing cases.
 
 ## Discord webhook versus bot delivery
 

@@ -32,7 +32,7 @@ are the short overviews. The operational instructions live here:
 | [Source-preserving formatting](CONFIGURATION.md#source-preserving-formatting) | compact lists, attached hyphens, marker spacing, unchanged source words/URLs |
 | [Measured long-strip grouping](CONFIGURATION.md#optional-measured-long-strip-grouping--implemented) | switch off/on, ratio and gallery limits, measurement bounds, boundaries and safe fallback |
 | [Pre-load & maintenance started](CONFIGURATION.md#pre-load--maintenance-started-explicit-per-game-opt-in-default-off) | `MAINTENANCE_ENABLED`, `MAINTENANCE_GAMES`, per-game webhooks/pings, precedence, 4-tier launch media, Phase II lock, silent seed and late edits |
-| [Beta kit & revision-diff cards](CONFIGURATION.md#beta-kit--revision-diff-cards-feature-5--explicit-opt-in-default-off) | `BETA_ENABLED`, all four released beta games, dedicated routing, retained baselines, bounded build polling and the local `--beta-enabled` benchmark check |
+| [Beta kit & revision-diff cards](CONFIGURATION.md#beta-kit--revision-diff-cards-feature-5--explicit-opt-in-default-off) | `BETA_ENABLED`, all four released beta games, dedicated routing, retained baselines, bounded build polling, five-second multi-page hand-off and the local full `--beta-enabled` harness |
 | [Coverage and safe verification](CONFIGURATION.md#source-coverage-and-safe-verification) | source/index limits, no backfill/state reset, offline versus live evidence |
 | [Sources](SOURCES.md#optional-full-content-news-adapter-2026-10-18) / [testing](TESTING.md#official-news-offline-coverage-and-read-only-checks) | adapters, bounded media preflight/refresh/holds, offline checks, read-only verification and benchmark command |
 
