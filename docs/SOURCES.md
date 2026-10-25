@@ -616,8 +616,10 @@ endpoints and existing caches only (never headless browsers or HTML scraping):
 ## Beta kit & revision-diff sources (2026-10-24)
 
 Feature 5 (`BETA_ENABLED=1`) reads structured JSON plus Markdown or server-rendered changelog HTML from community
-databases that publish beta revisions. No HTML scraping, no headless browser, no
-authentication, and no endpoint that is not already public. Verified 2026-10-24; the
+databases that publish beta revisions. The 2026-10-25 response-format repair replaces the
+earlier no-HTML-parsing assumption: public changelog headings/cards are parsed with the
+standard-library HTML parser. No headless browser, authentication or additional endpoint is
+needed. Verified 2026-10-24; the
 blank-heading / hotfix behavior and Sunbringer `19850203` source-link shape were rechecked
 2026-10-25.
 
