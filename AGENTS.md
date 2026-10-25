@@ -557,15 +557,22 @@ Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
   `DISCORD_WEBHOOK_NEWS_<GAME>`. Never the schedule/codes catch-all, never a mirror, never
   `FORCE_WEBHOOK`. `PING_BETA_<GAME>` > `PING_BETA` only — `PING_ROLE_ID` is deliberately not
   inherited, so turning the feature on cannot start pinging an unrelated role.
-- **Never invent a number or a direction.** Values come from the database export or they are
-  omitted. A changed entry is `[CHANGED]`; `[BUFF]` / `[NERF]` require a before *and* an after,
-  which a single revision snapshot does not provide.
+- **Never invent a number or guess a direction.** Values come from the database export or they
+  are omitted. `[BUFF]` / `[NERF]` require retained before **and** after snapshots plus an
+  unambiguous mechanic rule (for example, higher damage or lower cooldown); otherwise use
+  `[CHANGED]`, `[TEXT FIX]`, or `[ADJUSTMENT]`. A cold start is a full snapshot, never a fake diff.
 - **Never let an unresolved backend key reach a card.** `TestKey_PlaceHolder`,
   `Robin_Skill_Normal_Title`, `EquipmentSuit_34300_name`, `missing.webp` and friends are the
   database saying it has no data yet (`beta._is_key`, `beta._usable_image`).
 - **Keep the budget bounded.** `BETA_MIN_POLL_MINUTES`, `BETA_MAX_CHARACTERS`,
   `BETA_MAX_CHANGES`, `BETA_MAX_EQUIPMENT`, `BETA_MAX_REQUESTS` are all clamped in
-  `beta._budget`; a bad value must fall back to a bounded default, never to unbounded.
+  `beta._budget`; a bad value must fall back to a bounded default, never to unbounded. A
+  revision with more work than its bounds must resume through its per-batch cursor — never
+  advance the source build and silently drop the rest.
+- **Walk builds; do not jump them.** Use manifest `available` to select the next retained
+  static build. A blank changelog is not proof of no changes: recheck only manifest-new and
+  already-snapshotted ids. Only an explicit upstream `No tracked changes detected` can advance
+  silently, and not on a cold opt-in (which must still publish the current reveal).
 - **Keep the image lock.** A resolved image goes into
   `state["beta"][game]["locked_images"][id]` and is reused; a locked image is never re-verified.
   That lock is what stops a published card from polling forever.

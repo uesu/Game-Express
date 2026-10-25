@@ -112,9 +112,10 @@ equipment data that the community databases **nanoka.cc** and **gachabase.net** 
 publicly, and link back to those databases. The Service does not verify that data against the games
 themselves: **beta content is provisional by nature and may be incomplete, untranslated, mis-named
 or changed without notice before release.** Nothing in a beta card is gameplay advice, a release
-date or a guarantee that any value will ship unchanged. The Service reports what a revision changed
-(`[CHANGED]`) but deliberately does not label changes as buffs or nerfs, because a single revision
-snapshot cannot establish a direction. Operators remain responsible for attribution, for each
-upstream database's terms, and for any channel rules that apply to unreleased content. Honkai:
+date or a guarantee that any value will ship unchanged. Where two retained public snapshots make a
+simple value direction unambiguous, the Service may label that line `[BUFF]` or `[NERF]`; all
+ambiguous mechanics remain `[CHANGED]`, and a first-seen kit is never assigned a guessed direction.
+Operators remain responsible for attribution, for each upstream database's terms, and for any
+channel rules that apply to unreleased content. Honkai:
 Nexus Anima and ANANTA are excluded until they ship. Off by default, the feature makes no requests
 to those databases at all.

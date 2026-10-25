@@ -95,9 +95,10 @@ Feature 5 reads **only** two community databases, and only when an operator opts
   feature renders kits from. Thanks to the nanoka maintainers for publishing clean, structured
   data at `static.nanoka.cc/<game>/<revision>/en/<kind>/<id>.json`.
 - **[gachabase.net](https://gachabase.net/)** (`gi.`, `hsr.`, `zzz.` sub-domains) — the beta
-  changelog (`/<game>.gachabase.net/changelog/beta?lang=en`) that names each revision and every
-  entry it touched, and the per-entry before/after diff pages the cards link to
-  (`/diff/<kind>/<id>/<slug>?prev=…&cur=…`).
+  changelog (`/<game>.gachabase.net/changelog/beta?lang=en`) that names revisions and usually the
+  entries they touch, plus the per-entry before/after diff pages the cards link to
+  (`/diff/<kind>/<id>/<slug>?prev=…&cur=…`). When a hotfix heading is blank, Game-Express compares
+  its bounded prior nanoka snapshot for only already-tracked/new IDs rather than scraping the UI.
 
 Neither host is contacted while `BETA_ENABLED` is off. The monitor does not scrape either site's
 HTML UI and does not re-host their images — cards link to the URLs those databases publish.

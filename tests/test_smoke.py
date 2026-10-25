@@ -16527,6 +16527,11 @@ def test_feature5_manifest_reads_new_ids_per_game():
     assert manifest_new_ids(manifest, "gi", "artifact") == set()
     assert manifest_new_ids({}, "zzz", "character") == set()
     assert manifest_game(manifest, "nope") == {}
+    # A new beta series may restart its internal build counter; version change still advances.
+    from gamexpress.beta import _next_data_version
+    assert _next_data_version({"source_version": "3.4.1+99999999"}, {
+        "latest": "3.5.1+1", "available": ["3.5.1+1"],
+    }) == "3.5.1+1"
 
 
 def test_feature5_zzz_kit_renders_every_section_with_its_numbers():
@@ -16555,6 +16560,13 @@ def test_feature5_zzz_kit_renders_every_section_with_its_numbers():
         "Basic Attack", "Assist", "Special Attack & EX Special Attack",
         "Core Passive & Additional Ability", "Mindscape Cinema"}
     assert all(s.tag == "[NEW]" for s in built["sections"])
+    # The 2026-10-25 Sunbringer 19850203 export's Lv.12 table uses main + growth × 11.
+    # This is 8410 + 770 × 11 = 16880 -> 168.8%, matching gachabase's rendered source.
+    from gamexpress.beta import _zzz_param_rows
+    rows = _zzz_param_rows([{"name": "1st-Hit DMG Multiplier", "param": {
+        "1601101": {"main": 8410, "growth": 770, "format": "%"},
+    }}])
+    assert rows == [{"name": "1st-Hit DMG Multiplier", "value": 16880.0, "text": "168.8%"}]
 
 
 def test_feature5_hsr_kit_renders_skills_traces_eidolons_and_mechanic_glossary():
@@ -16573,12 +16585,11 @@ def test_feature5_hsr_kit_renders_skills_traces_eidolons_and_mechanic_glossary()
     assert "Aha Instant Incoming" in titles
     assert "E1 — Who Giggled at the Primordial Hush?" in titles
     assert "E6 — For THEY Said: You Are Elation" in titles
-    # The kit references named mechanics; the card must carry their definitions.
-    defs = dict(built["mechanic_defs"])
-    assert "Follow-Up ATK" in defs and "Unleashes an extra attack" in defs["Follow-Up ATK"]
-    assert "Action Advance" in defs
+    # The kit references named mechanics; their own definition text is placed directly under
+    # the relevant skill rather than repeated in a detached appendix.
     body = "\n".join(" ".join(s.lines) for s in built["sections"])
-    assert "Elation Debt" in body
+    assert "Follow-Up ATK" in body and "Unleashes an extra attack" in body
+    assert "Action Advance" in body and "Elation Debt" in body
 
 
 def test_feature5_gi_kit_renders_talents_passives_and_constellations():
@@ -16751,14 +16762,17 @@ def test_feature5_a_published_revision_is_never_published_twice():
                   "max_equip": 12, "max_requests": 48}
         patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest, budget))
         assert patch is not None
-        assert patch.rev_label.startswith("v3.4.1 Rev. 19834130")
+        # Static data and a changelog can briefly be one build apart. The card names the exact
+        # static build it fetched rather than mislabelling current data with an older heading.
+        assert patch.rev_label.startswith("v3.4.1 Rev. 19836465")
+        assert patch.source_version == "3.4.1+19836465"
         # The build suffix is stripped for display; the data fetch still uses the full string.
         assert patch.beta_version == "3.4.1"
-        # Every changelog entry appeared, new and changed alike (1661/1601 new, 1551 changed).
-        assert {c.id for c in patch.characters} == {"zzz:1661", "zzz:1601", "zzz:1551"}
-        assert [c.is_new for c in patch.characters] == [True, True, False]
-        assert [c.tag for c in ([s for s in c.sections][0] for c in patch.characters)] == \
-            ["[NEW]", "[NEW]", "[CHANGED]"]
+        # With no matching changelog build, only manifest-new ids are safely discovered. An old
+        # changed agent is never guessed from a stale changelog entry.
+        assert {c.id for c in patch.characters} == {"zzz:1661", "zzz:1601"}
+        assert all(c.is_new for c in patch.characters)
+        assert all(s.tag == "[NEW]" for c in patch.characters for s in c.sections)
         # Publish it by hand (delivery needs a webhook), then re-run.
         ctx.state.beta_record("zzz")["latest_rev"] = patch.rev_id
         before = len(fetcher.calls)
@@ -16816,6 +16830,23 @@ def test_feature5_state_round_trips_and_peer_merges_beta_records():
         other.merge_peer(peer.data)
         assert other.beta_record("zzz")["revisions"] == {}
         assert other.beta_record("zzz")["locked_images"] == {}
+
+        # Bounded revision batches can be in flight on a peer. Their per-batch cursors merge
+        # monotonically; a longer prefix wins, while a conflicting prefix would hold ambiguous.
+        left = State.load(Path(tmp) / "left.json")
+        right = State.load(Path(tmp) / "right.json")
+        left.beta_record("zzz")["revisions"]["batch"] = {
+            "status": "partial", "processed": ["character:zzz:1601"],
+            "batches": {"a": {"status": "posted", "messages": ["10"]}},
+        }
+        right.beta_record("zzz")["revisions"]["batch"] = {
+            "status": "partial", "processed": ["character:zzz:1601", "weapon:zzz:14160"],
+            "batches": {"a": {"status": "posted", "messages": ["10", "11"]}},
+        }
+        left.merge_peer(right.data, include_beta=True)
+        merged = left.beta_record("zzz")["revisions"]["batch"]
+        assert merged["processed"] == ["character:zzz:1601", "weapon:zzz:14160"]
+        assert merged["batches"]["a"]["messages"] == ["10", "11"]
 
 
 def test_feature5_prune_bounds_the_beta_state_file():
@@ -16928,7 +16959,11 @@ def test_feature5_every_beta_game_declares_a_namespace_and_a_changelog():
         assert g.beta, key
         ns = g.beta.get("nanoka")
         assert ns in NANOKA_KINDS, key
-        assert str(g.beta.get("changelog") or "").startswith("https://"), key
+    for key in ("genshin", "starrail", "zzz"):
+        assert str(GAMES[key].beta.get("changelog") or "").startswith("https://"), key
+    # Wuthering Waves is deliberately manifest-only: its public nanoka diff page is not a
+    # structured changelog endpoint, so polling it would only spend a request / risk a 500.
+    assert not GAMES["wuwa"].beta.get("changelog")
     # The two unreleased games stay out of it until they ship.
     assert not GAMES["hna"].beta
     assert not GAMES["ananta"].beta
@@ -16937,6 +16972,254 @@ def test_feature5_every_beta_game_declares_a_namespace_and_a_changelog():
 def test_feature5_media_host_allowlist_covers_the_beta_databases():
     src = (ROOT / "gamexpress" / "http.py").read_text(encoding="utf-8")
     assert '"nanoka.cc"' in src and '"gachabase.net"' in src
+
+
+
+def test_feature5_hotfix_blank_changelog_walks_revisions_and_emits_inline_diff():
+    """The supplied ZZZ 19850203 hotfix can be detected even when its page lists no entries."""
+    from gamexpress import beta as beta_mod
+
+    previous = _beta_json("zzz_character_1601.json")
+    current = json.loads(json.dumps(previous))
+    # Real Sunbringer static-table shape from the supplied 19850203 revision: Lv. 12 is
+    # `main + growth × 11`, so 6910 + 630×11 = 138.4% becomes 8410 + 770×11 = 168.8%.
+    previous["skill"]["basic"]["description"].append({
+        "name": "Basic Attack: Thornbreaker",
+        "param": [{"name": "1st-Hit DMG Multiplier", "param": {
+            "1601101": {"main": 6910, "growth": 630, "format": "%"},
+        }}],
+    })
+    current["skill"]["basic"]["description"].append({
+        "name": "Basic Attack: Thornbreaker",
+        "param": [{"name": "1st-Hit DMG Multiplier", "param": {
+            "1601101": {"main": 8410, "growth": 770, "format": "%"},
+        }}],
+    })
+    changelog = """# CHANGELOG - v3.4.X
+
+## v3.4.1 Rev. 19850203 | 24th October 2026
+
+## v3.4.1 Rev. 19834130 | 23rd October 2026
+"""
+
+    class RevisionFetcher:
+        def __init__(self):
+            self.calls = []
+
+        async def get_text(self, url, **_kw):
+            self.calls.append(url)
+            return changelog
+
+        async def get_json(self, url, **_kw):
+            self.calls.append(url)
+            if "19834130" in url:
+                return previous
+            if "19850203" in url:
+                return current
+            return None
+
+        async def verify_media(self, _url):
+            return True
+
+    manifest = {"zzz": {
+        "latest": "3.4.1+19834130",
+        "available": ["3.4.1+19834130"],
+        "new": {"character": [1601], "weapon": [], "equipment": []},
+    }}
+    with tempfile.TemporaryDirectory() as tmp:
+        fetcher = RevisionFetcher()
+        ctx = _beta_ctx(Path(tmp) / "state.json", fetcher, BETA_ENABLED="1", games=["zzz"])
+        budget = beta_mod._budget(ctx)
+        initial = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest, budget))
+        assert initial and initial.characters and initial.characters[0].is_new
+        beta_mod._settle_beta_patch(ctx, ctx.state.beta_record("zzz"), initial, status="posted")
+
+        manifest["zzz"]["latest"] = "3.4.1+19850203"
+        manifest["zzz"]["available"].append("3.4.1+19850203")
+        hotfix = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest, budget))
+        assert hotfix and hotfix.source_version == "3.4.1+19850203"
+        assert hotfix.rev_label.startswith("v3.4.1 Rev. 19850203")
+        assert len(hotfix.characters) == 1
+        agent = hotfix.characters[0]
+        assert agent.name == "Sunbringer" and agent.is_new is False
+        assert "19834130" in agent.diff_url and "19850203" in agent.diff_url
+        body = "\n".join(line for section in agent.sections for line in section.lines)
+        assert "~~**138.4%**~~ → **168.8%**" in body
+        assert "[BUFF]" in body                 # higher direct DMG multiplier is unambiguous
+        assert "[NEW]" not in body               # a beta hotfix is not a second reveal
+        payloads = cards.beta_payloads(GAMES["zzz"], hotfix, None, None)
+        assert payloads and all(cards.validate_payload(payload) == [] for payload in payloads)
+        rendered = json.dumps(payloads)
+        assert "Revision Changes" in rendered and "Revision diff" in rendered
+        assert "sunbringer" in rendered and "19850203" in rendered
+
+
+def test_feature5_explicit_quiet_revision_advances_without_card_or_data_reads():
+    from gamexpress import beta as beta_mod
+
+    quiet = """# CHANGELOG - v3.4.X
+
+## v3.4.1 Rev. 19851435 | 24th October 2026
+
+No tracked changes detected for this revision.
+"""
+
+    class QuietFetcher:
+        def __init__(self):
+            self.calls = []
+
+        async def get_text(self, url, **_kw):
+            self.calls.append(url)
+            return quiet
+
+        async def get_json(self, url, **_kw):
+            self.calls.append(url)
+            raise AssertionError("an explicit quiet revision must not fetch kit data")
+
+        async def verify_media(self, _url):
+            raise AssertionError("an explicit quiet revision must not preflight media")
+
+    manifest = {"zzz": {
+        "latest": "3.4.1+19851435", "available": ["3.4.1+19850203", "3.4.1+19851435"],
+        "new": {"character": [1601, 1661], "weapon": [14160], "equipment": [34300]},
+    }}
+    with tempfile.TemporaryDirectory() as tmp:
+        fetcher = QuietFetcher()
+        ctx = _beta_ctx(Path(tmp) / "state.json", fetcher, BETA_ENABLED="1", games=["zzz"])
+        # This is a later no-change micro-revision, not the first explicit opt-in. A cold
+        # start deliberately still posts the current beta's new-character overview.
+        ctx.state.beta_record("zzz")["source_version"] = "3.4.1+19850203"
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest, beta_mod._budget(ctx)))
+        assert patch and patch.no_changes and not patch.characters and not patch.equipment
+        beta_mod._settle_beta_patch(ctx, ctx.state.beta_record("zzz"), patch, status="silent")
+        record = ctx.state.beta_record("zzz")
+        assert record["source_version"] == "3.4.1+19851435"
+        assert record["revisions"][patch.rev_id]["status"] == "silent"
+        assert len(fetcher.calls) == 1 and "changelog" in fetcher.calls[0]
+
+
+def test_feature5_full_kit_substitution_and_structured_numeric_diff_are_truthful():
+    from gamexpress.beta import _hsr_character, diff_kits
+
+    built = _hsr_character(_beta_json("hsr_character_1511.json"))
+    rendered = "\n".join(line for section in built["sections"] for line in section.lines)
+    assert "Deals 50% Quantum Elation DMG" in rendered
+    assert "Deals 200% Quantum Elation DMG" in rendered
+    non_pending = "\n".join(
+        line for section in built["sections"] if section.title != "The True Story of Aha"
+        for line in section.lines)
+    assert "#1[i]" not in non_pending
+    # The database does not provide parameters for this trace: it is clearly labelled as
+    # pending, never silently fabricated.
+    assert "does not publish the numbers" in rendered
+
+    old = [BetaSectionEntry(
+        title="Core Passive: Test", category="Core Passive",
+        params=[{"name": "DMG Multiplier", "value": 200, "text": "200%"}],
+    )]
+    new = [BetaSectionEntry(
+        title="Core Passive: Test", category="Core Passive",
+        params=[{"name": "DMG Multiplier", "value": 240, "text": "240%"}],
+    )]
+    changed, untouched = diff_kits(old, new)
+    assert untouched == 0 and len(changed) == 1
+    assert "[BUFF]" in changed[0].lines[0]
+    assert "~~**200%**~~ → **240%**" in changed[0].lines[0]
+    lower, _ = diff_kits(
+        [BetaSectionEntry(title="Guard", category="Core", lines=["DMG taken is reduced by 40%."])],
+        [BetaSectionEntry(title="Guard", category="Core", lines=["DMG taken is reduced by 35%."])],
+    )
+    assert "[NERF]" in lower[0].lines[0] and "~~40~~ → **35**%" in lower[0].lines[0]
+
+
+
+def test_feature5_hard_request_budget_reserves_detail_and_media_preflight_calls():
+    """A card never crosses BETA_MAX_REQUESTS just because art is resolved after its kit."""
+    from gamexpress import beta as beta_mod
+
+    data = _beta_json("zzz_character_1601.json")
+    changelog = "## v3.4.1 Rev. 19850203 | 24th October 2026\n"
+
+    class CountedFetcher:
+        def __init__(self):
+            self.calls = []
+
+        async def get_text(self, url, **_kw):
+            self.calls.append(("text", url))
+            return changelog
+
+        async def get_json(self, url, **_kw):
+            self.calls.append(("json", url))
+            return data if "/character/" in url else None
+
+        async def verify_media(self, url):
+            self.calls.append(("media", url))
+            return True
+
+    manifest = {"zzz": {
+        "latest": "3.4.1+19850203", "available": ["3.4.1+19850203"],
+        "new": {"character": [1601, 1661], "weapon": [], "equipment": []},
+    }}
+    with tempfile.TemporaryDirectory() as tmp:
+        fetcher = CountedFetcher()
+        ctx = _beta_ctx(Path(tmp) / "state.json", fetcher, BETA_ENABLED="1", games=["zzz"])
+        budget = {"min_poll_min": 0, "max_chars": 4, "max_changed": 8,
+                  "max_equip": 12, "max_requests": 4}
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest, budget))
+        assert patch and len(patch.characters) == 1 and patch.more is True
+        # 1 changelog + 1 character JSON + 1 media preflight (plus the manifest counted before
+        # build_patch) is <= 4; the second character is deferred instead of crossing the ceiling.
+        assert len(fetcher.calls) == 3
+        assert all("1661" not in url for _kind, url in fetcher.calls)
+
+
+
+def test_feature5_request_ceiling_is_shared_across_games_not_multiplied_per_game():
+    """A 4-request cap means 4 total source calls, not 4 for GI plus 4 for ZZZ."""
+    from gamexpress import beta as beta_mod
+
+    manifest = {
+        "gi": {"latest": "7.1.53", "available": ["7.1.53"],
+               "new": {"character": [10000136], "weapon": [], "artifact": []}},
+        "zzz": {"latest": "3.4.1+19850203", "available": ["3.4.1+19850203"],
+                "new": {"character": [1601], "weapon": [], "equipment": []}},
+    }
+
+    class SharedCapFetcher:
+        def __init__(self):
+            self.calls = []
+
+        async def get_json(self, url, **_kw):
+            self.calls.append(("json", url))
+            if url.endswith("/manifest.json"):
+                return manifest
+            if "/gi/" in url and "/character/" in url:
+                return _beta_json("gi_character_10000136.json")
+            if "/zzz/" in url and "/character/" in url:
+                return _beta_json("zzz_character_1601.json")
+            return None
+
+        async def get_text(self, url, **_kw):
+            self.calls.append(("text", url))
+            return ""                         # force manifest fallback, no HTML/parser work
+
+        async def verify_media(self, url):
+            self.calls.append(("media", url))
+            return True
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fetcher = SharedCapFetcher()
+        ctx = _beta_ctx(Path(tmp) / "state.json", fetcher, BETA_ENABLED="1",
+                        BETA_GAMES="genshin,zzz", BETA_MAX_REQUESTS="4",
+                        games=["genshin", "zzz"])
+        asyncio.run(beta_mod.run(ctx))
+        # Manifest + GI changelog + GI kit + its art consumes the complete shared ceiling.
+        assert len(fetcher.calls) == 4
+        assert not any("/zzz/" in url for _kind, url in fetcher.calls)
+        assert any("run-wide request budget" in warning for warning in ctx.warnings)
+        # The starved game remains eligible next run instead of being marked as polled.
+        assert ctx.state.beta_record("genshin")["last_poll"] == ctx.now
+        assert not ctx.state.beta_record("zzz").get("last_poll")
 
 
 if __name__ == "__main__":

@@ -575,10 +575,11 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
 
 ## Beta kit & revision-diff cards (feature 5 — explicit opt-in; default off)
 
-The fifth feature publishes a game's **beta** revision: a full kit overview for every
-character that is new in the beta version, the new weapons / W-Engines / light cones /
-disc drives / relic sets / echo sets, and the older characters a revision touched
-(tagged `[CHANGED]`, with a link to the before/after diff).
+The fifth feature publishes a game's **beta** revision: a full kit overview for each
+newly revealed character and new weapons / W-Engines / light cones / disc drives /
+relic sets / echo sets on first observation, then compact source-backed revision diffs for
+later builds. It retains the prior readable kit in bounded state, so a later change can show
+`~~old~~ → **new**` inline rather than re-posting an entire kit.
 
 `BETA_ENABLED` is **off by default**. Disabled, the feature makes **zero** requests and
 adds nothing to `state/state.json`. It never posts to a schedule or codes channel:
@@ -594,33 +595,41 @@ routing is dedicated (`DISCORD_WEBHOOK_BETA_<GAME>` > `DISCORD_WEBHOOK_BETA` >
 | `DISCORD_WEBHOOK_NEWS_<GAME>` | Secret | *(unset)* | Last resort: that game's existing news channel (e.g. `zzz-news`). Never the schedule/codes catch-all |
 | `PING_BETA_<GAME>` / `PING_BETA` | Variable | *(unset = silent)* | Role ping on the **first page only**. `PING_ROLE_ID` is deliberately **not** inherited |
 | `BETA_MIN_POLL_MINUTES` | Variable | `30` | Minimum interval between changelog re-checks (`0` = every run). A quiet beta costs one manifest GET |
-| `BETA_MAX_CHARACTERS` | Variable | `4` | New characters rendered per revision |
-| `BETA_MAX_CHANGES` | Variable | `8` | Already-released characters a revision touched |
-| `BETA_MAX_EQUIPMENT` | Variable | `12` | Weapons / W-Engines / light cones / disc drives / relics / echoes |
-| `BETA_MAX_REQUESTS` | Variable | `48` | Hard HTTP ceiling for the whole feature in one run |
+| `BETA_MAX_CHARACTERS` | Variable | `4` | New-character cards in one bounded batch; remaining items resume next run |
+| `BETA_MAX_CHANGES` | Variable | `8` | Existing-character revision cards in one bounded batch (`0` intentionally suppresses them) |
+| `BETA_MAX_EQUIPMENT` | Variable | `12` | Weapons / W-Engines / light cones / disc drives / relics / echoes in one bounded batch |
+| `BETA_MAX_REQUESTS` | Variable | `48` | Hard HTTP ceiling for the whole feature in one run; uninspected items remain pending |
 
 Where the data comes from (`gamexpress/beta.py`, see [SOURCES.md](SOURCES.md#beta-kit--revision-diff-sources-2026-10-24)):
 
-- **`https://static.nanoka.cc/manifest.json`** — one small JSON naming each game's newest
-  data revision and the ids that are new in it. The cheapest possible "did anything move?".
+- **`https://static.nanoka.cc/manifest.json`** — one small JSON naming each game's `latest`,
+  ordered `available` data builds, and ids that are new in the current beta. The runner walks
+  one retained build at a time rather than silently jumping past a hotfix.
 - **the game's beta changelog** — `https://<game>.gachabase.net/changelog/beta?lang=en`
-  for GI / HSR / ZZZ; Wuthering Waves has no gachabase site, so it is driven by the
-  manifest's `new` lists alone.
+  for GI / HSR / ZZZ; its matching revision supplies item/diff links. If a hotfix heading has
+  no listed entries, the runner probes only manifest-new and already-snapshotted ids; it does
+  **not** fan out across every character. Wuthering Waves has no structured changelog endpoint,
+  so it remains manifest-driven; its `ww.nanoka.cc/diff` URL is a human resource link, never a
+  poll target.
 - **`https://static.nanoka.cc/<game>/<revision>/en/<kind>/<id>.json`** — the kit / weapon /
-  set detail, fetched once per new entry and bounded by `BETA_MAX_REQUESTS`.
+  set detail. The latest successful full snapshot becomes the next revision's baseline; all
+  detail reads, including bounded resume batches, remain under `BETA_MAX_REQUESTS`.
 
 Safety invariants:
 
-- **No invented numbers and no invented directions.** Values are read straight from the
-  database export. A changed entry the changelog lists as UPDATED is tagged `[CHANGED]`;
-  the feature never claims `[BUFF]` or `[NERF]`, because a single snapshot cannot
-  establish a direction. An entry whose stored kit is unchanged is `[TEXT FIX]`.
-- **Image lock.** A splash-art URL resolved for an entry is stored in
+- **No invented numbers and no guessed direction.** Values come straight from the structured
+  export. With a retained before/after baseline, clear cases may use `[BUFF]` / `[NERF]`
+  (for example, a damage multiplier rising or a cooldown falling); ambiguous mechanics remain
+  `[CHANGED]`, wording-only changes `[TEXT FIX]`, and type/category moves `[ADJUSTMENT]`.
+  Without a baseline the card is a full `[CHANGED]` snapshot, never a fabricated diff.
+- **Image lock.** A verified splash-art URL is stored in
   `state["beta"][game]["locked_images"]` and reused. A locked image is never re-verified,
   so a finished card stops generating traffic entirely.
-- **Idempotent per revision.** One card set per `(game, revision)`; a later run that sees
-  the same revision posts nothing. A partial delivery resumes from the stored message ids
-  instead of re-posting, and an ambiguous Discord outcome is held rather than retried.
+- **Idempotent, resumable build batches.** State stores the exact source build, a bounded full
+  snapshot per item, and a per-batch message cursor. Large revisions resume their next bounded
+  item batch rather than duplicating an earlier page; an ambiguous Discord outcome is held.
+  An explicit upstream “No tracked changes detected” build advances silently (except on a cold
+  opt-in, which intentionally publishes the current reveal once).
 - **Fail-over aware.** `state["beta"]` merges across peers so a standby never double-posts.
 - **Bounded pages.** Long kits split into sequential Components V2 containers, each
   independently inside Discord's 4,000-character and 40-component limits, labelled

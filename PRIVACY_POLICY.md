@@ -128,11 +128,11 @@ IDs, timestamps, version-lock metadata, and bounded post-delivery refresh counte
 
 When explicitly enabled (`BETA_ENABLED=1` with `BETA_GAMES`), beta cards render public
 character, weapon and equipment data published by those community databases and post it to
-dedicated Discord channels. State retains, per game, the last revision identifier, per-revision
-delivery status and message IDs, a small content signature per published kit (used only to tell a
-later revision apart from a text-only touch), and the splash-art URLs already resolved for a card
-(so a published card never re-fetches them). No Discord member data is read or stored, and no
-beta feature state is written when the feature is off.
+dedicated Discord channels. State retains, per game, the last processed source build,
+per-revision/batch delivery status and message IDs, and a bounded readable public-kit snapshot
+(skill text, values and item metadata) for source-backed later-revision diffs; it also retains the
+splash-art URLs already resolved for a card (so a published card never re-fetches them). It stores
+no account, Discord member or analytics data, and writes no beta state when the feature is off.
 
 The existing repository state retains public news IDs, publication times, publication floors,
 route/content fingerprints, delivery status and the monitor's own per-part message IDs; partial

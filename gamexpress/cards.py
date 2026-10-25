@@ -958,12 +958,46 @@ def _format_beta_skill_entry(entry: Any, include_cat_header: bool) -> str:
     if meta:
         head += f" *({meta})*"
     parts.append(head)
+    rendered_lines = []
     for raw_ln in getattr(entry, "lines", ()) or ():
         ln = strip_invisible(str(raw_ln or "")).strip()
         if not ln:
             continue
+        rendered_lines.append(ln)
         parts.append(ln if ln.startswith(">") else f"> {ln}")
+
+    # New-kit sources often keep their numerical table separate from the prose.  Render it
+    # only when the builder did not already include the same rows in its text, otherwise the
+    # card would show every multiplier twice.  The structured values remain available to the
+    # revision-diff engine regardless of which database shape produced them.
+    params = [p for p in (getattr(entry, "params", ()) or ()) if isinstance(p, dict)]
+    missing = []
+    lower_lines = "\n".join(rendered_lines).lower()
+    for param in params[:10]:
+        name = strip_invisible(str(param.get("name") or "")).strip()
+        value = strip_invisible(str(param.get("text") or "")).strip()
+        if not name or not value:
+            continue
+        if name.lower() not in lower_lines or value.lower() not in lower_lines:
+            missing.append((name, value))
+    if missing:
+        label = strip_invisible(str(getattr(entry, "values_label", "") or "Values")).strip()
+        parts.append(f"> **{label}:**")
+        for name, value in missing:
+            parts.append(f"> - {name}: **{value}**")
     return "\n".join(parts)
+
+
+def _beta_entry_sources(item: Any) -> str:
+    """A short, safe source line for one card item (the link is source data too)."""
+    full = safe_url(getattr(item, "page_url", ""))
+    diff = safe_url(getattr(item, "diff_url", ""))
+    links = []
+    if full:
+        links.append(f"[Full kit]({full})")
+    if diff:
+        links.append(f"[Revision diff]({diff})")
+    return " · ".join(links)
 
 
 def _split_beta_block(block: str, max_chars: int) -> list[str]:
@@ -1035,8 +1069,13 @@ def beta_payloads_with_map(
     characters = list(getattr(patch, "characters", ()) or ())
     equipment = list(getattr(patch, "equipment", ()) or ())
 
-    if characters and getattr(characters[0], "is_new", False):
-        header_lines.append(BETA_NEW_CHAR_HEADERS.get(game.key, "### ✦ New Characters"))
+    if characters:
+        if all(bool(getattr(char, "is_new", False)) for char in characters):
+            header_lines.append(BETA_NEW_CHAR_HEADERS.get(game.key, "### ✦ New Characters"))
+        elif any(bool(getattr(char, "is_new", False)) for char in characters):
+            header_lines.append("### ✦ Kit Overview & Revision Changes")
+        else:
+            header_lines.append("### ✦ Revision Changes")
     patch_header_str = "\n".join(header_lines)
 
     footer_reserve = 140
@@ -1062,6 +1101,9 @@ def beta_payloads_with_map(
             intro_parts.append(f"**{stats_header}**")
             for sln in stats_lines:
                 intro_parts.append(sln if sln.startswith(">") else f"> {sln}")
+        char_sources = _beta_entry_sources(char)
+        if char_sources:
+            intro_parts.append(f"-# {char_sources}")
         intro_str = "\n".join(intro_parts)
 
         blocks: list[str] = []
@@ -1167,6 +1209,9 @@ def beta_payloads_with_map(
                 eq_parts.append(f"> **{eq_eff_title}:**")
             for eln in eq_lines:
                 eq_parts.append(eln if eln.startswith(">") else f"> {eln}")
+            eq_sources = _beta_entry_sources(eq)
+            if eq_sources:
+                eq_parts.append(f"-# {eq_sources}")
             eq_text_str = "\n".join(eq_parts)
 
             max_eq_chars = MAX_TEXT_TOTAL - footer_reserve - 24
@@ -1251,4 +1296,3 @@ def beta_payloads(
     silent: bool = False,
 ) -> list[dict]:
     return beta_payloads_with_map(game, patch, settings, ping, silent=silent)[0]
-

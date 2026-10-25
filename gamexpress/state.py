@@ -236,13 +236,69 @@ class State:
                 for rev_key, rrec in (other_revs.items() if isinstance(other_revs, dict) else ()):
                     if not isinstance(rrec, dict):
                         continue
-                    if rrec.get("status") not in ("posted", "seeded", "partial", "ambiguous"):
+                    if rrec.get("status") not in ("posted", "seeded", "partial", "ambiguous", "silent"):
                         continue
                     cur_r = revs.get(rev_key)
-                    if isinstance(cur_r, dict) and cur_r.get("status") in ("posted", "ambiguous"):
+                    if not isinstance(cur_r, dict):
+                        revs[rev_key] = copy.deepcopy(rrec)
+                        imported += 1
                         continue
-                    revs[rev_key] = copy.deepcopy(rrec)
-                    imported += 1
+                    # An ambiguous outcome always wins: a conflict must hold rather than make a
+                    # standby replay a possibly-delivered Discord page.
+                    if cur_r.get("status") == "ambiguous":
+                        continue
+                    if rrec.get("status") == "ambiguous":
+                        cur_r.update(copy.deepcopy(rrec))
+                        imported += 1
+                        continue
+                    if cur_r.get("status") in ("posted", "silent"):
+                        continue
+
+                    changed = False
+                    mine_processed = {str(k) for k in cur_r.get("processed", [])}
+                    peer_processed = {str(k) for k in rrec.get("processed", [])}
+                    if peer_processed - mine_processed:
+                        cur_r["processed"] = sorted(mine_processed | peer_processed)
+                        changed = True
+                    mine_batches = _as_dict_slot(cur_r, "batches")
+                    peer_batches = rrec.get("batches")
+                    for batch_key, peer_batch in (peer_batches.items()
+                                                   if isinstance(peer_batches, dict) else ()):
+                        if not isinstance(peer_batch, dict):
+                            continue
+                        local_batch = mine_batches.get(batch_key)
+                        if not isinstance(local_batch, dict):
+                            mine_batches[batch_key] = copy.deepcopy(peer_batch)
+                            changed = True
+                            continue
+                        local_msgs = list(local_batch.get("messages") or [])
+                        peer_msgs = list(peer_batch.get("messages") or [])
+                        if peer_msgs[:len(local_msgs)] == local_msgs and len(peer_msgs) > len(local_msgs):
+                            local_batch.update(copy.deepcopy(peer_batch))
+                            changed = True
+                        elif local_msgs[:len(peer_msgs)] != peer_msgs:
+                            local_batch["ambiguous"] = True
+                            cur_r["status"] = "ambiguous"
+                            changed = True
+                    for field in ("label", "source_version", "source_revision", "more"):
+                        if field in rrec and (field not in cur_r or rrec.get(field) != cur_r.get(field)):
+                            cur_r[field] = copy.deepcopy(rrec[field])
+                            changed = True
+                    # A peer may finish a later batch while this instance has also processed
+                    # work the peer has never seen. Only adopt its terminal state when its
+                    # cursor covers our pre-merge cursor; otherwise remain partial and safe.
+                    peer_covers_mine = mine_processed <= peer_processed
+                    if (rrec.get("status") in ("posted", "seeded", "silent")
+                            and not rrec.get("more") and peer_covers_mine
+                            and cur_r.get("status") != "ambiguous"):
+                        cur_r["status"] = rrec["status"]
+                        changed = True
+                    if changed:
+                        imported += 1
+                if other.get("source_version") and not mine.get("source_version"):
+                    mine["source_version"] = str(other["source_version"])
+                if other.get("source_revision") and not mine.get("source_revision"):
+                    mine["source_revision"] = str(other["source_revision"])
                 snaps = _as_dict_slot(mine, "snapshots")
                 other_snaps = other.get("snapshots")
                 for skey, srec in (other_snaps.items() if isinstance(other_snaps, dict) else ()):

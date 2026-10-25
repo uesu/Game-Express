@@ -141,8 +141,7 @@
       },
       "news_url": "https://wutheringwaves.kurogames.com/en/main/news",
       "beta": {
-        "nanoka": "ww",
-        "changelog": "https://ww.nanoka.cc/diff"
+        "nanoka": "ww"
       },
       "program_feeds": [
         "https://raw.githubusercontent.com/TheLovinator1/wutheringwaves/refs/heads/master/articles_latest.xml",

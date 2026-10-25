@@ -59,4 +59,3 @@ UPDATED
 [![](https://i.gachabase.net/OsBiUca1pvaxaYHmQX6kprySUC9H0CEjJDvpyNSFwPs/q:50/f:webp/plain/zzz/assets/e31f3f92ec3fd82e5530aa29093b462c.png)\
 \
 Sunbringer](https://zzz.gachabase.net/agents/1601/sunbringer/beta?lang=en)
-

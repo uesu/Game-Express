@@ -277,24 +277,30 @@ that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA
 └─────────────────────────────────────────────────────────────
 ```
 
-- **What it posts.** A full kit overview for every character that is **new** in this beta
-  version — every skill with its numbers, the mindscape / constellation / resonance chain, and
-  the mechanic definitions the kit references; the new weapons, W-Engines, light cones, disc
-  drives, relic sets and echo sets; and the older characters a revision touched, tagged
-  `[CHANGED]` with a link to the before/after diff.
-- **Honest by design.** Every value is read straight from the database export. A changed entry
-  is tagged `[CHANGED]` — never `[BUFF]` or `[NERF]`, which one revision snapshot cannot
-  establish. Unlocalised backend strings (`TestKey_PlaceHolder`) and placeholder images are
-  dropped, so an unfinished localisation omits its gallery instead of posting internal
-  identifiers.
-- **Off by default, and cheap when it is on.** `BETA_ENABLED=1` is required. A quiet beta
-  costs one small manifest GET; `BETA_MIN_POLL_MINUTES` (default `30`) gates re-checks and
-  `BETA_MAX_CHARACTERS` / `BETA_MAX_CHANGES` / `BETA_MAX_EQUIPMENT` / `BETA_MAX_REQUESTS`
-  clamp every run. Disabled, the feature makes **zero** requests.
+- **What it posts.** The first observed build gives every beta-new character a full kit overview
+  — all readable skill text and values, mindscape / constellation / resonance-chain text, plus
+  the new weapons, W-Engines, light cones, disc drives, relic sets and echoes. Later builds use
+  the retained full-kit baseline to show only the changed blocks, with an exact **Full kit** and
+  **Revision diff** source link per item.
+- **Actual inline diffs, without guessing.** When an old and new value are both present, the card
+  renders the source text intact around an inline diff such as `~~**200%**~~ → **240%**`.
+  `[BUFF]` / `[NERF]` are emitted only for a small set of unambiguous mechanics (for example,
+  higher damage or lower cooldown); ambiguous, wording-only, renamed and reclassified changes
+  stay `[CHANGED]` / `[TEXT FIX]` / `[ADJUSTMENT]`. A cold start never fabricates a baseline.
+- **Hotfix-safe and quiet-safe.** Static `available` builds are walked in order, so a run does
+  not jump over a v2/v3 hotfix. If a changelog revision is blank, only already-snapshotted and
+  manifest-new IDs are rechecked; an explicit “No tracked changes detected” revision advances
+  silently without an empty Discord post. A cold opt-in still posts the current reveal instead
+  of losing it to a quiet micro-hotfix.
+- **Off by default, and bounded when it is on.** `BETA_ENABLED=1` is required.
+  `BETA_MIN_POLL_MINUTES` (default `30`) and `BETA_MAX_CHARACTERS` /
+  `BETA_MAX_CHANGES` / `BETA_MAX_EQUIPMENT` / `BETA_MAX_REQUESTS` bound polling, cards and
+  requests. Disabled, the feature makes **zero** requests.
 - **HNA and ANANTA are excluded** until they ship — `BETA_GAMES` defaults to the four released
   games and `all` resolves to the same four.
-- **It stops on its own.** A resolved splash-art URL is locked in state and never re-fetched,
-  and one revision is published exactly once, so a finished card generates no further traffic.
+- **It stops on its own.** A verified splash-art URL is locked in state and never re-fetched.
+  Per-revision batches persist their own resume cursor, so a bounded batch continues without a
+  duplicate page; once all batches settle, that revision generates no further traffic.
 
 Full setup, variables and safeguards:
 **[docs/CONFIGURATION.md → Beta kit & revision-diff cards](docs/CONFIGURATION.md#beta-kit--revision-diff-cards-feature-5--explicit-opt-in-default-off)**.
