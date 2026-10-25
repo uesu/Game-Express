@@ -64,7 +64,6 @@ scripts or re-host their images — cards link to the URLs those databases publi
 
 ## Tools and contributors
 
-- **[Arena AI](https://arena.ai/company/about)** ([@arena on X](https://x.com/arena?lang=en)) — AI engineering, deep verification, live upstream auditing, and regression testing that helped make these Game-Express capabilities possible
 - [aiohttp](https://github.com/aio-libs/aiohttp), [feedparser](https://github.com/kurtmckee/feedparser), [python-dotenv](https://github.com/theskumar/python-dotenv) — the entire runtime dependency list
 - [astral-sh/uv](https://github.com/astral-sh/uv), [ruff](https://github.com/astral-sh/ruff), [pytest](https://github.com/pytest-dev/pytest) and [PyYAML](https://github.com/yaml/pyyaml) (installs, linting and offline/workflow verification), [zizmor](https://github.com/zizmorcore/zizmor), [rhysd/actionlint](https://github.com/rhysd/actionlint) and [reviewdog/action-actionlint](https://github.com/reviewdog/action-actionlint) (workflow auditing), [pypa/gh-action-pip-audit](https://github.com/pypa/gh-action-pip-audit) (CVE checks), [peter-evans/create-pull-request](https://github.com/peter-evans/create-pull-request)
 - Discord's [Components V2](https://discord.com/developers/docs/components/reference), [Discohook](https://discohook.app) (payload inspection), and [cron-job.org](https://cron-job.org/) (the external scheduler)
