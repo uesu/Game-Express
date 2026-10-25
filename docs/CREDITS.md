@@ -37,8 +37,9 @@ Feature 5 reads these community databases only when an operator opts in:
   (`/diff/<kind>/<id>/<slug>?prev=…&cur=…`). When a hotfix heading is blank, Game-Express compares
   its bounded prior nanoka snapshot for only already-tracked/new IDs rather than scraping the UI.
 
-None of these beta hosts is contacted while `BETA_ENABLED` is off. The monitor does not scrape either site's
-HTML UI and does not re-host their images — cards link to the URLs those databases publish.
+None of these beta hosts is contacted while `BETA_ENABLED` is off. The monitor reads nanoka's structured
+JSON and gachabase's Markdown or server-rendered HTML changelog; it does not execute either site's UI
+scripts or re-host their images — cards link to the URLs those databases publish.
 
 ### News, schedules, codes and fallback sources
 
