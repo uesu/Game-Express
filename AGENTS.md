@@ -49,7 +49,7 @@ behaviours are deliberate (and must not be "fixed"), how to verify a change, and
 already cost a broken run. `README.md` is the user-facing manual and `docs/` is its reference
 material; this file is the maintainer's mental model.
 
-Last updated **2026-10-24**.
+Last updated **2026-10-25**.
 
 ---
 
@@ -600,3 +600,11 @@ settings or batch membership changes after a page was confirmed, delivery holds 
 reconciliation. Legacy partial batches without a signature also hold; do not clear their
 message IDs automatically. Inspect the actual Discord messages and retained source build
 before repairing state. Quiet source output cannot settle an unfinished delivery.
+
+### Bounded beta comparison
+
+Full-content digests suppress unchanged long kits even when retained text is clipped.
+If changed content exceeds retained limits, or a legacy snapshot lacks a full-content digest,
+the next inspected revision uses a labelled full `[CHANGED]` snapshot without invented inline
+direction. Retained text limits and state pruning stay bounded.
+Do not compare clipped prior text with full new text as an exact diff.

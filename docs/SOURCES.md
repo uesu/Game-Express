@@ -404,7 +404,7 @@ page fetcher, and so were the ennead calendars. The production reachability of t
 | DuolaD/HoYo_Versioncatcher | launcher-data repo; led us to the HoYoPlay launcher endpoints |
 | TwintailTeam/game-manifests · TomyJan/GenshinImpact-Client-Version | launcher-manifest repos documenting Kuro's `G153` global launcher index and `background/{hash}/en.json` schemas (`sources/kuro.py`) |
 | genshin.dev | character/game data API, not schedules or codes |
-| gachabase.net · nanoka.cc · sr.yatta.moe · lunaris.moe · ambr.top | databases, listed in [CREDITS.md](CREDITS.md#community-databases--resources). No public schedule/banner API was verified, so **banner names come from official notices, `Kitsudock-data` (`hub.json`), the `api.ennead.cc` calendars, the Fandom wikis, or `config/overrides.json`** |
+| gachabase.net · nanoka.cc · sr.yatta.moe · lunaris.moe · ambr.top | databases, listed in [CREDITS.md](CREDITS.md#community-databases-and-research). No public schedule/banner API was verified, so **banner names come from official notices, `Kitsudock-data` (`hub.json`), the `api.ennead.cc` calendars, the Fandom wikis, or `config/overrides.json`** |
 
 ## Reddit & Redlib fleet (2026-10-22)
 

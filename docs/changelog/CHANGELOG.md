@@ -1,5 +1,11 @@
 # Changelog — current entries
 
+## 2026-10-25 — Truthful bounded beta comparisons and source credits
+
+- Add a full-content digest alongside bounded readable snapshots. Unchanged long descriptions no longer produce false cards; changes beyond the stored text limit produce a labelled full current snapshot. Legacy records without a full digest rebaseline once without invented before/after values.
+- Preserve removed stat/equipment lines when a replacement block has fewer new lines. Add failing-before-fix regressions, including persisted state and payload validation.
+- Restructure credits around active sources, tools and research references; document the confirmed Game/News development and production repository map. Encore remains a research reference because its supplied API contract lacks beta revision history.
+
 ## 2026-10-25 — Live beta equipment schemas and restart-safe batches
 
 - Capture current public Light Cone, relic, Genshin weapon and WuWa weapon fields in offline regressions. Handle HSR list-based promotion stats, substitute equipment parameters, normalize source formatting tags and nested localized equipment names, and display WuWa percentage units correctly. Label missing source parameters instead of inventing values.

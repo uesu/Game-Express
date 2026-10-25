@@ -52,14 +52,14 @@ are the short overviews. The operational instructions live here:
 |---|---|
 | **[DEPENDABOT.md](DEPENDABOT.md)** | what Dependabot watches, and the opt-in auto-merge |
 | **[PYTHON_VERSION.md](PYTHON_VERSION.md)** | the automated Python-version bump workflow |
-| **[PROD-REPO-SETUP.md](PROD-REPO-SETUP.md)** | fresh-repository runtime manifest, state-preserving cutover, news settings, safe later syncs |
+| **[PROD-REPO-SETUP.md](PROD-REPO-SETUP.md)** | current Game/News development-production map, fresh-repository runtime manifest, state-preserving cutover and safe later syncs |
 | **[changelog/](changelog/)** | every change, newest first — [current line](changelog/CHANGELOG.md) · [archive](changelog/CHANGELOG_ARCHIVE.md) |
 
 ## Credits and legal
 
 | Doc | What's in it |
 |---|---|
-| **[CREDITS.md](CREDITS.md)** | the upstream projects this depends on, plus community databases |
+| **[CREDITS.md](CREDITS.md)** | active monitor sources, tools and contributors, and separately identified community research |
 | **[../PRIVACY_POLICY.md](../PRIVACY_POLICY.md)** · **[../TERMS_OF_SERVICE.md](../TERMS_OF_SERVICE.md)** | the legal pair |
 
 ---

@@ -581,6 +581,11 @@ relic sets / echo sets on first observation, then compact source-backed revision
 later builds. It retains the prior readable kit in bounded state, so a later change can show
 `~~old~~ → **new**` inline rather than re-posting an entire kit.
 
+Full-content digests suppress unchanged long kits even when retained text is clipped.
+If changed content exceeds retained limits, or a legacy snapshot lacks a full-content digest,
+the next inspected revision uses a labelled full `[CHANGED]` snapshot without invented inline
+direction. Retained text limits and state pruning stay bounded.
+
 `BETA_ENABLED` is **off by default**. Disabled, the feature makes **zero** requests and
 adds nothing to `state/state.json`. It never posts to a schedule or codes channel:
 routing is dedicated (`DISCORD_WEBHOOK_BETA_<GAME>` > `DISCORD_WEBHOOK_BETA` >

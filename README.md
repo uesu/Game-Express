@@ -280,13 +280,15 @@ that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA
 - **What it posts.** The first observed build gives every beta-new character a full kit overview
   — all readable skill text and values, mindscape / constellation / resonance-chain text, plus
   the new weapons, W-Engines, light cones, disc drives, relic sets and echoes. Later builds use
-  the retained full-kit baseline to show only the changed blocks, with an exact **Full kit** and
+  a retained bounded kit baseline to show changed blocks, with an exact **Full kit** and
   **Revision diff** source link per item.
 - **Actual inline diffs, without guessing.** When an old and new value are both present, the card
   renders the source text intact around an inline diff such as `~~**200%**~~ → **240%**`.
   `[BUFF]` / `[NERF]` are emitted only for a small set of unambiguous mechanics (for example,
   higher damage or lower cooldown); ambiguous, wording-only, renamed and reclassified changes
   stay `[CHANGED]` / `[TEXT FIX]` / `[ADJUSTMENT]`. A cold start never fabricates a baseline.
+  Full-content digests keep unchanged long kits quiet; clipped or legacy baselines use a
+  labelled full snapshot when exact comparison is unavailable.
 - **Hotfix-safe and quiet-safe.** Static `available` builds are walked in order, so a run does
   not jump over a v2/v3 hotfix. If a changelog revision is blank, only already-snapshotted and
   manifest-new IDs are rechecked; an explicit “No tracked changes detected” revision advances
@@ -740,7 +742,7 @@ Historical records are preserved in
   and [eddrit](https://github.com/corenting/eddrit) and every operator who keeps a public instance
   online, [FxEmbed / FxTwitter](https://github.com/FxEmbed/FxEmbed), and
   [BetterTwitFix / vxTwitter](https://github.com/dylanpdx/BetterTwitFix). The full list, with
-  licences and the community databases: **[docs/CREDITS.md](docs/CREDITS.md)**.
+  active beta sources, tools, research references and licences: **[docs/CREDITS.md](docs/CREDITS.md)**.
 - **Special thanks:** **[Arena AI](https://arena.ai/company/about)** ([@arena on X](https://x.com/arena?lang=en))
   for making these engineering additions, upstream audits, and reliability upgrades possible.
 - **Sibling project:** [News-Express](https://github.com/uesu/News-Express) — same design,

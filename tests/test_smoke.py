@@ -17574,5 +17574,78 @@ def test_feature5_request_ceiling_is_shared_across_games_not_multiplied_per_game
         assert not ctx.state.beta_record("zzz").get("last_poll")
 
 
+
+def test_feature5_long_snapshot_comparison_tracks_full_content_without_false_diffs():
+    """Clipped state must neither invent changes nor hide changes beyond its text limit."""
+    from unittest.mock import patch as mock_patch
+
+    from gamexpress import beta as beta_mod
+
+    long_text = "Unchanged description. " * 100
+    built = {"sections": [BetaSectionEntry(title="Skill", lines=[long_text])],
+             "stats_lines": ["ATK 100"]}
+    equipment = {"lines": [long_text], "stats_line": "ATK 200"}
+    files = {"changelog/beta": "", "character/1601": {"rarity": 4},
+             "weapon/14166": {"id": 14166}, "weapon.json": {"14166": {"rank": 5}}}
+    manifest = {"zzz": {"latest": "3.4.1+100", "available": ["3.4.1+100"],
+                        "new": {"character": [1601], "weapon": [14166], "equipment": []}}}
+    with tempfile.TemporaryDirectory() as tmp, \
+            mock_patch.dict(beta_mod._CHARACTER_BUILDERS, {"zzz": lambda _: built}), \
+            mock_patch.object(beta_mod, "_equip_from_detail", side_effect=lambda *_: equipment):
+        ctx = _beta_ctx(Path(tmp) / "state.json", _RecordingFetcher(files),
+                        BETA_ENABLED="1", games=["zzz"])
+        def advance(revision):
+            manifest["zzz"]["latest"] = revision
+            manifest["zzz"]["available"].append(revision)
+            return asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest,
+                                                   beta_mod._budget(ctx)))
+        first = advance("3.4.1+100")
+        assert first.characters and first.equipment
+        beta_mod._settle_beta_patch(ctx, ctx.state.beta_record("zzz"), first, status="posted")
+        # Round-trip actual persisted state, not an in-memory-only digest.
+        ctx.state.save()
+        ctx.state = State.load(ctx.settings.state_path)
+        unchanged = advance("3.4.1+101")
+        assert unchanged.no_changes and not unchanged.characters and not unchanged.equipment
+        for snapshot in unchanged.snapshots.values():
+            assert snapshot["truncated"] is True
+            data = snapshot["data"]
+            lines = data.get("lines") or data["sections"][0]["lines"]
+            assert len(lines[0]) <= 1401  # existing cap plus ellipsis
+        beta_mod._settle_beta_patch(ctx, ctx.state.beta_record("zzz"), unchanged, status="silent")
+        built["sections"][0].lines = [long_text + " Changed tail."]
+        equipment["lines"] = [long_text + " Changed tail."]
+        changed = advance("3.4.1+102")
+        assert len(changed.characters) == len(changed.equipment) == 1
+        assert "complete before/after text is unavailable" in changed.characters[0].subtext
+        assert "Changed tail." in changed.characters[0].sections[0].lines[0]
+        assert changed.equipment[0].tag == "[CHANGED]"
+        assert any("Changed tail." in line for line in changed.equipment[0].lines)
+        payloads = cards.beta_payloads(GAMES["zzz"], changed, None, None)
+        assert payloads and all(not cards.validate_payload(payload) for payload in payloads)
+        assert "~~" not in json.dumps(payloads)  # no invented before/after direction
+        beta_mod._settle_beta_patch(ctx, ctx.state.beta_record("zzz"), changed, status="posted")
+        # Legacy clipped baselines have no trustworthy full-content digest.
+        for snapshot in ctx.state.beta_record("zzz")["snapshots"].values():
+            snapshot.pop("content_signature", None)
+            snapshot.pop("truncated", None)
+        legacy = advance("3.4.1+103")
+        assert len(legacy.characters) == len(legacy.equipment) == 1
+        assert "~~" not in json.dumps(cards.beta_payloads(GAMES["zzz"], legacy, None, None))
+
+
+def test_feature5_replaced_blocks_preserve_surplus_removed_lines():
+    from gamexpress import beta as beta_mod
+
+    previous = BetaCharacter(id="test", name="Test", stats_lines=["ATK 100", "HP 200"])
+    current = BetaCharacter(id="test", name="Test", stats_lines=["ATK 120"])
+    lines = beta_mod._stat_diff(previous, current)[0].lines
+    assert any("Removed: ~~HP 200~~" in line for line in lines)
+    previous_equipment = BetaEquipment(id="test", name="Test", lines=["ATK 100", "HP 200"])
+    current_equipment = BetaEquipment(id="test", name="Test", lines=["ATK 120"])
+    result = beta_mod._diff_equipment(previous_equipment, current_equipment)
+    assert any("Removed: ~~HP 200~~" in line for line in result.lines)
+
+
 if __name__ == "__main__":
     sys.exit(main())

@@ -442,3 +442,12 @@ real temporary state file after one confirmed page and one failed page. It check
 newer manifest cannot skip the unfinished source build and that changed content or batch
 membership cannot reuse the old page cursor. Peer merge tests also reject conflicting
 payload signatures.
+
+### Bounded snapshot comparison regressions
+
+`test_feature5_long_snapshot_comparison_tracks_full_content_without_false_diffs` exercises
+actual build/settlement and a disk state round-trip: unchanged clipped character/equipment
+text stays quiet, suffix-only changes remain visible, legacy records rebaseline conservatively,
+and rendered payloads remain valid. `test_feature5_replaced_blocks_preserve_surplus_removed_lines`
+covers removal of surplus old stat/equipment lines within a replacement block. Both reproduced
+failures before repair; the existing numeric-direction tests continue to cover complete baselines.

@@ -1,8 +1,7 @@
 # Credits & community resources
 
-Game-Express is a thin layer over other people's work. Everything it reads is someone's
-volunteer project, and every card it posts exists because these are kept running — if one of
-them asks for support, they have earned it.
+Game-Express is a thin layer over other people's work. Its official publishers, community
+data maintainers, open-source authors and public instance operators make the cards possible.
 
 **Not affiliated** with HoYoverse, Kuro Games, NetEase or Discord. Game names, artwork and
 assets belong to their owners. See [PRIVACY_POLICY.md](../PRIVACY_POLICY.md) and
@@ -11,9 +10,36 @@ assets belong to their owners. See [PRIVACY_POLICY.md](../PRIVACY_POLICY.md) and
 What each endpoint actually serves, and why it was chosen or rejected, is in
 [SOURCES.md](SOURCES.md).
 
+**Browse:** [Monitor sources](#sources-used-by-the-monitor) · [Tools](#tools-and-contributors) ·
+[Sibling project](#sibling-project) · [Community research](#community-databases-and-research)
+
 ---
 
-## Data sources
+## Sources used by the monitor
+
+### Beta revisions — feature 5
+
+| Publisher | Contribution | Activation |
+|---|---|---|
+| [nanoka.cc](https://nanoka.cc/) | Ordered build manifest, structured kits and equipment, asset URLs | `BETA_ENABLED=1` |
+| [gachabase.net](https://gachabase.net/) | Beta changelog and source comparison links | `BETA_ENABLED=1` |
+
+Feature 5 reads **only** two community databases, and only when an operator opts in:
+
+- **[nanoka.cc](https://nanoka.cc/)** (`gi.`, `hsr.`, `zzz.`, `ww.` sub-domains) — the revision
+  manifest (`static.nanoka.cc/manifest.json`) and the structured per-revision JSON exports this
+  feature renders kits from. Thanks to the nanoka maintainers for publishing clean, structured
+  data at `static.nanoka.cc/<game>/<revision>/en/<kind>/<id>.json`.
+- **[gachabase.net](https://gachabase.net/)** (`gi.`, `hsr.`, `zzz.` sub-domains) — the beta
+  changelog (`/<game>.gachabase.net/changelog/beta?lang=en`) that names revisions and usually the
+  entries they touch, plus the per-entry before/after diff pages the cards link to
+  (`/diff/<kind>/<id>/<slug>?prev=…&cur=…`). When a hotfix heading is blank, Game-Express compares
+  its bounded prior nanoka snapshot for only already-tracked/new IDs rather than scraping the UI.
+
+Neither host is contacted while `BETA_ENABLED` is off. The monitor does not scrape either site's
+HTML UI and does not re-host their images — cards link to the URLs those databases publish.
+
+### News, schedules, codes and fallback sources
 
 - [seriaati/hoyo-codes](https://github.com/seriaati/hoyo-codes) and [hoyo-update-notifier](https://github.com/seriaati/hoyo-update-notifier) (the verified code API and the Sophon/launcher endpoints)
 - [TheLovinator1/wutheringwaves](https://github.com/TheLovinator1/wutheringwaves) — a GitHub Atom mirror of the Wuthering Waves news list, read only as a fallback for WuWa banner notices. The repository declares no license (checked 2026-10-09).
@@ -34,7 +60,7 @@ What each endpoint actually serves, and why it was chosen or rejected, is in
 
 ---
 
-## Built with
+## Tools and contributors
 
 - **[Arena AI](https://arena.ai/company/about)** ([@arena on X](https://x.com/arena?lang=en)) — AI engineering, deep verification, live upstream auditing, and regression testing that helped make these Game-Express capabilities possible
 - [aiohttp](https://github.com/aio-libs/aiohttp), [feedparser](https://github.com/kurtmckee/feedparser), [python-dotenv](https://github.com/theskumar/python-dotenv) — the entire runtime dependency list
@@ -49,10 +75,10 @@ What each endpoint actually serves, and why it was chosen or rejected, is in
 
 ---
 
-## Community databases & resources
+## Community databases and research
 
-Not used by the monitor — these are the sites the community actually reads, collected here so
-they are easy to find.
+Additional reading and research references. Listing a project here does not enable polling;
+active integrations are identified above and in [SOURCES.md](SOURCES.md).
 
 ### Solaris — Wuthering Waves
 
@@ -63,7 +89,7 @@ they are easy to find.
 - **Character Builds, Tier List, Echoes, Guides, Weapons and their Background Information**: https://wutheringlab.com/
 - **Provides Detailed Data to Help Players Navigate the Game World more Efficiently**: https://wuthering.gg/map
 - **Built by Wuthering Waves' experienced theorycrafting & speedrunning community**: https://tethys.gg/
-- **Official Wiki**: https://wutheringwaves.fandom.com/
+- **Community wiki**: https://wutheringwaves.fandom.com/
 - **More**: https://wuthering.gg/ · https://arabwuwa.com/ · https://wuwa.akademiya.app/en · https://wuwatracker.com/characters · https://wuwacompanion.com/en/database · https://www.prydwen.gg/wuthering-waves/characters
 
 ### New Eridu — Zenless Zone Zero
@@ -71,7 +97,7 @@ they are easy to find.
 - **Database for everything in Zenless Zone Zero**: https://zzz.gachabase.net/?lang=en&branch=beta
 - **Guides or Builds, Tier Lists, Detailed Information**: https://www.prydwen.gg/zenless/ · https://www.icy-veins.com/zenless-zone-zero/ · https://www.icy-veins.com/zenless-zone-zero/tier-list · [game8.co/games/Zenless-Zone-Zero](https://game8.co/games/Zenless-Zone-Zero/archives/522597)
 - **Information Related to Zenless Zone Zero**: https://zzz.honeyhunterworld.com/?lang=EN · https://zzz-run-archive.onrender.com/
-- **Official Wiki**: https://zenless-zone-zero.fandom.com/
+- **Community wiki**: https://zenless-zone-zero.fandom.com/
 
 ### Genshin Impact
 
@@ -86,19 +112,11 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 - **The definitive database for all HoYoverse and Wuthering Waves (Release, Beta & CBT)**: https://gachabase.net/ · https://nanoka.cc/
 - **More Database**: https://endfield.teamstardust.org/ · https://silver.teamstardust.org/ · https://www.ntegame.com/ · https://irminsul.gg/ · https://perlica.moe/ · https://endfieldtools.dev/ · https://anantacodex.com/
 
-### Beta kit & revision-diff data (feature 5, `BETA_ENABLED`)
+### Additional source research supplied for feature 5
 
-Feature 5 reads **only** two community databases, and only when an operator opts in:
-
-- **[nanoka.cc](https://nanoka.cc/)** (`gi.`, `hsr.`, `zzz.`, `ww.` sub-domains) — the revision
-  manifest (`static.nanoka.cc/manifest.json`) and the structured per-revision JSON exports this
-  feature renders kits from. Thanks to the nanoka maintainers for publishing clean, structured
-  data at `static.nanoka.cc/<game>/<revision>/en/<kind>/<id>.json`.
-- **[gachabase.net](https://gachabase.net/)** (`gi.`, `hsr.`, `zzz.` sub-domains) — the beta
-  changelog (`/<game>.gachabase.net/changelog/beta?lang=en`) that names revisions and usually the
-  entries they touch, plus the per-entry before/after diff pages the cards link to
-  (`/diff/<kind>/<id>/<slug>?prev=…&cur=…`). When a hotfix heading is blank, Game-Express compares
-  its bounded prior nanoka snapshot for only already-tracked/new IDs rather than scraping the UI.
-
-Neither host is contacted while `BETA_ENABLED` is off. The monitor does not scrape either site's
-HTML UI and does not re-host their images — cards link to the URLs those databases publish.
+- **[Encore](https://encore.moe/)** / **[alt3ri](https://github.com/alt3ri)** — [about and upstream acknowledgements](https://encore.moe/about), [API v2 reference](https://api-v2.encore.moe/_docs/scalar), [new content](https://encore.moe/new), [game notices](https://encore.moe/gamenotice), [characters](https://encore.moe/character), [weapons](https://encore.moe/weapon) and [echoes](https://encore.moe/echo). The supplied OpenAPI schema documents current resources; it does not specify a beta discriminator or ordered revision history, so it is not an automatic beta fallback.
+- **[Arikatsu/WutheringWaves_Data](https://github.com/Arikatsu/WutheringWaves_Data)** (formerly `WW_Data`), **[alt3ri/WW_Asset](https://github.com/alt3ri/WW_Asset)** and **[WW_Asset_Webp](https://github.com/alt3ri/WW_Asset_Webp)** — data and asset references acknowledged by Encore. The inspected data README describes release 3.7; release assets alone do not establish beta revisions.
+- Encore additionally acknowledges **[Arikatsu](https://github.com/Arikatsu)**, **[Adam](https://github.com/NotFakeAdam)**, **[Hiro420](https://github.com/Hiro420)**, **[Hakush.in](https://hakush.in/)**, **[KuroBBS](https://wiki.kurobbs.com/mc/home)** and its community. These are Encore's acknowledgements, not claims that Game-Express uses every project.
+- **[Wuthery/kuro.py](https://github.com/Wuthery/kuro.py)** ([PyPI](https://pypi.org/project/kuro.py/)) — KuroBBS/game-account API wrapper, not an ordered beta feed.
+- **[seriaati/ZenlessAssetScrape](https://github.com/seriaati/ZenlessAssetScrape)** — asset research; its README recommends Hakushin's API. Official [Genshin character pages](https://genshin.hoyoverse.com/en/character/mondstadt) provide published character context, not a beta history contract.
+- **[Discohook documentation](https://docs.discohook.app/)** ([text index](https://docs.discohook.app/llms.txt)) — reference for inspecting and editing Discord payloads; a manual edit succeeding does not establish the cause of an earlier unresolved media response.

@@ -1931,6 +1931,31 @@ def _section_from_snapshot(value: Any) -> BetaSectionEntry:
     )
 
 
+def _snapshot_record(item, data: dict, kind: str, revision: str, now: int) -> dict:
+    """Keep bounded text plus a digest of full content, excluding mutable media/links."""
+    full = {key: getattr(item, key) for key in data if key not in ("image_url", "page_url")}
+    if kind == "character":
+        full["sections"] = [
+            {key: getattr(section, key) for key in _section_snapshot(section)}
+            for section in item.sections
+        ]
+    content_signature = stable_hash(full)
+    retained = {key: value for key, value in data.items() if key in full}
+    return {"kind": kind, "revision": revision, "ts": int(now), "data": data,
+            "signature": stable_hash(data), "content_signature": content_signature,
+            "truncated": stable_hash(retained) != content_signature}
+
+
+def _snapshot_comparison(previous: dict, current: dict) -> str:
+    if previous.get("content_signature") == current["content_signature"]:
+        return "equal"
+    # Old snapshots did not record what was clipped. Rebaseline once without claiming
+    # a before/after comparison; a clipped suffix could contain the only real change.
+    if not previous.get("content_signature") or previous.get("truncated") or current["truncated"]:
+        return "snapshot"
+    return "diff"
+
+
 def _character_snapshot(character: BetaCharacter, revision: str, now: int) -> dict:
     data = {
         "id": character.id, "name": character.name, "rarity": character.rarity,
@@ -1941,8 +1966,7 @@ def _character_snapshot(character: BetaCharacter, revision: str, now: int) -> di
         "mechanic_defs": [(str(name), _clip(desc)) for name, desc in character.mechanic_defs[:24]],
         "image_url": character.image_url, "page_url": character.page_url,
     }
-    return {"kind": "character", "revision": revision, "ts": int(now),
-            "data": data, "signature": stable_hash(data)}
+    return _snapshot_record(character, data, "character", revision, now)
 
 
 def _character_from_snapshot(snapshot: Any) -> BetaCharacter | None:
@@ -1978,8 +2002,7 @@ def _equipment_snapshot(equipment: BetaEquipment, revision: str, now: int, kind:
         "lines": [_clip(line) for line in equipment.lines[:32]], "image_url": equipment.image_url,
         "page_url": equipment.page_url,
     }
-    return {"kind": kind, "revision": revision, "ts": int(now), "data": data,
-            "signature": stable_hash(data)}
+    return _snapshot_record(equipment, data, kind, revision, now)
 
 
 def _equipment_from_snapshot(snapshot: Any) -> BetaEquipment | None:
@@ -2027,6 +2050,8 @@ def _stat_diff(prev: BetaCharacter, current: BetaCharacter) -> list[BetaSectionE
                 lines.append(_change_line(old, new)[0])
             for extra in new_lines[j1 + len(pairs):j2]:
                 lines.append(f"**[NEW]** {extra}")
+            lines.extend(f"**[CHANGED]** Removed: ~~{line}~~"
+                         for line in old_lines[i1 + len(pairs):i2])
         elif opcode == "insert":
             lines.extend(f"**[NEW]** {line}" for line in new_lines[j1:j2])
         elif opcode == "delete":
@@ -2051,6 +2076,8 @@ def _diff_equipment(previous: BetaEquipment, current: BetaEquipment) -> BetaEqui
             pairs = list(zip(old_lines[i1:i2], new_lines[j1:j2]))
             changes.extend(_change_line(old, new)[0] for old, new in pairs)
             changes.extend(f"**[NEW]** {line}" for line in new_lines[j1 + len(pairs):j2])
+            changes.extend(f"**[CHANGED]** Removed: ~~{line}~~"
+                           for line in old_lines[i1 + len(pairs):i2])
         elif opcode == "insert":
             changes.extend(f"**[NEW]** {line}" for line in new_lines[j1:j2])
         elif opcode == "delete":
@@ -2263,7 +2290,13 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             if not is_new:
                 full.subtext = "-# Full readable kit snapshot — a prior baseline was not retained, so no direction is inferred."
             patch.characters.append(full)
-        else:
+        elif _snapshot_comparison(previous_snapshot, patch.snapshots[snap_key]) == "snapshot":
+            full.sections = _clone_sections(full.sections, "[CHANGED]")
+            full.is_new = False
+            full.subtext = ("-# Full current kit — complete before/after text is unavailable; "
+                            "no direction is inferred.")
+            patch.characters.append(full)
+        elif _snapshot_comparison(previous_snapshot, patch.snapshots[snap_key]) == "diff":
             diff_sections, unchanged = diff_kits(previous.sections, full.sections, max_sections=8)
             diff_sections = _stat_diff(previous, full) + diff_sections
             if diff_sections:
@@ -2271,7 +2304,7 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
                 full.is_new = False
                 old_rev = str((previous_snapshot or {}).get("revision") or "previous revision")
                 full.subtext = (f"-# Revision diff against {old_rev}"
-                                + (f" • {unchanged} unchanged block(s) omitted" if unchanged else ""))
+                                + (f" • {unchanged} other block(s) omitted" if unchanged else ""))
                 patch.characters.append(full)
         if is_new:
             char_new += 1
@@ -2351,7 +2384,14 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
         patch.item_keys.append(_entry_key(ns, role, item_id))
         if previous is None:
             patch.equipment.append(current)
-        else:
+        elif _snapshot_comparison(previous_snapshot, patch.snapshots[snap_key]) == "snapshot":
+            current.tag = "[CHANGED]"
+            current.lines = [
+                "-# Full current snapshot — complete before/after text is unavailable; "
+                "no direction is inferred.", *current.lines,
+            ]
+            patch.equipment.append(current)
+        elif _snapshot_comparison(previous_snapshot, patch.snapshots[snap_key]) == "diff":
             changed = _diff_equipment(previous, current)
             if changed:
                 patch.equipment.append(changed)
