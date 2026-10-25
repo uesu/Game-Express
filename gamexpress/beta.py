@@ -14,6 +14,7 @@ WHAT IT DOES
     headings advance silently without an empty Discord post. Missing current WuWa
     character/weapon details can use Encore's explicitly selected beta API after
     matching resource-version and stable-build checks within the same request budget.
+    Its official legacy endpoint is tried only when the primary Encore read is unusable.
 
 DESIGN GUARANTEES
     * Disabled by default: `BETA_ENABLED=1` is an explicit opt-in. Per-game opt-in
@@ -893,6 +894,7 @@ async def _listing(fetcher, ns: str, version: str, kind: str) -> dict:
 
 # Encore's frontend uses this beta selector (not included in its OpenAPI export).
 ENCORE_API = "https://api-v2.encore.moe/api/en"
+ENCORE_BACKUP_API = "https://api.encore.moe/en"
 
 
 def _encore_text(value: Any) -> str:
@@ -2450,28 +2452,36 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
         # Never use it to reconstruct an older build or issue an unbudgeted request.
         if ns != "ww" or kind not in ("character", "weapon") or version != m_game.get("latest"):
             return None
-        if requests + 3 > budget["max_requests"] or not _take_shared_request(budget, 3):
-            return None
-        requests += 3
-        metadata_url = f"{ENCORE_API}/new?v=Beta"
-        before = _encore_metadata(await ctx.fetcher.get_json(
-            metadata_url, source="beta-encore", retries=1))
-        if before is None or before[1] != version:
-            return None
-        if encore_revision is not None and before != encore_revision:
-            ctx.warnings.append(f"{game.short} beta: Encore build changed between items; deferred")
-            return None
-        raw = await ctx.fetcher.get_json(
-            f"{ENCORE_API}/{kind}/{item_id}?ver=latest&v=Beta", source="beta-encore", retries=1)
-        after = _encore_metadata(await ctx.fetcher.get_json(
-            metadata_url, source="beta-encore", retries=1))
-        if after != before:
-            ctx.warnings.append(f"{game.short} beta: Encore build changed while reading; deferred")
-            return None
-        normalized = _encore_detail(raw, kind, item_id, before)
-        if normalized:
-            encore_revision = before
-        return normalized
+        deferred_reason = ""
+        # The published legacy server uses /en, not /api/en. Each attempt must bracket
+        # its own detail read: never borrow metadata from the other server. Reserve the
+        # complete attempt even when its first request fails, keeping both budgets bounded.
+        for api in (ENCORE_API, ENCORE_BACKUP_API):
+            if requests + 3 > budget["max_requests"] or not _take_shared_request(budget, 3):
+                break
+            requests += 3
+            metadata_url = f"{api}/new?v=Beta"
+            before = _encore_metadata(await ctx.fetcher.get_json(
+                metadata_url, source="beta-encore", retries=1))
+            if before is None or before[1] != version:
+                continue
+            if encore_revision is not None and before != encore_revision:
+                deferred_reason = "between items"
+                continue
+            raw = await ctx.fetcher.get_json(
+                f"{api}/{kind}/{item_id}?ver=latest&v=Beta", source="beta-encore", retries=1)
+            after = _encore_metadata(await ctx.fetcher.get_json(
+                metadata_url, source="beta-encore", retries=1))
+            if after != before:
+                deferred_reason = "while reading"
+                continue
+            normalized = _encore_detail(raw, kind, item_id, before)
+            if normalized:
+                encore_revision = before
+                return normalized
+        if deferred_reason:
+            ctx.warnings.append(f"{game.short} beta: Encore build changed {deferred_reason}; deferred")
+        return None
 
     for entry in char_entries:
         item_id = _entry_id(entry)

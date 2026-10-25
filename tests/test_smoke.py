@@ -17818,6 +17818,129 @@ def test_feature5_encore_future_beta_waits_for_matching_build_and_settles():
         assert fetcher.calls == []
 
 
+def _beta_encore_endpoint_fetcher(primary="unavailable", secondary="matching"):
+    """Both official endpoints share the captured, independently compared display schema."""
+    from gamexpress import beta as beta_mod
+
+    class Fetcher:
+        def __init__(self):
+            self.calls = []
+            self.metadata_reads = {}
+
+        async def get_json(self, url, **kwargs):
+            self.calls.append(url)
+            for base, mode in ((beta_mod.ENCORE_API, primary),
+                               ("https://api.encore.moe/en", secondary)):
+                if not url.startswith(base + "/"):
+                    continue
+                assert kwargs["source"] == "beta-encore" and "v=Beta" in url
+                if mode == "unavailable":
+                    return None
+                if "/new?" in url:
+                    count = self.metadata_reads.get(base, 0) + 1
+                    self.metadata_reads[base] = count
+                    if mode == "malformed":
+                        return {"error": "unavailable"}
+                    return [{"GameVer": "3.8.0",
+                             "ResVer": "3.9.1" if mode == "mismatch" else "3.8.1",
+                             "Changelist": "9162984" if (
+                                 mode == "changing" and count % 2 == 0
+                                 or mode == "between_items" and count > 2
+                             ) else "9162983"}]
+                if mode == "detail_unavailable":
+                    return None
+                character = "/character/" in url
+                raw = _beta_json("encore_lily_live.json" if character else "encore_weapon_live.json")
+                if mode == "wrong_id":
+                    raw["Id" if character else "ItemId"] = 1
+                if mode == "unreadable":
+                    raw.update(Skills=[], SkillTree=[], ResonantChain=[], Desc="")
+                return raw
+            return None
+
+        async def verify_media(self, _url):
+            raise AssertionError("Encore raw/placeholder art must not be requested")
+
+    return Fetcher()
+
+
+def test_feature5_encore_secondary_api_recovers_with_identical_cards_and_durable_settlement():
+    from gamexpress import beta as beta_mod
+
+    manifest = {"ww": {"latest": "3.8.1", "available": ["3.7", "3.8.1"],
+                       "new": {"character": [1512], "weapon": [21030076], "echo": []}}}
+    secondary = "https://api.encore.moe/en/"
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "state.json"
+        ctx = _beta_ctx(path, _beta_encore_endpoint_fetcher(primary="matching"),
+                        BETA_ENABLED="1", games=["wuwa"])
+        primary = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, beta_mod._budget(ctx)))
+        assert not any(url.startswith(secondary) for url in ctx.fetcher.calls)
+        expected = cards.beta_payloads(GAMES["wuwa"], primary)
+        assert expected
+        for primary_mode, expected_calls in (("unavailable", 11), ("detail_unavailable", 15),
+                                             ("mismatch", 11), ("malformed", 11),
+                                             ("changing", 15), ("wrong_id", 15), ("unreadable", 15)):
+            ctx.fetcher = _beta_encore_endpoint_fetcher(primary=primary_mode)
+            budget = {**beta_mod._budget(ctx), "_shared_requests_left": 20}
+            patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, budget))
+            assert patch and not patch.more and len(patch.characters) == len(patch.equipment) == 1
+            assert len(ctx.fetcher.calls) == expected_calls
+            assert budget["_shared_requests_left"] == 5  # details/listing + two three-call reservations per item
+            fallback_calls = [url for url in ctx.fetcher.calls if url.startswith(secondary)]
+            assert len(fallback_calls) == 6
+            assert all("v=Beta" in url and "/api/" not in url for url in fallback_calls)
+            assert cards.beta_payloads(GAMES["wuwa"], patch) == expected
+            assert all(not cards.validate_payload(p) for p in expected)
+            assert patch.snapshots == primary.snapshots
+            assert ctx.warnings == []
+        beta_mod._settle_beta_patch(ctx, ctx.state.beta_record("wuwa"), patch, status="posted")
+        ctx.state.save()
+        ctx.state = State.load(path)
+        ctx.fetcher.calls.clear()
+        assert asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, beta_mod._budget(ctx))) is None
+        assert ctx.fetcher.calls == []
+
+
+def test_feature5_encore_secondary_api_keeps_version_identity_and_request_limits():
+    from gamexpress import beta as beta_mod
+
+    manifest = {"ww": {"latest": "3.8.1", "available": ["3.7", "3.8.1"],
+                       "new": {"character": [1512], "weapon": [21030076], "echo": []}}}
+    secondary = "https://api.encore.moe/en/"
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _beta_ctx(Path(tmp) / "state.json", _beta_encore_endpoint_fetcher(),
+                        BETA_ENABLED="1", games=["wuwa"])
+        for mode in ("unavailable", "mismatch", "malformed", "changing", "wrong_id", "unreadable"):
+            # Primary metadata is valid but its detail is absent. It cannot authorize
+            # unverified secondary data or replace the secondary's own metadata reads.
+            ctx.fetcher = _beta_encore_endpoint_fetcher(primary="detail_unavailable", secondary=mode)
+            patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, beta_mod._budget(ctx)))
+            assert patch.more and not patch.characters and not patch.equipment, mode
+            assert any(url.startswith(secondary) for url in ctx.fetcher.calls), mode
+        ctx.fetcher = _beta_encore_endpoint_fetcher(secondary="between_items")
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, beta_mod._budget(ctx)))
+        assert patch.more and len(patch.characters) == 1 and not patch.equipment
+        assert not any(url.startswith(secondary + "weapon/") for url in ctx.fetcher.calls)
+        for cap, shared in ((5, 40), (48, 4)):
+            ctx.fetcher = _beta_encore_endpoint_fetcher()
+            budget = {**beta_mod._budget(ctx), "max_requests": cap, "_shared_requests_left": shared}
+            patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, budget))
+            assert patch.more and not patch.characters and not patch.equipment
+            assert not any(url.startswith(secondary) for url in ctx.fetcher.calls)
+        ctx.fetcher = _beta_encore_endpoint_fetcher()
+        budget = {**beta_mod._budget(ctx), "max_requests": 8, "_shared_requests_left": 7}
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, budget))
+        assert patch.more and len(patch.characters) == 1 and not patch.equipment
+        assert budget["_shared_requests_left"] == 0
+        ctx.state.beta_record("wuwa")["source_version"] = "3.6"
+        older = {"ww": {**manifest["ww"], "available": ["3.6", "3.7", "3.8.1"]}}
+        ctx.fetcher = _beta_encore_endpoint_fetcher()
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], older, beta_mod._budget(ctx)))
+        assert patch.source_version == "3.7" and patch.more and not patch.characters and not patch.equipment
+        assert not any("encore.moe/" in url for url in ctx.fetcher.calls)
+
+
 def test_feature5_encore_hsin_suoming_captured_beta_kits():
     from gamexpress import beta as beta_mod
 

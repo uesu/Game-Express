@@ -666,12 +666,19 @@ inspection of the live site's frontend and API on 2026-10-25 confirmed:
   value in code.
 
 Feature 5 uses this API **only as a missing/unreadable character or weapon detail fallback**
-for the manifest's current WuWa build. Nanoka still selects ordered revisions and IDs. Each
-fallback reserves up to three calls in both existing request limits: beta metadata, detail,
-then beta metadata again. `ResVer` must exactly equal the selected current nanoka version;
+for the manifest's current WuWa build. Nanoka still selects ordered revisions and IDs.
+Try `https://api-v2.encore.moe/api/en` first, then the documented official legacy server
+`https://api.encore.moe/en` if the primary read is unusable. The legacy path has no `/api` prefix.
+Both were verified with matching beta metadata and identical normalized Lily/Lullaby display
+fields on 2026-10-25; this adds endpoint redundancy within Encore, not an independent data authority.
+Each server attempt reserves three calls in both existing request limits: beta metadata, detail,
+then beta metadata again, all on that same server. Even an early failure consumes its full
+reservation; both attempts together permit at most six `get_json` calls per item, each
+retaining the existing one-retry policy for HTTP failures. A successful
+primary read adds zero backup requests. `ResVer` must exactly equal the selected current nanoka version;
 all three metadata fields must remain unchanged across the read, and the returned item ID
-must match. An older retained revision, mismatched/unavailable metadata, changed build, invalid
-item or exhausted budget leaves the item deferred. A healthy nanoka detail makes zero Encore
+must match. If neither server passes these checks within the budget, the item stays deferred.
+An older retained revision cannot use either server. A healthy nanoka detail makes zero Encore
 requests. No release endpoint or unqualified API fallback is used.
 
 Character attributes use the published Lv.10 array position; properties use explicit Lv.90
@@ -688,6 +695,15 @@ versions make two publishers' data identical. Metadata bracketing is a best-effo
 check of the mutable current API, not an atomic historical snapshot. Earlier documentation
 classifying Encore as research-only was based on the incomplete OpenAPI export and is superseded
 by this observed beta selector and bounded integration.
+
+The additional asset references were assessed for backups on 2026-10-25. The inspected Lily
+response points to Ciaccona/Xiakong art and Lullaby's icon to weapon `21030056`; the inspected
+`WW_Asset_Webp` folder has no `21030076` icon. Returning HTTP 200 cannot establish correct item
+art. The inspected `ZenlessAssetScrape` index has no beta-marked rows or current `1601`/`1661`
+entries, while `WW_Data`'s published branches/README stop at release 3.7. These sources do not
+currently fill the verified current-beta gap, so no speculative asset lookup, release-data
+fallback or extra polling is added. Encore echo detail has additional nested IDs/set fields
+requiring a separate validated adapter; it is not treated as interchangeable character/weapon data.
 
 What is deliberately **not** done:
 

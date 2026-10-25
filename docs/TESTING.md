@@ -474,6 +474,14 @@ The actual-build regression failed against c54da29 before the adapter was presen
 Suoming fixtures demonstrate readable beta API skills/attributes and all six chain nodes;
 they do not reconstruct their historical beta revisions.
 
+Two secondary-endpoint regressions reuse the shared captured display schema, independently
+compared against both live server responses. They cover unavailable/unreadable/changing primary
+responses recovering through the legacy server with identical payloads and snapshots, healthy
+primary zero-backup traffic, same-server metadata bracketing, wrong versions/IDs, changing builds,
+batch consistency, local/shared request boundaries and durable quiet settlement after reload.
+Both tests failed before the secondary endpoint was implemented. Live API schema/metadata checks
+remain separate from these offline tests; no Discord writes are used.
+
 A synthetic future `4.0.1` lifecycle test starts from live `3.7`, holds stale Encore
 `3.8.1`, retries the same manifest after a matching update, validates the rendered payloads,
 and round-trips settlement through disk to prove repeat runs stay quiet. Released Hsin/Suoming

@@ -588,8 +588,12 @@ direction. Retained text limits and state pruning stay bounded.
 
 WuWa also has a bounded Encore API beta detail fallback for missing/unreadable current-build
 characters and weapons. It uses explicit `?v=Beta`, an exact `ResVer` match and unchanged
-`GameVer`/`ResVer`/`Changelist` before/after the detail read. It consumes up to three calls per
-fallback under existing limits and adds no setting. Healthy nanoka data needs no extra calls.
+`GameVer`/`ResVer`/`Changelist` before/after the detail read. The primary Encore endpoint is
+tried before its official legacy backup; each server attempt reserves three calls under the
+existing limits, at most six logical JSON reads per item, each keeping its existing retry
+policy. An early failure still consumes that attempt's reservation. No setting is added.
+Healthy nanoka data needs no extra calls, and a
+successful primary Encore read never contacts the backup.
 See [the source contract](SOURCES.md#encore-beta-api-fallback-for-wuwa) for historical and media limits.
 
 `BETA_ENABLED` is **off by default**. Disabled, the feature makes **zero** requests and

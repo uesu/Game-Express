@@ -23,7 +23,7 @@ What each endpoint actually serves, and why it was chosen or rejected, is in
 |---|---|---|
 | [nanoka.cc](https://nanoka.cc/) | Ordered build manifest, structured kits and equipment, asset URLs | `BETA_ENABLED=1` |
 | [gachabase.net](https://gachabase.net/) | Beta changelog and source comparison links | `BETA_ENABLED=1` |
-| [Encore / alt3ri](https://encore.moe/) | Matching current WuWa beta character/weapon fallback via `?v=Beta` | Missing/unreadable nanoka detail; same request budget |
+| [Encore / alt3ri](https://encore.moe/) | Matching current WuWa beta character/weapon fallback via `?v=Beta`, primary and official legacy API endpoints | Missing/unreadable nanoka detail; same request budget |
 
 Feature 5 reads these community databases only when an operator opts in:
 

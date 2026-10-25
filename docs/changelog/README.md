@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Gachabase HTML revision discovery](CHANGELOG.md#2026-10-25--gachabase-html-revision-discovery).
+Latest: [Encore secondary beta API backup](CHANGELOG.md#2026-10-25--encore-secondary-beta-api-backup).
+
+Previous: [Gachabase HTML revision discovery](CHANGELOG.md#2026-10-25--gachabase-html-revision-discovery).
 
 Previous: [Future Encore build transition coverage](CHANGELOG.md#2026-10-25--future-encore-build-transition-coverage).
 

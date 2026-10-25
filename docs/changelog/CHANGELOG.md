@@ -1,5 +1,11 @@
 # Changelog — current entries
 
+## 2026-10-25 — Encore secondary beta API backup
+
+- Extend the existing current-build WuWa character/weapon fallback with Encore's documented legacy `https://api.encore.moe/en` server after an unusable primary response. Both endpoints' current beta metadata and normalized Lily/Lullaby output were compared directly.
+- Keep each server's metadata/detail/metadata reads together, exact version/ID and batch checks, and three-call reservation per server inside existing local/shared budgets (at most six Encore calls per item). Healthy nanoka adds no Encore traffic; successful primary Encore adds no backup traffic. Retain prior delivery, snapshots, images, feature isolation, settings and dependencies.
+- Add two offline regressions for recovery parity, invalid/unavailable/changing responses, request bounds and durable settlement. Assess additional asset references without wiring unrelated placeholder artwork or unverified release data into beta cards.
+
 ## 2026-10-25 — Gachabase HTML revision discovery
 
 - Fix a live response-format mismatch: gachabase returns server-rendered HTML to the monitor, while the original parser accepted only Markdown. Read both formats so changed existing IDs are discovered instead of silently falling back to manifest-new IDs.
