@@ -102,7 +102,7 @@ jobs:
     # mistake. A TEST run (mode = test) is still allowed there — it never writes the state.
     # Never set ENABLED_FEATURES=none on the repo that posts.
     if: vars.ENABLED_FEATURES != 'none' || inputs.mode == 'test'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       PYTHONUNBUFFERED: '1'
@@ -144,12 +144,12 @@ jobs:
       - name: Check out (branch HEAD, so a queued run sees the previous run's state)
         # zizmor: ignore[artipacked] — the credentials are the point: the last step pushes
         # state/state.json back to this branch. Nothing is uploaded as an artifact.
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.ref_name }}
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: '3.14.8'
 
