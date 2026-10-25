@@ -352,6 +352,16 @@ renderer timing cases (with per-item galleries); those timings supplement rather
 full feature harness. The default command remains the existing 12-case default-off news benchmark.
 
 
+The variable-beta-page regressions additionally exercise **5, 12 and 21 actual renderer pages**,
+including a failure on page eleven, a disk reload after ten confirmed messages, exact remaining
+page delivery without duplicates, persisted IDs before every send, first-page-only pings and
+settlement only after the final page. Complete-output fixtures validate all four released games
+with more than ten pages, all 24 parameter rows, long equipment text in order, 14 changed skill
+blocks plus a removed block, and all stat/effect changes. Oversized unbroken character/stat/equipment
+text must split without loss, an oversized payload or a loop. Boundaries stay mocked; these checks
+do not certify live Discord playback. See [beta page counts](CONFIGURATION.md#beta-page-counts).
+
+
 
 ### Latest layout corrections: 7,000 eligibility / final-container controls
 
@@ -427,3 +437,58 @@ while keeping definite pre-send connection errors, `429` rate-limit backoff, exp
 No state reset or old-post edits.
 Discord controls thumbnail cropping; neither header measurements, HTML previews
 nor passing offline tests prove live media decoding/readability or delivery.
+
+### Captured live beta equipment and restart regressions
+
+`test_feature5_captured_live_equipment_schemas_render_values_without_tokens` uses
+`tests/fixtures/beta/*_live.json`, captured from the recorded public source URLs on
+2026-10-25. Fixtures retain relevant source fields (large unrelated fields and intermediate
+WuWa levels are omitted). It checks HSR promotion lists and refinement/set parameters,
+Genshin published weapon ATK, WuWa percentage units and missing-parameter labels, and nested
+localized names. These are offline regressions, not proof of live Discord rendering.
+
+`test_feature5_partial_delivery_holds_changed_payload_and_batch_after_restart` reloads a
+real temporary state file after one confirmed page and one failed page. It checks that a
+newer manifest cannot skip the unfinished source build and that changed content or batch
+membership cannot reuse the old page cursor. Peer merge tests also reject conflicting
+payload signatures.
+
+### Bounded snapshot comparison regressions
+
+`test_feature5_long_snapshot_comparison_tracks_full_content_without_false_diffs` exercises
+actual build/settlement and a disk state round-trip: unchanged clipped character/equipment
+text stays quiet, suffix-only changes remain visible, legacy records rebaseline conservatively,
+and rendered payloads remain valid. `test_feature5_replaced_blocks_preserve_surplus_removed_lines`
+covers removal of surplus old stat/equipment lines within a replacement block. Both reproduced
+failures before repair; the existing numeric-direction tests continue to cover complete baselines.
+
+### Encore beta fallback regression coverage
+
+Captured `encore_{hsin,suoming,lily,weapon}_live.json` fixtures retain relevant API fields and
+source URLs/build metadata (2026-10-25). Unused fields are removed; property rows retain only
+Lv.1 and Lv.90. Tests cover actual bounded build fallback for character/weapon, valid payloads,
+Lv.10 array selection, HTML cleanup, chain text, unavailable values, correct beta links and
+provider metadata, healthy primary zero-extra-call behavior, version mismatch, changing build,
+malformed metadata, wrong item identity, older revision rejection and both request ceilings.
+The actual-build regression failed against c54da29 before the adapter was present. Hsin and
+Suoming fixtures demonstrate readable beta API skills/attributes and all six chain nodes;
+they do not reconstruct their historical beta revisions.
+
+Two secondary-endpoint regressions reuse the shared captured display schema, independently
+compared against both live server responses. They cover unavailable/unreadable/changing primary
+responses recovering through the legacy server with identical payloads and snapshots, healthy
+primary zero-backup traffic, same-server metadata bracketing, wrong versions/IDs, changing builds,
+batch consistency, local/shared request boundaries and durable quiet settlement after reload.
+Both tests failed before the secondary endpoint was implemented. Live API schema/metadata checks
+remain separate from these offline tests; no Discord writes are used.
+
+A synthetic future `4.0.1` lifecycle test starts from live `3.7`, holds stale Encore
+`3.8.1`, retries the same manifest after a matching update, validates the rendered payloads,
+and round-trips settlement through disk to prove repeat runs stay quiet. Released Hsin/Suoming
+IDs are not requested when absent from manifest new IDs and retained snapshots. This tests
+version-independent behavior; the fixture reuses Lily's captured kit and is not real 4.0 data.
+
+Gachabase HTML regression: `test_feature5_gachabase_html_revisions_and_changed_existing_ids`
+uses a reduced SSR fixture to cover changed existing IDs, relative links/entities, category and
+diff pairing, script/style exclusion, blank versus explicit quiet revisions, and error pages.
+Public-source smoke checks are separate read-only checks, never part of the offline suite.

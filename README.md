@@ -280,13 +280,20 @@ that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA
 - **What it posts.** The first observed build gives every beta-new character a full kit overview
   — all readable skill text and values, mindscape / constellation / resonance-chain text, plus
   the new weapons, W-Engines, light cones, disc drives, relic sets and echoes. Later builds use
-  the retained full-kit baseline to show only the changed blocks, with an exact **Full kit** and
+  a retained bounded kit baseline to show changed blocks, with an exact **Full kit** and
   **Revision diff** source link per item.
+- **Revision discovery.** Gachabase Markdown and server-rendered HTML both identify changed existing items; unreadable pages warn and fall back to nanoka’s new/retained IDs.
+- **Content-driven pages.** Beta cards can use five pages, ten or more, according to the
+  readable content in each batch; there is no fixed beta page cap. Long equipment effects,
+  character text, parameter rows and revision changes continue in order on validated pages.
+  Only page one pings. Request/item budgets still bound source work across resumable batches.
 - **Actual inline diffs, without guessing.** When an old and new value are both present, the card
   renders the source text intact around an inline diff such as `~~**200%**~~ → **240%**`.
   `[BUFF]` / `[NERF]` are emitted only for a small set of unambiguous mechanics (for example,
   higher damage or lower cooldown); ambiguous, wording-only, renamed and reclassified changes
   stay `[CHANGED]` / `[TEXT FIX]` / `[ADJUSTMENT]`. A cold start never fabricates a baseline.
+  Full-content digests keep unchanged long kits quiet; clipped or legacy baselines use a
+  labelled full snapshot when exact comparison is unavailable.
 - **Hotfix-safe and quiet-safe.** Static `available` builds are walked in order, so a run does
   not jump over a v2/v3 hotfix. If a changelog revision is blank, only already-snapshotted and
   manifest-new IDs are rechecked; an explicit “No tracked changes detected” revision advances
@@ -296,6 +303,10 @@ that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA
   `BETA_MIN_POLL_MINUTES` (default `30`) and `BETA_MAX_CHARACTERS` /
   `BETA_MAX_CHANGES` / `BETA_MAX_EQUIPMENT` / `BETA_MAX_REQUESTS` bound polling, cards and
   requests. Disabled, the feature makes **zero** requests.
+- **WuWa beta fallback.** If nanoka lacks a readable current-build character or weapon,
+  Encore’s `?v=Beta` API can supply it after matching resource-version and stable-build checks.
+  Its official legacy endpoint is a backup if the primary Encore read fails, within the same
+  request budget; [source details](docs/SOURCES.md#encore-beta-api-fallback-for-wuwa).
 - **HNA and ANANTA are excluded** until they ship — `BETA_GAMES` defaults to the four released
   games and `all` resolves to the same four.
 - **It stops on its own.** A verified splash-art URL is locked in state and never re-fetched.
@@ -740,7 +751,7 @@ Historical records are preserved in
   and [eddrit](https://github.com/corenting/eddrit) and every operator who keeps a public instance
   online, [FxEmbed / FxTwitter](https://github.com/FxEmbed/FxEmbed), and
   [BetterTwitFix / vxTwitter](https://github.com/dylanpdx/BetterTwitFix). The full list, with
-  licences and the community databases: **[docs/CREDITS.md](docs/CREDITS.md)**.
+  active beta sources, tools, research references and licences: **[docs/CREDITS.md](docs/CREDITS.md)**.
 - **Special thanks:** **[Arena AI](https://arena.ai/company/about)** ([@arena on X](https://x.com/arena?lang=en))
   for making these engineering additions, upstream audits, and reliability upgrades possible.
 - **Sibling project:** [News-Express](https://github.com/uesu/News-Express) — same design,

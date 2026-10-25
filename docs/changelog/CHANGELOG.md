@@ -1,5 +1,45 @@
 # Changelog — current entries
 
+## 2026-10-25 — Encore secondary beta API backup
+
+- Extend the existing current-build WuWa character/weapon fallback with Encore's documented legacy `https://api.encore.moe/en` server after an unusable primary response. Both endpoints' current beta metadata and normalized Lily/Lullaby output were compared directly.
+- Keep each server's metadata/detail/metadata reads together, exact version/ID and batch checks, and three-call reservation per server inside existing local/shared budgets (at most six Encore calls per item). Healthy nanoka adds no Encore traffic; successful primary Encore adds no backup traffic. Retain prior delivery, snapshots, images, feature isolation, settings and dependencies.
+- Add two offline regressions for recovery parity, invalid/unavailable/changing responses, request bounds and durable settlement. Assess additional asset references without wiring unrelated placeholder artwork or unverified release data into beta cards.
+
+## 2026-10-25 — Gachabase HTML revision discovery
+
+- Fix a live response-format mismatch: gachabase returns server-rendered HTML to the monitor, while the original parser accepted only Markdown. Read both formats so changed existing IDs are discovered instead of silently falling back to manifest-new IDs.
+- Preserve revision order, dates, categories, same-item diff links and explicit quiet markers; ignore scripts/styles, navigation and foreign links. Warn on unreadable changelogs. No extra HTTP calls, dependencies, settings or changes to features 1–4.
+- Add a reduced public-layout fixture and offline regression; recheck live GI/HSR/ZZZ changelogs and nanoka/Encore rendering without Discord writes.
+
+## 2026-10-25 — Future Encore build transition coverage
+
+- Verify a synthetic 4.0 resource-version transition, stale fallback hold, matching retry, valid cards and durable quiet settlement. Clarify that released characters remaining in the Encore beta catalog are not automatically new beta characters. No runtime, configuration or benchmark behavior changed.
+
+## 2026-10-25 — Content-driven beta pages without display truncation
+
+- Support beta batches with five, ten or more pages according to readable content. Split long equipment effects instead of truncating them, render every parameter row and preserve all changed/removed skill, stat and equipment lines. Remove the prior compact-diff display caps; source request/item budgets and bounded snapshot retention remain unchanged.
+- Split oversized whitespace-free text with guaranteed progress, including long character introductions/stat blocks. Continue equipment with labelled headings, retain source links and show each equipment image once. Every page independently validates; pings remain first-page-only.
+- Add offline regressions for 5/12/21-page delivery, failure/restart after ten confirmed pages, durable page IDs, final-only settlement, complete output across all four games and bounded lossless token splitting. Changed partial payload signatures still require reconciliation; no saved IDs are cleared.
+
+## 2026-10-25 — Encore beta API fallback for WuWa
+
+- Correct the earlier research-only assessment: Encore’s frontend/API support explicit `?v=Beta`, omitted from the supplied OpenAPI export. Confirm Hsin and Suoming details plus current beta metadata and capture relevant public API fields for offline tests.
+- Use Encore only for missing/unreadable current nanoka WuWa character/weapon details, with exact resource-version matching, stable metadata before/after, item-ID validation and existing local/shared request bounds. Link fallback items to Encore beta pages, retain provider/build metadata, and suppress cross-provider inline direction. Historical discovery remains nanoka-driven; no new settings or dependencies.
+- Render published Lv.10 skill values, six chain nodes, stat bonuses, explicit Lv.90 properties and labelled weapon refinement values. Retain unavailable-value labels and existing image validation/locking. Document active-source credits and the observed API contract and limits. Earlier dated research conclusions below are historical and superseded by this live verification.
+
+## 2026-10-25 — Truthful bounded beta comparisons and source credits
+
+- Add a full-content digest alongside bounded readable snapshots. Unchanged long descriptions no longer produce false cards; changes beyond the stored text limit produce a labelled full current snapshot. Legacy records without a full digest rebaseline once without invented before/after values.
+- Preserve removed stat/equipment lines when a replacement block has fewer new lines. Add failing-before-fix regressions, including persisted state and payload validation.
+- Restructure credits around active sources, tools and research references; document the confirmed Game/News development and production repository map. Encore remains a research reference because its supplied API contract lacks beta revision history.
+
+## 2026-10-25 — Live beta equipment schemas and restart-safe batches
+
+- Capture current public Light Cone, relic, Genshin weapon and WuWa weapon fields in offline regressions. Handle HSR list-based promotion stats, substitute equipment parameters, normalize source formatting tags and nested localized equipment names, and display WuWa percentage units correctly. Label missing source parameters instead of inventing values.
+- Preserve an unfinished beta source build across manifest advances. Persist a payload signature with page progress; hold changed or legacy unsigned partial payloads and conflicting peer signatures for operator reconciliation. A changed candidate batch or newly quiet source cannot silently bypass a partial delivery.
+- Existing default-off routing, five-second page pacing, image preflight, and schedule/codes/news/maintenance behavior remain covered by the repository suites. Live source reads are separate from offline fixture evidence; no Discord posting is part of these checks.
+
 ## 2026-10-25 — Enabled-beta full-pipeline harness and safe multi-page hand-off
 
 - **Full enabled-feature harness (`gamexpress/beta_harness.py`, `gamexpress/__main__.py`, `tests/test_smoke.py`):** replace the earlier renderer-only interpretation of `python -m gamexpress benchmark --beta-enabled` with a deterministic **actual `BETA_ENABLED=1` monitor pass**. It covers all released beta games (GI, HSR, ZZZ and WuWa) through manifest/changelog or manifest fallback discovery, each namespace parser, character + weapon + relic/echo baselines, image preflight, Components V2 validation, webhook delivery, state settlement, retained revisions, deduplication and an explicit quiet revision. The JSON report separates this semantic evidence in `beta_enabled_fixture.pipeline` from the eight supplemental renderer microbenchmark rows in `render_microbenchmarks`.

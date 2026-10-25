@@ -581,6 +581,21 @@ relic sets / echo sets on first observation, then compact source-backed revision
 later builds. It retains the prior readable kit in bounded state, so a later change can show
 `~~old~~ → **new**` inline rather than re-posting an entire kit.
 
+Full-content digests suppress unchanged long kits even when retained text is clipped.
+If changed content exceeds retained limits, or a legacy snapshot lacks a full-content digest,
+the next inspected revision uses a labelled full `[CHANGED]` snapshot without invented inline
+direction. Retained text limits and state pruning stay bounded.
+
+WuWa also has a bounded Encore API beta detail fallback for missing/unreadable current-build
+characters and weapons. It uses explicit `?v=Beta`, an exact `ResVer` match and unchanged
+`GameVer`/`ResVer`/`Changelist` before/after the detail read. The primary Encore endpoint is
+tried before its official legacy backup; each server attempt reserves three calls under the
+existing limits, at most six logical JSON reads per item, each keeping its existing retry
+policy. An early failure still consumes that attempt's reservation. No setting is added.
+Healthy nanoka data needs no extra calls, and a
+successful primary Encore read never contacts the backup.
+See [the source contract](SOURCES.md#encore-beta-api-fallback-for-wuwa) for historical and media limits.
+
 `BETA_ENABLED` is **off by default**. Disabled, the feature makes **zero** requests and
 adds nothing to `state/state.json`. It never posts to a schedule or codes channel:
 routing is dedicated (`DISCORD_WEBHOOK_BETA_<GAME>` > `DISCORD_WEBHOOK_BETA` >
@@ -687,3 +702,29 @@ webhook-versus-bot latency benchmark was performed.
 References: [1](https://docs.discord.com/developers/topics/rate-limits),
 [5](https://github.com/discord/discord-api-docs/blob/main/developers/topics/rate-limits.mdx),
 [10](https://discord.com/developers/docs/resources/webhook).
+
+### Beta page counts
+
+Beta page count follows readable content, with no fixed five- or ten-page maximum. Character
+text, equipment effects, all published parameter rows and all changed/removed blocks continue
+across as many validated Components V2 messages as needed. Every message stays within the
+4,000-character / 40-component limits, with a `Page n/N` footer and first-page-only ping.
+`BETA_MAX_CHARACTERS`, `BETA_MAX_CHANGES` and `BETA_MAX_EQUIPMENT` limit items fetched per
+batch, not pages or skill changes within an item. Request budgets and bounded snapshot storage
+remain unchanged. Incomplete prior snapshots still yield labelled full current kits.
+
+A successful page's ID is saved before the five-second gap to the next page. A confirmed failure
+after page ten resumes at page eleven; snapshots and the revision cursor settle only after the
+entire batch succeeds. Ambiguous POSTs hold for reconciliation. Larger cards need more Discord
+requests and pacing time; no live throughput guarantee is implied. Upgrading the renderer during
+an existing partial delivery can change its payload signature and trigger the same reconciliation
+hold described below; preserve the saved message IDs.
+
+### Beta partial-delivery reconciliation
+
+A beta batch stores its exact payload signature and source version with confirmed page IDs.
+On restart, finish that source version before newer manifest builds. If content, media,
+settings or batch membership changes after a page was confirmed, delivery holds for operator
+reconciliation. Legacy partial batches without a signature also hold; do not clear their
+message IDs automatically. Inspect the actual Discord messages and retained source build
+before repairing state. Quiet source output cannot settle an unfinished delivery.

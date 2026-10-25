@@ -932,7 +932,7 @@ BETA_RESOURCE_LINKS = {
     "genshin": "Resource: [gachabase](https://gi.gachabase.net/changelog/beta?lang=en) / [nanoka](https://gi.nanoka.cc/diff)",
     "starrail": "Resource: [gachabase](https://hsr.gachabase.net/changelog/beta?lang=en) / [nanoka](https://hsr.nanoka.cc/diff)",
     "zzz": "Resource: [gachabase](https://zzz.gachabase.net/changelog/beta?lang=en) / [nanoka](https://zzz.nanoka.cc/diff)",
-    "wuwa": "Resource: [nanoka](https://ww.nanoka.cc/diff) / [database](https://ww.nanoka.cc/)",
+    "wuwa": "Resource: [nanoka](https://ww.nanoka.cc/diff) / [Encore beta](https://encore.moe/new?v=Beta)",
 }
 BETA_NEW_CHAR_HEADERS = {
     "zzz": "### ✦ New Agents",
@@ -973,7 +973,7 @@ def _format_beta_skill_entry(entry: Any, include_cat_header: bool) -> str:
     params = [p for p in (getattr(entry, "params", ()) or ()) if isinstance(p, dict)]
     missing = []
     lower_lines = "\n".join(rendered_lines).lower()
-    for param in params[:10]:
+    for param in params:
         name = strip_invisible(str(param.get("name") or "")).strip()
         value = strip_invisible(str(param.get("text") or "")).strip()
         if not name or not value:
@@ -1001,44 +1001,32 @@ def _beta_entry_sources(item: Any) -> str:
 
 
 def _split_beta_block(block: str, max_chars: int) -> list[str]:
+    """Split at line/word boundaries, hard-splitting an oversized token to ensure progress."""
+    if max_chars < 1:
+        raise ValueError("beta text capacity must be positive")
     if len(block) <= max_chars:
         return [block]
-    lines = block.split("\n")
     chunks: list[str] = []
     cur = ""
-    for ln in lines:
-        if len(ln) > max_chars:
-            words = ln.split(" ")
-            wbuf = ""
-            for w in words:
-                cand = f"{wbuf} {w}".strip() if wbuf else w
-                if len(cand) <= max_chars - 4:
-                    wbuf = cand
-                else:
-                    if wbuf:
-                        if cur:
-                            chunks.append(cur)
-                            cur = ""
-                        chunks.append(wbuf)
-                    wbuf = f"> {w}" if ln.startswith(">") else w
-            if wbuf:
-                if cur and len(cur) + 1 + len(wbuf) <= max_chars:
-                    cur = f"{cur}\n{wbuf}"
-                else:
-                    if cur:
-                        chunks.append(cur)
-                    cur = wbuf
-            continue
-        cand = f"{cur}\n{ln}" if cur else ln
-        if len(cand) <= max_chars:
-            cur = cand
-        else:
+    for line in block.split("\n"):
+        while len(line) > max_chars:
             if cur:
                 chunks.append(cur)
-            cur = ln
+                cur = ""
+            cut = line.rfind(" ", 1, max_chars + 1)
+            if cut < 1:
+                cut = max_chars
+            chunks.append(line[:cut])
+            line = line[cut:].lstrip(" ")
+        candidate = f"{cur}\n{line}" if cur else line
+        if len(candidate) > max_chars:
+            chunks.append(cur)
+            cur = line
+        else:
+            cur = candidate
     if cur:
         chunks.append(cur)
-    return chunks or [truncate(block, max_chars)]
+    return chunks
 
 
 def beta_payloads_with_map(
@@ -1128,7 +1116,7 @@ def beta_payloads_with_map(
 
         first_container_for_char = True
         cont_idx = 0
-        pending_blocks = list(blocks)
+        pending_blocks = [intro_str, *blocks]
 
         while first_container_for_char or pending_blocks:
             kids: list[dict] = []
@@ -1143,31 +1131,31 @@ def beta_payloads_with_map(
                 img_url = safe_url(getattr(char, "image_url", None))
                 if img_url:
                     kids.append(gallery([img_url]))
-                cur_body = intro_str
+                cur_body = ""
                 first_container_for_char = False
             else:
                 cont_idx += 1
                 suffix = "*(cont.)*" if cont_idx == 1 else f"*(cont. {cont_idx})*"
-                cur_body = f"## **{char_name}** {suffix}"
+                cur_body = f"## **{truncate(char_name, 240)}** {suffix}"
 
             max_body = MAX_TEXT_TOTAL - used_chars - 24
-            expanded_pending: list[str] = []
-            for blk in pending_blocks:
-                expanded_pending.extend(_split_beta_block(blk, max(400, max_body - len(cur_body) - 8)))
-            pending_blocks = expanded_pending
-
+            page_heading = cur_body
             while pending_blocks:
                 nxt = pending_blocks[0]
                 cand = f"{cur_body}\n\n{nxt}" if cur_body else nxt
                 if len(cand) <= max_body:
                     cur_body = cand
                     pending_blocks.pop(0)
+                elif (cur_body == page_heading
+                      or max_body - len(cur_body) - 2 >= 400):
+                    # Fill available space without re-splitting every pending block on each
+                    # page. Each iteration consumes text, including whitespace-free source data.
+                    room = max_body - len(cur_body) - (2 if cur_body else 0)
+                    pieces = _split_beta_block(nxt, room)
+                    cur_body = f"{cur_body}\n\n{pieces[0]}" if cur_body else pieces[0]
+                    pending_blocks = pieces[1:] + pending_blocks[1:]
+                    break
                 else:
-                    if cur_body in (intro_str, f"## **{char_name}** *(cont.)*", f"## **{char_name}** *(cont. {cont_idx})*"):
-                        sub_pieces = _split_beta_block(nxt, max(200, max_body - len(cur_body) - 4))
-                        if len(sub_pieces) > 1:
-                            pending_blocks = sub_pieces + pending_blocks[1:]
-                            continue
                     break
 
             kids.append(text(cur_body))
@@ -1214,36 +1202,31 @@ def beta_payloads_with_map(
                 eq_parts.append(f"-# {eq_sources}")
             eq_text_str = "\n".join(eq_parts)
 
-            max_eq_chars = MAX_TEXT_TOTAL - footer_reserve - 24
-            if len(eq_text_str) > max_eq_chars:
-                eq_text_str = truncate(eq_text_str, max_eq_chars)
-
-            add_comps = (2 if eq_img else 1)
-            cur_comps = count_components(kids)
-            if kids and (used_chars + len(eq_text_str) + 4 > MAX_TEXT_TOTAL - 16 or cur_comps + add_comps > MAX_COMPONENTS - 4):
-                raw_containers.append(kids)
-                cont_head = f"### {eq_cat} *(cont.)*" if not include_cat else ""
-                if cont_head:
-                    eq_text_str = f"{cont_head}\n{eq_text_str}"
-                kids = []
-                used_chars = footer_reserve
-
-            if eq_img:
-                kids.append(gallery([eq_img]))
-                kids.append(text(eq_text_str))
-                used_chars += len(eq_text_str)
-            else:
-                if kids and kids[-1].get("type") == 10 and kids[-1].get("content") != patch_header_str:
-                    merged = kids[-1]["content"] + "\n\n" + eq_text_str
-                    if len(merged) + used_chars - len(kids[-1]["content"]) <= MAX_TEXT_TOTAL - 16:
-                        used_chars += 2 + len(eq_text_str)
-                        kids[-1] = text(merged)
-                    else:
-                        kids.append(text(eq_text_str))
-                        used_chars += len(eq_text_str)
+            # Keep ordinary equipment compact; long effects continue instead of being clipped.
+            continuation = f"### {truncate(eq_cat, 120)} *(cont.)*\n**{truncate(eq_name, 240)}** *(cont.)*\n"
+            max_eq_chars = MAX_TEXT_TOTAL - footer_reserve - 24 - len(continuation)
+            pieces = _split_beta_block(eq_text_str, max_eq_chars)
+            for piece_idx, piece in enumerate(pieces):
+                piece_image = eq_img if piece_idx == 0 else None
+                if piece_idx:
+                    piece = continuation + piece
+                add_comps = 2 if piece_image else 1
+                if kids and (used_chars + len(piece) + 4 > MAX_TEXT_TOTAL - 16
+                             or count_components(kids) + add_comps > MAX_COMPONENTS - 4):
+                    raw_containers.append(kids)
+                    kids = []
+                    used_chars = footer_reserve
+                    if not piece_idx and not include_cat:
+                        piece = f"### {truncate(eq_cat, 120)} *(cont.)*\n{piece}"
+                if piece_image:
+                    kids.append(gallery([piece_image]))
+                if (not piece_image and kids and kids[-1].get("type") == 10
+                        and kids[-1].get("content") != patch_header_str):
+                    kids[-1] = text(kids[-1]["content"] + "\n\n" + piece)
+                    used_chars += 2 + len(piece)
                 else:
-                    kids.append(text(eq_text_str))
-                    used_chars += len(eq_text_str)
+                    kids.append(text(piece))
+                    used_chars += len(piece)
 
         if kids:
             raw_containers.append(kids)

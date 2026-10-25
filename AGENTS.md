@@ -49,7 +49,7 @@ behaviours are deliberate (and must not be "fixed"), how to verify a change, and
 already cost a broken run. `README.md` is the user-facing manual and `docs/` is its reference
 material; this file is the maintainer's mental model.
 
-Last updated **2026-10-24**.
+Last updated **2026-10-25**.
 
 ---
 
@@ -591,3 +591,49 @@ Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
   `- {"hna", "ananta"}` subtraction in `load_settings`).
 - **Tests stay offline.** New parsers get a fixture under `tests/fixtures/beta/`; nothing in the
   suite may touch the network.
+
+### Beta output completeness
+
+Beta has no fixed page cap. Preserve all readable kit/equipment text, parameter rows and
+changed/removed blocks across validated pages; do not reintroduce per-item display truncation.
+Source/item budgets and bounded retained snapshots remain separate. First-page-only pings,
+five-second inter-page pacing, durable IDs and final-batch settlement apply beyond page ten.
+Renderer changes can hold signed partial batches for reconciliation; never clear their IDs.
+
+### Beta partial-delivery reconciliation
+
+A beta batch stores its exact payload signature and source version with confirmed page IDs.
+On restart, finish that source version before newer manifest builds. If content, media,
+settings or batch membership changes after a page was confirmed, delivery holds for operator
+reconciliation. Legacy partial batches without a signature also hold; do not clear their
+message IDs automatically. Inspect the actual Discord messages and retained source build
+before repairing state. Quiet source output cannot settle an unfinished delivery.
+
+### Bounded beta comparison
+
+Full-content digests suppress unchanged long kits even when retained text is clipped.
+If changed content exceeds retained limits, or a legacy snapshot lacks a full-content digest,
+the next inspected revision uses a labelled full `[CHANGED]` snapshot without invented inline
+direction. Retained text limits and state pruning stay bounded.
+Do not compare clipped prior text with full new text as an exact diff.
+
+### Encore current-beta detail fallback
+
+Encore supports beta through `?v=Beta` (verified live frontend/API; absent from its supplied
+OpenAPI export). For WuWa only, missing/unreadable current nanoka character/weapon detail may
+use the API with exact `ResVer` matching and identical GameVer/ResVer/Changelist before/after.
+Try the primary `api-v2.encore.moe/api/en` before the official legacy `api.encore.moe/en`.
+Reserve three `get_json` calls per server attempt inside local/shared budgets (at most six
+per item, each retaining its existing network retry policy). Each server must bracket its
+own detail read; never mix metadata between servers.
+Do not emit a deferred-build warning if the backup succeeds. Never use the mutable current beta for
+an older manifest build, use release data, or invent an Encore historical cursor. Retain provider
+metadata and avoid cross-provider inline diffs. Disabled and healthy primary paths add zero
+Encore requests. See docs/SOURCES.md for the observed contract and limitations.
+
+### Gachabase response formats
+
+Accept Markdown and server-rendered HTML changelogs. HTML revision headings and item/diff links
+must preserve source order and categories; ignore scripts/styles/navigation and foreign links.
+An unreadable response warns and uses the existing safe manifest fallback; never call it an
+explicit quiet revision. Do not add requests or dependencies just to convert HTML to Markdown.

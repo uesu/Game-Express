@@ -404,7 +404,7 @@ page fetcher, and so were the ennead calendars. The production reachability of t
 | DuolaD/HoYo_Versioncatcher | launcher-data repo; led us to the HoYoPlay launcher endpoints |
 | TwintailTeam/game-manifests · TomyJan/GenshinImpact-Client-Version | launcher-manifest repos documenting Kuro's `G153` global launcher index and `background/{hash}/en.json` schemas (`sources/kuro.py`) |
 | genshin.dev | character/game data API, not schedules or codes |
-| gachabase.net · nanoka.cc · sr.yatta.moe · lunaris.moe · ambr.top | databases, listed in [CREDITS.md](CREDITS.md#community-databases--resources). No public schedule/banner API was verified, so **banner names come from official notices, `Kitsudock-data` (`hub.json`), the `api.ennead.cc` calendars, the Fandom wikis, or `config/overrides.json`** |
+| gachabase.net · nanoka.cc · sr.yatta.moe · lunaris.moe · ambr.top | databases, listed in [CREDITS.md](CREDITS.md#community-databases-and-research). No public schedule/banner API was verified, so **banner names come from official notices, `Kitsudock-data` (`hub.json`), the `api.ennead.cc` calendars, the Fandom wikis, or `config/overrides.json`** |
 
 ## Reddit & Redlib fleet (2026-10-22)
 
@@ -615,16 +615,18 @@ endpoints and existing caches only (never headless browsers or HTML scraping):
 
 ## Beta kit & revision-diff sources (2026-10-24)
 
-Feature 5 (`BETA_ENABLED=1`) reads **only** structured JSON/markdown from community
-databases that publish beta revisions. No HTML scraping, no headless browser, no
-authentication, and no endpoint that is not already public. Verified 2026-10-24; the
+Feature 5 (`BETA_ENABLED=1`) reads structured JSON plus Markdown or server-rendered changelog HTML from community
+databases that publish beta revisions. The 2026-10-25 response-format repair replaces the
+earlier no-HTML-parsing assumption: public changelog headings/cards are parsed with the
+standard-library HTML parser. No headless browser, authentication or additional endpoint is
+needed. Verified 2026-10-24; the
 blank-heading / hotfix behavior and Sunbringer `19850203` source-link shape were rechecked
 2026-10-25.
 
 | Purpose | Endpoint | Shape |
 |---|---|---|
 | Revision probe | `https://static.nanoka.cc/manifest.json` | ~1 KiB. Per game: `latest`, ordered `available`, `live`, and `new` → `character` / `weapon` / `lightcone` / `relicset` / `equipment` / `echo` ids. The runner walks retained builds in order, so an observed beta hotfix is not skipped |
-| Revision contents | `https://zzz.gachabase.net/changelog/beta?lang=en` (also `gi.` / `hsr.`) | Markdown. `## vX.Y.Z Rev. N \| <date>` headings, `### Agents` / `### W-Engines` / `### Drive Discs` sections, then one `[![img]name](detail) [See Changes](diff)` entry per touched item. An explicit `No tracked changes detected` heading is a silent cursor advance; an otherwise blank heading only probes prior snapshots plus manifest-new ids |
+| Revision contents | `https://zzz.gachabase.net/changelog/beta?lang=en` (also `gi.` / `hsr.`) | Markdown or server-rendered HTML (`h2` revision headings, `h3` categories, item/diff links); scripts are ignored and relative links resolve only to the configured source origin. Markdown: `## vX.Y.Z Rev. N \| <date>` headings, `### Agents` / `### W-Engines` / `### Drive Discs` sections, then one `[![img]name](detail) [See Changes](diff)` entry per touched item. An explicit `No tracked changes detected` heading is a silent cursor advance; an otherwise blank heading only probes prior snapshots plus manifest-new ids |
 | Before/after diff | `https://zzz.gachabase.net/diff/agents/1601/sunbringer?prev=beta_3.4.1_19842923&cur=beta_3.4.1_19850203&lang=en` | Linked from a changelog entry or deterministically surfaced from a retained before/after build; it is **not fetched** by the monitor — readable structured JSON snapshots create the card's inline diff |
 | Character kit | `https://static.nanoka.cc/<game>/<revision>/en/character/<id>.json` | One bounded GET per newly revealed or already-snapshotted candidate. `<game>` ∈ `gi` / `hsr` / `zzz` / `ww`; `<revision>` is the selected manifest build (e.g. `3.4.1+19850203`) |
 | Weapon / W-Engine / light cone | `https://static.nanoka.cc/<game>/<revision>/en/{weapon,lightcone}/<id>.json` | Stats + refinement effect text |
@@ -648,13 +650,60 @@ also keeps that manifest id explicitly rather than reparsing it from the human-f
 `ww.nanoka.cc/character/<id>/`, `weapon/<id>/` or `relic/<id>/` URL; this keeps new WuWa
 characters, weapons and echoes on the same bounded detail/delivery path as the other games.
 
-The supplied **encore.moe API v2** OpenAPI reference was re-reviewed on 2026-10-25. It documents
-current `/{lang}/character`, `weapon`, `echo` and `/new` resources (the latter exposes
-`GameVer`, `ResVer` and `Changelist` fields), but does not document whether a record is beta,
-an ordered historical build list, a stable beta revision cursor, or item-level before/after data.
-It is therefore **not polled** for feature 5: using it as a revision source could confuse a live
-update with a beta build or invent a hotfix diff. The existing ordered nanoka manifest remains the
-bounded WuWa discovery source until Encore documents an equivalent beta/revision contract.
+### Encore beta API fallback for WuWa
+
+Encore **does expose beta data**. The supplied OpenAPI export omits the `v` selector;
+inspection of the live site's frontend and API on 2026-10-25 confirmed:
+
+- `https://api-v2.encore.moe/api/en/new?v=Beta` returns `GameVer`, `ResVer` and
+  `Changelist`, followed by new-content IDs.
+- `.../character/<id>?ver=latest&v=Beta` returns character skills, level values, stat
+  bonuses, resonance chains and properties; `.../weapon/<id>?ver=latest&v=Beta` returns
+  weapon effects/refinement values and properties. Hsin (`1311`) and Suoming (`1312`)
+  were confirmed in the beta character list and detail responses. Both are released characters;
+  presence in that full catalog does not make them new beta announcements. The inspected current
+  beta metadata was `3.8.0` / `3.8.1` / `9162983`; this is observation evidence, not a fixed
+  value in code.
+
+Feature 5 uses this API **only as a missing/unreadable character or weapon detail fallback**
+for the manifest's current WuWa build. Nanoka still selects ordered revisions and IDs.
+Try `https://api-v2.encore.moe/api/en` first, then the documented official legacy server
+`https://api.encore.moe/en` if the primary read is unusable. The legacy path has no `/api` prefix.
+Both were verified with matching beta metadata and identical normalized Lily/Lullaby display
+fields on 2026-10-25; this adds endpoint redundancy within Encore, not an independent data authority.
+Each server attempt reserves three calls in both existing request limits: beta metadata, detail,
+then beta metadata again, all on that same server. Even an early failure consumes its full
+reservation; both attempts together permit at most six `get_json` calls per item, each
+retaining the existing one-retry policy for HTTP failures. A successful
+primary read adds zero backup requests. `ResVer` must exactly equal the selected current nanoka version;
+all three metadata fields must remain unchanged across the read, and the returned item ID
+must match. If neither server passes these checks within the budget, the item stays deferred.
+An older retained revision cannot use either server. A healthy nanoka detail makes zero Encore
+requests. No release endpoint or unqualified API fallback is used.
+
+Character attributes use the published Lv.10 array position; properties use explicit Lv.90
+rows only. Weapon effects retain the API's refinement 1–5 values and label them accordingly.
+Unpublished parameters remain marked unavailable. HTML is converted to readable text. Each
+fallback item links to its Encore beta page and retains provider/build metadata in its bounded
+snapshot. A provider switch produces a full labelled snapshot rather than a misleading diff
+between different schemas. Media still uses the existing verified/locked path; Encore's raw
+asset paths are not guessed into splash-art URLs.
+
+This complements the nanoka timeline. It does not independently poll every Encore changelist,
+reconstruct historical Encore builds, provide an echo fallback, or claim that matching resource
+versions make two publishers' data identical. Metadata bracketing is a best-effort consistency
+check of the mutable current API, not an atomic historical snapshot. Earlier documentation
+classifying Encore as research-only was based on the incomplete OpenAPI export and is superseded
+by this observed beta selector and bounded integration.
+
+The additional asset references were assessed for backups on 2026-10-25. The inspected Lily
+response points to Ciaccona/Xiakong art and Lullaby's icon to weapon `21030056`; the inspected
+`WW_Asset_Webp` folder has no `21030076` icon. Returning HTTP 200 cannot establish correct item
+art. The inspected `ZenlessAssetScrape` index has no beta-marked rows or current `1601`/`1661`
+entries, while `WW_Data`'s published branches/README stop at release 3.7. These sources do not
+currently fill the verified current-beta gap, so no speculative asset lookup, release-data
+fallback or extra polling is added. Encore echo detail has additional nested IDs/set fields
+requiring a separate validated adapter; it is not treated as interchangeable character/weapon data.
 
 What is deliberately **not** done:
 

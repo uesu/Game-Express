@@ -1,5 +1,19 @@
 # Changelog
 
+Latest: [Encore secondary beta API backup](CHANGELOG.md#2026-10-25--encore-secondary-beta-api-backup).
+
+Previous: [Gachabase HTML revision discovery](CHANGELOG.md#2026-10-25--gachabase-html-revision-discovery).
+
+Previous: [Future Encore build transition coverage](CHANGELOG.md#2026-10-25--future-encore-build-transition-coverage).
+
+Previous: [Content-driven beta pages without display truncation](CHANGELOG.md#2026-10-25--content-driven-beta-pages-without-display-truncation).
+
+Previous: [Encore beta API fallback for WuWa](CHANGELOG.md#2026-10-25--encore-beta-api-fallback-for-wuwa).
+
+Previous: [Truthful bounded beta comparisons and source credits](CHANGELOG.md#2026-10-25--truthful-bounded-beta-comparisons-and-source-credits).
+
+Previous: [Live beta equipment schemas and restart-safe batches](CHANGELOG.md#2026-10-25--live-beta-equipment-schemas-and-restart-safe-batches).
+
 Every Game-Express change, newest first. The log used to live at the bottom of the project
 README; it now lives here so the README can stay a manual instead of a history book.
 
