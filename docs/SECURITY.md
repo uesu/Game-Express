@@ -38,7 +38,9 @@ enforced in `cards.link_button()` and `cards.validate_payload()` alongside non-e
 Action Row validation, and direct media preflight/dimension checks allowlist only verified
 official publisher CDNs (`hoyoverse.com`, `hoyolab.com`, `mihoyo.com`, `kurogame.com`,
 `kurogames.com`, `aki-game.net`, `aki-game.com`, `easebar.com`, `anantagame.com`, `netease.com`,
-`163.com`) plus X/Reddit media hosts where applicable. That blocks the concrete attacks:
+`163.com`) plus X/Reddit media hosts where applicable, and the two beta-database hosts
+(`nanoka.cc`, `gachabase.net`) that feature 5 (`BETA_ENABLED`) reads from. That blocks the
+concrete attacks:
 
 * `javascript:` / `data:` or an oversized (`>512`-char) URL in a link button would make Discord
   reject the **whole message** (`HTTP 400 Invalid Form Body`), so one poisoned or bloated link

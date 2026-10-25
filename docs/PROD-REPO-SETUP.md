@@ -1,20 +1,25 @@
-# Splitting Game-Express into development and a separate production repository
+# Development and production repository setup
 
-Target shape:
+## Current repository map
 
-| Repo | Visibility | Runs the monitor? | Holds |
-|---|---|---|---|
-| `uesu/Game-Express` | maintainer choice | no live scheduler | everything: code, tests, docs, CI, Dependabot |
-| `uesu/<random-name>` | **public** | **yes**, every 5 min | whole runtime package + config/state/workflow + 2 policy files |
+Owner-confirmed on 2026-10-25. Changes are developed and reviewed on `main` in the
+named development repositories, then delivered through their existing sync processes.
 
----
+| Development repository | Production repository | Purpose |
+|---|---|---|
+| [uesu/Game-Express](https://github.com/uesu/Game-Express) | [uesu/8mqzv4k2n7c](https://github.com/uesu/8mqzv4k2n7c) | Game monitor |
+| [uesu/News-Express](https://github.com/uesu/News-Express) | [uesu/7jkxmy9nvbc](https://github.com/uesu/7jkxmy9nvbc) | Reddit monitor |
+| [uesu/News-Express](https://github.com/uesu/News-Express) | [uesu/wvkhabh2s22](https://github.com/uesu/wvkhabh2s22) | Twitter monitor |
 
-## The family model this follows
+This guide describes setup and later synchronization; it does not assert that production
+secrets, scheduler settings or deployments have been verified by local tests. Game-Express's
+sync workflow targets its own production repository. News-Express deployments belong to that
+sibling project's workflow. PR acceptance does not authorize a merge or production update.
 
-After the split, **`Game-Express` stops being a bot and becomes a development repository** —
-the place changes are written, reviewed and tested. It never posts again. That is exactly the
-arrangement `News-Express` already has: development lives in the named repo, and the live bots
-run from separate obscure production repos (currently two of them, for Twitter and for Reddit).
+## The family model
+
+The named repositories hold development code, tests and documentation. Production runs in the
+separate repositories listed above.
 
 What that means in practice:
 
@@ -213,8 +218,8 @@ cp -r --parents \
   /tmp/prod/
 
 find /tmp/prod -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
-find /tmp/prod -type f | wc -l     # expect 41 (39 runtime + 2 policy files)
-                                  # 43 if you also copied the two python-bump files
+find /tmp/prod -type f | wc -l     # expect 43 (41 runtime + 2 policy files)
+                                  # 45 if you also copied the two python-bump files
 ```
 
 **Don't trust that number on its own — verify the package instead.** The count goes stale the

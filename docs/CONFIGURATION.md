@@ -573,6 +573,111 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
   - *Check cadence:* evaluated at most once per scheduled `maintenance.run(ctx)` execution (existing 5-minute poll schedule — no in-run loops), memoized per run (`verified_cache`) so each distinct URL is checked at most once per poll (`0` HTTP checks on already-expired `auth_key=` timestamps), and skipping `hoyoplay_basic_info` completely when `cur_tier == 1` is healthy and no authoritative timestamp upgrade applies.
   - *Separate succeeded-edit cap (`MAX_LATE_EDITS = 6`):* tracked monotonically in `entry["edit_count"]` (never reset), capping total succeeded silent `PATCH` edits per posted milestone across upgrades, renewals, and fallbacks.
 
+## Beta kit & revision-diff cards (feature 5 — explicit opt-in; default off)
+
+The fifth feature publishes a game's **beta** revision: a full kit overview for each
+newly revealed character and new weapons / W-Engines / light cones / disc drives /
+relic sets / echo sets on first observation, then compact source-backed revision diffs for
+later builds. It retains the prior readable kit in bounded state, so a later change can show
+`~~old~~ → **new**` inline rather than re-posting an entire kit.
+
+Full-content digests suppress unchanged long kits even when retained text is clipped.
+If changed content exceeds retained limits, or a legacy snapshot lacks a full-content digest,
+the next inspected revision uses a labelled full `[CHANGED]` snapshot without invented inline
+direction. Retained text limits and state pruning stay bounded.
+
+WuWa also has a bounded Encore API beta detail fallback for missing/unreadable current-build
+characters and weapons. It uses explicit `?v=Beta`, an exact `ResVer` match and unchanged
+`GameVer`/`ResVer`/`Changelist` before/after the detail read. The primary Encore endpoint is
+tried before its official legacy backup; each server attempt reserves three calls under the
+existing limits, at most six logical JSON reads per item, each keeping its existing retry
+policy. An early failure still consumes that attempt's reservation. No setting is added.
+Healthy nanoka data needs no extra calls, and a
+successful primary Encore read never contacts the backup.
+See [the source contract](SOURCES.md#encore-beta-api-fallback-for-wuwa) for historical and media limits.
+
+`BETA_ENABLED` is **off by default**. Disabled, the feature makes **zero** requests and
+adds nothing to `state/state.json`. It never posts to a schedule or codes channel:
+routing is dedicated (`DISCORD_WEBHOOK_BETA_<GAME>` > `DISCORD_WEBHOOK_BETA` >
+`DISCORD_WEBHOOK_NEWS_<GAME>`), with no catch-all, mirror or `FORCE_WEBHOOK` fallback.
+
+| Setting | Kind | Default | Meaning |
+|---|---|---|---|
+| `BETA_ENABLED` | Variable | `0` | Master switch; disabled unless explicitly truthy (and overridden by `ENABLED_FEATURES=none/off/standby/0`) |
+| `BETA_GAMES` | Variable | `genshin,starrail,zzz,wuwa` | Game allow-list. `all` resolves to the same four — **Honkai: Nexus Anima and ANANTA are excluded until they ship**; `none` switches it off |
+| `DISCORD_WEBHOOK_BETA_<GAME>` | Secret | *(unset)* | Dedicated per-game channel (`GENSHIN`, `STARRAIL`, `ZZZ`, `WUWA` + short aliases `GI`, `HSR`, `WW`) |
+| `DISCORD_WEBHOOK_BETA` | Secret | *(unset)* | Shared beta channel for any opted-in game without its own secret |
+| `DISCORD_WEBHOOK_NEWS_<GAME>` | Secret | *(unset)* | Last resort: that game's existing news channel (e.g. `zzz-news`). Never the schedule/codes catch-all |
+| `PING_BETA_<GAME>` / `PING_BETA` | Variable | *(unset = silent)* | Role ping on the **first page only**. `PING_ROLE_ID` is deliberately **not** inherited |
+| `BETA_MIN_POLL_MINUTES` | Variable | `30` | Minimum interval between changelog re-checks (`0` = every run). A quiet beta costs one manifest GET |
+| `BETA_MAX_CHARACTERS` | Variable | `4` | New-character cards in one bounded batch; remaining items resume next run |
+| `BETA_MAX_CHANGES` | Variable | `8` | Existing-character revision cards in one bounded batch (`0` intentionally suppresses them) |
+| `BETA_MAX_EQUIPMENT` | Variable | `12` | Weapons / W-Engines / light cones / disc drives / relics / echoes in one bounded batch |
+| `BETA_MAX_REQUESTS` | Variable | `48` | Hard HTTP ceiling for the whole feature in one run; uninspected items remain pending |
+
+Where the data comes from (`gamexpress/beta.py`, see [SOURCES.md](SOURCES.md#beta-kit--revision-diff-sources-2026-10-24)):
+
+- **`https://static.nanoka.cc/manifest.json`** — one small JSON naming each game's `latest`,
+  ordered `available` data builds, and ids that are new in the current beta. The runner walks
+  one retained build at a time rather than silently jumping past a hotfix. Its internally generated
+  fallback retains that exact numeric id instead of reparsing a public URL, which keeps WuWa's
+  singular `character` / `weapon` / `relic` paths deliverable alongside the other games.
+- **the game's beta changelog** — `https://<game>.gachabase.net/changelog/beta?lang=en`
+  for GI / HSR / ZZZ; its matching revision supplies item/diff links. If a hotfix heading has
+  no listed entries, the runner probes only manifest-new and already-snapshotted ids; it does
+  **not** fan out across every character. Wuthering Waves has no structured changelog endpoint,
+  so it remains manifest-driven; its `ww.nanoka.cc/diff` URL is a human resource link, never a
+  poll target.
+- **`https://static.nanoka.cc/<game>/<revision>/en/<kind>/<id>.json`** — the kit / weapon /
+  set detail. The latest successful full snapshot becomes the next revision's baseline; all
+  detail reads, including bounded resume batches, remain under `BETA_MAX_REQUESTS`.
+
+Safety invariants:
+
+- **No invented numbers and no guessed direction.** Values come straight from the structured
+  export. With a retained before/after baseline, clear cases may use `[BUFF]` / `[NERF]`
+  (for example, a damage multiplier rising or a cooldown falling); ambiguous mechanics remain
+  `[CHANGED]`, wording-only changes `[TEXT FIX]`, and type/category moves `[ADJUSTMENT]`.
+  Without a baseline the card is a full `[CHANGED]` snapshot, never a fabricated diff.
+- **Image lock.** A verified splash-art URL is stored in
+  `state["beta"][game]["locked_images"]` and reused. A locked image is never re-verified,
+  so a finished card stops generating traffic entirely.
+- **Idempotent, resumable build batches.** State stores the exact source build, a bounded full
+  snapshot per item, and a per-batch message cursor. Large revisions resume their next bounded
+  item batch rather than duplicating an earlier page. An ambiguous Discord outcome is a persisted
+  circuit breaker across later runs—not an automatic retry—until an operator reconciles that
+  batch, so an uncertain page-one POST cannot become a duplicate. Snapshot/candidate identity is
+  role-aware if upstream numeric ids collide, preventing a character, weapon, and relic from
+  sharing an image lock or baseline. An explicit upstream “No tracked changes detected” build
+  advances silently (except on a cold opt-in, which intentionally publishes the current reveal
+  once).
+- **Fail-over aware.** `state["beta"]` merges across peers so a standby never double-posts.
+- **Bounded pages and delivery gap.** Long kits split into sequential Components V2 containers,
+  each independently inside Discord's 4,000-character and 40-component limits, labelled
+  `Page n/N`. After a successful page, production waits a fixed **five seconds** before the next
+  unsent page. It never adds a trailing wait after the final page, and a restart begins its first
+  unsent page without replaying a previous-run gap. This is intentionally a fixed safety rule,
+  not an environment knob.
+
+### Offline enabled-beta full-pipeline harness
+
+Use `python -m gamexpress benchmark --iterations 300 --beta-enabled` to exercise feature 5
+without opting in a real monitor. The command constructs an isolated in-memory
+`BETA_ENABLED=1` / `BETA_GAMES=genshin,starrail,zzz,wuwa` context and executes the actual
+manifest → changelog/manifest fallback → detail parser → image preflight → Components V2 renderer
+→ webhook delivery → state-settlement path for **all four** released beta games. It deliberately
+covers long multi-page full kits, character/weapon/relic baselines, retained-revision diffs,
+deduplication, an explicit quiet revision, a failed first page, an ambiguous first page plus its
+blocked replay, and a resume boundary. Its injected sleeper records every intended five-second
+page gap instead of making the suite wait.
+
+The JSON report is `beta_enabled_fixture.pipeline`: it records fixture collaborator calls and
+state-save transitions while asserting **zero live** source requests, Discord posts and physical
+state writes. `beta_enabled_fixture.render_microbenchmarks` keeps the eight synthetic new/revision
+renderer timing rows as a supplemental performance measurement. The command never changes the
+process environment or production settings; the normal default-off benchmark remains its original
+12 news/parity timing cases.
+
 ## Discord webhook versus bot delivery
 
 Incoming webhooks remain the appropriate simple outbound transport here; they do
@@ -597,3 +702,29 @@ webhook-versus-bot latency benchmark was performed.
 References: [1](https://docs.discord.com/developers/topics/rate-limits),
 [5](https://github.com/discord/discord-api-docs/blob/main/developers/topics/rate-limits.mdx),
 [10](https://discord.com/developers/docs/resources/webhook).
+
+### Beta page counts
+
+Beta page count follows readable content, with no fixed five- or ten-page maximum. Character
+text, equipment effects, all published parameter rows and all changed/removed blocks continue
+across as many validated Components V2 messages as needed. Every message stays within the
+4,000-character / 40-component limits, with a `Page n/N` footer and first-page-only ping.
+`BETA_MAX_CHARACTERS`, `BETA_MAX_CHANGES` and `BETA_MAX_EQUIPMENT` limit items fetched per
+batch, not pages or skill changes within an item. Request budgets and bounded snapshot storage
+remain unchanged. Incomplete prior snapshots still yield labelled full current kits.
+
+A successful page's ID is saved before the five-second gap to the next page. A confirmed failure
+after page ten resumes at page eleven; snapshots and the revision cursor settle only after the
+entire batch succeeds. Ambiguous POSTs hold for reconciliation. Larger cards need more Discord
+requests and pacing time; no live throughput guarantee is implied. Upgrading the renderer during
+an existing partial delivery can change its payload signature and trigger the same reconciliation
+hold described below; preserve the saved message IDs.
+
+### Beta partial-delivery reconciliation
+
+A beta batch stores its exact payload signature and source version with confirmed page IDs.
+On restart, finish that source version before newer manifest builds. If content, media,
+settings or batch membership changes after a page was confirmed, delivery holds for operator
+reconciliation. Legacy partial batches without a signature also hold; do not clear their
+message IDs automatically. Inspect the actual Discord messages and retained source build
+before repairing state. Quiet source output cannot settle an unfinished delivery.

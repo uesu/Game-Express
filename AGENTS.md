@@ -49,7 +49,7 @@ behaviours are deliberate (and must not be "fixed"), how to verify a change, and
 already cost a broken run. `README.md` is the user-facing manual and `docs/` is its reference
 material; this file is the maintainer's mental model.
 
-Last updated **2026-10-24**.
+Last updated **2026-10-25**.
 
 ---
 
@@ -61,10 +61,12 @@ official sources, decides whether anything is new, posts **Discord Components V2
 **webhooks**, commits its state, and exits. A run takes ~25 s end to end (~5–6 s of that is the
 Python).
 
-Four independent features: **`schedule`** (version/Special-Program cards) and **`codes`**
+Five independent features: **`schedule`** (version/Special-Program cards) and **`codes`**
 (redemption-code cards) on by default, plus explicit opt-in **`news`** (`NEWS_ENABLED=1`, full
-official articles for five games) and **`maintenance`** (`MAINTENANCE_ENABLED=1` +
-`MAINTENANCE_GAMES`, independent `Pre-Load Started` and `Maintenance Started` cards). Six games:
+official articles for five games), **`maintenance`** (`MAINTENANCE_ENABLED=1` +
+`MAINTENANCE_GAMES`, independent `Pre-Load Started` and `Maintenance Started` cards), and
+**`beta`** (`BETA_ENABLED=1` + `BETA_GAMES`, beta kit & revision-diff cards for the four
+released games — `hna` and `ananta` are excluded until they ship). Six games:
 `genshin`, `starrail`, `zzz`, `wuwa`, `hna`, `ananta`.
 
 **There is no Discord bot and there must not be one.** A bot existed long ago; it was removed in
@@ -79,18 +81,19 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 | Path | Role |
 |---|---|
 | `gamexpress/__main__.py` | CLI: `run`, `test-card`, `check-webhooks`, `preview`, `speculate`, `validate`, `benchmark` |
-| `gamexpress/runner.py` | builds `Ctx` (settings, games, state, fetcher, webhook, X client, Reddit client), fail-over, `run_news`, `maintenance.run`, run summary |
+| `gamexpress/runner.py` | builds `Ctx` (settings, games, state, fetcher, webhook, X client, Reddit client), fail-over, `run_news`, `maintenance.run`, `beta.run`, run summary |
 | `gamexpress/schedule.py` (the largest module by far) | the brain: picks the announcement, parses times, locks banners, speculates a cycle, builds/edits the schedule card |
 | `gamexpress/codeposter.py` | the code gate (families, validators, min-sources), posts/edits code cards |
 | `gamexpress/maintenance.py` | fourth feature (off by default): independent `Pre-Load Started` & `Maintenance Started` cards, `official > override > observed > cadence` precedence, 4-tier version-verified launch media, corroborated signed URL renewal/fallback, silent seed & bounded late `PATCH` |
+| `gamexpress/beta.py` | fifth feature (off by default): beta kit & revision-diff cards from `static.nanoka.cc/manifest.json` + the game's gachabase beta changelog, image locking, revision idempotence, bounded request budget |
 | `gamexpress/news_timestamps.py` | single-pass `O(N)` render-only news timestamp converter (`NEWS_TIMESTAMPS`, off by default) |
-| `gamexpress/cards.py` | Components V2 payload builders (`schedule`, `codes`, `news`, `maintenance`) + `validate_payload` |
+| `gamexpress/cards.py` | Components V2 payload builders (`schedule`, `codes`, `news`, `maintenance`, `beta`) + `validate_payload` |
 | `gamexpress/discord.py` | webhook POST/PATCH, 429/5xx retries, `WEBHOOK_SPACING = 1.2 s` pacing |
 | `gamexpress/http.py` | shared `aiohttp` fetcher, `MAX_PARALLEL = 12`, per-source health counters |
-| `gamexpress/state.py` | `state/state.json` (`SCHEMA = 1`): posted keys, message ids, bootstrap flags, heartbeat |
+| `gamexpress/state.py` | `state/state.json` (`SCHEMA = 1`): posted keys, message ids, bootstrap flags, heartbeat, `beta` revisions / snapshots / locked images |
 | `gamexpress/config.py` | `Settings` (env) + `Game` (games.json) + `game_is_on` / `active_games` |
 | `gamexpress/sources/*` | one module per upstream: `twitter` (nitter fleet + FxEmbed), `reddit` (Redlib fleet + `reddit.com` feed token + rich-embed proxies), `hoyolab`, `kuro`, `codes`, `launcher`, `bannerfeed`, `calendarfeed`, `gachawiki`, `banner_search`, `countdown`, `newspage` |
-| `gamexpress/{models,media,textutil,timeparse,samples,preview_html}.py` | the `Item` / `CodeHit` dataclasses, image URL normalisation, HTML→text, date/time parsing, sample cards, local preview |
+| `gamexpress/{models,media,textutil,timeparse,samples,preview_html}.py` | the `Item` / `CodeHit` / `BetaCharacter` / `BetaEquipment` / `BetaPatch` / `BetaSectionEntry` dataclasses, image URL normalisation, HTML→text, date/time parsing, sample cards, local preview |
 | `config/games.json` | per-game config (see §4) · `config/overrides.json` human corrections · `config/program_announcements.json` discovered tweet ids |
 | `tests/test_smoke.py` | the main suite: every test offline — no network, no secrets |
 | `tests/test_schedule_epithet_and_settled.py` · `tests/test_gachawiki_placeholder.py` | the 2026-10-08 schedule regressions (the first also runs in a checkout with no dependencies installed) and the ZZZ 3.3 "Agent" placeholder guard. Every test file has a plain runner and **every one is a CI gate** — `test_ci_and_the_python_bump_gate_run_every_offline_test_file` fails the moment a new file is not wired into `ci.yml` and the python-bump gate |
@@ -540,3 +543,97 @@ and mocked/derived protocol counts (`short(off)=1 msg / 1 media GET / 1 POST`,
 `medium<=7000(off)=2 msgs / 1 media GET / 2 POSTs (+1.2s min pacing)`,
 `long>7000(off)=1 excerpt msg / 1 media GET / 1 POST`,
 `long>7000(expand_full=1)=4 msgs / 18 media GETs / 4 POSTs (+3.6s min pacing)`).
+
+For the all-game enabled feature-5 renderer check, also run
+`.venv/bin/python -m gamexpress benchmark --iterations 300 --beta-enabled` (or `--json`). It
+constructs an isolated in-memory `BETA_ENABLED=1` settings object for `genshin`, `starrail`,
+`zzz`, and `wuwa`, validates new-kit plus retained-revision payloads and per-item galleries for
+all four (8 cases / 16 payloads), then reports zero source HTTP, webhook and state activity. It
+must never flip the real environment, poll live beta sources or replace the fixture-backed parser,
+hotfix, request-budget and delivery-resume tests. Without this flag, retain the 12-case
+default-off benchmark exactly as above.
+
+
+## Beta kit & revision-diff cards (feature 5, 2026-10-24)
+
+`BETA_ENABLED=0` by default — disabled, `gamexpress/beta.py` makes **zero** requests and
+writes nothing to `state/state.json`.
+
+Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
+`gamexpress/cards.py`, the `beta` state block, or `BETA_*` settings:
+
+- **Dedicated destinations only.** `DISCORD_WEBHOOK_BETA_<GAME>` > `DISCORD_WEBHOOK_BETA` >
+  `DISCORD_WEBHOOK_NEWS_<GAME>`. Never the schedule/codes catch-all, never a mirror, never
+  `FORCE_WEBHOOK`. `PING_BETA_<GAME>` > `PING_BETA` only — `PING_ROLE_ID` is deliberately not
+  inherited, so turning the feature on cannot start pinging an unrelated role.
+- **Never invent a number or guess a direction.** Values come from the database export or they
+  are omitted. `[BUFF]` / `[NERF]` require retained before **and** after snapshots plus an
+  unambiguous mechanic rule (for example, higher damage or lower cooldown); otherwise use
+  `[CHANGED]`, `[TEXT FIX]`, or `[ADJUSTMENT]`. A cold start is a full snapshot, never a fake diff.
+- **Never let an unresolved backend key reach a card.** `TestKey_PlaceHolder`,
+  `Robin_Skill_Normal_Title`, `EquipmentSuit_34300_name`, `missing.webp` and friends are the
+  database saying it has no data yet (`beta._is_key`, `beta._usable_image`).
+- **Keep the budget bounded.** `BETA_MIN_POLL_MINUTES`, `BETA_MAX_CHARACTERS`,
+  `BETA_MAX_CHANGES`, `BETA_MAX_EQUIPMENT`, `BETA_MAX_REQUESTS` are all clamped in
+  `beta._budget`; a bad value must fall back to a bounded default, never to unbounded. A
+  revision with more work than its bounds must resume through its per-batch cursor — never
+  advance the source build and silently drop the rest.
+- **Walk builds; do not jump them.** Use manifest `available` to select the next retained
+  static build. A blank changelog is not proof of no changes: recheck only manifest-new and
+  already-snapshotted ids. Only an explicit upstream `No tracked changes detected` can advance
+  silently, and not on a cold opt-in (which must still publish the current reveal). A manifest
+  fallback must retain its explicit numeric id; never depend on public URL grammar — WuWa's
+  intentional singular `character` / `weapon` paths are not gachabase's plural paths.
+- **Keep the image lock.** A resolved image goes into
+  `state["beta"][game]["locked_images"][id]` and is reused; a locked image is never re-verified.
+  That lock is what stops a published card from polling forever.
+- **HNA and ANANTA stay out** until they ship (`DEFAULT_BETA_GAMES` and the
+  `- {"hna", "ananta"}` subtraction in `load_settings`).
+- **Tests stay offline.** New parsers get a fixture under `tests/fixtures/beta/`; nothing in the
+  suite may touch the network.
+
+### Beta output completeness
+
+Beta has no fixed page cap. Preserve all readable kit/equipment text, parameter rows and
+changed/removed blocks across validated pages; do not reintroduce per-item display truncation.
+Source/item budgets and bounded retained snapshots remain separate. First-page-only pings,
+five-second inter-page pacing, durable IDs and final-batch settlement apply beyond page ten.
+Renderer changes can hold signed partial batches for reconciliation; never clear their IDs.
+
+### Beta partial-delivery reconciliation
+
+A beta batch stores its exact payload signature and source version with confirmed page IDs.
+On restart, finish that source version before newer manifest builds. If content, media,
+settings or batch membership changes after a page was confirmed, delivery holds for operator
+reconciliation. Legacy partial batches without a signature also hold; do not clear their
+message IDs automatically. Inspect the actual Discord messages and retained source build
+before repairing state. Quiet source output cannot settle an unfinished delivery.
+
+### Bounded beta comparison
+
+Full-content digests suppress unchanged long kits even when retained text is clipped.
+If changed content exceeds retained limits, or a legacy snapshot lacks a full-content digest,
+the next inspected revision uses a labelled full `[CHANGED]` snapshot without invented inline
+direction. Retained text limits and state pruning stay bounded.
+Do not compare clipped prior text with full new text as an exact diff.
+
+### Encore current-beta detail fallback
+
+Encore supports beta through `?v=Beta` (verified live frontend/API; absent from its supplied
+OpenAPI export). For WuWa only, missing/unreadable current nanoka character/weapon detail may
+use the API with exact `ResVer` matching and identical GameVer/ResVer/Changelist before/after.
+Try the primary `api-v2.encore.moe/api/en` before the official legacy `api.encore.moe/en`.
+Reserve three `get_json` calls per server attempt inside local/shared budgets (at most six
+per item, each retaining its existing network retry policy). Each server must bracket its
+own detail read; never mix metadata between servers.
+Do not emit a deferred-build warning if the backup succeeds. Never use the mutable current beta for
+an older manifest build, use release data, or invent an Encore historical cursor. Retain provider
+metadata and avoid cross-provider inline diffs. Disabled and healthy primary paths add zero
+Encore requests. See docs/SOURCES.md for the observed contract and limitations.
+
+### Gachabase response formats
+
+Accept Markdown and server-rendered HTML changelogs. HTML revision headings and item/diff links
+must preserve source order and categories; ignore scripts/styles/navigation and foreign links.
+An unreadable response warns and uses the existing safe manifest fallback; never call it an
+explicit quiet revision. Do not add requests or dependencies just to convert HTML to Markdown.

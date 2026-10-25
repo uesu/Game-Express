@@ -247,6 +247,88 @@ Full setup and safeguards: **[docs/CONFIGURATION.md → Pre-load & maintenance s
 
 ---
 
+### 5 · Beta kit & revision-diff cards (optional; off by default)
+
+While a version is in beta, the community databases publish a new **revision** (v2, v3, …)
+every few days. This feature watches those revisions and posts one batch per new revision to
+that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA` →
+`DISCORD_WEBHOOK_NEWS_<GAME>` — never a schedule or codes channel).
+
+```
+┌─────────────────────────────────────────────────────────────
+│ ## [ZZZ - 3.4.1 Beta] Patch Notes: v3.4.1 Rev. 19834130
+│ Resource: [gachabase](https://zzz.gachabase.net/changelog/beta?lang=en) / [nanoka](https://zzz.nanoka.cc/diff)
+│ ─────────────
+│ ### ✦ New Agents
+│ [ splash art ]
+│ # ★5 • Robin • Ether • Defense
+│ -# …                                  ← character line
+│ **Base Stats**
+│ > Lv. 60 — HP 8754 · ATK 750 · DEF 706
+│ > CRIT Rate 5% · CRIT DMG 50% · Impact 90
+│ ### Core Passive & Additional Ability
+│ **Core Passive:** — [CHANGED]
+│ > When Robin uses certain skills, she grants all squad members a [Robin Shield] …
+│ ### Mechanic Definitions
+│ > - **Aftershock:** …
+│ ─────────────
+│ <a:starwardsleepywink:…> **Citlali News**   [ <a:starwardyayy:…> ]
+│ -# Citlali Mains • Zenless Zone Zero 3.4.1 Beta • Page 1/3
+└─────────────────────────────────────────────────────────────
+```
+
+- **What it posts.** The first observed build gives every beta-new character a full kit overview
+  — all readable skill text and values, mindscape / constellation / resonance-chain text, plus
+  the new weapons, W-Engines, light cones, disc drives, relic sets and echoes. Later builds use
+  a retained bounded kit baseline to show changed blocks, with an exact **Full kit** and
+  **Revision diff** source link per item.
+- **Revision discovery.** Gachabase Markdown and server-rendered HTML both identify changed existing items; unreadable pages warn and fall back to nanoka’s new/retained IDs.
+- **Content-driven pages.** Beta cards can use five pages, ten or more, according to the
+  readable content in each batch; there is no fixed beta page cap. Long equipment effects,
+  character text, parameter rows and revision changes continue in order on validated pages.
+  Only page one pings. Request/item budgets still bound source work across resumable batches.
+- **Actual inline diffs, without guessing.** When an old and new value are both present, the card
+  renders the source text intact around an inline diff such as `~~**200%**~~ → **240%**`.
+  `[BUFF]` / `[NERF]` are emitted only for a small set of unambiguous mechanics (for example,
+  higher damage or lower cooldown); ambiguous, wording-only, renamed and reclassified changes
+  stay `[CHANGED]` / `[TEXT FIX]` / `[ADJUSTMENT]`. A cold start never fabricates a baseline.
+  Full-content digests keep unchanged long kits quiet; clipped or legacy baselines use a
+  labelled full snapshot when exact comparison is unavailable.
+- **Hotfix-safe and quiet-safe.** Static `available` builds are walked in order, so a run does
+  not jump over a v2/v3 hotfix. If a changelog revision is blank, only already-snapshotted and
+  manifest-new IDs are rechecked; an explicit “No tracked changes detected” revision advances
+  silently without an empty Discord post. A cold opt-in still posts the current reveal instead
+  of losing it to a quiet micro-hotfix.
+- **Off by default, and bounded when it is on.** `BETA_ENABLED=1` is required.
+  `BETA_MIN_POLL_MINUTES` (default `30`) and `BETA_MAX_CHARACTERS` /
+  `BETA_MAX_CHANGES` / `BETA_MAX_EQUIPMENT` / `BETA_MAX_REQUESTS` bound polling, cards and
+  requests. Disabled, the feature makes **zero** requests.
+- **WuWa beta fallback.** If nanoka lacks a readable current-build character or weapon,
+  Encore’s `?v=Beta` API can supply it after matching resource-version and stable-build checks.
+  Its official legacy endpoint is a backup if the primary Encore read fails, within the same
+  request budget; [source details](docs/SOURCES.md#encore-beta-api-fallback-for-wuwa).
+- **HNA and ANANTA are excluded** until they ship — `BETA_GAMES` defaults to the four released
+  games and `all` resolves to the same four.
+- **It stops on its own.** A verified splash-art URL is locked in state and never re-fetched.
+  Per-revision batches persist their own resume cursor, so a bounded batch continues without a
+  duplicate page; once all batches settle, that revision generates no further traffic. After a
+  successful multi-page beta card, the monitor waits **five seconds before the next page only**
+  (never after the final page); a restart resumes its first unsent page immediately.
+- **Offline enabled-feature harness.** `python -m gamexpress benchmark --beta-enabled` keeps the
+  production default off, but runs an isolated `BETA_ENABLED=1` monitor pass for **GI, HSR, ZZZ
+  and WuWa** through manifest/changelog discovery, every namespace parser, image preflight,
+  Components V2 validation, multi-page delivery/pacing, retained revisions, deduplication, quiet
+  revisions, and failed/ambiguous/resume delivery paths. Its collaborators are in-memory only:
+  it makes **zero live** source HTTP requests, Discord posts and physical state writes while still
+  proving state-save transitions. Renderer timings are a supplemental section of the report, not
+  the feature test itself.
+
+Full setup, variables and safeguards:
+**[docs/CONFIGURATION.md → Beta kit & revision-diff cards](docs/CONFIGURATION.md#beta-kit--revision-diff-cards-feature-5--explicit-opt-in-default-off)**.
+Sources: **[docs/SOURCES.md → Beta kit & revision-diff sources](docs/SOURCES.md#beta-kit--revision-diff-sources-2026-10-24)**.
+
+---
+
 ## 🎮 Supported games
 
 | Game | Status | Schedule sources | Code sources |
@@ -411,6 +493,10 @@ editing YAML. The ones worth knowing:
 | `NEWS_EXPAND_FULL` | `0` | optional multi-page full articles (up to 12 pages / 120,000 chars / 120 media) |
 | `MAINTENANCE_ENABLED` | `0` | explicit opt-in for `Pre-Load Started` / `Maintenance Started` |
 | `MAINTENANCE_GAMES` | *(empty)* | explicit per-game list (`all` or game keys) required to activate maintenance alerts |
+| `BETA_ENABLED` | `0` | explicit opt-in for beta kit / revision-diff cards (feature 5) |
+| `BETA_GAMES` | `genshin,starrail,zzz,wuwa` | beta subset; `all` resolves to the same four (HNA and ANANTA excluded until launch) |
+| `BETA_MIN_POLL_MINUTES` | `30` | minimum interval between beta changelog re-checks |
+| `BETA_MAX_REQUESTS` | `48` | hard HTTP ceiling for the whole beta feature per run |
 | `GAMES` / `ENABLE_GAMES` | all enabled / — | run a subset · switch prepared games on |
 | `LOOKBACK_HOURS` | 72 | how far back official posts are considered |
 | `CODES_MIN_SOURCES` | 2 | independent sources needed for an unverified code |
@@ -523,9 +609,9 @@ For local runs and debugging: `python -m gamexpress <command>`
 | `check-webhooks [--kind …] [--game …]` | one "connected" card per unique webhook (no ping) |
 | `test-card [--kind …] [--game …] [--ping] [--unlaunched]` | post the sample cards, labelled 🧪 TEST. `--unlaunched` keeps only the games with `"released": false` |
 | `speculate [--game …] [--verbose] [--now <unix>]` | read-only: what the bot would predict for each game's next version, the confidence, and the real dates it is anchored on |
-| `benchmark [--iterations N] [--json]` | offline microbenchmark for timestamp formatting/scanning and short vs multi-page news rendering |
+| `benchmark [--iterations N] [--json] [--beta-enabled]` | offline microbenchmark for timestamp formatting/scanning and short vs multi-page news rendering; `--beta-enabled` additionally runs an isolated full enabled-beta pipeline harness for GI, HSR, ZZZ and WuWa (fixture collaborators only: no live network/webhook/disk write) and then reports supplemental beta renderer timings |
 
-Flags: `--dry-run --only --game --repost --kind --ping --out --unlaunched --verbose --now`.
+Flags: `--dry-run --only --game --repost --kind --ping --out --unlaunched --verbose --now --beta-enabled`.
 
 ---
 
@@ -665,7 +751,7 @@ Historical records are preserved in
   and [eddrit](https://github.com/corenting/eddrit) and every operator who keeps a public instance
   online, [FxEmbed / FxTwitter](https://github.com/FxEmbed/FxEmbed), and
   [BetterTwitFix / vxTwitter](https://github.com/dylanpdx/BetterTwitFix). The full list, with
-  licences and the community databases: **[docs/CREDITS.md](docs/CREDITS.md)**.
+  active beta sources, tools, research references and licences: **[docs/CREDITS.md](docs/CREDITS.md)**.
 - **Special thanks:** **[Arena AI](https://arena.ai/company/about)** ([@arena on X](https://x.com/arena?lang=en))
   for making these engineering additions, upstream audits, and reliability upgrades possible.
 - **Sibling project:** [News-Express](https://github.com/uesu/News-Express) — same design,

@@ -88,7 +88,7 @@ noted in the [changelog](docs/changelog/CHANGELOG.md). Continued use after a cha
 Open an issue in the repository that hosts the instance you are using.
 
 
-## Optional official news and milestone alerts
+## Optional official news, milestone alerts and beta cards
 
 Official news (`NEWS_ENABLED=1`) and pre-load/maintenance-started alerts
 (`MAINTENANCE_ENABLED=1` with `MAINTENANCE_GAMES`) are off by default and require explicit
@@ -105,3 +105,17 @@ discovery uses a bounded current English index (`startTime`, fallback `createTim
 archive. Silent baselines, bounded catch-up and retention deliberately avoid historical floods;
 partial-delivery or milestone state must not be reset to force tests. These limitations do not
 remove the existing warranty, operator responsibility or no-affiliation provisions.
+
+Beta kit and revision-diff cards (`BETA_ENABLED=1` with `BETA_GAMES`) are likewise off by default
+and require explicit operator opt-in plus a dedicated channel. They republish character, weapon and
+equipment data that the community databases **nanoka.cc** and **gachabase.net** already publish
+publicly, and link back to those databases. The Service does not verify that data against the games
+themselves: **beta content is provisional by nature and may be incomplete, untranslated, mis-named
+or changed without notice before release.** Nothing in a beta card is gameplay advice, a release
+date or a guarantee that any value will ship unchanged. Where two retained public snapshots make a
+simple value direction unambiguous, the Service may label that line `[BUFF]` or `[NERF]`; all
+ambiguous mechanics remain `[CHANGED]`, and a first-seen kit is never assigned a guessed direction.
+Operators remain responsible for attribution, for each upstream database's terms, and for any
+channel rules that apply to unreleased content. Honkai:
+Nexus Anima and ANANTA are excluded until they ship. Off by default, the feature makes no requests
+to those databases at all.

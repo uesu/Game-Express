@@ -55,7 +55,11 @@ URL; configured credentials are sent to the intended service when required:
 - the official banner notices, found by title through HoYoLAB's search endpoint and Kuro's article menu (for
   Wuthering Waves, a GitHub mirror as a fallback), the community banner feed (`ertezy.github.io`, Kitsudock data), and countdown sites
   (`gachacountdown.online`, `*-countdown.gengamer.in`) for estimated dates;
-- Discord (to post and edit the operator's cards through the operator's webhooks).
+- Discord (to post and edit the operator's cards through the operator's webhooks);
+- when the operator enables the optional beta feature (`BETA_ENABLED=1`), the public community
+  databases nanoka.cc (revision manifest and structured per-revision JSON exports) and
+  gachabase.net (beta changelog pages). Both are read-only public endpoints; no account, token
+  or credential is ever sent to them.
 
 The operator's scheduler (cron-job.org) only calls GitHub's API to start the workflow. It
 receives no data about Discord users.
@@ -121,6 +125,14 @@ When explicitly enabled (`MAINTENANCE_ENABLED=1` with `MAINTENANCE_GAMES`), mile
 per-game `preload` and `maintenance` state entries, non-reversible webhook fingerprints, message
 IDs, timestamps, version-lock metadata, and bounded post-delivery refresh counters in the existing
 `state/state.json`. Signed URL query strings (`auth_key=`) are redacted in summaries and logs.
+
+When explicitly enabled (`BETA_ENABLED=1` with `BETA_GAMES`), beta cards render public
+character, weapon and equipment data published by those community databases and post it to
+dedicated Discord channels. State retains, per game, the last processed source build,
+per-revision/batch delivery status and message IDs, and a bounded readable public-kit snapshot
+(skill text, values and item metadata) for source-backed later-revision diffs; it also retains the
+splash-art URLs already resolved for a card (so a published card never re-fetches them). It stores
+no account, Discord member or analytics data, and writes no beta state when the feature is off.
 
 The existing repository state retains public news IDs, publication times, publication floors,
 route/content fingerprints, delivery status and the monitor's own per-part message IDs; partial
