@@ -592,6 +592,14 @@ Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
 - **Tests stay offline.** New parsers get a fixture under `tests/fixtures/beta/`; nothing in the
   suite may touch the network.
 
+### Beta output completeness
+
+Beta has no fixed page cap. Preserve all readable kit/equipment text, parameter rows and
+changed/removed blocks across validated pages; do not reintroduce per-item display truncation.
+Source/item budgets and bounded retained snapshots remain separate. First-page-only pings,
+five-second inter-page pacing, durable IDs and final-batch settlement apply beyond page ten.
+Renderer changes can hold signed partial batches for reconciliation; never clear their IDs.
+
 ### Beta partial-delivery reconciliation
 
 A beta batch stores its exact payload signature and source version with confirmed page IDs.

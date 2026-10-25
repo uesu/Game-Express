@@ -1,5 +1,11 @@
 # Changelog — current entries
 
+## 2026-10-25 — Content-driven beta pages without display truncation
+
+- Support beta batches with five, ten or more pages according to readable content. Split long equipment effects instead of truncating them, render every parameter row and preserve all changed/removed skill, stat and equipment lines. Remove the prior compact-diff display caps; source request/item budgets and bounded snapshot retention remain unchanged.
+- Split oversized whitespace-free text with guaranteed progress, including long character introductions/stat blocks. Continue equipment with labelled headings, retain source links and show each equipment image once. Every page independently validates; pings remain first-page-only.
+- Add offline regressions for 5/12/21-page delivery, failure/restart after ten confirmed pages, durable page IDs, final-only settlement, complete output across all four games and bounded lossless token splitting. Changed partial payload signatures still require reconciliation; no saved IDs are cleared.
+
 ## 2026-10-25 — Encore beta API fallback for WuWa
 
 - Correct the earlier research-only assessment: Encore’s frontend/API support explicit `?v=Beta`, omitted from the supplied OpenAPI export. Confirm Hsin and Suoming details plus current beta metadata and capture relevant public API fields for offline tests.

@@ -17778,5 +17778,161 @@ def test_feature5_encore_hsin_suoming_captured_beta_kits():
         assert beta_mod._encore_detail(raw, "character", "9999", ("3.8.0", "3.8.1", "9162983")) is None
 
 
+def test_feature5_complete_output_keeps_long_equipment_parameters_and_diff_changes():
+    from gamexpress.beta import _diff_equipment, _diff_parts, _section_lines, _stat_diff, diff_kits
+
+    params = [{"name": f"Parameter-{i:02}", "text": f"Value-{i:02}"} for i in range(24)]
+    equipment_lines = [(f"Equipment-line-{i:03}: " + "effect text " * 25).rstrip() for i in range(140)]
+    char = BetaCharacter(id="complete", name="Complete Kit", rarity=5,
+                         sections=[BetaSectionEntry(title="All values", params=params)])
+    eq = BetaEquipment(id="long", name="Long Weapon", category_label="Weapons",
+                       lines=equipment_lines, image_url="https://example.com/weapon.png",
+                       page_url="https://example.com/weapon")
+    for key in ("genshin", "starrail", "zzz", "wuwa"):
+        patch = BetaPatch(game_key=key, beta_version="1.0", rev_label="Full output",
+                          rev_id="full", characters=[char], equipment=[eq])
+        payloads = cards.beta_payloads(GAMES[key], patch)
+        joined = json.dumps(payloads)
+        assert len(payloads) > 10, "fixture must exercise a two-digit page count"
+        assert all(cards.validate_payload(payload) == [] for payload in payloads)
+        for row in params:
+            assert row["name"] in joined and row["text"] in joined
+        offsets = [joined.index(line) for line in equipment_lines]
+        assert offsets == sorted(offsets)
+        assert joined.count("https://example.com/weapon.png") == 1
+        assert "https://example.com/weapon" in joined
+        for n, payload in enumerate(payloads, 1):
+            assert f"Page {n}/{len(payloads)}" in json.dumps(payload)
+
+    previous = [BetaSectionEntry(title=f"Skill-{n:02}", category="Skills",
+                                 lines=[f"Damage-{i:02}: 100%" for i in range(12)])
+                for n in range(14)]
+    current = [BetaSectionEntry(title=section.title, category=section.category,
+                               lines=[f"Damage-{i:02}: 120%" for i in range(12)])
+               for section in previous]
+    removed = BetaSectionEntry(title="Removed skill", category="Old skills",
+                               lines=[f"Removed-line-{i:02}" for i in range(9)])
+    changes, untouched = diff_kits(previous + [removed], current)
+    assert len(changes) == 15 and untouched == 0
+    assert all(len(section.lines) == 12 for section in changes[:14])
+    assert len(changes[-1].lines) == 9
+    assert "more change(s)" not in str(changes)
+    stat_changes = _stat_diff(
+        BetaCharacter(id="stats", name="Stats", stats_lines=[f"Stat-{i}: 100" for i in range(12)]),
+        BetaCharacter(id="stats", name="Stats", stats_lines=[f"Stat-{i}: 120" for i in range(12)]))
+    assert len(stat_changes[0].lines) == 12
+    equipment_change = _diff_equipment(
+        BetaEquipment(id="diff", name="Weapon", lines=[f"Effect-{i}: 100%" for i in range(12)]),
+        BetaEquipment(id="diff", name="Weapon", lines=[f"Effect-{i}: 120%" for i in range(12)]))
+    assert equipment_change is not None and len(equipment_change.lines) == 12
+    flattened = _section_lines(BetaSectionEntry(title="Structured", params=params))
+    assert all(row["name"] in flattened[0] and row["text"] in flattened[0] for row in params)
+    replacements, _ = diff_kits([BetaSectionEntry(title="Shrink", lines=["Prior one", "Prior two"])],
+                                [BetaSectionEntry(title="Shrink", lines=["Current only"])])
+    assert "Prior two" in str(replacements)
+    old = " unchanged context between distinct effects ".join(f"old-{i:02}" for i in range(12))
+    new = " unchanged context between distinct effects ".join(f"new-{i:02}" for i in range(12))
+    rendered, parts = _diff_parts(old, new)
+    assert len(parts) == 12 and rendered.count("~~old~~") == 12
+
+
+def test_feature5_splitter_preserves_unbroken_source_text_with_bounded_chunks():
+    from gamexpress.cards import _split_beta_block
+
+    token = "Ω" * 16000
+    pieces = _split_beta_block(token, 600)
+    assert pieces and all(0 < len(piece) <= 600 for piece in pieces)
+    assert "".join(pieces) == token
+    patch = BetaPatch(game_key="wuwa", beta_version="3.8.1", rev_label="Unbroken", rev_id="unbroken",
+                      characters=[BetaCharacter(id="token", name="Unbroken",
+                                                stats_lines=["Ж" * 18000],
+                                                sections=[BetaSectionEntry(title="Token", lines=[token])])],
+                      equipment=[BetaEquipment(id="token-eq", name="Token Weapon", lines=["Ψ" * 16000])])
+    payloads, char_map = cards.beta_payloads_with_map(GAMES["wuwa"], patch)
+    assert len(payloads) > 10 and char_map == {"token": 0}
+    assert all(cards.validate_payload(payload) == [] for payload in payloads)
+    rendered = json.dumps(payloads, ensure_ascii=False)
+    for symbol, expected in (("Ω", 16000), ("Ψ", 16000), ("Ж", 18000)):
+        assert rendered.count(symbol) == expected
+
+
+def test_feature5_variable_page_counts_resume_after_ten_confirmed_pages():
+    from gamexpress import beta
+
+    ping = "<@&1296268365593186426>"
+
+    def exercise(count, tmp):
+        path = Path(tmp) / f"pages-{count}.json"
+        ctx = _beta_ctx(path, _RecordingFetcher({}), BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, PING_BETA=ping, games=["wuwa"])
+        entries = [BetaEquipment(id=f"weapon-{i}", name=f"Weapon-{i}",
+                                 category_label="Weapons",
+                                 lines=[f"Page-content-{i:02}: " + "word " * 530])
+                   for i in range(count)]
+        patch = BetaPatch(game_key="wuwa", beta_version="3.8.1", rev_label="Variable pages",
+                          rev_id="variable", batch_id="variable", equipment=entries,
+                          item_keys=[f"weapon:{entry.id}" for entry in entries],
+                          snapshots={"weapon-0": {"kind": "weapon", "data": {"id": "weapon-0"}}},
+                          source_version="3.8.1", source_revision="variable")
+        payloads = cards.beta_payloads(GAMES["wuwa"], patch, ctx.settings, ctx.settings.ping("beta", "wuwa"))
+        assert len(payloads) == count
+        assert all(cards.validate_payload(payload) == [] for payload in payloads)
+        assert payloads[0]["allowed_mentions"]["roles"] == ["1296268365593186426"]
+        assert all(p["allowed_mentions"] == {"parse": []} and ping not in json.dumps(p)
+                   for p in payloads[1:])
+        successful = []
+        events = []
+        failure_at = 10 if count > 10 else None
+
+        class Recorder:
+            async def send(self, _hook, payload, **_kw):
+                durable = State.load(path).beta_record("wuwa") if path.exists() else {}
+                saved = ((durable.get("revisions") or {}).get("variable") or {})
+                batch = (saved.get("batches") or {}).get("variable") or {}
+                assert len(batch.get("messages") or []) == len(successful)
+                assert payload == payloads[len(successful)]
+                events.append("send")
+                if failure_at is not None and len(successful) == failure_at:
+                    return SendResult(False, 500, error="page eleven fixture failure")
+                successful.append(payload)
+                return SendResult(True, 200, message_id=f"page-{len(successful)}")
+
+        async def sleep(seconds):
+            assert seconds == 5
+            events.append("sleep")
+
+        ctx.webhook, ctx.sleep = Recorder(), sleep
+        asyncio.run(beta._deliver(ctx, GAMES["wuwa"], patch, ctx.state.beta_record("wuwa"), False))
+        if failure_at is not None:
+            durable = State.load(path).beta_record("wuwa")
+            revision = durable["revisions"]["variable"]
+            assert revision["status"] == "partial"
+            assert len(revision["batches"]["variable"]["messages"]) == 10
+            assert not durable.get("snapshots") and not durable.get("latest_rev")
+            assert not revision.get("processed")
+            assert len(successful) == 10 and events.count("sleep") == 10
+            ctx.state = State.load(path)
+            events.clear()
+            failure_at = None
+            asyncio.run(beta._deliver(ctx, GAMES["wuwa"], patch, ctx.state.beta_record("wuwa"), False))
+            assert events[0] == "send" and events[-1] == "send"
+            assert events.count("sleep") == count - 11
+        else:
+            assert events.count("sleep") == count - 1
+        assert successful == payloads
+        durable = State.load(path).beta_record("wuwa")
+        revision = durable["revisions"]["variable"]
+        assert revision["status"] == "posted"
+        assert revision["batches"]["variable"]["messages"] == [f"page-{n}" for n in range(1, count + 1)]
+        assert revision["characters"] == {}
+        assert revision["processed"] == sorted(patch.item_keys)
+        assert durable["latest_rev"] == patch.rev_id
+        assert durable["snapshots"] == patch.snapshots
+
+    with tempfile.TemporaryDirectory() as tmp:
+        for count in (5, 12, 21):
+            exercise(count, tmp)
+
+
 if __name__ == "__main__":
     sys.exit(main())

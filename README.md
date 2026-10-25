@@ -282,6 +282,10 @@ that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA
   the new weapons, W-Engines, light cones, disc drives, relic sets and echoes. Later builds use
   a retained bounded kit baseline to show changed blocks, with an exact **Full kit** and
   **Revision diff** source link per item.
+- **Content-driven pages.** Beta cards can use five pages, ten or more, according to the
+  readable content in each batch; there is no fixed beta page cap. Long equipment effects,
+  character text, parameter rows and revision changes continue in order on validated pages.
+  Only page one pings. Request/item budgets still bound source work across resumable batches.
 - **Actual inline diffs, without guessing.** When an old and new value are both present, the card
   renders the source text intact around an inline diff such as `~~**200%**~~ → **240%**`.
   `[BUFF]` / `[NERF]` are emitted only for a small set of unambiguous mechanics (for example,

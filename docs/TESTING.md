@@ -352,6 +352,16 @@ renderer timing cases (with per-item galleries); those timings supplement rather
 full feature harness. The default command remains the existing 12-case default-off news benchmark.
 
 
+The variable-beta-page regressions additionally exercise **5, 12 and 21 actual renderer pages**,
+including a failure on page eleven, a disk reload after ten confirmed messages, exact remaining
+page delivery without duplicates, persisted IDs before every send, first-page-only pings and
+settlement only after the final page. Complete-output fixtures validate all four released games
+with more than ten pages, all 24 parameter rows, long equipment text in order, 14 changed skill
+blocks plus a removed block, and all stat/effect changes. Oversized unbroken character/stat/equipment
+text must split without loss, an oversized payload or a loop. Boundaries stay mocked; these checks
+do not certify live Discord playback. See [beta page counts](CONFIGURATION.md#beta-page-counts).
+
+
 
 ### Latest layout corrections: 7,000 eligibility / final-container controls
 

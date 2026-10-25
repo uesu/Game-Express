@@ -1,5 +1,7 @@
 # Game-Express documentation
 
+Feature 5: [content-driven beta page counts and restart behavior](CONFIGURATION.md#beta-page-counts).
+
 Everything that does not belong in the [project README](../README.md). Start there for what
 Game-Express is and how to set it up; come here for the detail.
 

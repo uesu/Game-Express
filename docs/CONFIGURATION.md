@@ -699,6 +699,23 @@ References: [1](https://docs.discord.com/developers/topics/rate-limits),
 [5](https://github.com/discord/discord-api-docs/blob/main/developers/topics/rate-limits.mdx),
 [10](https://discord.com/developers/docs/resources/webhook).
 
+### Beta page counts
+
+Beta page count follows readable content, with no fixed five- or ten-page maximum. Character
+text, equipment effects, all published parameter rows and all changed/removed blocks continue
+across as many validated Components V2 messages as needed. Every message stays within the
+4,000-character / 40-component limits, with a `Page n/N` footer and first-page-only ping.
+`BETA_MAX_CHARACTERS`, `BETA_MAX_CHANGES` and `BETA_MAX_EQUIPMENT` limit items fetched per
+batch, not pages or skill changes within an item. Request budgets and bounded snapshot storage
+remain unchanged. Incomplete prior snapshots still yield labelled full current kits.
+
+A successful page's ID is saved before the five-second gap to the next page. A confirmed failure
+after page ten resumes at page eleven; snapshots and the revision cursor settle only after the
+entire batch succeeds. Ambiguous POSTs hold for reconciliation. Larger cards need more Discord
+requests and pacing time; no live throughput guarantee is implied. Upgrading the renderer during
+an existing partial delivery can change its payload signature and trigger the same reconciliation
+hold described below; preserve the saved message IDs.
+
 ### Beta partial-delivery reconciliation
 
 A beta batch stores its exact payload signature and source version with confirmed page IDs.

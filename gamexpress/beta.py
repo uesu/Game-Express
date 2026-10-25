@@ -270,9 +270,6 @@ def _zzz_param_rows(items: Any, level: int = 12) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- text diff
-MAX_PARAM_ROWS = 10          # skill values shown per block on a full kit card
-MAX_CHANGE_LINES = 6         # change lines shown per block on a diff card
-
 _TOKEN_RE = re.compile(r"\w+|[^\s\w]")
 
 
@@ -280,7 +277,7 @@ def _spans(text: str) -> list[tuple[str, int, int]]:
     return [(m.group(), m.start(), m.end()) for m in _TOKEN_RE.finditer(str(text or ""))]
 
 
-def _diff_parts(old: str, new: str, keep: int = 4, max_blocks: int = 6
+def _diff_parts(old: str, new: str, keep: int = 4, max_blocks: int | None = None
                 ) -> tuple[str, list[tuple[str, str]]]:
     """Word-level `old` -> `new`, returned as (rendered line, changed fragments)."""
     old_s, new_s = str(old or ""), str(new or "")
@@ -307,7 +304,8 @@ def _diff_parts(old: str, new: str, keep: int = 4, max_blocks: int = 6
             blocks[-1][1], blocks[-1][3] = i2, j2
     if not blocks:
         return new_s, []
-    blocks = blocks[:max_blocks]
+    if max_blocks is not None:
+        blocks = blocks[:max_blocks]
 
     def token_start(toks: list[tuple[str, int, int]], pos: int, src: str) -> int:
         return toks[pos][1] if pos < len(toks) else len(src)
@@ -479,7 +477,7 @@ def _section_lines(entry: Any) -> list[str]:
         return lines
     params = [p for p in (getattr(entry, "params", ()) or ()) if isinstance(p, dict)]
     if params:
-        rows = " · ".join(f"{p.get('name')} {p.get('text')}" for p in params[:MAX_PARAM_ROWS])
+        rows = " · ".join(f"{p.get('name')} {p.get('text')}" for p in params)
         label = str(getattr(entry, "values_label", "") or "max level")
         lines.append(f"**Values ({label}):** {rows}")
     for name, desc in (getattr(entry, "defs", ()) or ()):
@@ -575,6 +573,8 @@ def _diff_section(prev: Any, cur: Any) -> tuple[list[str], list[str]]:
                         lines.append((f"**[CHANGED]** {new_ln}", "[CHANGED]"))
                 for extra in cur_lines[j1 + len(pairs):j2]:
                     lines.append((f"**[NEW]** {extra}", "[NEW]"))
+                lines.extend((f"**[CHANGED]** Removed: ~~{old_ln}~~", "[CHANGED]")
+                             for old_ln in prev_lines[i1 + len(pairs):i2])
             elif opcode == "insert":
                 lines.extend((f"**[NEW]** {new_ln}", "[NEW]") for new_ln in cur_lines[j1:j2])
             elif opcode == "delete":
@@ -584,13 +584,9 @@ def _diff_section(prev: Any, cur: Any) -> tuple[list[str], list[str]]:
     if not lines:
         return [], []
     tags = [tag for _line, tag in lines]
-    rendered = [line for line, _tag in lines][:MAX_CHANGE_LINES]
-    if len(rendered) < len(lines):
-        rendered.append(f"-# …and {len(lines) - len(rendered)} more change(s) in this block.")
-    return rendered, tags
+    return [line for line, _tag in lines], tags
 
-def diff_kits(prev_sections: list, cur_sections: list, max_sections: int = 8
-              ) -> tuple[list[Any], int]:
+def diff_kits(prev_sections: list, cur_sections: list) -> tuple[list[Any], int]:
     """Compare two revisions of one kit without claiming a direction we cannot establish."""
     prev_list = list(prev_sections or ())
     cur_list = list(cur_sections or ())
@@ -622,9 +618,6 @@ def diff_kits(prev_sections: list, cur_sections: list, max_sections: int = 8
             used.add(id(previous))
 
         if previous is None:
-            if len(out) >= max_sections:
-                untouched += 1
-                continue
             out.append(BetaSectionEntry(
                 title=getattr(section, "title", ""), category=getattr(section, "category", ""),
                 tag="[NEW]", meta=getattr(section, "meta", ""),
@@ -635,9 +628,6 @@ def diff_kits(prev_sections: list, cur_sections: list, max_sections: int = 8
 
         change_lines, tags = _diff_section(previous, section)
         if not change_lines:
-            untouched += 1
-            continue
-        if len(out) >= max_sections:
             untouched += 1
             continue
         if all(tag == "[TEXT FIX]" for tag in tags):
@@ -662,9 +652,6 @@ def diff_kits(prev_sections: list, cur_sections: list, max_sections: int = 8
     for previous in prev_list:
         if id(previous) in used:
             continue
-        if len(out) >= max_sections:
-            untouched += 1
-            continue
         old = _section_lines(previous)
         if not old:
             continue
@@ -672,7 +659,7 @@ def diff_kits(prev_sections: list, cur_sections: list, max_sections: int = 8
             title=str(getattr(previous, "title", "")),
             category=str(getattr(previous, "category", "")), tag="[CHANGED]",
             meta=str(getattr(previous, "meta", "")),
-            lines=[f"**[CHANGED]** Removed from this revision: ~~{line}~~" for line in old[:3]],
+            lines=[f"**[CHANGED]** Removed from this revision: ~~{line}~~" for line in old],
         ))
     return out, untouched
 
@@ -2193,7 +2180,7 @@ def _stat_diff(prev: BetaCharacter, current: BetaCharacter) -> list[BetaSectionE
         elif opcode == "delete":
             lines.extend(f"**[CHANGED]** Removed: ~~{line}~~" for line in old_lines[i1:i2])
     return [BetaSectionEntry(title="Profile & Base Stats", category="Profile Changes",
-                             tag="[CHANGED]", lines=lines[:MAX_CHANGE_LINES])]
+                             tag="[CHANGED]", lines=lines)]
 
 
 def _diff_equipment(previous: BetaEquipment, current: BetaEquipment) -> BetaEquipment | None:
@@ -2223,7 +2210,7 @@ def _diff_equipment(previous: BetaEquipment, current: BetaEquipment) -> BetaEqui
     return BetaEquipment(
         id=current.id, name=current.name, category_label=current.category_label,
         rarity=current.rarity, sub_type=current.sub_type, tag="[CHANGED]",
-        stats_line="", effect_title="", lines=changes[:MAX_CHANGE_LINES],
+        stats_line="", effect_title="", lines=changes,
         image_url=current.image_url, diff_url=current.diff_url, page_url=current.page_url,
     )
 
@@ -2473,14 +2460,14 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
                             "no direction is inferred.")
             patch.characters.append(full)
         elif _snapshot_comparison(previous_snapshot, patch.snapshots[snap_key]) == "diff":
-            diff_sections, unchanged = diff_kits(previous.sections, full.sections, max_sections=8)
+            diff_sections, unchanged = diff_kits(previous.sections, full.sections)
             diff_sections = _stat_diff(previous, full) + diff_sections
             if diff_sections:
                 full.sections = diff_sections
                 full.is_new = False
                 old_rev = str((previous_snapshot or {}).get("revision") or "previous revision")
                 full.subtext = (f"-# Revision diff against {old_rev}"
-                                + (f" • {unchanged} other block(s) omitted" if unchanged else ""))
+                                + (f" • {unchanged} unchanged block(s) omitted" if unchanged else ""))
                 patch.characters.append(full)
         if is_new:
             char_new += 1
