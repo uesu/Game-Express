@@ -1,5 +1,10 @@
 # Changelog — current entries
 
+## 2026-10-25 — CI annotation hygiene, zizmor action pin alignment, and beta post-merge edge-case hardening
+
+- Fix CI & sync-gate error annotations across `uesu/Game-Express` and `uesu/8mqzv4k2n7c` while keeping `runs-on: ubuntu-latest` for automatic runner OS updates: update `actions/setup-python` to `6d4fd22b20465ccc0f7354476588e8df7c9ca0e0` (`# v7.1.0`), pin exact `# vX.Y.Z` tag comments on all workflow actions so `zizmor` exits `0` instead of `13`, include `sync_prod.yml` in `python_version_bump.py`, and capture simulated `::error::` workflow commands in `tests/test_smoke.py` with a runner-wide command-leak guard.
+- Harden feature-5 (`beta`) post-merge edge cases without touching features 1–4 runtime code: compare CN/CHS vs EN prose percentages as order-independent multisets so clause word order and English ordinals (`1st-Hit` vs `第一段`) never emit false lag notes, preserve immediate retry (`last_poll` unstamped) on transient Discord HTTP failures (`will retry`) and clear stale `paused` markers on resume, surface pure slot-skill renames in `diff_kits`, pack long equipment-only items onto Page 1 alongside the patch header, split HSR `Planar Ornaments Changes` vs `Relics & Ornaments` headings independently, and preserve `ambiguous` circuit-breaker holds across `BETA_FORMAT_EPOCH` peer merges in both directions.
+
 ## 2026-10-25 — Beta Prime Formatting Style, active-beta gating, media galleries, and CN/CHS cross-check
 
 - Gate beta discovery against each game's live version cycle (manifest `live`/`hotfix`, version config, and confirmed past maintenance schedules) so finished or already-live betas (e.g. GI `7.1.53` on live `7.1`, HSR `4.6.54` on live `4.6`) skip immediately with zero changelog or detail requests while active betas (e.g. ZZZ `3.4.1`, WuWa `3.8.1`) publish normally. Handle gachabase HTTP 403 / access-denied blocks cleanly without warning spam.
