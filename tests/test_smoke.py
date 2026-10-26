@@ -1356,8 +1356,8 @@ def test_every_action_is_pinned_to_a_commit_sha_with_a_readable_version_comment(
             assert re.fullmatch(r"v\d+\.\d+\.\d+", ver.group(1)), (
                 f"{path.name}: {repo} comment {ver.group(1)} must be an exact vX.Y.Z tag for zizmor"
             )
-        assert "runs-on: ubuntu-latest" not in path.read_text(encoding="utf-8"), (
-            f"{path.name}: pin explicit ubuntu-24.04 runner instead of floating ubuntu-latest"
+        assert "runs-on: ubuntu-latest" in path.read_text(encoding="utf-8"), (
+            f"{path.name}: keep runs-on: ubuntu-latest so runner OS updates roll forward automatically"
         )
     assert len(seen) >= 9, seen
 

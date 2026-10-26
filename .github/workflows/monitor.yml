@@ -102,7 +102,7 @@ jobs:
     # mistake. A TEST run (mode = test) is still allowed there — it never writes the state.
     # Never set ENABLED_FEATURES=none on the repo that posts.
     if: vars.ENABLED_FEATURES != 'none' || inputs.mode == 'test'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       PYTHONUNBUFFERED: '1'

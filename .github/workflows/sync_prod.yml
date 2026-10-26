@@ -49,7 +49,7 @@ jobs:
   sync:
     name: Validate & sync runtime to production
     if: github.repository == 'uesu/Game-Express'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Check out development repository
