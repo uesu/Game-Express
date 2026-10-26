@@ -54,7 +54,9 @@ jobs:
     steps:
       # peter-evans/create-pull-request pushes the bump branch with these credentials, so they
       # have to persist. Nothing in this job is uploaded as an artifact.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1 # zizmor: ignore[artipacked]
+      - name: Checkout
+        # zizmor: ignore[artipacked]
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           token: ${{ secrets.BUMP_PAT }}
 

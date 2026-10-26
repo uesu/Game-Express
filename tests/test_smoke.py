@@ -1351,10 +1351,9 @@ def test_every_action_is_pinned_to_a_commit_sha_with_a_readable_version_comment(
             repo, ref = m.group(1), m.group(2)
             seen.append(f"{repo}@{ref}")
             assert re.fullmatch(r"[0-9a-f]{40}", ref), f"{path.name}: {repo}@{ref} is not a SHA"
-            ver = re.search(r"#\s*(v[\w.-]+)", line)
-            assert ver, f"{path.name}: {repo} pinned without a version comment"
-            assert re.fullmatch(r"v\d+\.\d+\.\d+", ver.group(1)), (
-                f"{path.name}: {repo} comment {ver.group(1)} must be an exact vX.Y.Z tag for zizmor"
+            ver = re.search(r"#\s*(v\d+\.\d+\.\d+)\s*$", line)
+            assert ver, (
+                f"{path.name}: {repo} must end with a bare '# vX.Y.Z' tag comment so zizmor can verify it"
             )
         assert "runs-on: ubuntu-latest" in path.read_text(encoding="utf-8"), (
             f"{path.name}: keep runs-on: ubuntu-latest so runner OS updates roll forward automatically"
@@ -18701,7 +18700,8 @@ def test_feature5_post_merge_edge_cases_and_ci_annotation_hygiene():
         merged_revs = s_old_local.beta_record("zzz")["revisions"]
         assert "amb_local" in merged_revs and "new_rev" in merged_revs and "posted_old" not in merged_revs
 
-        # 7. python_version_bump.py updates sync_prod.yml when present alongside ci/monitor/bump.
+        # 7. python_version_bump.py updates sync_prod.yml when present alongside ci/monitor/bump,
+        #    and skips it cleanly in production checkouts where dev-only sync_prod.yml is absent.
         bump_root = Path(tmp) / "bump_repo"
         (bump_root / ".github" / "workflows").mkdir(parents=True)
         (bump_root / ".github" / "scripts").mkdir(parents=True)
@@ -18710,8 +18710,12 @@ def test_feature5_post_merge_edge_cases_and_ci_annotation_hygiene():
             bump_root / ".github" / "scripts" / "python_version_bump.py",
         )
         for wf_name in ("ci.yml", "monitor.yml", "python_version_bump.yml", "sync_prod.yml"):
-            txt = (ROOT / ".github" / "workflows" / wf_name).read_text(encoding="utf-8")
-            txt = re.sub(r"(python-version:\s*')\d+\.\d+\.\d+(')", r"\g<1>3.14.8\2", txt)
+            src_wf = ROOT / ".github" / "workflows" / wf_name
+            if src_wf.is_file():
+                txt = src_wf.read_text(encoding="utf-8")
+                txt = re.sub(r"(python-version:\s*')\d+\.\d+\.\d+(')", r"\g<1>3.14.8\2", txt)
+            else:
+                txt = "python-version: '3.14.8'\n"
             (bump_root / ".github" / "workflows" / wf_name).write_text(txt, encoding="utf-8")
         spec = importlib.util.spec_from_file_location(
             "bump_sync_check", bump_root / ".github" / "scripts" / "python_version_bump.py"
@@ -18721,6 +18725,13 @@ def test_feature5_post_merge_edge_cases_and_ci_annotation_hygiene():
         rewritten = mod.bump_workflow_files("3.14.9")
         assert ".github/workflows/sync_prod.yml" in rewritten
         assert "'3.14.9'" in (bump_root / ".github" / "workflows" / "sync_prod.yml").read_text(encoding="utf-8")
+
+        # Production checkout (no sync_prod.yml): succeeds cleanly and rewrites the 3 synced workflows.
+        (bump_root / ".github" / "workflows" / "sync_prod.yml").unlink()
+        rewritten_prod = mod.bump_workflow_files("3.14.10")
+        assert ".github/workflows/sync_prod.yml" not in rewritten_prod
+        assert ".github/workflows/ci.yml" in rewritten_prod
+        assert "'3.14.10'" in (bump_root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
 if __name__ == "__main__":
     sys.exit(main())
