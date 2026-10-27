@@ -726,3 +726,25 @@ What is deliberately **not** done:
   `Robin_Skill_Normal_Title` and `EquipmentSuit_34300_name` are recognised and dropped
   (`gamexpress/beta.py::_is_key`), so an unfinished localisation shows as "no text yet"
   instead of a wall of internal identifiers.
+
+### Verified skill-level caps, curves & offline client-schema references (2026-10-27)
+
+Client skill-level caps and stat curves are enforced at build time in `gamexpress/beta.py`
+so unused raw client padding rows (`Lv. 15` / `Lv. 20`) never leak into rendered multipliers:
+
+| Game | Base (E0 / C0 / M0 / S0) caps rendered on cards |Dupes (`+levels`) | Raw table padding ignored | Equipment & curve notes |
+|---|---|---|---|---|
+| Wuthering Waves | `Lv. 10` (`Normal Attack`, `Resonance Skill`, `Forte Circuit`, `Resonance Liberation`, `Intro Skill`); `Outro Skill` & `Tune Break` unleveled | `S1–S6`: `+0` skill levels | Rows `11–20` in `param[0]` | `lvData.format` / Encore `Description` units (`s`, ` HP`, ` DEF`) preserved; Echoes evaluated at max `Rank 5` (`skill.param[-1]`), Sonata `set[n].param` interpolated |
+| Zenless Zone Zero | `Lv. 12` combat skills (`main + growth × 11`) + `Core Skill F` (`passive.level` max rank, `extra_level.6` flat bonuses) | **M3** `+2` (`Lv. 14`), **M5** `+2` (`Lv. 16` max); **M6** `+0` | Rows `13–16` at M0 | `prop=12101` flat Base ATK strictly separated from `12102` `ATK%`; `Armorer` (`7`), `Wind` (`204`), `Lumiflux` (`300`) enum fallbacks built in |
+| Honkai: Star Rail | `Lv. 6` (`Basic ATK` / `普攻`, `Memosprite Skill/Talent` / `忆灵`), `Lv. 10` (`Skill`, `Ultimate`, `Talent`, `Elation Skill`, `Assist Skill`), `Lv. 1` (`Technique` / `秘技`) | **E3/E5**: `Lv. 7` Basic/Memosprite, `Lv. 12` Skill/Ult/Talent/Elation | Rows `8–10` & `13–15` | `#n[f1]`/`[f2]` float formatters + `{RUBY_*}` furigana stripping; EN & `/zh/` slots share identical caps |
+| Genshin Impact | `Lv. 10` (`Normal Attack`, `Elemental Skill`, `Elemental Burst`); `Lv. 1` for single-level alternate sprints | **C3/C5**: `+3` (`Lv. 13`) | Rows `14–15` | `Lv. 90` weapon substats computed from `sub_prop_value × 4.594` (`GROW_CURVE_CRITICAL_{101,201,301}`) when listing omits substat percentage |
+
+Additional community and client-table repositories (`seriaati/hb-data`, `gi.yatta.moe` /
+`sr.yatta.moe`, `HomDGCat`, `Mar-7th/StarRailRes`, `malu-no996/ZenlessData`,
+`d4rkOfficial/wuwa-afyg-tool`, `everbird/ww-dps-sim`, and `t.me/s/nanoka_news`) were audited
+on 2026-10-27. Mutable latest-only endpoints (`gi.yatta.moe/api/v2`, `sr.yatta.moe/api/v2`)
+cannot serve immutable historical revision diffs, and multi-hundred-MB raw git dumps
+(`hb-data` upstream repositories) are unsuitable for low-cost scheduled runs; instead, their
+verified client curves, property IDs, markup grammars (`<Term:...>`, `<highlight>`, `{RUBY_*}`),
+and enum tables are baked directly into `gamexpress/beta.py` with **zero extra HTTP requests**.
+
