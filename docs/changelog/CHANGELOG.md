@@ -1,5 +1,10 @@
 # Changelog — current entries
 
+## 2026-10-27 — Redlib Tier-1 fleet expansion (24 → 27) and inline-video / crosspost media parity
+
+- Expand `DEFAULT_REDDIT` from `24` to `27` entries (`0` deletions) by adding three verified working clearnet Redlib instances to Tier 1: `https://r.naa.gg` (`Nachtalb/redlib` GraphQL engine), `https://redlib.thepixora.com` (`PR #603` GraphQL comments patch), and `https://redlib.r4fo.com`, while explicitly excluding `https://redlib.cow.rip` (Cloudflare + custom verification wall).
+- Harden `gamexpress/sources/reddit.py` (`redlib_media_to_reddit`, `parse_redlib_html`, `parse_reddit_rss`, `parse_reddit_json`, and `resolve_post`) to extract rich-text inline `/link/<post>/video/<id>/player` and `media_metadata` `RedditVideo` / `Image` / `AnimatedImage` media and unwrap `crosspost_parent_list` / `crosspost_parent` records on Arctic Shift fallbacks.
+
 ## 2026-10-25 — CI annotation hygiene, zizmor action pin alignment, and beta post-merge edge-case hardening
 
 - Fix CI & sync-gate error annotations across `uesu/Game-Express` and `uesu/8mqzv4k2n7c` while keeping `runs-on: ubuntu-latest` for automatic runner OS updates: update `actions/setup-python` to `6d4fd22b20465ccc0f7354476588e8df7c9ca0e0` (`# v7.1.0`), pin exact `# vX.Y.Z` tag comments on all workflow actions so `zizmor` exits `0` instead of `13`, include `sync_prod.yml` in `python_version_bump.py`, and capture simulated `::error::` workflow commands in `tests/test_smoke.py` with a runner-wide command-leak guard.
