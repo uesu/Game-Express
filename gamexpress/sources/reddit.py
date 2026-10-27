@@ -93,7 +93,7 @@ REDLIB_PREVIEW_RE = re.compile(r"^https?://[^/]+/preview/(external-pre|pre)/([^?
 REDLIB_VID_RE = re.compile(r"^https?://[^/]+/vid/([A-Za-z0-9_-]+)/([^\s\"'<>]+)", re.I)
 _REDLIB_VID_SUBPATH_RE = re.compile(r"^(DASH|CMAF|HLS)/([A-Za-z0-9._-]+)", re.I)
 INLINE_REDDIT_VIDEO_RE = re.compile(
-    r"(?:https?://[^/\s\"'<>]+)?/link/[a-z0-9]+/video/([A-Za-z0-9]{5,20})(?:/player)?(?=[/?#\x22\x27<>\s).,;]|$)",
+    r"(?:https?://[^/\s\"'<>]+|(?:(?<=[\s\x22\x27<(])|^))/link/[a-z0-9]+/video/([A-Za-z0-9]{5,20})(?:/player)?(?=[/?#\x22\x27<>\s).,;]|$)",
     re.I,
 )
 VREDDIT_ID_RE = re.compile(r"https?://v\.redd\.it/([A-Za-z0-9]{5,20})(?=[/?#\x22\x27<>\s).,;]|$)", re.I)
@@ -664,14 +664,14 @@ def _extract_record_media(source_data: dict) -> tuple[list[str], list[str], str]
     def _add_meta_entry(mid: str, meta_entry: object) -> None:
         if not isinstance(meta_entry, dict) or meta_entry.get("status") not in (None, "valid"):
             return
-        if (meta_entry.get("e") == "RedditVideo" or meta_entry.get("is_video")) and not (
-            meta_entry.get("isGif") or meta_entry.get("is_gif")
+        best_s = meta_entry.get("s") if isinstance(meta_entry.get("s"), dict) else {}
+        if (meta_entry.get("e") == "RedditVideo" or meta_entry.get("is_video")) and not isinstance(
+            best_s.get("gif"), str
         ):
             vid_id = str(meta_entry.get("id") or mid or "").strip()
             if vid_id and re.fullmatch(r"[A-Za-z0-9]{5,20}", vid_id):
                 videos.append(f"https://v.redd.it/{vid_id}/CMAF_720.mp4")
             return
-        best_s = meta_entry.get("s") if isinstance(meta_entry.get("s"), dict) else {}
         img_u = html.unescape(str(best_s.get("gif") or best_s.get("u") or "")).strip()
         if img_u.startswith(("http://", "https://")):
             images.append(img_u)

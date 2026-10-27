@@ -13506,6 +13506,39 @@ def test_reddit_inline_video_and_crosspost_media_parity():
 
     asyncio.run(_run_arc_xpost())
 
+    # 5. Mid-path foreign URLs never false-match INLINE_REDDIT_VIDEO_RE, and loop-flagged RedditVideo (isGif=True, no s.gif) stays a video.
+    from gamexpress.sources.reddit import _inline_video_urls_from_text
+
+    assert _inline_video_urls_from_text(
+        "https://example.com/foo/link/1xgncao/video/juuuo3it3zxh1/player "
+        "https://video.twimg.com/ext_tw_video/1982000/pu/vid/1280x720/abc.mp4"
+    ) == []
+    assert _inline_video_urls_from_text("/link/1xgncao/video/juuuo3it3zxh1/player") == [
+        "https://v.redd.it/juuuo3it3zxh1/CMAF_720.mp4"
+    ]
+    loop_json = {
+        "data": {
+            "children": [
+                {
+                    "kind": "t3",
+                    "data": {
+                        "id": "1loop99",
+                        "subreddit": "Zenlesszonezeroleaks_",
+                        "title": "Loop Clip",
+                        "author": "Leaker",
+                        "created_utc": 1793000000,
+                        "media_metadata": {
+                            "loopvid99": {"status": "valid", "e": "RedditVideo", "id": "loopvid99", "isGif": True},
+                        },
+                    },
+                }
+            ]
+        }
+    }
+    loop_posts = parse_reddit_json(loop_json)
+    assert len(loop_posts) == 1
+    assert loop_posts[0]["videos"] == ["https://v.redd.it/loopvid99/CMAF_720.mp4"]
+
 
 def test_redlib_html_parser_merges_author_comment_and_rewrites_redd_it_media():
     """Live 2026-10-22 `u/genshinimpact` `1xbd2nm` shape: image post + same-author comment timestamp,
