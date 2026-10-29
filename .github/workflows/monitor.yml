@@ -183,17 +183,28 @@ jobs:
           ONLY: ${{ inputs.only != 'all' && inputs.only || '' }}
           GAME: ${{ inputs.game }}
           REPOST: ${{ inputs.repost }}
-          # A run with warnings or errors writes its step summary to this file, and the persist
-          # step below commits it with the state. Clean runs write nothing, so a healthy monitor
-          # still commits only when something actually moved. Evidence lives in the repo instead
-          # of being pasted by hand into an issue.
-          SUMMARY_ARCHIVE_PATH: polishing and refining/game express summary.txt
         run: python -m gamexpress run
 
       - name: LIVE · commit state (also after a partial failure, so nothing is ever posted twice)
         id: persist_state
         if: always() && inputs.mode == 'live' && steps.run.conclusion != 'skipped'
         run: |
+          # A run with warnings or errors keeps its step summary in the repository, so a bad run
+          # can be reviewed later without pasting job logs by hand. A clean run writes nothing,
+          # so a healthy monitor still commits only when state actually moves.
+          python - "polishing and refining/game express summary.txt" <<'PY'
+          import os
+          import pathlib
+          import sys
+
+          source = os.environ.get("GITHUB_STEP_SUMMARY") or ""
+          text = pathlib.Path(source).read_text(encoding="utf-8") if source and pathlib.Path(source).is_file() else ""
+          if any(line.startswith(("- \u274c", "- \u26a0")) for line in text.splitlines()):
+              target = pathlib.Path(sys.argv[1])
+              target.parent.mkdir(parents=True, exist_ok=True)
+              target.write_text(text, encoding="utf-8")
+              print("archived the run summary")
+          PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add state/state.json 2>/dev/null || true

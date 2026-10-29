@@ -21264,20 +21264,26 @@ def test_reveal_ping_default_off_isolation_and_multi_era_plus_unseen_future_clas
     assert s_no_role.news_reveal_ping is True
     assert not s_no_role.reveal_ping("genshin")
 
-    s_scoped = config.load_settings({
-        "NEWS_REVEAL_PING": "1",
-        "PING_NEWS_REVEAL": "222222222222222222",
-        "PING_NEWS_REVEAL_GI": "444444444444444444",
-        "PING_NEWS_REVEAL_ZZZ": "none",
-    })
-    assert s_scoped.reveal_ping("genshin").text == "<@&444444444444444444>"
-    assert s_scoped.reveal_ping("wuwa").text == "<@&222222222222222222>"
-    assert not s_scoped.reveal_ping("zzz")
+    # Exactly two settings: one switch, one role list that covers every game.
+    s_all = config.load_settings({"NEWS_REVEAL_PING": "1", "PING_NEWS_REVEAL": "222222222222222222"})
+    assert {s_all.reveal_ping(g).text for g in ("genshin", "starrail", "zzz", "wuwa", "hna", "ananta")} == {
+        "<@&222222222222222222>"}
+    assert config.load_settings({"NEWS_REVEAL_PING": "1",
+                                 "PING_NEWS_REVEAL": "222222222222222222, 444444444444444444"}
+                                ).reveal_ping("genshin").roles == ["222222222222222222", "444444444444444444"]
+    assert not config.load_settings({"NEWS_REVEAL_PING": "1", "PING_NEWS_REVEAL": "none"}).reveal_ping("zzz")
     assert not config.load_settings({
         "NEWS_REVEAL_PING": "1",
         "PING_NEWS_REVEAL": "222222222222222222",
         "NO_PING": "1",
     }).reveal_ping("wuwa")
+    # A stale per-game variable from an older draft must not resurrect the removed override.
+    assert config.load_settings({
+        "NEWS_REVEAL_PING": "1",
+        "PING_NEWS_REVEAL": "222222222222222222",
+        "PING_NEWS_REVEAL_GI": "444444444444444444",
+        "PING_REVEAL": "555555555555555555",
+    }).reveal_ping("genshin").text == "<@&222222222222222222>"
 
     # `known_rerun_names` baseline seeds historical roster silently on cold start:
     g_rec: dict = {}
@@ -21460,7 +21466,7 @@ def test_reveal_ping_same_time_single_ping_wave_different_times_recheck_edit_and
             Path(tmp) / "off.json",
             NEWS_ENABLED="1",
             NEWS_GAMES="wuwa",
-            PING_NEWS_REVEAL_WUWA=role_id,
+            PING_NEWS_REVEAL=role_id,
             DISCORD_WEBHOOK_NEWS_WUWA="https://discord.com/api/webhooks/100000000000000099/ww_tok",
         )
         with patch.object(kuro, "discover_news", return_value=[]):
@@ -21487,7 +21493,7 @@ def test_reveal_ping_same_time_single_ping_wave_different_times_recheck_edit_and
             NEWS_ENABLED="1",
             NEWS_GAMES="wuwa",
             NEWS_REVEAL_PING="1",
-            PING_NEWS_REVEAL_WUWA=role_id,
+            PING_NEWS_REVEAL=role_id,
             DISCORD_WEBHOOK_NEWS_WUWA="https://discord.com/api/webhooks/100000000000000099/ww_tok",
         )
         base_11am = 1793242800  # 11:00:00 UTC+8
@@ -21599,7 +21605,7 @@ def test_reveal_distinct_timestamps_in_same_run_and_ambiguous_hold():
     role = "987654321098765432"
     with tempfile.TemporaryDirectory() as tmp:
         ctx = make_ctx(Path(tmp) / "state.json", NEWS_ENABLED="1", NEWS_GAMES="wuwa",
-                       NEWS_REVEAL_PING="1", PING_NEWS_REVEAL_WUWA=role,
+                       NEWS_REVEAL_PING="1", PING_NEWS_REVEAL=role,
                        DISCORD_WEBHOOK_NEWS_WUWA="https://discord.com/api/webhooks/100000000000000099/ww_tok")
         ctx.now = 1793240000
         with patch.object(kuro, "discover_news", return_value=[]):
@@ -21650,7 +21656,7 @@ def test_reveal_ping_near_limit_reflows_without_losing_article():
     role = "987654321098765432"
     with tempfile.TemporaryDirectory() as tmp:
         ctx = make_ctx(Path(tmp) / "state.json", NEWS_ENABLED="1", NEWS_GAMES="wuwa",
-                       NEWS_REVEAL_PING="1", PING_NEWS_REVEAL_WUWA=role,
+                       NEWS_REVEAL_PING="1", PING_NEWS_REVEAL=role,
                        DISCORD_WEBHOOK_NEWS_WUWA="https://discord.com/api/webhooks/100000000000000099/ww_tok")
         ctx.now = 1793242200
         with patch.object(kuro, "discover_news", return_value=[]):
@@ -21694,7 +21700,7 @@ def test_reveal_ping_near_limit_uses_safe_word_split_in_first_card():
     role = "987654321098765432"
     with tempfile.TemporaryDirectory() as tmp:
         ctx = make_ctx(Path(tmp) / "state.json", NEWS_ENABLED="1", NEWS_GAMES="wuwa",
-                       NEWS_REVEAL_PING="1", PING_NEWS_REVEAL_WUWA=role,
+                       NEWS_REVEAL_PING="1", PING_NEWS_REVEAL=role,
                        DISCORD_WEBHOOK_NEWS_WUWA="https://discord.com/api/webhooks/100000000000000099/ww_tok")
         ctx.now = 1793242200
         with patch.object(kuro, "discover_news", return_value=[]):
@@ -21729,7 +21735,7 @@ def test_reveal_ping_near_limit_continuation_resumes_after_failure():
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "state.json"
         opts = dict(NEWS_ENABLED="1", NEWS_GAMES="wuwa", NEWS_REVEAL_PING="1",
-                    PING_NEWS_REVEAL_WUWA=role,
+                    PING_NEWS_REVEAL=role,
                     DISCORD_WEBHOOK_NEWS_WUWA="https://discord.com/api/webhooks/100000000000000099/ww_tok")
         ctx = make_ctx(path, **opts)
         ctx.now = 1793242200
@@ -21853,7 +21859,7 @@ def test_reveal_ping_edit_guard_skips_reflow_and_lost_mention_instead_of_truncat
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "state.json"
         opts = dict(NEWS_ENABLED="1", NEWS_GAMES="wuwa", NEWS_REVEAL_PING="1",
-                    PING_NEWS_REVEAL_WUWA=role,
+                    PING_NEWS_REVEAL=role,
                     DISCORD_WEBHOOK_NEWS_WUWA="https://discord.com/api/webhooks/100000000000000099/ww_tok")
         ctx = make_ctx(path, **opts)
         ctx.now = ts - 1200
@@ -21899,62 +21905,59 @@ def test_reveal_ping_edit_guard_skips_reflow_and_lost_mention_instead_of_truncat
         assert f"<@&{role}>" in json.dumps(patches[0]["payload"]), "mention restored on the retried edit"
 
 
-def test_run_summary_archives_only_a_run_that_needs_attention():
-    """A clean run must not commit an ever-changing summary file; a run with warnings/errors
-    writes the same sanitized summary to `SUMMARY_ARCHIVE_PATH` so the evidence is in the repo
-    instead of being pasted by hand. The workflow stages exactly that file."""
-    from unittest.mock import patch
+def test_run_summary_is_archived_only_when_the_run_needs_attention():
+    """The archive lives in the live commit step, not in a runtime setting.
+
+    A clean run must not create a file the 5-minute monitor would commit every time, and a run
+    with warnings or errors must leave its summary in the repository. This runs the real
+    shell/python block from `monitor.yml` rather than a copy of its logic.
+    """
+    import subprocess
+    import sys
 
     import yaml
 
-    from gamexpress.runner import write_summary
-
-    def quiet(call):
-        # write_summary also prints `::warning::`/`::error::` annotations for the runner; the
-        # standalone harness treats an uncaptured workflow command as a failure, so capture it.
-        with contextlib.redirect_stdout(io.StringIO()):
-            return call()
-
-    def ctx_with(warnings, errors):
-        ctx = make_ctx(Path(tempfile.mkdtemp()) / "state.json", NEWS_ENABLED="1")
-        ctx.fetcher = types.SimpleNamespace(summary=lambda: "hoyolab: 3 ok / 0 fail")
-        ctx.report.append("📰 GI news: delivered 47218605 (1 message(s), 1 container(s))")
-        ctx.warnings.extend(warnings)
-        ctx.errors.extend(errors)
-        return ctx
-
-    with tempfile.TemporaryDirectory() as tmp:
-        archive = Path(tmp) / "polishing and refining" / "game express summary.txt"
-        step = Path(tmp) / "step.md"
-        env = {"SUMMARY_ARCHIVE_PATH": str(archive), "GITHUB_STEP_SUMMARY": str(step)}
-        with patch.dict(os.environ, env, clear=False):
-            quiet(lambda: write_summary(ctx_with([], [])))
-            assert step.read_text(encoding="utf-8").strip(), "the step summary is always written"
-            assert not archive.exists(), "a clean run must not create a commit-magnet file"
-
-            quiet(lambda: write_summary(ctx_with(["WW: no announcement source answered this run"], [])))
-            body = archive.read_text(encoding="utf-8")
-            assert "⚠️ WW: no announcement source answered this run" in body
-            assert "delivered 47218605" in body and "sources: hoyolab: 3 ok / 0 fail" in body
-
-    # A secret in a warning must never reach the archived file.
-    with tempfile.TemporaryDirectory() as tmp:
-        archive = Path(tmp) / "summary.txt"
-        secret = "https://discord.com/api/webhooks/1234567890/abcdefSECRETtoken"
-        with patch.dict(os.environ, {"SUMMARY_ARCHIVE_PATH": str(archive),
-                                     "DISCORD_WEBHOOK_NEWS_GI": secret}, clear=False):
-            quiet(lambda: write_summary(ctx_with([f"post failed for {secret}"], [])))
-        body = archive.read_text(encoding="utf-8")
-        assert "abcdefSECRETtoken" not in body and "[REDACTED]" in body
-
-    # The live workflow supplies the path and stages the file with the state commit.
-    wf = yaml.safe_load((Path(__file__).resolve().parents[1] / ".github/workflows/monitor.yml")
-                        .read_text(encoding="utf-8"))
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github" / "workflows" / "monitor.yml").read_text(encoding="utf-8")
+    wf = yaml.safe_load(workflow)
     steps = wf["jobs"]["monitor"]["steps"]
-    live = next(s for s in steps if s.get("id") == "run")
-    assert live["env"]["SUMMARY_ARCHIVE_PATH"] == "polishing and refining/game express summary.txt"
-    persist = next(s for s in steps if s.get("id") == "persist_state")["run"]
-    assert 'git add -f "polishing and refining/game express summary.txt"' in persist
+    persist = next(s for s in steps if s.get("id") == "persist_state")
+    assert "<<'PY'" in persist["run"], "the archive must not add another LIVE step"
+    script = persist["run"].split("<<'PY'\n", 1)[1].split("\nPY", 1)[0]
+    assert "SUMMARY_ARCHIVE_PATH" not in (root / "gamexpress" / "runner.py").read_text(encoding="utf-8")
+    assert "SUMMARY_ARCHIVE_PATH" not in workflow
+
+    def run(text: str | None):
+        """Run the workflow block in a throwaway directory and return the archived text (or None).
+
+        The archive is read inside the temporary directory: returning its path and reading it
+        after the `with` block would inspect a deleted directory and always look 'clean'.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+            if text is not None:
+                step = Path(tmp) / "step.md"
+                step.write_text(text, encoding="utf-8")
+                env["GITHUB_STEP_SUMMARY"] = str(step)
+            proc = subprocess.run([sys.executable, "-c", script, "polishing and refining/summary.txt"],
+                                  cwd=tmp, capture_output=True, text=True, timeout=120, env=env)
+            assert proc.returncode == 0, proc.stderr
+            target = Path(tmp) / "polishing and refining" / "summary.txt"
+            return target.read_text(encoding="utf-8") if target.is_file() else None
+
+    clean = ("### Game-Express abc — alpha (primary)\n"
+             "- 📰 GI news: delivered 47218605 (1 message(s), 1 container(s))\n"
+             "- sources: hoyolab: 3 ok / 0 fail\n")
+    assert run(clean) is None, "a clean run must not create a commit-magnet file"
+    warned = run(clean + "- ⚠️ WW: no announcement source answered this run\n")
+    assert warned is not None and "⚠️ WW: no announcement source answered this run" in warned
+    errored = run(clean + "- ❌ orchestration failed: boom\n")
+    assert errored is not None and "❌ orchestration failed: boom" in errored
+    # No step summary at all (dry-run/test mode, or a skipped run) is a silent no-op.
+    assert run(None) is None
+
+    # The same step stages that file with the state.
+    assert 'git add -f "polishing and refining/game express summary.txt"' in persist["run"]
 
 
 def test_live_news_probe_cli_guards_without_network():

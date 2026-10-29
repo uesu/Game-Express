@@ -611,24 +611,16 @@ class Settings:
         return Ping()
 
     def reveal_ping(self, game_key: str) -> Ping:
-        """Opt-in new-character reveal ping for official news.
+        """Opt-in new-character reveal ping: one switch and one role list for every game.
 
-        Strictly off unless `NEWS_REVEAL_PING=1` AND an explicit `PING_NEWS_REVEAL*` / `PING_REVEAL*`
-        role is configured. Never inherits `PING_ROLE_ID` or `PING_NEWS`."""
+        Exactly two settings exist - `NEWS_REVEAL_PING=1` turns it on and `PING_NEWS_REVEAL`
+        carries the role(s) used by all six games. It never inherits `PING_ROLE_ID` or
+        `PING_NEWS`, so enabling it cannot mute, move or widen an existing ping.
+        """
+        del game_key  # one configuration covers every game; kept for a uniform call site
         if self.no_ping or not self.news_reveal_ping:
             return Ping()
-        slugs = self._game_slugs(game_key)
-        names = [
-            *(f"PING_NEWS_REVEAL_{g}" for g in slugs),
-            *(f"PING_REVEAL_{g}" for g in slugs),
-            "PING_NEWS_REVEAL",
-            "PING_REVEAL",
-        ]
-        for name in names:
-            p = parse_ping(_env(self.env, name))
-            if p is not None:
-                return p
-        return Ping()
+        return parse_ping(_env(self.env, "PING_NEWS_REVEAL")) or Ping()
 
 
 def _off_to_empty(value: str) -> str:

@@ -19,10 +19,13 @@
 - Hold a backstage CMS edit instead of publishing a truncated card when re-attaching a retained
   reveal mention now needs a continuation page or no longer fits.
 - Accept trailing-slash and `/watch/` YouTube player URLs when rendering the visible watch link.
+- Turn on character-reveal mentions with exactly two settings: `NEWS_REVEAL_PING` (the switch)
+  and `PING_NEWS_REVEAL` (one role list covering every game). The per-game
+  `PING_NEWS_REVEAL_<GAME>` overrides and the `PING_REVEAL` aliases are gone.
 - Archive the run summary to `polishing and refining/game express summary.txt` only when a run
   has warnings or errors, and commit it with the state, so a bad run's evidence is in the
   repository instead of being pasted by hand. Clean runs write nothing, so the every-5-minute
-  monitor still commits only when state moves.
+  monitor still commits only when state moves. It is a workflow step, not a runtime setting.
 - Credit the launcher-API documentation the two launcher adapters were written from
   (DynamiByte's HoyoPlay and Wuthering Waves endpoint notes, and the WuWa research they build on),
   and pin those credits in the documentation-hygiene test.
