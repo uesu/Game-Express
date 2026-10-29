@@ -21548,7 +21548,7 @@ def test_reveal_distinct_timestamps_in_same_run_and_ambiguous_hold():
         assert ctx.state.news_record("wuwa")["records"]["3"]["ambiguous"] is True
 
 
-def test_reveal_ping_cannot_fit_keeps_original_news_delivery():
+def test_reveal_ping_near_limit_reflows_without_losing_article():
     import copy
     from unittest.mock import patch
 
@@ -21578,11 +21578,99 @@ def test_reveal_ping_cannot_fit_keeps_original_news_delivery():
               patch("gamexpress.media.news_media_available", return_value=True)):
             asyncio.run(run_news(ctx))
         posts = [x["payload"] for x in ctx.webhook.sent if x["method"] == "POST"]
-        assert posts == original
+        assert len(posts) == 2 and all(not validate_payload(p) for p in posts)
+        assert posts[0]["allowed_mentions"] == {"parse": [], "roles": [role]}
+        assert posts[1]["allowed_mentions"] == {"parse": []}
+        assert posts[0]["components"][0]["components"][0]["content"].endswith(f" · <@&{role}>")
+        original_kids = [c for container in original[0]["components"] for c in container["components"]]
+        posted_kids = [c for post in posts for container in post["components"] for c in container["components"]]
+        posted_kids[0] = copy.deepcopy(original_kids[0])
+        assert posted_kids == original_kids
         assert ctx.state.news_record("wuwa")["records"]["x"]["status"] == "posted"
-        assert any("reveal mention did not fit" in warning for warning in ctx.warnings)
-        assert not ctx.state.news_record("wuwa").get("reveal_times")
+        assert not any("reveal mention did not fit" in warning for warning in ctx.warnings)
+        assert ctx.state.news_record("wuwa").get("reveal_times")
 
+
+
+
+def test_reveal_ping_near_limit_uses_safe_word_split_in_first_card():
+    from unittest.mock import patch
+
+    from gamexpress.cards import news_payloads, validate_payload
+    from gamexpress.runner import run_news
+    from gamexpress.sources import kuro
+
+    role = "987654321098765432"
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", NEWS_ENABLED="1", NEWS_GAMES="wuwa",
+                       NEWS_REVEAL_PING="1", PING_NEWS_REVEAL_WUWA=role,
+                       DISCORD_WEBHOOK_NEWS_WUWA="https://discord.com/api/webhooks/100000000000000099/ww_tok")
+        ctx.now = 1793242200
+        with patch.object(kuro, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now = 1793242860
+        row = {"id": "x", "ts": 1793242806}
+        body = "word " * 777 + "xx"
+        article = Item("kuro", "wuwa", "x", "https://example.com/x", "Resonator Reveal | Stella", "", row["ts"],
+                       article_blocks=[{"kind": "text", "text": body}])
+        original = news_payloads(GAMES["wuwa"], article)
+        assert len(original) == 1
+        with (patch.object(kuro, "discover_news", return_value=[row]),
+              patch.object(kuro, "news_article", return_value=article),
+              patch("gamexpress.media.news_media_available", return_value=True)):
+            asyncio.run(run_news(ctx))
+        posts = [x["payload"] for x in ctx.webhook.sent if x["method"] == "POST"]
+        assert len(posts) == 2 and all(not validate_payload(p) for p in posts)
+        first_kids = posts[0]["components"][0]["components"]
+        second_kids = posts[1]["components"][0]["components"]
+        assert first_kids[0]["content"].endswith(f" · <@&{role}>")
+        assert first_kids[1]["type"] == second_kids[0]["type"] == 10
+        assert first_kids[1]["content"] + second_kids[0]["content"] == body
+        assert second_kids[1:] == original[0]["components"][0]["components"][2:]
+
+def test_reveal_ping_near_limit_continuation_resumes_after_failure():
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress.runner import run_news
+    from gamexpress.sources import kuro
+
+    role = "987654321098765432"
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "state.json"
+        opts = dict(NEWS_ENABLED="1", NEWS_GAMES="wuwa", NEWS_REVEAL_PING="1",
+                    PING_NEWS_REVEAL_WUWA=role,
+                    DISCORD_WEBHOOK_NEWS_WUWA="https://discord.com/api/webhooks/100000000000000099/ww_tok")
+        ctx = make_ctx(path, **opts)
+        ctx.now = 1793242200
+        with patch.object(kuro, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now = 1793242860
+        row = {"id": "x", "ts": 1793242806}
+        article = Item("kuro", "wuwa", "x", "https://example.com/x", "Resonator Reveal | Stella", "", row["ts"],
+                       article_blocks=[{"kind": "text", "text": "x" * 3887}])
+        send = AsyncMock(side_effect=[SendResult(True, 200, message_id="page1"), SendResult(False, 500)])
+        with (patch.object(kuro, "discover_news", return_value=[row]),
+              patch.object(kuro, "news_article", return_value=article),
+              patch("gamexpress.media.news_media_available", return_value=True),
+              patch.object(ctx.webhook, "send", send)):
+            asyncio.run(run_news(ctx))
+        rec = ctx.state.news_record("wuwa")["records"]["x"]
+        assert rec["status"] == "partial" and rec["messages"] == ["page1"]
+        assert rec["reveal_ping"] == f"<@&{role}>"
+        continuation = send.await_args_list[1].args[1]
+        retry = make_ctx(path, **opts)
+        retry.state = State.load(path)
+        retry.now = ctx.now + 1
+        send_retry = AsyncMock(return_value=SendResult(True, 200, message_id="page2"))
+        with (patch.object(kuro, "discover_news", return_value=[row]),
+              patch.object(kuro, "news_article", return_value=article),
+              patch("gamexpress.media.news_media_available", return_value=True),
+              patch.object(retry.webhook, "send", send_retry)):
+            asyncio.run(run_news(retry))
+        assert send_retry.await_count == 1
+        assert send_retry.await_args.args[1] == continuation
+        assert retry.state.news_record("wuwa")["records"]["x"]["status"] == "posted"
+        assert retry.state.news_record("wuwa")["records"]["x"]["messages"] == ["page1", "page2"]
 
 def test_reveal_ping_location_matches_user_astra_yao_capture():
     """The published ping-location capture puts the mention after the source byline timestamp."""

@@ -526,6 +526,64 @@ async def run_news(ctx: Ctx) -> None:
                 extra_page["allowed_mentions"] = {"parse": []}
             if not validate_payload(patched[0]):
                 return patched
+            # The article was valid before the mention. Move the smallest suffix of
+            # its first message to a continuation, preserving every component and its
+            # order. This only runs at the boundary; ordinary cards are unchanged.
+            # In particular, do not re-render an already grouped media strip or
+            # truncate an article merely to make room for the byline mention.
+            first = patched[0]
+            moved = []
+            while validate_payload(first):
+                containers = first.get("components") or []
+                if not containers:
+                    break
+                last = containers[-1]
+                if last.get("type") != 17:
+                    break
+                children = last.get("components") or []
+                if len(containers) > 1:
+                    moved.insert(0, containers.pop())
+                    continue
+                if len(children) <= 1:
+                    break  # the header itself cannot fit
+                child = children.pop()
+                if moved and moved[0].get("_same_container"):
+                    moved[0]["components"].insert(0, child)
+                else:
+                    continuation_container = _copy.deepcopy(last)
+                    continuation_container["components"] = [child]
+                    continuation_container["_same_container"] = True
+                    moved.insert(0, continuation_container)
+            # When the boundary lands in a text block, retain as much of it as
+            # possible on page one using the news renderer's markdown-safe splitter.
+            # Unsplittable text stays intact on the continuation instead.
+            if moved and moved[0].get("_same_container") and moved[0].get("components"):
+                child = moved[0]["components"][0]
+                if child.get("type") == 10:
+                    from .cards import MAX_TEXT_TOTAL, _split_expanded_text, text_length
+
+                    room = MAX_TEXT_TOTAL - text_length(first.get("components") or [])
+                    body = str(child.get("content") or "")
+                    pieces = _split_expanded_text(body, room) if room > 0 else None
+                    if pieces and len(pieces) > 1:
+                        cut = 0
+                        size = 0
+                        while cut < len(pieces) - 1 and size + len(pieces[cut]) <= room:
+                            size += len(pieces[cut])
+                            cut += 1
+                        first_piece = _copy.deepcopy(child)
+                        first_piece["content"] = "".join(pieces[:cut])
+                        remainder = _copy.deepcopy(child)
+                        remainder["content"] = "".join(pieces[cut:])
+                        containers[-1]["components"].append(first_piece)
+                        moved[0]["components"][0] = remainder
+            for component in moved:
+                component.pop("_same_container", None)
+            if moved:
+                continuation = {"flags": first["flags"], "allowed_mentions": {"parse": []},
+                                "components": moved}
+                if not validate_payload(first) and not validate_payload(continuation):
+                    return [first, continuation, *patched[1:]]
         # Never let optional mention formatting prevent the original article from posting.
         ctx.warnings.append(f"{gm.short} news {art.id}: reveal mention did not fit; attempting article without ping")
         return base_pls
@@ -739,7 +797,6 @@ async def run_news(ctx: Ctx) -> None:
                         or not msgs
                         or any(not isinstance(m, str) or not m for m in msgs)
                         or not rec.get("signature")
-                        or len(msgs) > len(payloads)
                     ):
                         raise ValueError("incomplete partial delivery state; manual review required")
                     if rec.get("signature") != signature:
@@ -768,6 +825,8 @@ async def run_news(ctx: Ctx) -> None:
                     resumed_ping = parse_ping(str(rec["reveal_ping"]))
                     if resumed_ping:
                         payloads = await _attach_news_ping(game, item, payloads, resumed_ping)
+                if len(rec["messages"]) > len(payloads):
+                    raise ValueError("incomplete partial delivery state; manual review required")
                 start_page_idx = len(rec["messages"])
                 for rel_idx, payload in enumerate(payloads[start_page_idx:]):
                     result = await ctx.webhook.send(hook, payload, stop_on_ambiguous=True)
