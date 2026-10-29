@@ -22295,6 +22295,190 @@ def test_news_default_policy_smart_fits_a_long_article_instead_of_excerpting_it(
     assert "**Excerpt — this article exceeds the delivery safety limit.**" in json.dumps(excerpt, ensure_ascii=False)
 
 
+def test_reveal_ping_bold_dossier_keys_work_for_every_game_and_both_layers():
+    """The renderer bolds dossier lines for every game, so both matchers must read through it.
+
+    Layer 1 covers the named publisher series (Genshin `◆`, Star Rail, ZZZ, WuWa, HNA) and Layer 2
+    covers a series nobody has seen yet. A bold key must match in both, and a bold `◆` event
+    notice must still be refused - the marker is formatting, never evidence.
+    """
+    import json as _json
+
+    from gamexpress.models import Item
+    from gamexpress.reveal_ping import classify_character_reveal
+    from gamexpress.textutil import news_blocks
+
+    img = ("image", "https://upload-os-bbs.hoyolab.com/upload/2026/10/29/bold.png")
+
+    def build(game, title, rows):
+        ops = []
+        for kind, value in rows:
+            if kind == "bold":
+                ops.append({"insert": value, "attributes": {"bold": True}})
+            elif kind == "text":
+                ops.append({"insert": value})
+            elif kind == "image":
+                ops.append({"insert": {"image": value}})
+            ops.append({"insert": "\n"})
+        blocks = news_blocks("", _json.dumps(ops))
+        body = "\n\n".join(b["text"].strip() for b in blocks
+                            if b["kind"] == "text" and b["text"].strip())
+        return Item("kuro" if game == "wuwa" else "hoyolab", game, "z", "https://x/1", title, body, 0,
+                    author="Official", official=True, article_blocks=blocks)
+
+    rows = [
+        # (game, title, body rows, expected character)
+        ("genshin", "Genius At Play",
+         [("bold", '"Research differs from production."'),
+          ("bold", "◆Name: Mitya"), ("bold", "◆Title: Rules Set at Naught"),
+          ("bold", "◆ Stellar Linchpin: Electro"), ("bold", "◆Constellation: Nodus Gordianus"),
+          img, ("text", "Experts tend to be remarkably efficient, capable of producing results.")],
+         "Mitya"),
+        ("genshin", "The Divine Laid Down, Metaphor Makes Plain the Heart",
+         [("bold", '"Long, long ago..."'),
+          ("bold", "◆ Name: Nicole"), ("bold", "◆ Title: Clamor Within"),
+          ("bold", "◆ Vision: Pyro"), ("bold", "◆ Constellation: Reliquiarium"),
+          img, ("text", "Many of the stories Nicole envisions begin with a phrase as old as stories.")],
+         "Nicole"),
+        # Layer 2 only: an unseen series whose only dossier key is bold.
+        ("starrail", "Lushaka's Deep-Sea Chronicle | Nereia",
+         [("bold", '"Every tide remembers its oath."'), ("bold", "◆ Path: Remembrance"), img,
+          ("text", "Nereia watches the trench from the shore, counting the lanterns of the fleet.")],
+         "Nereia"),
+        ("zzz", "Agent Record | Evelyn Chevalier",
+         [("bold", '"Quote of the agent."'), ("bold", "◆ Faction: Defence Force"), img,
+          ("text", "Evelyn Chevalier stands guard at the harbour gate.")],
+         "Evelyn Chevalier"),
+        ("wuwa", "Profile Reveal | Eternal Blaze — Changli",
+         [("bold", '"A blade remembers."'), ("bold", "◆ Attribute: Fusion"), img,
+          ("text", "Changli counsels the young magistrate through the long night.")],
+         "Changli"),
+        ("hna", "Sovereign Nexus Dossier | Seraphina",
+         [("bold", '"Bind your Anima to mine."'), ("bold", "◆ Affiliation: Astral Sanctum"), img,
+          ("text", "Seraphina awaits the summons at the edge of the sanctum.")],
+         "Seraphina"),
+        ("ananta", "Esper Manifest | Kaede",
+         [("bold", '"The city never sleeps."'), ("bold", "◆ Affiliation: NTE Division"), img,
+          ("text", "Kaede watches the skyline until the last light fails.")],
+         "Kaede"),
+    ]
+    for game, title, body_rows, expected in rows:
+        item = build(game, title, body_rows)
+        assert "**◆" in item.text, f"{game}: the bold marker must survive the renderer"
+        match = classify_character_reveal(game, item)
+        assert match is not None, f"{game}: bold dossier key no longer classified ({title!r})"
+        assert match.character == expected, (game, title, match.character)
+        for expand in (False, True):
+            pages = cards.news_payloads(GAMES[game], item, expand_full=expand)
+            assert pages and all(not cards.validate_payload(p) for p in pages), (game, expand)
+
+    assert {row[0] for row in rows} == set(GAMES), "every configured game needs a bold-dossier row"
+
+    # The same bold `◆` style on an event notice is not a character, in either layer.
+    notice = build("starrail", "Skyline Festival Preview | Nereia",
+                   [("bold", "◆ Event Duration: October 25 - November 5"),
+                    ("bold", "◆ Participation Requirements: Adventure Rank 20"), img,
+                    ("text", "Come join the festival and claim your rewards before it ends.")])
+    assert classify_character_reveal("starrail", notice) is None
+
+
+def test_news_default_policy_keeps_an_unbreakable_4000_to_7000_article_whole():
+    """An article just past 4,000 characters is delivered, not excerpted - even as one paragraph.
+
+    The legacy two-page packer only cuts between blank lines, so a single long paragraph between
+    4,000 and 7,000 characters used to fall through to the one-container excerpt while the same
+    text rendered in full under `NEWS_EXPAND_FULL=1`. The smart fitter is now the fallback there,
+    so page count depends on the text budget alone.
+    """
+    sentence = "A newcomer walks the harbour at dusk and the lamps answer one by one. "
+    for key in ("genshin", "starrail", "hna", "zzz", "wuwa"):
+        for target in (4200, 6900, 7200):
+            body = (sentence * (target // len(sentence) + 1))[:target]
+            assert "\n" not in body          # a single paragraph: no safe blank-line boundary
+            item = news_item(body=body)
+            pages = cards.news_payloads(GAMES[key], item)
+            assert 2 <= len(pages) <= cards.NEWS_DEFAULT_MAX_PAGES, (key, target, len(pages))
+            assert all(not cards.validate_payload(p) for p in pages), (key, target)
+            assert "Excerpt" not in json.dumps(pages), (key, target)
+            delivered = "".join(
+                c["content"] for page in pages for c in page["components"][0]["components"]
+                if c["type"] == 10 and not c["content"].startswith(("## ", "-# Page")))
+            # The renderer trims page-edge whitespace; every character of prose survives.
+            assert delivered.replace("\n", "").strip() == body.replace("\n", "").strip(), (key, target)
+            labels = [c["content"] for page in pages for c in page["components"][0]["components"]
+                      if c["type"] == 10 and c["content"].startswith("-# Page")]
+            assert labels == [f"-# Page {n}" for n in range(1, len(pages) + 1)], (key, labels)
+
+
+def test_reveal_ping_renumbers_pages_and_keeps_every_article_whole():
+    """The mention must not produce an unlabelled message or a stale page number.
+
+    When the byline mention pushes page one over budget, its trailing block moves into a new
+    message placed ahead of the pages that already existed. A card that was numbered 1..N would
+    otherwise be delivered as `Page 1`, an unlabelled message, then `Page 2`..`Page N`. Every page
+    is renumbered in delivery order, the article stays complete, and the mention stays last on
+    page one for every game that can receive it.
+    """
+    from unittest.mock import patch
+
+    from gamexpress.models import Item
+    from gamexpress.runner import run_news
+    from gamexpress.sources import hoyolab, kuro
+
+    role = "1296268365593186426"
+    hook = "https://discord.com/api/webhooks/100000000000000099/g_tok"
+    img = "https://upload-os-bbs.hoyolab.com/upload/community/2026/10/29/ping.png"
+    titles = {
+        "genshin": ('"Astute Luminary" · Nahida',
+                    "◆ Physic of Purity\n◆ Lesser Lord Kusanali\n◆ Gnosis: Dendro"),
+        "starrail": ("Extraterrestrial Satellite Communication | Dan Heng • Imbibitor Lunae",
+                     '"My past, my future."'),
+        "zzz": ("Agent Record | Miyabi", '"Order cannot be broken."'),
+        "wuwa": ("Profile Reveal | Eternal Blaze — Changli", '"A blade remembers."'),
+        "hna": ("Sovereign Nexus Dossier | Seraphina",
+                '"Bind your Anima to mine."\nAffiliation: Astral Sanctum\nSeraphina awaits.'),
+    }
+    filler = "Paragraph about this new character's past and combat style. " * 80
+    tail = "FINAL-MARKER-SENTINEL"
+    for gk, (title, head) in titles.items():
+        for repeats in (1, 3):
+            text = head + "\n" + filler * repeats + tail
+            article = Item("kuro" if gk == "wuwa" else "hoyolab", gk, "p1",
+                           "https://www.hoyolab.com/article/1", title, text, 1793160008,
+                           article_blocks=[{"kind": "text", "text": text},
+                                           {"kind": "image", "url": img}],
+                           author=GAMES[gk].name, official=True)
+            source = kuro if gk == "wuwa" else hoyolab
+            with tempfile.TemporaryDirectory() as tmp:
+                env = dict(NEWS_ENABLED="1", NEWS_GAMES=gk, NEWS_REVEAL_PING="1",
+                           PING_NEWS_REVEAL=role,
+                           **{f"DISCORD_WEBHOOK_NEWS_{g}": hook for g in
+                              ("GENSHIN", "STARRAIL", "ZZZ", "WUWA", "HNA", "ANANTA", "GI", "HSR")})
+                ctx = make_ctx(Path(tmp) / "state.json", **env)
+                ctx.now = 1793160000
+                with patch.object(source, "discover_news", return_value=[]):
+                    asyncio.run(run_news(ctx))
+                ctx.now = 1793160030
+                row = {"id": "p1", "ts": 1793160008}
+                with (patch.object(source, "discover_news", return_value=[row]),
+                      patch.object(source, "news_article", return_value=article),
+                      patch("gamexpress.media.news_media_available", return_value=True)):
+                    asyncio.run(run_news(ctx))
+                posts = [p["payload"] for p in ctx.webhook.sent if p["method"] == "POST"]
+            case = f"{gk} repeats={repeats}"
+            assert posts, f"{case}: nothing posted ({ctx.warnings})"
+            assert all(not cards.validate_payload(p) for p in posts), case
+            assert posts[0]["allowed_mentions"] == {"parse": [], "roles": [role]}, case
+            assert all(p["allowed_mentions"] == {"parse": []} for p in posts[1:]), case
+            byline = posts[0]["components"][0]["components"][0]["content"].splitlines()[-1]
+            assert byline.rstrip().endswith(f"<@&{role}>"), (case, byline)
+            assert tail in json.dumps(posts, ensure_ascii=False), case
+            assert "Excerpt" not in json.dumps(posts, ensure_ascii=False), case
+            labels = [c["content"] for p in posts for co in p["components"]
+                      for c in co["components"] if c["type"] == 10 and c["content"].startswith("-# Page")]
+            assert labels == [f"-# Page {n}" for n in range(1, len(posts) + 1)], (case, labels)
+
+
 def test_reveal_ping_prefix_on_every_game_survives_both_page_policies():
     """End-to-end `run_news` for every game with a news adapter, short and oversized articles.
 

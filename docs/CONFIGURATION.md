@@ -436,6 +436,13 @@ does not fit the room still open on the page is continued in the next message at
 boundary that never splits a link, a bold run or a bracket. Concatenating the pages
 reproduces the article text exactly, so no sentence is silently dropped.
 
+That also covers an article between `4,000` and `7,000` characters written as one long
+paragraph with no blank line: the two-page layout is tried first (and keeps its exact
+bytes), and when it cannot cut safely the smart fitter continues the paragraph at a word
+boundary instead of truncating the article. Page labels stay truthful when the reveal
+mention reflows page one: a card that was numbered `1..N` is renumbered `1..N+1` in
+delivery order, while a single-message card never gains a label.
+
 When `NEWS_EXPAND_FULL=1` is explicitly enabled, the 2-page / 7,000-character policy
 ceiling is lifted up to an explicit operational safety bound (`NEWS_EXPAND_MAX_PAGES = 12`,
 `NEWS_EXPAND_MAX_CHARS = 120000`, `NEWS_EXPAND_MAX_MEDIA = 120`):

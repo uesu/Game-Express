@@ -769,6 +769,48 @@ def _smart_fit_news(
 
 
 
+
+_PAGE_LABEL_RE = re.compile(r"^-# Page \d+$")
+
+
+def renumber_page_labels(payloads: list[dict]) -> list[dict]:
+    """Keep `-# Page n` labels truthful after the reveal mention reflowed page one.
+
+    The mention can push a trailing block of page one into a new message placed before the pages
+    that already existed. Only a card that was ALREADY numbered is touched: single-message cards
+    keep the untouched shape, and a card that never had labels never gains one. A label is
+    rewritten in place, and a missing one is inserted only when that keeps the page valid.
+    """
+    numbered = any(
+        child.get("type") == 10 and _PAGE_LABEL_RE.match(str(child.get("content", "")).strip())
+        for payload in payloads for container in payload.get("components") or []
+        for child in container.get("components") or []
+    )
+    if not numbered:
+        return payloads
+    for index, payload in enumerate(payloads, start=1):
+        containers = payload.get("components") or []
+        if not containers:
+            continue
+        kids = containers[0].get("components") or []
+        existing = next(
+            (child for child in kids
+             if child.get("type") == 10 and _PAGE_LABEL_RE.match(str(child.get("content", "")).strip())),
+            None,
+        )
+        if existing is not None:
+            existing["content"] = f"-# Page {index}"
+            continue
+        at = 1 if kids and kids[0].get("type") == 10 and str(kids[0].get("content", "")).startswith("## ") else 0
+        trial = kids[:at] + [text(f"-# Page {index}"), sep()] + kids[at:]
+        probe = {"flags": payload.get("flags"), "allowed_mentions": payload.get("allowed_mentions"),
+                 "components": [{**containers[0], "components": trial}]}
+        if not validate_payload(probe):
+            containers[0]["components"] = trial
+    return payloads
+
+
+
 def news_payloads(
     game: Game,
     item,
@@ -1012,7 +1054,18 @@ def news_payloads(
                 pages.append(page_payload(current, final=True))
                 if len(pages) == 2 and all(not validate_payload(page) for page in pages):
                     return pages
-        # Never publish a partial full article: fall through to the excerpt.
+        # The legacy two-page packer keeps the exact bytes it always produced, but it can fail on
+        # an article that is inside its character ceiling and still unbreakable for it: one long
+        # paragraph with no blank line, or a paragraph whose markdown cannot be cut safely. The
+        # smart fitter continues such a paragraph at a word boundary instead of truncating the
+        # article, so the card is complete under the default policy as well.
+        pages, notice = _smart_fit_news(
+            units, page_prefix=page_prefix, page_payload=page_payload,
+            max_pages=max(1, NEWS_DEFAULT_MAX_PAGES),
+        )
+        if pages:
+            return pages
+        excerpt_notice = notice
 
     # Beyond the old two-page / 7,000-character envelope the card used to be truncated to one
     # excerpt. The whole article is now smart fitted across pages, and only an article that

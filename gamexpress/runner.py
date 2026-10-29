@@ -583,7 +583,9 @@ async def run_news(ctx: Ctx) -> None:
                 continuation = {"flags": first["flags"], "allowed_mentions": {"parse": []},
                                 "components": moved}
                 if not validate_payload(first) and not validate_payload(continuation):
-                    return [first, continuation, *patched[1:]]
+                    from .cards import renumber_page_labels
+
+                    return renumber_page_labels([first, continuation, *patched[1:]])
         # Never let optional mention formatting prevent the original article from posting.
         ctx.warnings.append(f"{gm.short} news {art.id}: reveal mention did not fit; attempting article without ping")
         return base_pls
