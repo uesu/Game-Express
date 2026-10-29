@@ -104,7 +104,7 @@ _GI_TITLE_DOT_RE = re.compile(
 
 _HSR_SERIES_RE = re.compile(
     r"^[\"“「『]?(?:extraterrestrial\s+satellite\s+communication|amphoreus'?\s+saga\s+of\s+heroes|"
-    r"aha\s+instant)[\"”」』]?\s*[|丨:：—–\-]\s*(.+?)\s*$",
+    r"aha\s+instant)(?:[\"”」』]\s+(?:[|丨:：—–\-]\s*)?|\s*[|丨:：—–\-]\s*)(.+?)\s*$",
     re.I,
 )
 _ZZZ_SERIES_RE = re.compile(
@@ -121,7 +121,7 @@ _WUWA_REVEAL_RE = re.compile(
     re.I,
 )
 _WUWA_PROFILE_RE = re.compile(
-    r"^(?:profile\s+reveal\s*[|丨]|(?:resonator\s+)?profile\s*[:：|丨])\s*(.+?)\s*$",
+    r"^(?:profile\s+reveal\s*[:：|丨]|(?:resonator\s+)?profile\s*[:：|丨])\s*(.+?)\s*$",
     re.I,
 )
 
@@ -290,6 +290,10 @@ def classify_character_reveal(game_key: str, item) -> RevealMatch | None:
         return None
 
     gk = (game_key or "").lower()
+    # Miliastra Wonderland shares Genshin's HoYoLAB feed but publishes UGC
+    # content rather than Genshin character reveals.
+    if gk == "genshin" and "miliastra wonderland" in str(getattr(item, "author", "") or "").casefold():
+        return None
 
     # --- Layer 1: Multi-era publisher reveal templates ---
     diamond = _match_genshin_diamond_dossier(title, body)

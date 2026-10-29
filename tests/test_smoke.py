@@ -21231,6 +21231,8 @@ def test_reveal_ping_default_off_isolation_and_multi_era_plus_unseen_future_clas
         ("starrail", "Aha Instant | Ellen", '"Do you guys have shark tail care services here too?"', "Ellen"),
         # Reddit archive titles are useful formatting examples, not original HoYoLAB captures.
         ("starrail", '"Extraterrestrial Satellite Communication" | Rappa', '"Quote."', "Rappa"),
+        ("starrail", '"Extraterrestrial Satellite Communication" Firefly', '"Quote."', "Firefly"),
+        ("starrail", '"Extraterrestrial Satellite Communication" #Archer', '"Quote."', "Archer"),
         ("starrail", '"Amphoreus\' Saga of Heroes" | #Castorice', '"Quote."', "Castorice"),
         ("zzz", 'Agent Record | "Trigger"', '"Quote."', "Trigger"),
         # ZZZ `Agent Record` + early `[Agent Record]`
@@ -21240,6 +21242,8 @@ def test_reveal_ping_default_off_isolation_and_multi_era_plus_unseen_future_clas
         ("wuwa", "Post-Lament Anthropocene: Stars Intertwined | Suoming", '"Every variable is accounted for."', "Suoming"),
         ("wuwa", "Profile Reveal | Power of Ten — Suoming", '"Calculations complete."', "Suoming"),
         # Captured Kuro profile titles use em dashes without spaces.
+        ("wuwa", "Profile Reveal: Snow Waltz — Sanhua", '"Quote."', "Sanhua"),
+        ("wuwa", "Profile Reveal: Mistcloak Strike — Aalto", '"Quote."', "Aalto"),
         ("wuwa", "Profile Reveal | Howling Flame—Lupa", '"Quote."', "Lupa"),
         ("wuwa", "Profile Reveal | Magnetism Before Light—Augusta", '"Quote."', "Augusta"),
         ("wuwa", "Resonator Reveal | Rebecca", '"Let us tear Night City apart!"', "Rebecca"),
@@ -21321,6 +21325,14 @@ def test_reveal_ping_default_off_isolation_and_multi_era_plus_unseen_future_clas
         )
         assert reveal_ping.classify_character_reveal(gkey, it) is None, f"false positive on {gkey}: {title!r}"
 
+
+    # Miliastra shares gid=2 and may publish a dossier-shaped UGC post.
+    dossier = "◆ Name: Linnea\n◆ Title: Frostweaver\n◆ Constellation: Lucerna"
+    ugc = Item("hoyolab", "genshin", "ugc", "https://example.org", "A New Design", dossier, 100,
+               article_blocks=[{"kind": "text", "text": dossier}], author="Miliastra Wonderland")
+    assert reveal_ping.classify_character_reveal("genshin", ugc) is None
+    ugc.author = "Genshin Impact"
+    assert reveal_ping.classify_character_reveal("genshin", ugc) is not None
 
     # Embedded video links and body URLs are also excluded even with a reveal-like title.
     for blocks, text in [
