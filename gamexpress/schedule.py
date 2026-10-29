@@ -18,7 +18,7 @@ import logging
 import math
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from statistics import median
 from urllib.parse import urlparse
 
@@ -72,6 +72,12 @@ MAINT_POSTPONE_RE = re.compile(
     r"\b(?:(?:version\s+(?:\d+\.\d+\s+)?update|update\s+(?:and\s+)?maintenance|maintenance)"
     r"[^\n.]{0,70}?(?:postpone(?:d|ment)|delay(?:ed)?)(?:\s+(?:until\s+further\s+notice|to\s+a\s+later\s+date))?|"
     r"(?:postpone|delay)\s+the\s+version\s+(?:\d+\.\d+\s+)?update)\b",
+    re.I,
+)
+# A postponement that DOES name the replacement moment (`postponed to 2026/10/01 11:00 (UTC+8)`).
+MAINT_POSTPONE_TO_RE = re.compile(
+    r"\b(?:(?:version\s+(?:\d+\.\d+\s+)?update|update|maintenance|reschedul\w*)"
+    r"[^\n.]{0,70}?(?:postpon(?:ed|ement)|delay(?:ed)?|reschedul(?:ed|ing)))\s*(?:to|until)\b",
     re.I,
 )
 PROGRAM_EXCLUDE = re.compile(
@@ -132,10 +138,24 @@ def is_program_announcement(game: Game, text: str, title: str = "") -> bool:
 
 
 PRE_WORDS = re.compile(r"pre-?install|pre-?download|pre-?installation|pre-?load", re.I)
-MAINT_WORDS = re.compile(r"maintenance|update\s+time|update\s+schedule|^begins?\s+at|^starts?\s+at|downtime", re.I)
+# `maintained` matters: HoYoverse writes the standard HSR/GI reminder as "The game will be updated
+# and maintained at 2026/11/05 06:00 (UTC+8)", which names no "maintenance" noun at all. Before
+# this, that sentence was dropped and the window fell back to an estimate or TBA.
+MAINT_WORDS = re.compile(
+    r"maintenance|maintain(?:ed|s)?|update\s+time|update\s+schedule|^begins?\s+at|^starts?\s+at|downtime", re.I)
+# Sentences about something else entirely (compensation, claims, events, deadlines).
 MAINT_EXCLUDE = re.compile(
     r"compensation|claim|eligib|reached|reach\s|purchase|top-?up|expire|event\s+(?:period|duration)|"
-    r"will\s+end|ends?\s+at|until|closed|deadline|reset", re.I)
+    r"closed|deadline|reset", re.I)
+# Words that describe the END of a window. They disqualify a sentence only when no start cue comes
+# first: `The event will end at 03:59` is not a maintenance start, but `Maintenance begins at 06:00
+# and ends at 11:00` is the window itself. ZZZ and HoYoverse routinely write the second form.
+MAINT_END_ONLY = re.compile(r"will\s+end|ends?\s+at|until", re.I)
+MAINT_START_CUE = re.compile(r"maintenance|maintain|update|begins?|starts?|undergo", re.I)
+# `HH:MM (UTC±N)` without a date — the form used by extension notices ("extended to 14:00 (UTC+8)").
+_CLOCK_TZ_RE = re.compile(
+    r"\b(?P<h>\d{1,2}):(?P<mi>[0-5]\d)\s*[\(（]?\s*(?:UTC|GMT)\s*(?P<sign>[+\-−–])\s*"
+    r"(?P<zh>\d{1,2})(?::?(?P<zm>\d{2}))?\s*[\)）]?", re.I)
 COMP_RE = re.compile(r"(?:Maintenance\s+)?Compensation\s*[:：]\s*([^\n(（]{3,80})", re.I)
 FIVE_RE = re.compile(r"(?:5[-\s]?star|5\s?★|★\s?5|S[-\s]?Rank)\s+(?:limited[-\s]?(?:time\s+)?)?(?:event[-\s]exclusive\s+)?"
                      r"(?:character|resonator|agent)s?", re.I)
@@ -435,6 +455,45 @@ def extract_labelled(text: str, ref: int | None) -> dict:
     return f
 
 
+def _starts_window(sentence: str) -> bool:
+    """True when a sentence describes a window OPENING, even if it also names the end.
+
+    `MAINT_END_ONLY` keeps end-only sentences out (`The event will end at 03:59 (UTC+8)`), but a
+    start cue before the end phrase means the same sentence carries the whole window.
+    """
+    end = MAINT_END_ONLY.search(sentence or "")
+    if end is None:
+        return True
+    return bool(MAINT_START_CUE.search(sentence[:end.start()]))
+
+
+def _clock_ts_after(text: str, start: int, anchor: int | None) -> int | None:
+    """Resolve a bare `HH:MM (UTC±N)` after `start` against the anchor's own calendar day.
+
+    Extension notices often name only the new end clock (`Maintenance has been extended to 14:00
+    (UTC+8)`); `begins at 06:00 and ends at 11:00 (UTC+8)` does the same for the end. The date is
+    anchored to `anchor` (`ref` for extensions, the start for a same-day end); a clock more than
+    six hours behind the anchor rolls to the next day so a window crossing midnight stays ordered.
+    """
+    if not anchor or anchor <= 0:
+        return None
+    m = _CLOCK_TZ_RE.search(text or "", max(0, start))
+    if not m:
+        return None
+    hours, minutes = int(m.group("h")), int(m.group("mi"))
+    zh, zm = int(m.group("zh")), int(m.group("zm") or 0)
+    if hours > 23 or zh > 14 or zm >= 60:
+        return None
+    offset = (-1 if m.group("sign") in "-−–" else 1) * (zh + zm / 60)
+    tz = timezone(timedelta(hours=offset))
+    base = datetime.fromtimestamp(int(anchor), tz)
+    try:
+        ts = int(base.replace(hour=hours, minute=minutes, second=0, microsecond=0).timestamp())
+    except ValueError:
+        return None
+    return ts + 86400 if ts <= int(anchor) - 6 * 3600 else ts
+
+
 def extract_maintenance(item: Item) -> dict:
     text = item.full
     ref = item.published_ts or None
@@ -445,12 +504,14 @@ def extract_maintenance(item: Item) -> dict:
             # Only a timestamp following the extension phrase is evidence of the new end;
             # the sentence may also quote the original window or later unrelated dates.
             after = [dt for dt in find_datetimes(s, ref) if dt.start >= extension.end()]
-            if after:
-                f["maint_end_ts"] = after[0].ts
+            new_end = after[0].ts if after else _clock_ts_after(s, extension.end(), ref)
+            if new_end:
+                f["maint_end_ts"] = new_end
                 f["maint_extended"] = True
             continue
         rngs = find_time_ranges(s, ref)
-        if rngs and (MAINT_WORDS.search(s) or "maintenance" in s.lower()) and not MAINT_EXCLUDE.search(s):
+        if (rngs and (MAINT_WORDS.search(s) or "maintenance" in s.lower())
+                and not MAINT_EXCLUDE.search(s) and _starts_window(s)):
             f.setdefault("maint_start_ts", rngs[0][0])
             f.setdefault("maint_end_ts", rngs[0][1])
             continue
@@ -460,18 +521,45 @@ def extract_maintenance(item: Item) -> dict:
         if PRE_WORDS.search(s) and not re.search(r"\b(?:end|ends|until|close|closes)\b", s, re.I):
             f.setdefault("preinstall_ts", found[0].ts)
             continue
-        if MAINT_WORDS.search(s) and not MAINT_EXCLUDE.search(s):
+        if MAINT_WORDS.search(s) and not MAINT_EXCLUDE.search(s) and _starts_window(s):
             f.setdefault("maint_start_ts", found[0].ts)
             if len(found) > 1 and found[1].ts > found[0].ts and \
-                    re.search(r"[-–—~〜]|\bto\b|\buntil\b", s[found[0].end:found[1].start], re.I):
+                    re.search(r"[-–—~〜]|\bto\b|\buntil\b|\band\s+(?:then\s+)?(?:ends?|concludes?|finishes?)\b",
+                              s[found[0].end:found[1].start], re.I):
                 f.setdefault("maint_end_ts", found[1].ts)
+            elif "maint_end_ts" not in f and "maint_start_ts" in f:
+                # `begins at 06:00 (UTC+8) and ends at 11:00 (UTC+8)` names the end as a clock only.
+                end_words = re.search(
+                    r"\b(?:and\s+(?:then\s+)?(?:ends?|concludes?|finishes?)|until|to)\b", s[found[0].end:], re.I)
+                if end_words:
+                    end_clock = _clock_ts_after(s, found[0].end + end_words.end(), f["maint_start_ts"])
+                    if end_clock and int(end_clock) > int(f["maint_start_ts"]):
+                        f.setdefault("maint_end_ts", end_clock)
+    postponed_to = None
+    for s in sentences(text):
+        check = MAINT_POSTPONE_TO_RE.search(s)
+        if check:
+            after = [dt for dt in find_datetimes(s, ref) if dt.start >= check.end()]
+            if after:
+                postponed_to = after[0].ts
+                break
     postpone_text = f"{item.title or ''}\n{text[:500]}"
     postponed = MAINT_POSTPONE_RE.search(postpone_text)
     if postponed and re.search(r"\b(?:not|never)\s+(?:(?:be|been)\s+)?(?:postponed|delayed)\b", postponed.group(), re.I):
         postponed = None
+    if postponed_to and postponed:
+        # A rescheduled notice may quote the abandoned window first. The replacement date is the
+        # only start it establishes; an end that no longer follows it is dropped.
+        f["maint_start_ts"] = postponed_to
+        if f.get("maint_end_ts") is not None and int(f["maint_end_ts"]) <= postponed_to:
+            f.pop("maint_end_ts", None)
+        postponement_moved = True
+    else:
+        postponement_moved = False
     # A TBA notice can quote the original window; those dates are not a replacement.
     tba = postponed and re.search(r"\b(?:until further notice|to a later date)\b", postpone_text, re.I)
-    if postponed and (tba or ("maint_start_ts" not in f and "maint_end_ts" not in f)):
+    if postponed and not postponement_moved and (
+            tba or ("maint_start_ts" not in f and "maint_end_ts" not in f)):
         if tba:
             for key in ("maint_start_ts", "maint_end_ts", "preinstall_ts"):
                 f.pop(key, None)

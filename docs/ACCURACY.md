@@ -31,8 +31,19 @@ Related: [SOURCES.md](SOURCES.md) (what each upstream serves) ·
      launch notices (`"1.0"` on `HNA` / `ANANTA`) — resolve the number from sibling notices,
      `version_name` / nearby timestamps in tracked records, launcher `pre`, or `live + 0.1`.
    - **Maintenance**: pre-install, start, and end (end comes from an explicit end time, a range
-     like `04:00 - 11:00 (UTC+8)`, or "estimated to take 5 hours"). Compensation deadlines and
-     event end dates are never mistaken for maintenance.
+     like `04:00 - 11:00 (UTC+8)`, an end written only as a clock (`and ends at 11:00 (UTC+8)`
+     after a dated start, anchored to that start's day), or "estimated to take 5 hours").
+     HoYoverse's reminder form — `The game will be updated and maintained at 2026/11/05 06:00
+     (UTC+8)` — carries no "maintenance" noun and is matched on `maintained`. Compensation
+     deadlines and event end dates are never mistaken for maintenance: an end-only sentence
+     (`The event will end at 03:59 (UTC+8)`) needs a start cue before the end phrase to count.
+   - **Extensions and postponements** edit the existing window instead of opening a new one. A
+     new end may be a full date-time or only a clock (`extended to 14:00 (UTC+8)`, resolved on
+     the notice's own day). A postponement naming a replacement moment (`postponed to
+     2026/10/01 11:00 (UTC+8)`) adopts that date even when the notice quotes the abandoned
+     window first; `until further notice` clears times and suppresses cadence estimates until an
+     authoritative reschedule arrives. `will not be postponed` is not a postponement, and a
+     delay that no notice states cannot be inferred.
    - **Banners**: only names that directly follow "5-star character" / "S-Rank Agent" /
      "5-star Resonator" (and the 4★ equivalents) in official banner notices. Genshin titles the
      banner and *then* names the character (the 5-star character `"Tasteful Excellence"

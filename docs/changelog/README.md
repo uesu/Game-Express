@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Follow-up regression guards](CHANGELOG.md#2026-10-29--follow-up-regression-guards).
+Latest: [Timing phrases, reveal dedup and edit safety](CHANGELOG.md#2026-10-29--timing-phrases-reveal-dedup-and-edit-safety).
+
+Previous: [Follow-up regression guards](CHANGELOG.md#2026-10-29--follow-up-regression-guards).
 
 Previous: [Optional character reveal mentions](CHANGELOG.md#2026-10-29--optional-character-reveal-mentions).
 

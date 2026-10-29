@@ -20911,6 +20911,68 @@ def test_wuwa_labelled_maintenance_time_range_cross_day_dual_tz_and_subsystem_ma
         assert schedule.classify(GAMES[gkey], sub_it) is None
 
 
+def test_maintenance_window_phrasings_are_read_for_every_game():
+    """The sentences publishers actually write, for all six configured games.
+
+    * `The game will be updated and maintained at <date> (UTC+8)` (HoYoverse reminder form) names
+      no "maintenance" noun; before the fix the whole notice produced no timing at all.
+    * `Maintenance begins at <date> and ends at <clock> (UTC+8)` must read BOTH ends, while an
+      event sentence that only says something ends must still be ignored.
+    * A clock-only extension (`extended to 14:00 (UTC+8)`) resolves on the notice's own day and a
+      window crossing midnight keeps `end > start`.
+    * A reschedule that quotes the abandoned window must adopt the replacement date, and a
+      "will not be postponed" sentence must not be read as a postponement.
+    """
+    from gamexpress import schedule, timeparse
+
+    def fields(body, *, title="Version Update Maintenance Notice", ts=1793000000):
+        return schedule.extract_maintenance(
+            Item("hoyolab", "starrail", "1", "https://example.com/1", title, body, ts))
+
+    start = 1793829600   # 2026-11-05 06:00 UTC+8
+    end = start + 5 * 3600
+    for key in GAMES:
+        # 1. HoYoverse reminder phrasing: "updated and maintained at ..." + stated duration.
+        parsed = fields("Dear Trailblazers,\nThe game will be updated and maintained at "
+                        "2026/11/05 06:00 (UTC+8). The update is expected to take about 5 hours.")
+        assert parsed.get("maint_start_ts") == start, (key, parsed)
+        assert parsed.get("maint_end_ts") == end, (key, parsed)
+        # 2. Range split across a date and a bare end clock.
+        parsed = fields("Maintenance begins at 2026/11/05 06:00 (UTC+8) and ends at 11:00 (UTC+8).")
+        assert parsed.get("maint_start_ts") == start, (key, parsed)
+        assert parsed.get("maint_end_ts") == end, (key, parsed)
+        # 3. A plain range still works and an event end is never a maintenance start.
+        parsed = fields("The Planar Fissure event will end at 2026/11/05 03:59 (UTC+8).\n"
+                        "Maintenance begins at 2026/11/05 06:00 - 11:00 (UTC+8).")
+        assert parsed.get("maint_start_ts") == start, (key, parsed)
+        assert parsed.get("maint_end_ts") == end, (key, parsed)
+        assert fields("The Planar Fissure event will end at 2026/11/05 03:59 (UTC+8).") == {}, key
+        # 4. Clock-only extension anchored to the publication day.
+        published = start + 6 * 3600 + 1800          # 12:30 UTC+8 the same day
+        parsed = fields("The maintenance has been extended to 14:00 (UTC+8).", ts=published)
+        assert parsed.get("maint_extended") is True, (key, parsed)
+        assert parsed["maint_end_ts"] == start + 8 * 3600, (key, parsed)
+        # 5. A window crossing midnight keeps the end after the start.
+        parsed = fields("Maintenance begins at 2026/11/05 23:00 (UTC+8) and ends at 02:00 (UTC+8).")
+        assert parsed["maint_end_ts"] - parsed["maint_start_ts"] == 3 * 3600, (key, parsed)
+        # 6. Rescheduled notice quoting the abandoned window -> the replacement date wins.
+        parsed = fields("The Version 3.8 update maintenance, originally scheduled for "
+                        "2026/09/30 04:00 - 11:00 (UTC+8), has been postponed to 2026/10/01 11:00 (UTC+8).")
+        assert parsed.get("maint_start_ts") == 1790823600, (key, parsed)
+        assert "maint_end_ts" not in parsed, (key, parsed)
+        # 7. TBA postponement clears quoted times; a denial is not a postponement.
+        parsed = fields("The Version 3.8 update maintenance, originally scheduled for "
+                        "2026/09/30 04:00 - 11:00 (UTC+8), has been postponed until further notice.")
+        assert parsed == {"maint_postponed": True}, (key, parsed)
+        denied = fields("The update will not be postponed. Maintenance Time: 2026/09/30 04:00 - 11:00 (UTC+8)")
+        assert "maint_postponed" not in denied, denied
+        assert denied.get("maint_start_ts") == 1790712000, denied
+        # 8. `find_time_ranges` accepts both offsets and rejects impossible minutes.
+        assert timeparse.find_time_ranges("2026/09/30 04:00 (UTC+8) - 2026/09/30 11:00 (UTC+8)") == \
+            [(1790712000, 1790737200)]
+        assert timeparse.find_time_ranges("2026/09/30 04:00 - 11:00 (UTC+8:75)") == []
+
+
 def test_maintenance_mid_patch_7h_extension_tba_postponement_and_kuro_bg_hash_renewal():
     """Verify:
     1) Standalone maintenance extension notice at +6.5h into a 7h WuWa maintenance updates `maint_end_ts`
@@ -21156,6 +21218,11 @@ def test_news_youtube_embeds_render_watch_links_for_all_games_without_guessing()
     assert cards._youtube_watch_url(f"https://youtu.be/{video}?t=45s") == (
         f"https://www.youtube.com/watch?v={video}&t=45s"
     )
+    # Trailing slashes and the `/watch/` variant appear in copied HoYoLAB/Quill links.
+    for source in (f"https://youtu.be/{video}/", f"https://www.youtube.com/watch/?v={video}",
+                   f"https://m.youtube.com/watch?v={video}", f"https://music.youtube.com/watch?v={video}",
+                   f"https://www.youtube.com/embed/{video}/?start=45"):
+        assert cards._youtube_watch_url(source) is not None, source
     for invalid in (f"https://youtube.com.evil.example/embed/{video}",
                     f"https://youtube.com@evil.example/embed/{video}",
                     f"https://youtube.com/embed/{video}x", "https://youtube.com/channel/example",
@@ -21680,6 +21747,87 @@ def test_reveal_ping_near_limit_continuation_resumes_after_failure():
         assert send_retry.await_args.args[1] == continuation
         assert retry.state.news_record("wuwa")["records"]["x"]["status"] == "posted"
         assert retry.state.news_record("wuwa")["records"]["x"]["messages"] == ["page1", "page2"]
+
+
+def test_reveal_ping_collapses_a_full_name_variant_but_not_a_different_character():
+    """ZZZ publishes `Agent Record | Evelyn` and `Agent Record | Evelyn Chevalier` minutes apart.
+
+    A token-prefix variant inside the retention window must not ping twice; a later reveal of a
+    genuinely different name (or the same variant years later) still can.
+    """
+    from gamexpress.reveal_ping import (
+        RevealMatch,
+        canonical_character_key,
+        commit_reveal_delivery,
+        evaluate_reveal_ping_decision,
+    )
+
+    def match(name):
+        return RevealMatch(name, canonical_character_key(name), "zzz_agent_record")
+
+    record: dict = {}
+    first = match("Evelyn")
+    assert evaluate_reveal_ping_decision(record, first, published_ts=1793000000) == (True, "new_character_reveal")
+    commit_reveal_delivery(record, first, published_ts=1793000000, now=1793000060, pinged=True)
+    assert evaluate_reveal_ping_decision(record, match("Evelyn Chevalier"),
+                                         published_ts=1793000900) == (False, "same_character_variant")
+    # A different character that merely shares a word is NOT a variant.
+    assert evaluate_reveal_ping_decision({"reveal_chars": {"the herta": 1793000000}}, match("Herta"),
+                                         published_ts=1793000600)[0] is True
+    # Two years later the fuller name is a new reveal again, not a retained suppression.
+    assert evaluate_reveal_ping_decision(record, match("Evelyn Chevalier"),
+                                         published_ts=1793000000 + 2 * 365 * 86400)[0] is True
+
+
+def test_reveal_ping_edit_guard_skips_reflow_and_lost_mention_instead_of_truncating():
+    """A backstage CMS edit must never publish a shorter card than the one already posted.
+
+    Scenario: the reveal mention fitted when the article was posted. A later edit lengthens the
+    article, so re-attaching the mention needs a continuation page. `zip(msgs, payloads)` would
+    silently drop that page; the guard must skip the edit and warn instead of truncating content.
+    """
+    from unittest.mock import patch
+
+    from gamexpress.runner import run_news
+    from gamexpress.sources import kuro
+
+    role = "987654321098765432"
+    ts = 1793242806
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "state.json"
+        opts = dict(NEWS_ENABLED="1", NEWS_GAMES="wuwa", NEWS_REVEAL_PING="1",
+                    PING_NEWS_REVEAL_WUWA=role,
+                    DISCORD_WEBHOOK_NEWS_WUWA="https://discord.com/api/webhooks/100000000000000099/ww_tok")
+        ctx = make_ctx(path, **opts)
+        ctx.now = ts - 1200
+        with patch.object(kuro, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now = ts + 60
+        row = {"id": "x", "ts": ts}
+        short = Item("kuro", "wuwa", "x", "https://example.com/x", "Resonator Reveal | Stella", "", ts,
+                     article_blocks=[{"kind": "text", "text": "Short reveal body."}])
+        with (patch.object(kuro, "discover_news", return_value=[row]),
+              patch.object(kuro, "news_article", return_value=short),
+              patch("gamexpress.media.news_media_available", return_value=True)):
+            asyncio.run(run_news(ctx))
+        rec = ctx.state.news_record("wuwa")["records"]["x"]
+        assert rec["status"] == "posted" and len(rec["messages"]) == 1
+        assert rec.get("reveal_ping") == f"<@&{role}>"
+
+        # Same article id, edited body that no longer satisfies the 4,000-character limit alone.
+        grown = Item("kuro", "wuwa", "x", "https://example.com/x", "Resonator Reveal | Stella", "", ts,
+                     article_blocks=[{"kind": "text", "text": "x" * 3887}])
+        edited_row = dict(row, modified_ts=ts + 3600)
+        ctx.now = ts + 4200
+        with (patch.object(kuro, "discover_news", return_value=[edited_row]),
+              patch.object(kuro, "news_article", return_value=grown),
+              patch("gamexpress.media.news_media_available", return_value=True)):
+            asyncio.run(run_news(ctx))
+        assert not [s for s in ctx.webhook.sent if s["method"] == "PATCH"], \
+            "edit must be held, not posted truncated"
+        assert any("skipped in-place edit" in w for w in ctx.warnings), ctx.warnings
+        assert len(ctx.state.news_record("wuwa")["records"]["x"]["messages"]) == 1
+
 
 def test_reveal_ping_location_matches_user_astra_yao_capture():
     """The published ping-location capture puts the mention after the source byline timestamp."""

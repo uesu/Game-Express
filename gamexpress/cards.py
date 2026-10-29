@@ -145,12 +145,13 @@ def _youtube_watch_url(url: str) -> str | None:
         if parsed.scheme.lower() not in ("http", "https") or parsed.username or parsed.password:
             return None
         host = (parsed.hostname or "").lower()
-        parts = parsed.path.strip("/").split("/")
+        path = parsed.path.rstrip("/") or "/"
+        parts = path.strip("/").split("/")
         query = parse_qs(parsed.query)
         candidate = None
         if host in ("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com",
                     "youtube-nocookie.com", "www.youtube-nocookie.com"):
-            if parsed.path == "/watch":
+            if path == "/watch":
                 values = query.get("v", [])
                 candidate = values[0] if len(values) == 1 else None
             elif len(parts) == 2 and parts[0] in ("embed", "shorts", "live", "v"):

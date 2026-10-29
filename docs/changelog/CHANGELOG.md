@@ -1,5 +1,21 @@
 # Changelog — current entries
 
+## 2026-10-29 — Timing phrases, reveal dedup and edit safety
+
+- Read the HoYoverse reminder form `The game will be updated and maintained at <date> (UTC+8)`
+  (`maintained`, no "maintenance" noun) and windows whose end is only a clock
+  (`begins at 06:00 (UTC+8) and ends at 11:00 (UTC+8)`, including the midnight case). End-only
+  sentences about events or compensation still never become a maintenance start.
+- Resolve a clock-only extension (`extended to 14:00 (UTC+8)`) on the notice's own day, and adopt
+  the replacement date of a reschedule that quotes the abandoned window. `will not be postponed`
+  is not a postponement.
+- Collapse a token-prefix full-name variant of the *same* reveal inside a 12-hour window
+  (`Agent Record | Evelyn` then `Agent Record | Evelyn Chevalier`) so one Agent pings once;
+  different characters that merely share a word still ping.
+- Hold a backstage CMS edit instead of publishing a truncated card when re-attaching a retained
+  reveal mention now needs a continuation page or no longer fits.
+- Accept trailing-slash and `/watch/` YouTube player URLs when rendering the visible watch link.
+
 ## 2026-10-29 — Follow-up regression guards
 
 - Exclude non-official and Miliastra-authored reveal candidates, recognize quoted Star Rail series without a pipe, and exclude YouTube privacy-enhanced embedded videos. Tests are requirement-derived reconstructions, not historical accuracy evidence.

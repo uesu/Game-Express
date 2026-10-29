@@ -10,6 +10,9 @@ import re
 from dataclasses import dataclass
 
 MAX_TRACKED_CHARACTERS = 200
+# A fuller version of the same name arriving within this window is the same reveal, not a new
+# character (ZZZ publishes `Agent Record | Evelyn` and the 12:15 dossier minutes apart).
+VARIANT_WINDOW_S = 12 * 3600
 
 # Direct video watch / short / file URLs (deliberately NOT matching channel homepages like
 # `youtube.com/@GenshinImpact` that sit in standard publisher social footers).
@@ -408,6 +411,18 @@ def prune_reveal_chars(record: dict, limit: int = MAX_TRACKED_CHARACTERS) -> Non
         chars.pop(k, None)
 
 
+def _same_character_variant(seen: str, candidate: str) -> bool:
+    """`Evelyn` and `Evelyn Chevalier` are one Agent published twice minutes apart.
+
+    Token-prefix only: `Herta` is not `The Herta`, and `March` is not `March 7th` — a shared
+    surname or epithet would suppress genuinely different characters.
+    """
+    if not seen or not candidate or seen == candidate:
+        return False
+    short, long = (seen, candidate) if len(seen) < len(candidate) else (candidate, seen)
+    return long.startswith(short + " ")
+
+
 def evaluate_reveal_ping_decision(
     record: dict, match: RevealMatch, *, published_ts: int,
 ) -> tuple[bool, str]:
@@ -415,6 +430,12 @@ def evaluate_reveal_ping_decision(
     chars = record.get("reveal_chars") if isinstance(record.get("reveal_chars"), dict) else {}
     if match.canonical_key in chars:
         return False, "already_pinged_character"
+    if published_ts > 0:
+        for seen_key, seen_ts in chars.items():
+            if (isinstance(seen_ts, int) and abs(published_ts - seen_ts) <= VARIANT_WINDOW_S
+                    and _same_character_variant(str(seen_key), match.canonical_key)):
+                # The same reveal published under a fuller name minutes later (ZZZ 12:15 dossiers).
+                return False, "same_character_variant"
     times = record.get("reveal_times") if isinstance(record.get("reveal_times"), dict) else {}
     if published_ts > 0 and any(
         str(key).isdigit() and int(key) // 60 == published_ts // 60 for key in times

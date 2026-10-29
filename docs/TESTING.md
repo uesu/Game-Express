@@ -552,3 +552,51 @@ playback test, production sync or merge was performed. Twitter's optional 350 Mi
 handoff remains separate and off by default; higher limits are not proof of proxy
 playback reliability. Final-head CI and workflow annotations must be reviewed on
 the PR before release.
+
+### 2026-10-29 follow-up — timing phrases, reveal dedup and edit safety
+
+Verification for the delta on top of the revision above (same offline suite, Python 3.11.2).
+
+- `python -m compileall -q gamexpress tests .github/scripts`, `ruff check .`,
+  `python -m gamexpress validate`, `python -m gamexpress preview --out <temp>` passed.
+- Standalone smoke **509/509**; `python -m pytest -q tests` **532 passed** (overlapping
+  totals, not 1,041 distinct tests). Schedule regressions and the placeholder guard unchanged.
+- New guards and the requirement each pins (each fails on the pre-delta code):
+  `test_maintenance_window_phrasings_are_read_for_every_game` (`updated and maintained at …`,
+  clock-only end after a dated start, clock-only extension, reschedule that quotes the abandoned
+  window, `will not be postponed`, all six game keys);
+  `test_reveal_ping_edit_guard_skips_reflow_and_lost_mention_instead_of_truncating` (a CMS edit
+  that would need a continuation page is held, not published truncated);
+  `test_reveal_ping_collapses_a_full_name_variant_but_not_a_different_character`.
+  The YouTube test now also covers trailing-slash and `/watch/` player URLs.
+- Real-corpus replay (read-only clones, no network at test time, not committed):
+  - **Wuthering Waves**, all **712** official Kuro website articles
+    (`TheLovinator1/wutheringwaves`, 2023-02 → 2026-10):
+    **78** classifier matches over **43** unique characters (`43` `Profile Reveal`, `33`
+    `Stars Intertwined`, `2` `Resonator Reveal`). Every match is a reveal-series title —
+    **0** title-series false positives. **4** labelled titles stay unmatched
+    (`Rover: Aero` ×2, `Yangyang: Xuanling` ×2): colon-suffixed variant names, deliberately
+    left out so a second post about an existing character cannot ping.
+  - **Genshin Impact**, **1,185** in-game notices (`KQM-git/GINews`, 2020 → 2026):
+    **0** matches — no `◆` bullet list, version notice or top-up notice is mistaken for a reveal.
+  - Corpora are unlabelled outside their own series titles; these are precision/recall proxies
+    against publisher titles, not the earlier report's 2,179-post figures.
+  - Cost: 141 µs/article (WuWa) and 168 µs/article (Genshin) including HTML body extraction on
+    this host, with zero HTTP inside the classifier.
+- `python -m gamexpress benchmark --iterations 200 --beta-enabled` (same host, uncommitted tree):
+  short news default-off **94.31 µs** median, medium two-page **591.44 µs**, long expansion-off
+  **1730.24 µs**, long expansion-on **2195.34 µs**, both-on **6470.50 µs**. `output_equal=True`,
+  `main_1e071d8_sha256_equal=True`, timestamp-parser calls when disabled **0**, extra
+  HTTP/webhook **0**. Beta-enabled local-only pipeline: 16 initial pages, 16 retained-revision
+  pages, quiet silent, live HTTP **0**.
+- Read-only production replay of the live state blob at `2026-10-29T12:00:00Z`, with no live
+  inputs and no writes: the four released games resolve an upcoming **estimated** preload /
+  maintenance pair (UTC) — GI Nov 2 03:00 / Nov 3 22:00, HSR Nov 9 06:00 / Nov 10 22:00,
+  WuWa Nov 10 02:00 / Nov 11 20:00, ZZZ Nov 30 04:00 / Dec 1 22:00; every settled milestone
+  stays outside the 12 h delivery window, `postponed=False`, and HNA/ANANTA produce no dates.
+- Live production observation (not a test): the three prod repositories' latest runs are green
+  (Game `40838508714`, Twitter `40838524872`, Reddit `40838516409`). Their check-run annotations
+  contain only GitHub's Ubuntu-migration notice — no warning or error annotation. This is a
+  status/annotation check, not a delivery or playback audit.
+- Limits: one live-source availability and no Discord playback test were performed in this
+  session; unfamiliar publisher formats and incomplete historic rosters remain heuristic.

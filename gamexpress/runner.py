@@ -743,6 +743,30 @@ async def run_news(ctx: Ctx) -> None:
                         saved_ping = parse_ping(saved_ping_raw)
                         if saved_ping:
                             payloads = await _attach_news_ping(game, item, payloads, saved_ping)
+                            if payloads[0].get("allowed_mentions") != saved_ping.allowed_mentions:
+                                # The byline mention could not be restored: an edit would silently
+                                # drop it from a card that was published with it.
+                                if eff_mod > prev_mod:
+                                    rec["modified_ts"] = eff_mod
+                                if not ephemeral:
+                                    ctx.state.save()
+                                ctx.warnings.append(
+                                    f"{game.short} news {row['id']}: reveal mention no longer fits; "
+                                    "skipped in-place edit"
+                                )
+                                continue
+                    if len(payloads) != len(msgs):
+                        # Reflowing the byline mention added or moved a page; `zip` would silently
+                        # drop the tail and publish a shorter card than the source article.
+                        if eff_mod > prev_mod:
+                            rec["modified_ts"] = eff_mod
+                        if not ephemeral:
+                            ctx.state.save()
+                        ctx.warnings.append(
+                            f"{game.short} news {row['id']}: edited page count changed "
+                            f"({len(msgs)} -> {len(payloads)}); skipped in-place edit"
+                        )
+                        continue
                     deleted_404 = False
                     for mid, payload in zip(msgs, payloads):
                         res = await ctx.webhook.edit(hook, mid, payload)
