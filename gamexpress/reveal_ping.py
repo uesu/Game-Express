@@ -1,4 +1,4 @@
-"""Opt-in classifier and exact-publication-time deduplication for character reveals.
+"""Opt-in classifier and publication-minute deduplication for character reveals.
 
 Heuristic recognition cannot guarantee future publisher formats or known roster coverage.
 Video-bearing articles are excluded; the feature performs no network calls itself.
@@ -401,12 +401,14 @@ def prune_reveal_chars(record: dict, limit: int = MAX_TRACKED_CHARACTERS) -> Non
 def evaluate_reveal_ping_decision(
     record: dict, match: RevealMatch, *, published_ts: int,
 ) -> tuple[bool, str]:
-    """Deduplicate characters and equal known source timestamps, never a time window."""
+    """Deduplicate characters and announcements in the same source minute."""
     chars = record.get("reveal_chars") if isinstance(record.get("reveal_chars"), dict) else {}
     if match.canonical_key in chars:
         return False, "already_pinged_character"
     times = record.get("reveal_times") if isinstance(record.get("reveal_times"), dict) else {}
-    if published_ts > 0 and str(published_ts) in times:
+    if published_ts > 0 and any(
+        str(key).isdigit() and int(key) // 60 == published_ts // 60 for key in times
+    ):
         return False, "same_publication_time"
     return True, "new_character_reveal"
 
@@ -428,7 +430,7 @@ def commit_reveal_delivery(
     if pinged:
         times = record.setdefault("reveal_times", {})
         if isinstance(times, dict) and published_ts > 0:
-            times[str(published_ts)] = int(now)
+            times[str(published_ts - published_ts % 60)] = int(now)
             if len(times) > 200:
                 for key in sorted(times, key=lambda k: (times[k] if isinstance(times[k], int) else 0, k))[:-200]:
                     times.pop(key, None)

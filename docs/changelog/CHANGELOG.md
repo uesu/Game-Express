@@ -2,7 +2,7 @@
 
 ## 2026-10-29 — Optional character reveal mentions
 
-- Add default-off, dedicated role mentions for recognized official-news character reveals; exclude recognized video and other non-reveals, deduplicate retained characters and identical publication timestamps, and preserve different-time pings. Detection is heuristic, not guaranteed for unknown formats or incomplete historic rosters. See configuration for limits and ambiguous-delivery handling.
+- Add default-off, dedicated role mentions for recognized official-news character reveals; exclude recognized video and other non-reveals, deduplicate retained characters and the same publication minute, and preserve pings in different minutes. Detection is heuristic, not guaranteed for unknown formats or incomplete historic rosters. See configuration for limits and ambiguous-delivery handling.
 
 ## 2026-10-29 — News YouTube watch links
 

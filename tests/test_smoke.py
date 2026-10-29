@@ -21329,7 +21329,11 @@ def test_reveal_ping_default_off_isolation_and_multi_era_plus_unseen_future_clas
     record = {}
     reveal_ping.commit_reveal_delivery(record, one, published_ts=1000, now=1100, pinged=True)
     assert reveal_ping.evaluate_reveal_ping_decision(record, two, published_ts=1000) == (False, "same_publication_time")
+    assert reveal_ping.evaluate_reveal_ping_decision(record, two, published_ts=1010) == (False, "same_publication_time")
+    assert reveal_ping.evaluate_reveal_ping_decision(record, two, published_ts=1020) == (True, "new_character_reveal")
     assert reveal_ping.evaluate_reveal_ping_decision(record, two, published_ts=1300) == (True, "new_character_reveal")
+    # Previously persisted exact-second keys still group into the same minute.
+    assert reveal_ping.evaluate_reveal_ping_decision({"reveal_times": {"1001": 1100}}, two, published_ts=1019) == (False, "same_publication_time")
 
 def test_reveal_ping_same_time_single_ping_wave_different_times_recheck_edit_and_peer_merge():
     """End-to-end `run_news` proof of:
@@ -21400,14 +21404,14 @@ def test_reveal_ping_same_time_single_ping_wave_different_times_recheck_edit_and
         # 11:01 AM run: TWO new characters (`Solaria` & `Noctis`) announced at 11:00 AM, plus a video trailer!
         ctx_on.now = base_11am + 60
         rows_wave1 = [
-            {"id": "6101", "ts": base_11am},
-            {"id": "6102", "ts": base_11am},
-            {"id": "6103", "ts": base_11am},
+            {"id": "6101", "ts": base_11am + 6},
+            {"id": "6102", "ts": base_11am + 8},
+            {"id": "6103", "ts": base_11am + 9},
         ]
         arts_wave1 = {
-            "6101": _make_reveal("6101", "Post-Lament Anthropocene: Stars Intertwined | Solaria", '"Dawn breaks."', base_11am),
-            "6102": _make_reveal("6102", "Post-Lament Anthropocene: Stars Intertwined | Noctis", '"Dusk falls."', base_11am),
-            "6103": _make_reveal("6103", "Post-Lament Anthropocene: Stars Intertwined | Ignis", '"Watch video!"', base_11am, with_video=True),
+            "6101": _make_reveal("6101", "Post-Lament Anthropocene: Stars Intertwined | Solaria", '"Dawn breaks."', base_11am + 6),
+            "6102": _make_reveal("6102", "Post-Lament Anthropocene: Stars Intertwined | Noctis", '"Dusk falls."', base_11am + 8),
+            "6103": _make_reveal("6103", "Post-Lament Anthropocene: Stars Intertwined | Ignis", '"Watch video!"', base_11am + 9, with_video=True),
         }
         with (
             patch.object(kuro, "discover_news", return_value=rows_wave1),
@@ -21431,7 +21435,7 @@ def test_reveal_ping_same_time_single_ping_wave_different_times_recheck_edit_and
 
         # 11:06 AM (+5m): micro-staggered 3rd character (`Zephyr` at 11:05 AM) AND CMS typo fix on `6101` (`Solaria`)!
         ctx_on.now = base_11am + 360
-        art_6101_edited = _make_reveal("6101", "Post-Lament Anthropocene: Stars Intertwined | Solaria", '"Dawn breaks brightly."', base_11am)
+        art_6101_edited = _make_reveal("6101", "Post-Lament Anthropocene: Stars Intertwined | Solaria", '"Dawn breaks brightly."', base_11am + 6)
         row_6104 = {"id": "6104", "ts": base_11am + 300}
         art_6104 = _make_reveal("6104", "Post-Lament Anthropocene: Stars Intertwined | Zephyr", '"Winds rise."', base_11am + 300)
         arts_wave1b = {**arts_wave1, "6101": art_6101_edited, "6104": art_6104}
@@ -21539,6 +21543,42 @@ def test_reveal_distinct_timestamps_in_same_run_and_ambiguous_hold():
         assert sender.await_args_list[0].args[1]["allowed_mentions"] == {"parse": [], "roles": [role]}
         assert sender.await_args_list[1].args[1]["allowed_mentions"] == {"parse": []}
         assert ctx.state.news_record("wuwa")["records"]["3"]["ambiguous"] is True
+
+
+def test_reveal_ping_cannot_fit_keeps_original_news_delivery():
+    import copy
+    from unittest.mock import patch
+
+    from gamexpress.cards import news_payloads, validate_payload
+    from gamexpress.runner import run_news
+    from gamexpress.sources import kuro
+
+    role = "987654321098765432"
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", NEWS_ENABLED="1", NEWS_GAMES="wuwa",
+                       NEWS_REVEAL_PING="1", PING_NEWS_REVEAL_WUWA=role,
+                       DISCORD_WEBHOOK_NEWS_WUWA="https://discord.com/api/webhooks/100000000000000099/ww_tok")
+        ctx.now = 1793242200
+        with patch.object(kuro, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now = 1793242860
+        row = {"id": "x", "ts": 1793242806}
+        article = Item("kuro", "wuwa", "x", "https://example.com/x", "Resonator Reveal | Stella", "", row["ts"],
+                       article_blocks=[{"kind": "text", "text": "x" * 3887}])
+        original = news_payloads(GAMES["wuwa"], article)
+        overflowing = copy.deepcopy(original[0])
+        overflowing["components"][0]["components"][0]["content"] += f" · <@&{role}>"
+        assert not validate_payload(original[0])
+        assert validate_payload(overflowing) == ["4001 text chars > 4000"]
+        with (patch.object(kuro, "discover_news", return_value=[row]),
+              patch.object(kuro, "news_article", return_value=article),
+              patch("gamexpress.media.news_media_available", return_value=True)):
+            asyncio.run(run_news(ctx))
+        posts = [x["payload"] for x in ctx.webhook.sent if x["method"] == "POST"]
+        assert posts == original
+        assert ctx.state.news_record("wuwa")["records"]["x"]["status"] == "posted"
+        assert any("reveal mention did not fit" in warning for warning in ctx.warnings)
+        assert not ctx.state.news_record("wuwa").get("reveal_times")
 
 
 if __name__ == "__main__":

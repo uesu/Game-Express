@@ -526,7 +526,9 @@ async def run_news(ctx: Ctx) -> None:
                 extra_page["allowed_mentions"] = {"parse": []}
             if not validate_payload(patched[0]):
                 return patched
-        raise ValueError("reveal ping cannot fit existing news payload; manual review required")
+        # Never let optional mention formatting prevent the original article from posting.
+        ctx.warnings.append(f"{gm.short} news {art.id}: reveal mention did not fit; attempting article without ping")
+        return base_pls
 
     for game in ctx.games:
         if game.key not in ctx.settings.news_games:
@@ -759,6 +761,7 @@ async def run_news(ctx: Ctx) -> None:
                         )
                         if should_reveal_ping:
                             payloads = await _attach_news_ping(game, item, payloads, rev_ping_cfg)
+                            should_reveal_ping = payloads[0].get("allowed_mentions") == rev_ping_cfg.allowed_mentions
                 elif rec.get("reveal_ping"):
                     from .config import parse_ping
 
