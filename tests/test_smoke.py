@@ -20810,5 +20810,56 @@ def test_feature5_weapon_multi_tier_diffs_zh_sync_and_legacy_state_self_heal():
         assert "[BUFF]" not in fb_lines and "[NERF]" not in fb_lines
 
 
+def test_live_persistence_summary_reports_observed_outcomes():
+    """Exercise the real workflow scripts without performing any git writes or network calls."""
+    import os
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    import yaml
+
+    workflow = yaml.load(Path('.github/workflows/monitor.yml').read_text(), Loader=yaml.BaseLoader)
+    steps = workflow['jobs']['monitor']['steps']
+    persist = next(s['run'] for s in steps if s.get('id') == 'persist_state')
+    summary = next(s['run'] for s in steps if s.get('name') == 'Summarize live state persistence')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bindir = root / 'bin'
+        bindir.mkdir()
+        git = bindir / 'git'
+        git.write_text('#!/bin/sh\ncase "$1 $2" in\n'
+                       '  "diff --cached") [ "$MODE" = unchanged ] && exit 0; exit 1 ;;\n'
+                       '  "push origin") [ "$MODE" != failed ] && exit 0; exit 1 ;;\n'
+                       '  *) exit 0 ;;\nesac\n')
+        git.chmod(0o755)
+        sleep = bindir / 'sleep'
+        sleep.write_text('#!/bin/sh\nexit 0\n')
+        sleep.chmod(0o755)
+        output, report = root / 'output', root / 'summary'
+        env = {**os.environ, 'PATH': str(bindir) + ':' + os.environ['PATH'],
+               'GITHUB_OUTPUT': str(output), 'GITHUB_STEP_SUMMARY': str(report), 'GITHUB_REF_NAME': 'main'}
+        cases = [('unchanged', 0, 'unchanged', 'no staged changes observed'),
+                 ('pushed', 0, 'pushed', 'committed and pushed'),
+                 ('failed', 1, '', 'failed — inspect')]
+        for mode, exit_code, expected_output, expected_text in cases:
+            output.write_text('')
+            report.write_text('')
+            env['MODE'] = mode
+            result = subprocess.run(['bash', '-e', '-c', persist], env=env, capture_output=True, check=False)
+            assert result.returncode == exit_code
+            observed = output.read_text().strip().removeprefix('result=')
+            assert observed == expected_output
+            env.update(PERSIST_OUTCOME='success' if exit_code == 0 else 'failure', PERSIST_RESULT=observed)
+            subprocess.run(['bash', '-e', '-c', summary], env=env, check=True)
+            assert expected_text in report.read_text()
+        for outcome in ('skipped', 'cancelled', ''):
+            report.write_text('')
+            env.update(PERSIST_OUTCOME=outcome, PERSIST_RESULT='')
+            subprocess.run(['bash', '-e', '-c', summary], env=env, check=True)
+            assert 'not confirmed' in report.read_text()
+
+
+
 if __name__ == "__main__":
     sys.exit(main())
