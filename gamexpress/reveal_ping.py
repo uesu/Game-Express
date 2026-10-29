@@ -13,6 +13,12 @@ MAX_TRACKED_CHARACTERS = 200
 # A fuller version of the same name arriving within this window is the same reveal, not a new
 # character (ZZZ publishes `Agent Record | Evelyn` and the 12:15 dossier minutes apart).
 VARIANT_WINDOW_S = 12 * 3600
+# Corroborated same-character aliases: `<fuller canonical key> -> <shorter canonical key>`.
+# Only names confirmed to belong to ONE character belong here. A shared word is not evidence:
+# `March 7th` is not `March`, and `Saber Alter` is not `Saber`, so those never collapse.
+SAME_CHARACTER_ALIASES: dict[str, str] = {
+    "evelyn chevalier": "evelyn",
+}
 
 # Direct video watch / short / file URLs (deliberately NOT matching channel homepages like
 # `youtube.com/@GenshinImpact` that sit in standard publisher social footers).
@@ -124,7 +130,7 @@ _WUWA_REVEAL_RE = re.compile(
     re.I,
 )
 _WUWA_PROFILE_RE = re.compile(
-    r"^(?:profile\s+reveal\s*[|丨]|(?:resonator\s+)?profile\s*[:：|丨])\s*(.+?)\s*$",
+    r"^(?:profile\s+reveal\s*[|丨:：]|(?:resonator\s+)?profile\s*[:：|丨])\s*(.+?)\s*$",
     re.I,
 )
 
@@ -179,11 +185,25 @@ def clean_character_name(raw: str) -> str:
         return ""
     if re.search(r"[!?#@/\\=\[\]{}<>~_]|https?:|\d+\.\d+", s):
         return ""
+    # Variant forms name the character plus a form suffix (`Rover: Aero`, `Yangyang: Xuanling`,
+    # `Rover: Electro`). Both sides must be proper names; the canonical key keeps only the base
+    # character so one character can never ping twice for its forms.
+    if ":" in s or "：" in s:
+        parts = [p.strip() for p in re.split(r"[:：]", s)]
+        if len(parts) != 2 or not all(_is_proper_name(p) for p in parts):
+            return ""
+        return f"{parts[0]}: {parts[1]}"
+    return s if _is_proper_name(s) else ""
+
+
+def _is_proper_name(s: str) -> bool:
+    """True for a playable-character proper name (`Astra Yao`, `Dan Heng • Imbibitor Lunae`,
+    `The Herta`, `March 7th`, `Soldier 11`, `Kaedehara Kazuha`, `von Lycaon`, `de la ...`)."""
+    if not (2 <= len(s) <= 36):
+        return False
     tokens = [tok for tok in re.split(r"[\s•·&]+", s) if tok]
     if not (1 <= len(tokens) <= 5):
-        return ""
-    # Allow proper-noun capitalization (`Astra Yao`, `Dan Heng • Imbibitor Lunae`, `The Herta`,
-    # `March 7th`, `Soldier 11`, `Kaedehara Kazuha`, `von Lycaon`, `de la ...`).
+        return False
     connectors = {"of", "the", "von", "van", "de", "del", "da", "la", "le", "du", "no"}
     proper_tokens = 0
     for idx, tok in enumerate(tokens):
@@ -192,8 +212,8 @@ def clean_character_name(raw: str) -> str:
         if re.match(r"^(?:[A-ZÀ-ÖØ-Þ][\w'’.\-]*|\d+(?:st|nd|rd|th)?)$", tok):
             proper_tokens += 1
             continue
-        return ""
-    return s if proper_tokens >= 1 else ""
+        return False
+    return proper_tokens >= 1
 
 
 def canonical_character_key(name: str) -> str:
@@ -202,6 +222,8 @@ def canonical_character_key(name: str) -> str:
     cleaned = clean_character_name(name) or str(name or "").strip()
     cleaned = re.sub(r"[•·]+", " ", cleaned)
     cleaned = re.sub(r"['’`]", "'", cleaned)
+    # A form suffix (`Rover: Aero`, `Yangyang: Xuanling`) is the same character, not a new one.
+    cleaned = re.sub(r"\s*[:：]\s*.*$", "", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip().lower()
     return cleaned
 
@@ -414,13 +436,14 @@ def prune_reveal_chars(record: dict, limit: int = MAX_TRACKED_CHARACTERS) -> Non
 def _same_character_variant(seen: str, candidate: str) -> bool:
     """`Evelyn` and `Evelyn Chevalier` are one Agent published twice minutes apart.
 
-    Token-prefix only: `Herta` is not `The Herta`, and `March` is not `March 7th` — a shared
-    surname or epithet would suppress genuinely different characters.
+    Only corroborated aliases in `SAME_CHARACTER_ALIASES` collapse. A shared word is not a
+    variant: `Herta` is not `The Herta`, `March` is not `March 7th`, and `Saber` is not
+    `Saber Alter`, so those never suppress a genuinely different character's reveal.
     """
     if not seen or not candidate or seen == candidate:
         return False
-    short, long = (seen, candidate) if len(seen) < len(candidate) else (candidate, seen)
-    return long.startswith(short + " ")
+    return (SAME_CHARACTER_ALIASES.get(candidate) == seen
+            or SAME_CHARACTER_ALIASES.get(seen) == candidate)
 
 
 def evaluate_reveal_ping_decision(

@@ -21315,6 +21315,14 @@ def test_reveal_ping_default_off_isolation_and_multi_era_plus_unseen_future_clas
         ("wuwa", "Profile Reveal | Howling Flame—Lupa", '"Quote."', "Lupa"),
         ("wuwa", "Profile Reveal | Magnetism Before Light—Augusta", '"Quote."', "Augusta"),
         ("wuwa", "Resonator Reveal | Rebecca", '"Let us tear Night City apart!"', "Rebecca"),
+        # Legacy Kuro separator `Profile Reveal:` (archived articles 451/475/512/542/621/…).
+        ("wuwa", "Profile Reveal: Snow Waltz — Sanhua", '"Quote."', "Sanhua"),
+        ("wuwa", "Profile Reveal: Mistcloak Strike — Aalto", '"Quote."', "Aalto"),
+        ("wuwa", "Profile Reveal: Dragon's Breath — Mortefi", '"Quote."', "Mortefi"),
+        # Form-suffixed names are one character (`Rover: Aero`, `Yangyang: Xuanling`).
+        ("wuwa", "Profile Reveal | Vessel of Sounds — Rover: Aero", '"Quote."', "Rover: Aero"),
+        ("wuwa", "Profile Reveal | Voices of Azure Plume - Yangyang: Xuanling", '"Quote."', "Yangyang: Xuanling"),
+        ("wuwa", "Post-Lament Anthropocene: Stars Intertwined | Yangyang: Xuanling", '"Quote."', "Yangyang: Xuanling"),
         # Layer 2 unseen future planet/arc series (`<New Series> | <Character>`) across HSR 5.0 / HNA / Ananta
         ("starrail", "Lushaka's Deep-Sea Chronicle | Nereia", (
             '"Beneath the sunken spires, every tide remembers its oath."\n'
@@ -21336,6 +21344,9 @@ def test_reveal_ping_default_off_isolation_and_multi_era_plus_unseen_future_clas
 
     # Canonical key collapses `Stars Intertwined | Suoming` and `Profile Reveal | Power of Ten — Suoming`!
     assert reveal_ping.canonical_character_key("Suoming") == reveal_ping.canonical_character_key("Power of Ten — Suoming") == "suoming"
+    # A form suffix keeps the base character: one character can never ping twice for its forms.
+    assert reveal_ping.canonical_character_key("Rover: Aero") == reveal_ping.canonical_character_key("Rover: Electro") == "rover"
+    assert reveal_ping.canonical_character_key("Yangyang: Xuanling") == reveal_ping.canonical_character_key("Yangyang") == "yangyang"
 
     # 3. Strict hard exclusions: ANY video post, trailer, showcase, outfit, rerun, comic episode, or event -> None!
     negatives = [
@@ -21752,9 +21763,10 @@ def test_reveal_ping_near_limit_continuation_resumes_after_failure():
 def test_reveal_ping_collapses_a_full_name_variant_but_not_a_different_character():
     """ZZZ publishes `Agent Record | Evelyn` and `Agent Record | Evelyn Chevalier` minutes apart.
 
-    A token-prefix variant inside the retention window must not ping twice; a later reveal of a
+    A corroborated alias inside the retention window must not ping twice; a later reveal of a
     genuinely different name (or the same variant years later) still can.
     """
+    from gamexpress import reveal_ping
     from gamexpress.reveal_ping import (
         RevealMatch,
         canonical_character_key,
@@ -21777,6 +21789,47 @@ def test_reveal_ping_collapses_a_full_name_variant_but_not_a_different_character
     # Two years later the fuller name is a new reveal again, not a retained suppression.
     assert evaluate_reveal_ping_decision(record, match("Evelyn Chevalier"),
                                          published_ts=1793000000 + 2 * 365 * 86400)[0] is True
+    # A shared word is NOT a variant: only corroborated aliases collapse, so a genuinely
+    # different character that merely starts with the same token still pings.
+    assert reveal_ping._same_character_variant("march", "march 7th") is False
+    assert reveal_ping._same_character_variant("saber", "saber alter") is False
+    assert reveal_ping._same_character_variant("evelyn", "evelyn chevalier") is True
+    assert reveal_ping._same_character_variant("herta", "the herta") is False
+    for prior, candidate in (("march", "March 7th"), ("saber", "Saber Alter")):
+        assert evaluate_reveal_ping_decision({"reveal_chars": {prior: 1793000000}}, match(candidate),
+                                             published_ts=1793000900)[0] is True, candidate
+
+
+def test_reveal_ping_form_names_collapse_to_one_character_after_a_real_commit():
+    """`Rover: Aero` and `Rover: Electro` are one character, and a later full-name form of an
+    already-pinged character stays silent instead of announcing the same Agent twice."""
+    from gamexpress.models import Item
+    from gamexpress.reveal_ping import (
+        classify_character_reveal,
+        commit_reveal_delivery,
+        evaluate_reveal_ping_decision,
+    )
+
+    def item(title):
+        return Item(
+            "kuro", "wuwa", title, "https://example.org/1", title, '"Quote."', 1793000000,
+            article_blocks=[{"kind": "text", "text": '"Quote."'},
+                            {"kind": "image", "url": "https://example.org/a.jpg"}],
+        )
+
+    aero = classify_character_reveal("wuwa", item("Profile Reveal | Vessel of Sounds — Rover: Aero"))
+    electro = classify_character_reveal("wuwa", item("Profile Reveal | Vessel of Sounds — Rover: Electro"))
+    assert aero is not None and electro is not None
+    assert (aero.character, electro.character) == ("Rover: Aero", "Rover: Electro")
+    record: dict = {}
+    assert evaluate_reveal_ping_decision(record, aero, published_ts=1793000000) == (True, "new_character_reveal")
+    commit_reveal_delivery(record, aero, published_ts=1793000000, now=1793000060, pinged=True)
+    assert evaluate_reveal_ping_decision(record, electro, published_ts=1793086400) == (False, "already_pinged_character")
+    # The base name of the same character is equally already known.
+    assert evaluate_reveal_ping_decision({"reveal_chars": {"yangyang": 1793000000}},
+                                         classify_character_reveal(
+                                             "wuwa", item("Post-Lament Anthropocene: Stars Intertwined | Yangyang: Xuanling")),
+                                         published_ts=1793000900) == (False, "already_pinged_character")
 
 
 def test_reveal_ping_edit_guard_skips_reflow_and_lost_mention_instead_of_truncating():

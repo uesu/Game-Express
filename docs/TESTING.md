@@ -559,29 +559,32 @@ Verification for the delta on top of the revision above (same offline suite, Pyt
 
 - `python -m compileall -q gamexpress tests .github/scripts`, `ruff check .`,
   `python -m gamexpress validate`, `python -m gamexpress preview --out <temp>` passed.
-- Standalone smoke **509/509**; `python -m pytest -q tests` **532 passed** (overlapping
-  totals, not 1,041 distinct tests). Schedule regressions and the placeholder guard unchanged.
+- Standalone smoke **510/510**; `python -m pytest -q tests` **533 passed** (overlapping
+  totals, not 1,043 distinct tests). Schedule regressions and the placeholder guard unchanged.
 - New guards and the requirement each pins (each fails on the pre-delta code):
   `test_maintenance_window_phrasings_are_read_for_every_game` (`updated and maintained at …`,
   clock-only end after a dated start, clock-only extension, reschedule that quotes the abandoned
   window, `will not be postponed`, all six game keys);
   `test_reveal_ping_edit_guard_skips_reflow_and_lost_mention_instead_of_truncating` (a CMS edit
   that would need a continuation page is held, not published truncated);
-  `test_reveal_ping_collapses_a_full_name_variant_but_not_a_different_character`.
+  `test_reveal_ping_collapses_a_full_name_variant_but_not_a_different_character` (corroborated
+  aliases collapse; `March` / `March 7th` and `Saber` / `Saber Alter` do not);
+  `test_reveal_ping_form_names_collapse_to_one_character_after_a_real_commit` (form suffixes and
+  the legacy `Profile Reveal:` separator).
   The YouTube test now also covers trailing-slash and `/watch/` player URLs.
 - Real-corpus replay (read-only clones, no network at test time, not committed):
   - **Wuthering Waves**, all **712** official Kuro website articles
     (`TheLovinator1/wutheringwaves`, 2023-02 → 2026-10):
-    **78** classifier matches over **43** unique characters (`43` `Profile Reveal`, `33`
-    `Stars Intertwined`, `2` `Resonator Reveal`). Every match is a reveal-series title —
-    **0** title-series false positives. **4** labelled titles stay unmatched
-    (`Rover: Aero` ×2, `Yangyang: Xuanling` ×2): colon-suffixed variant names, deliberately
-    left out so a second post about an existing character cannot ping.
+    **97** classifier matches over **57** unique characters (`61` `Profile Reveal` — including the
+    15 archived `Profile Reveal:` titles, `34` `Stars Intertwined`, `2` `Resonator Reveal`).
+    Every match is a reveal-series title — **0** title-series false positives and **0** unmatched
+    labelled titles. `Rover: Aero` / `Rover: Electro` share one key, as do
+    `Yangyang: Xuanling` / `Yangyang`.
   - **Genshin Impact**, **1,185** in-game notices (`KQM-git/GINews`, 2020 → 2026):
     **0** matches — no `◆` bullet list, version notice or top-up notice is mistaken for a reveal.
   - Corpora are unlabelled outside their own series titles; these are precision/recall proxies
     against publisher titles, not the earlier report's 2,179-post figures.
-  - Cost: 141 µs/article (WuWa) and 168 µs/article (Genshin) including HTML body extraction on
+  - Cost: 141 µs/article (WuWa) and 167 µs/article (Genshin) including HTML body extraction on
     this host, with zero HTTP inside the classifier.
 - `python -m gamexpress benchmark --iterations 300` on the clean head (Python 3.11.2):
   short news default-off **93.06 µs** median, medium two-page **588.02 µs**, long

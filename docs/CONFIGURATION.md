@@ -749,9 +749,12 @@ before repairing state. Quiet source output cannot settle an unfinished delivery
 It checks existing fetched articles; no additional source requests are made. Announcements in the
 same **source publication minute** within a game share one ping; different minutes are not subject
 to a cooldown.
-Recognized follow-up profiles for retained character names are suppressed. Tracking retains up to
-200 names and timestamps per game and can be seeded from known schedule reruns; it is not a
-complete historical roster. Ambiguous first-page delivery is held and treated as already pinged
+Recognized follow-up profiles for retained character names are suppressed. A form suffix is the
+same character (`Rover: Aero` and `Rover: Electro` share one key), and only corroborated full-name
+aliases collapse within 12 hours (`Evelyn` / `Evelyn Chevalier`); names that merely share a word
+(`March` / `March 7th`, `Saber` / `Saber Alter`, `Herta` / `The Herta`) stay distinct. Tracking
+retains up to 200 names and timestamps per game and can be seeded from known schedule reruns; it is
+not a complete historical roster. Ambiguous first-page delivery is held and treated as already pinged
 for deduplication until manually reconciled. If the mention cannot fit the existing card, the
 original article is sent without that ping and a warning is reported; its structure is not changed.
 Matching is heuristic: new formats and unknown

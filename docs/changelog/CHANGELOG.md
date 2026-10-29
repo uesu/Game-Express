@@ -9,9 +9,13 @@
 - Resolve a clock-only extension (`extended to 14:00 (UTC+8)`) on the notice's own day, and adopt
   the replacement date of a reschedule that quotes the abandoned window. `will not be postponed`
   is not a postponement.
-- Collapse a token-prefix full-name variant of the *same* reveal inside a 12-hour window
-  (`Agent Record | Evelyn` then `Agent Record | Evelyn Chevalier`) so one Agent pings once;
-  different characters that merely share a word still ping.
+- Detect the legacy Kuro separator `Profile Reveal: <epithet> — <character>` again, alongside
+  `Profile Reveal |`, and read form-suffixed names (`Rover: Aero`, `Yangyang: Xuanling`) as one
+  character per base name, so a second form of a known character cannot ping twice.
+- Collapse a *corroborated* full-name alias of the same reveal inside a 12-hour window
+  (`Agent Record | Evelyn` then `Agent Record | Evelyn Chevalier`) so one Agent pings once. A
+  shared word is not evidence: `March` / `March 7th`, `Saber` / `Saber Alter` and `Herta` /
+  `The Herta` stay separate characters.
 - Hold a backstage CMS edit instead of publishing a truncated card when re-attaching a retained
   reveal mention now needs a continuation page or no longer fits.
 - Accept trailing-slash and `/watch/` YouTube player URLs when rendering the visible watch link.
