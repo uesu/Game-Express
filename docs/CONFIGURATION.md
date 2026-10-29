@@ -266,6 +266,8 @@ A schedule/code-only selector does not count as toggling news off.
 |---|---|---|
 | `NEWS_ENABLED` | `0` | Explicit news opt-in; independent of the existing schedule/code defaults |
 | `NEWS_GROUP_LONG_STRIPS` | `0` | Opt-in measured grouping; failure keeps article order |
+| `NEWS_REVEAL_PING` | `0` | Opt-in heuristic character-reveal mentions for official news; excludes identified video, deduplicates characters and equal exact source publication timestamps |
+| `PING_NEWS_REVEAL` / `PING_NEWS_REVEAL_<GAME>` | — | Dedicated reveal role(s); no `PING_ROLE_ID` inheritance. `PING_REVEAL` aliases also accepted |
 | `NEWS_TIMESTAMPS` | `0` | Opt-in render-time `<t:EPOCH:…>` conversion for exact TZ-qualified news dates/times |
 | `NEWS_EXPAND_FULL` | `0` | Opt-in multi-page full articles beyond 2 pages (bounded at `NEWS_EXPAND_MAX_PAGES = 12`, `NEWS_EXPAND_MAX_CHARS = 120000`, `NEWS_EXPAND_MAX_MEDIA = 120`) |
 | `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | Canonical game keys; removing a game pauses its existing news state |
@@ -740,3 +742,15 @@ settings or batch membership changes after a page was confirmed, delivery holds 
 reconciliation. Legacy partial batches without a signature also hold; do not clear their
 message IDs automatically. Inspect the actual Discord messages and retained source build
 before repairing state. Quiet source output cannot settle an unfinished delivery.
+
+### Character reveal mentions
+
+`NEWS_REVEAL_PING=1` requires a dedicated `PING_NEWS_REVEAL` role and enabled official news.
+It checks existing fetched articles; no additional source requests are made. Equal **exact source
+timestamps** within a game share one ping; different timestamps are not subject to a cooldown.
+Recognized follow-up profiles for retained character names are suppressed. Tracking retains up to
+200 names and timestamps per game and can be seeded from known schedule reruns; it is not a
+complete historical roster. Ambiguous first-page delivery is held and treated as already pinged
+for deduplication until manually reconciled. If the mention cannot fit the existing card, delivery
+is held rather than changing the card structure. Matching is heuristic: new formats and unknown
+video representations can be missed. ANANTA has no configured official-news adapter.

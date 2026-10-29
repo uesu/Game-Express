@@ -217,6 +217,19 @@ class State:
                         mstage = _safe_int(mval[1], -1) if isinstance(mval, list) and len(mval) == 3 else -1
                         if ostage > mstage:
                             my_rechecks[key] = list(oval)
+                for slot in ("reveal_chars", "reveal_times"):
+                    theirs = other.get(slot)
+                    if isinstance(theirs, dict):
+                        ours = _as_dict_slot(mine, slot)
+                        for key, value in theirs.items():
+                            if isinstance(key, str) and isinstance(value, int):
+                                ours[key] = max(_safe_int(ours.get(key), 0), value)
+                        if len(ours) > 200:
+                            for key in sorted(ours, key=lambda k: (_safe_int(ours[k], 0), k))[:-200]:
+                                ours.pop(key, None)
+                if "reveal_seeded_at" in other:
+                    mine["reveal_seeded_at"] = max(_safe_int(mine.get("reveal_seeded_at"), 0),
+                                                   _safe_int(other.get("reveal_seeded_at"), 0))
         if include_maintenance:
             peer_maint = peer.get("maintenance")
             for game, other in (peer_maint.items() if isinstance(peer_maint, dict) else ()):

@@ -21165,5 +21165,381 @@ def test_news_youtube_embeds_render_watch_links_for_all_games_without_guessing()
     assert "https://example.org/video.mp4" in json.dumps(cards.news_payloads(GAMES["starrail"], native))
 
 
+def test_reveal_ping_default_off_isolation_and_multi_era_plus_unseen_future_classifier():
+    """Verify default-off reveal-ping config isolation, multi-era + unseen-future detection, and
+    strict video / outfit / rerun / showcase / event exclusions."""
+    from gamexpress import config, reveal_ping
+
+    img_blk = {"kind": "image", "url": "https://upload-os-bbs.hoyolab.com/upload/2026/10/20/portrait.jpg"}
+
+    # 1. Config isolation: OFF by default; never inherits `PING_ROLE_ID` or `PING_NEWS`.
+    s_default = config.load_settings({
+        "PING_ROLE_ID": "111111111111111111",
+        "PING_NEWS_REVEAL": "222222222222222222",
+    })
+    assert s_default.news_reveal_ping is False
+    assert not s_default.reveal_ping("genshin")
+
+    s_no_role = config.load_settings({
+        "NEWS_REVEAL_PING": "1",
+        "PING_ROLE_ID": "111111111111111111",
+        "PING_NEWS": "333333333333333333",
+    })
+    assert s_no_role.news_reveal_ping is True
+    assert not s_no_role.reveal_ping("genshin")
+
+    s_scoped = config.load_settings({
+        "NEWS_REVEAL_PING": "1",
+        "PING_NEWS_REVEAL": "222222222222222222",
+        "PING_NEWS_REVEAL_GI": "444444444444444444",
+        "PING_NEWS_REVEAL_ZZZ": "none",
+    })
+    assert s_scoped.reveal_ping("genshin").text == "<@&444444444444444444>"
+    assert s_scoped.reveal_ping("wuwa").text == "<@&222222222222222222>"
+    assert not s_scoped.reveal_ping("zzz")
+    assert not config.load_settings({
+        "NEWS_REVEAL_PING": "1",
+        "PING_NEWS_REVEAL": "222222222222222222",
+        "NO_PING": "1",
+    }).reveal_ping("wuwa")
+
+    # `known_rerun_names` baseline seeds historical roster silently on cold start:
+    g_rec: dict = {}
+    reveal_ping.ensure_reveal_baseline(g_rec, 1793242800, known_rerun_names=["Shorekeeper", "Power of Ten — Suoming"])
+    assert "shorekeeper" in g_rec["reveal_chars"] and "suoming" in g_rec["reveal_chars"]
+
+    # 2. Multi-era positive templates (2020 -> 2026 -> future power labels).
+    positives = [
+        # Genshin V2-V7 `◆` dossier (Moon Wheel / future Snezhnaya/Khaenri'ah power key)
+        ("genshin", "Candlight's Lingering Radiance · Linnea", (
+            '"A warm breeze from Nod-Krai..."\n◆ Name: Linnea\n◆ Title: Frostweaver\n'
+            '◆ Moon Wheel: Cryo\n◆ Constellation: Lucerna Borealis'
+        ), "Linnea"),
+        ("genshin", "Echoes Beyond the Firmament", (
+            '◆ Name: Dainsleif\n◆ Title: Bough Keeper\n◆ Abyssal Core: Khaenri\'ah\n◆ Constellation: Viator'
+        ), "Dainsleif"),
+        # Early Genshin V2/V3 `◆` bullet dossier without `Name:` key
+        ("genshin", '"Astute Luminary" · Nahida', (
+            '◆ Physic of Purity\n◆ Lesser Lord Kusanali\n◆ Gnosis: Dendro\n◆ Constellation: Sapientia Oromasdis'
+        ), "Nahida"),
+        # Old Genshin V1 `[Character Tales]` & `Character Introduction`
+        ("genshin", '[Character Tales] - "Vago Mundo" Zhongli', '"Osmanthus wine tastes the same..."', "Zhongli"),
+        ("genshin", 'Character Introduction — "Lone Glimmer" Skirk', '"From beyond the rift..."', "Skirk"),
+        # HSR V1-V4 (`Extraterrestrial`, `Amphoreus`, `Aha Instant` incl. Oct 2026 minimal quote-only post)
+        ("starrail", "Extraterrestrial Satellite Communication | Dan Heng • Imbibitor Lunae", '"My past..."', "Dan Heng • Imbibitor Lunae"),
+        ("starrail", "Amphoreus' Saga of Heroes | Castorice", '"Life and death walk hand in hand."', "Castorice"),
+        ("starrail", "Aha Instant | Ellen", '"Do you guys have shark tail care services here too?"', "Ellen"),
+        # ZZZ `Agent Record` + early `[Agent Record]`
+        ("zzz", "Agent Record | Miyabi", '"Order cannot be broken."', "Miyabi"),
+        ("zzz", '"Leave the housekeeping to me." — Victoria: Lycaon', '[Agent Record]\nVoice: Kobayashi Chikahiro', "Lycaon"),
+        # WuWa `Stars Intertwined`, `Resonator Reveal`, and `Profile Reveal` (canonicalized to `"suoming"`)
+        ("wuwa", "Post-Lament Anthropocene: Stars Intertwined | Suoming", '"Every variable is accounted for."', "Suoming"),
+        ("wuwa", "Profile Reveal | Power of Ten — Suoming", '"Calculations complete."', "Suoming"),
+        ("wuwa", "Resonator Reveal | Rebecca", '"Let us tear Night City apart!"', "Rebecca"),
+        # Layer 2 unseen future planet/arc series (`<New Series> | <Character>`) across HSR 5.0 / HNA / Ananta
+        ("starrail", "Lushaka's Deep-Sea Chronicle | Nereia", (
+            '"Beneath the sunken spires, every tide remembers its oath."\n'
+            'Nereia gazes across the abyssal trench.\nEnglish Voice: Jane Doe'
+        ), "Nereia"),
+        ("hna", "Sovereign Nexus Dossier | Seraphina", (
+            '"Bind your Anima to mine, and no rift shall part us."\nAffiliation: Astral Sanctum\nSeraphina awaits.'
+        ), "Seraphina"),
+    ]
+    for gkey, title, body, expected_char in positives:
+        it = Item(
+            "kuro" if gkey == "wuwa" else "hoyolab", gkey, "p1", "https://www.hoyolab.com/article/1",
+            title, body, 1792206000,
+            article_blocks=[{"kind": "text", "text": body}, img_blk],
+        )
+        m = reveal_ping.classify_character_reveal(gkey, it)
+        assert m is not None, f"missed positive reveal {gkey}: {title!r}"
+        assert m.character == expected_char, f"{title!r} -> {m.character!r} != {expected_char!r}"
+
+    # Canonical key collapses `Stars Intertwined | Suoming` and `Profile Reveal | Power of Ten — Suoming`!
+    assert reveal_ping.canonical_character_key("Suoming") == reveal_ping.canonical_character_key("Power of Ten — Suoming") == "suoming"
+
+    # 3. Strict hard exclusions: ANY video post, trailer, showcase, outfit, rerun, comic episode, or event -> None!
+    negatives = [
+        # Drip-looking title WITH native video block (e.g. ZZZ 12:05 PM Agent Record Short!)
+        ("zzz", "Agent Record | Miyabi", '"Order cannot be broken."', [
+            {"kind": "text", "text": '"Order cannot be broken."'},
+            {"kind": "video", "url": "https://vod-static.hoyolab.com/agent_short.mp4"},
+        ], []),
+        # Drip-looking title WITH unavailable native video placeholder
+        ("starrail", "Aha Instant | Astra Yao", "[Native video unavailable; open original post]", [
+            {"kind": "text", "text": "[Native video unavailable; open original post]"}, img_blk,
+        ], []),
+        # Drip-looking title WITH YouTube Shorts / watch link
+        ("wuwa", "Post-Lament Anthropocene: Stars Intertwined | Suoming", '"Quote here."', [
+            {"kind": "text", "text": '"Quote here."'}, img_blk,
+        ], ["https://www.youtube.com/shorts/abc123XYZ89"]),
+        # WuWa rerun series (`Resonator Review` is for reruns, NEVER new characters!)
+        ("wuwa", "Post-Lament Anthropocene: Resonator Review | Shorekeeper", '"Welcome home."', [
+            {"kind": "text", "text": '"Welcome home."'}, img_blk,
+        ], []),
+        # Genshin `Character Introduction and Skill Showcase` (pre-banner kit post, NOT drip!)
+        ("genshin", "Character Introduction and Skill Showcase — \"Frostweaver\" Linnea", '"Quote..."\n◆ Name: Linnea\n◆ Title: Frostweaver\n◆ Moon Wheel: Cryo', [
+            {"kind": "text", "text": '◆ Name: Linnea\n◆ Title: Frostweaver\n◆ Moon Wheel: Cryo'}, img_blk,
+        ], []),
+        # Outfits / skins / costumes (vertical portrait + quote, NOT a new character!)
+        ("genshin", 'Outfit Teaser: Shenhe "Frostflower Dew"', '"A fitting garment for the lantern rite."', [
+            {"kind": "text", "text": '"A fitting garment for the lantern rite."'}, img_blk,
+        ], []),
+        ("wuwa", "Outfit Showcase | Peach Blossom — Jinhsi", '"Spring returns to Jinzhou."', [
+            {"kind": "text", "text": '"Spring returns to Jinzhou."'}, img_blk,
+        ], []),
+        # Gag comic / episode serial (`monitor 1645.txt` real HSR post!)
+        ("starrail", '"The Laughter Outsmarts miHoYo" Episode 6 | Retreat', '"Run away before Aha notices!"', [
+            {"kind": "text", "text": '"Run away before Aha notices!"'}, img_blk,
+        ], []),
+        # Web event / banner / weapon / patch notices
+        ("zzz", '"Cyber Miracle Healer" Web Event Now Live!', "Event Duration: 2026/10/20 - 2026/10/30", [
+            {"kind": "text", "text": "Event Duration: 2026/10/20 - 2026/10/30"}, img_blk,
+        ], []),
+        ("starrail", "Character Preview | Valeriy", '"Check out Valeriy skills!"', [
+            {"kind": "text", "text": '"Check out Valeriy skills!"'}, img_blk,
+        ], []),
+        ("wuwa", "Resonator Combat Showcase | Suoming", '"Watch Suoming in combat!"', [
+            {"kind": "text", "text": '"Watch Suoming in combat!"'}, img_blk,
+        ], []),
+        ("wuwa", "Echo Showcase | Lorelei", '"A phantom echoing over Rinascita."', [
+            {"kind": "text", "text": '"A phantom echoing over Rinascita."'}, img_blk,
+        ], []),
+    ]
+    for gkey, title, body, blocks, links in negatives:
+        it = Item(
+            "kuro" if gkey == "wuwa" else "hoyolab", gkey, "n1", "https://www.hoyolab.com/article/2",
+            title, body, 1792206300,
+            images=[img_blk["url"]], links=links, article_blocks=blocks,
+        )
+        assert reveal_ping.classify_character_reveal(gkey, it) is None, f"false positive on {gkey}: {title!r}"
+
+
+    # Embedded video links and body URLs are also excluded even with a reveal-like title.
+    for blocks, text in [
+        ([{"kind": "link", "url": "https://www.youtube.com/embed/rCxNRV9gdzo?enablejsapi=1"}], ""),
+        ([{"kind": "text", "text": "https://www.youtube.com/watch?v=rCxNRV9gdzo"}], ""),
+        ([], "https://www.youtube.com/shorts/rCxNRV9gdzo"),
+    ]:
+        item = Item("hoyolab", "starrail", "video", "https://example.org",
+                    "Extraterrestrial Satellite Communication | Jane", text, 100, article_blocks=blocks)
+        assert reveal_ping.classify_character_reveal("starrail", item) is None
+    one = reveal_ping.RevealMatch("One", "one", "test")
+    two = reveal_ping.RevealMatch("Two", "two", "test")
+    record = {}
+    reveal_ping.commit_reveal_delivery(record, one, published_ts=1000, now=1100, pinged=True)
+    assert reveal_ping.evaluate_reveal_ping_decision(record, two, published_ts=1000) == (False, "same_publication_time")
+    assert reveal_ping.evaluate_reveal_ping_decision(record, two, published_ts=1300) == (True, "new_character_reveal")
+
+def test_reveal_ping_same_time_single_ping_wave_different_times_recheck_edit_and_peer_merge():
+    """End-to-end `run_news` proof of:
+    1) Zero pings when `NEWS_REVEAL_PING=0` (default).
+    2) Equal-timestamp characters ping once; a different-time character pings separately,
+       and recognized follow-up profiles stay silent.
+    3) Different-time new character drop (hours later / next day) pings once at its own reveal time.
+    4) Post-publish CMS `rechecks` edit keeps visible `<@&ROLE_ID>` header pill without re-pinging (`parse: []`).
+    5) `State.merge_peer(include_news=True)` syncs `reveal_chars` & `last_reveal_ping_ts` across failover."""
+    from unittest.mock import patch
+
+    from gamexpress.runner import run_news
+    from gamexpress.sources import kuro
+
+    role_id = "987654321098765432"
+    img_url = "https://upload-os-bbs.hoyolab.com/upload/2026/10/29/reveal.jpg"
+
+    def _make_reveal(aid: str, title: str, body: str, pub_ts: int, *, with_video: bool = False) -> Item:
+        blocks = [{"kind": "text", "text": body}, {"kind": "image", "url": img_url}]
+        if with_video:
+            blocks.append({"kind": "video", "url": "https://vod-static.hoyolab.com/pv.mp4"})
+        return Item(
+            "kuro", "wuwa", aid, f"https://wutheringwaves.kurogames.com/en/main/news/detail/{aid}",
+            title, body, pub_ts, images=[img_url], article_blocks=blocks, author="Wuthering Waves",
+        )
+
+    # 1. Default OFF (`NEWS_REVEAL_PING` unset) -> delivers card with `allowed_mentions={"parse": []}` & no role text.
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx_off = make_ctx(
+            Path(tmp) / "off.json",
+            NEWS_ENABLED="1",
+            NEWS_GAMES="wuwa",
+            PING_NEWS_REVEAL_WUWA=role_id,
+            DISCORD_WEBHOOK_NEWS_WUWA="https://discord.com/api/webhooks/100000000000000099/ww_tok",
+        )
+        with patch.object(kuro, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx_off))
+        ctx_off.now += 60
+        row_a = {"id": "6001", "ts": ctx_off.now - 10}
+        art_a = _make_reveal("6001", "Post-Lament Anthropocene: Stars Intertwined | Solaria", '"Light guides us."', row_a["ts"])
+        with (
+            patch.object(kuro, "discover_news", return_value=[row_a]),
+            patch.object(kuro, "news_article", return_value=art_a),
+            patch("gamexpress.media.news_media_available", return_value=True),
+        ):
+            asyncio.run(run_news(ctx_off))
+        assert len(ctx_off.webhook.sent) == 1
+        sent0 = ctx_off.webhook.sent[0]["payload"]
+        assert sent0["allowed_mentions"] == {"parse": []}
+        assert role_id not in json.dumps(sent0)
+
+    # 2. Enabled (`NEWS_REVEAL_PING=1`): same-time 11:00 AM double drop -> ONLY 1 ping; micro-stagger +5m -> separately pinged;
+    #    next-day Profile Reveal for 2nd character -> suppressed; new character at 6:00 PM -> PINGS 1 time!
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx_on = make_ctx(
+            Path(tmp) / "on.json",
+            NEWS_ENABLED="1",
+            NEWS_GAMES="wuwa",
+            NEWS_REVEAL_PING="1",
+            PING_NEWS_REVEAL_WUWA=role_id,
+            DISCORD_WEBHOOK_NEWS_WUWA="https://discord.com/api/webhooks/100000000000000099/ww_tok",
+        )
+        base_11am = 1793242800  # 11:00:00 UTC+8
+        ctx_on.now = base_11am - 600
+        with patch.object(kuro, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx_on))
+
+        # 11:01 AM run: TWO new characters (`Solaria` & `Noctis`) announced at 11:00 AM, plus a video trailer!
+        ctx_on.now = base_11am + 60
+        rows_wave1 = [
+            {"id": "6101", "ts": base_11am},
+            {"id": "6102", "ts": base_11am},
+            {"id": "6103", "ts": base_11am},
+        ]
+        arts_wave1 = {
+            "6101": _make_reveal("6101", "Post-Lament Anthropocene: Stars Intertwined | Solaria", '"Dawn breaks."', base_11am),
+            "6102": _make_reveal("6102", "Post-Lament Anthropocene: Stars Intertwined | Noctis", '"Dusk falls."', base_11am),
+            "6103": _make_reveal("6103", "Post-Lament Anthropocene: Stars Intertwined | Ignis", '"Watch video!"', base_11am, with_video=True),
+        }
+        with (
+            patch.object(kuro, "discover_news", return_value=rows_wave1),
+            patch.object(kuro, "news_article", side_effect=lambda _f, _g, r: arts_wave1[r["id"]]),
+            patch("gamexpress.media.news_media_available", return_value=True),
+        ):
+            asyncio.run(run_news(ctx_on))
+
+        posts = [s["payload"] for s in ctx_on.webhook.sent if s["method"] == "POST"]
+        assert len(posts) == 3
+        p1, p2, p3 = posts
+        # Solaria (first in wave) pings once:
+        assert p1["allowed_mentions"] == {"parse": [], "roles": [role_id]}
+        assert f"<@&{role_id}>" in p1["components"][0]["components"][0]["content"]
+        # Noctis (same 11:00 AM drop) & Ignis (video post) do NOT ping:
+        assert p2["allowed_mentions"] == {"parse": []} and role_id not in json.dumps(p2)
+        assert p3["allowed_mentions"] == {"parse": []} and role_id not in json.dumps(p3)
+        ww_rec = ctx_on.state.news_record("wuwa")
+        assert "solaria" in ww_rec["reveal_chars"] and "noctis" in ww_rec["reveal_chars"]
+        assert "ignis" not in ww_rec["reveal_chars"]
+
+        # 11:06 AM (+5m): micro-staggered 3rd character (`Zephyr` at 11:05 AM) AND CMS typo fix on `6101` (`Solaria`)!
+        ctx_on.now = base_11am + 360
+        art_6101_edited = _make_reveal("6101", "Post-Lament Anthropocene: Stars Intertwined | Solaria", '"Dawn breaks brightly."', base_11am)
+        row_6104 = {"id": "6104", "ts": base_11am + 300}
+        art_6104 = _make_reveal("6104", "Post-Lament Anthropocene: Stars Intertwined | Zephyr", '"Winds rise."', base_11am + 300)
+        arts_wave1b = {**arts_wave1, "6101": art_6101_edited, "6104": art_6104}
+        with (
+            patch.object(kuro, "discover_news", return_value=rows_wave1 + [row_6104]),
+            patch.object(kuro, "news_article", side_effect=lambda _f, _g, r: arts_wave1b[r["id"]]),
+            patch("gamexpress.media.news_media_available", return_value=True),
+        ):
+            asyncio.run(run_news(ctx_on))
+
+        # `Zephyr` at +5m is a different publication time -> separately pinged!
+        posts = [s["payload"] for s in ctx_on.webhook.sent if s["method"] == "POST"]
+        patches = [s["payload"] for s in ctx_on.webhook.sent if s["method"] == "PATCH"]
+        assert len(posts) == 4
+        p4 = posts[3]
+        assert p4["allowed_mentions"] == {"parse": [], "roles": [role_id]}
+        assert "zephyr" in ww_rec["reveal_chars"]
+        # `6101` CMS edit preserved `<@&ROLE_ID>` in header text while `edit` kept `allowed_mentions={"parse": []}`!
+        assert len(patches) == 1
+        edited_payload = patches[0]
+        assert edited_payload["allowed_mentions"] == {"parse": []}
+        assert f"<@&{role_id}>" in edited_payload["components"][0]["components"][0]["content"]
+
+        # 6:00 PM same day (+7 hours, DIFFERENT announcement time!): `Vespera` drops AND `Profile Reveal — Noctis` drops!
+        ts_6pm = base_11am + 7 * 3600
+        ctx_on.now = ts_6pm + 60
+        rows_6pm = [
+            {"id": "6105", "ts": ts_6pm},
+            {"id": "6106", "ts": ts_6pm + 60},
+        ]
+        arts_6pm = {
+            "6105": _make_reveal("6105", "Profile Reveal | Shadow Weaver — Noctis", '"Dusk profile."', ts_6pm),
+            "6106": _make_reveal("6106", "Post-Lament Anthropocene: Stars Intertwined | Vespera", '"Evening star."', ts_6pm + 60),
+        }
+        with (
+            patch.object(kuro, "discover_news", return_value=rows_6pm),
+            patch.object(kuro, "news_article", side_effect=lambda _f, _g, r: arts_6pm[r["id"]]),
+            patch("gamexpress.media.news_media_available", return_value=True),
+        ):
+            asyncio.run(run_news(ctx_on))
+
+        posts = [s["payload"] for s in ctx_on.webhook.sent if s["method"] == "POST"]
+        assert len(posts) == 6
+        p_noctis_prof, p_vespera = posts[4], posts[5]
+        # `Profile Reveal — Noctis` was already recorded from the 11:00 AM wave -> NO ping!
+        assert p_noctis_prof["allowed_mentions"] == {"parse": []}
+        # `Vespera` is a brand-new character at a different time (6:00 PM) -> PINGS 1 TIME!
+        assert p_vespera["allowed_mentions"] == {"parse": [], "roles": [role_id]}
+        assert f"<@&{role_id}>" in p_vespera["components"][0]["components"][0]["content"]
+
+        # Peer merge imports character and timestamp deduplication state onto standby.
+        standby = State(Path(tmp) / "standby.json")
+        standby.merge_peer(ctx_on.state.data, include_news=True)
+        sb_ww = standby.news_record("wuwa")
+        assert {"solaria", "noctis", "zephyr", "vespera"} <= set(sb_ww["reveal_chars"])
+        assert sb_ww["reveal_times"] == ww_rec["reveal_times"]
+
+
+
+def test_reveal_distinct_timestamps_in_same_run_and_ambiguous_hold():
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress.discord import SendResult
+    from gamexpress.runner import run_news
+    from gamexpress.sources import kuro
+
+    role = "987654321098765432"
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", NEWS_ENABLED="1", NEWS_GAMES="wuwa",
+                       NEWS_REVEAL_PING="1", PING_NEWS_REVEAL_WUWA=role,
+                       DISCORD_WEBHOOK_NEWS_WUWA="https://discord.com/api/webhooks/100000000000000099/ww_tok")
+        ctx.now = 1793240000
+        with patch.object(kuro, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now += 600
+        rows = [{"id": "1", "ts": ctx.now - 301}, {"id": "2", "ts": ctx.now - 1}]
+        def article(_f, _g, row):
+            name = "Solaria" if row["id"] == "1" else "Noctis"
+            return Item("kuro", "wuwa", row["id"], "https://example.org/" + row["id"],
+                        "Resonator Reveal | " + name, "Quote", row["ts"],
+                        article_blocks=[{"kind": "text", "text": "Quote"}])
+        with (patch.object(kuro, "discover_news", return_value=rows),
+              patch.object(kuro, "news_article", side_effect=article),
+              patch("gamexpress.media.news_media_available", return_value=True)):
+            asyncio.run(run_news(ctx))
+        posts = [x["payload"] for x in ctx.webhook.sent if x["method"] == "POST"]
+        assert len(posts) == 2
+        assert all(x["allowed_mentions"] == {"parse": [], "roles": [role]} for x in posts)
+
+        # An indeterminate first POST is held and its same-time sibling cannot ping again.
+        ctx.now += 300
+        rows = [{"id": "3", "ts": ctx.now - 1}, {"id": "4", "ts": ctx.now - 1}]
+        def new_article(_f, _g, row):
+            name = "Stella" if row["id"] == "3" else "Vespera"
+            return Item("kuro", "wuwa", row["id"], "https://example.org/" + row["id"],
+                        "Resonator Reveal | " + name, "Quote", row["ts"],
+                        article_blocks=[{"kind": "text", "text": "Quote"}])
+        sender = AsyncMock(side_effect=[SendResult(False, 0, ambiguous=True), SendResult(True, 200, message_id="ok")])
+        with (patch.object(kuro, "discover_news", return_value=rows),
+              patch.object(kuro, "news_article", side_effect=new_article),
+              patch("gamexpress.media.news_media_available", return_value=True),
+              patch.object(ctx.webhook, "send", sender)):
+            asyncio.run(run_news(ctx))
+        assert sender.await_count == 2
+        assert sender.await_args_list[0].args[1]["allowed_mentions"] == {"parse": [], "roles": [role]}
+        assert sender.await_args_list[1].args[1]["allowed_mentions"] == {"parse": []}
+        assert ctx.state.news_record("wuwa")["records"]["3"]["ambiguous"] is True
+
+
 if __name__ == "__main__":
     sys.exit(main())

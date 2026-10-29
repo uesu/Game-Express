@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 import aiohttp
 
 from . import beta, build_id, codeposter, maintenance, schedule
-from .config import Game, Settings, active_games, load_games, load_overrides
+from .config import Game, Ping, Settings, active_games, load_games, load_overrides
 from .discord import WebhookClient, webhook_fingerprint
 from .http import BOT_UA, Fetcher, Probe
 from .models import Item
@@ -506,6 +506,28 @@ async def run_news(ctx: Ctx) -> None:
         )
         return art, pls, stable_hash(pls), mod
 
+    async def _attach_news_ping(gm: Game, art: Item, base_pls: list[dict], ping: Ping) -> list[dict]:
+        """Attach `ping` to container 0 / page 1 of `base_pls` while preserving Components V2 validity."""
+        if not ping or not base_pls:
+            return base_pls
+        import copy as _copy
+
+        from .cards import validate_payload
+
+        patched = _copy.deepcopy(base_pls)
+        comps0 = patched[0].get("components") or []
+        kids0 = comps0[0].get("components") if comps0 and isinstance(comps0[0], dict) else None
+        if kids0 and isinstance(kids0[0], dict) and kids0[0].get("type") == 10:
+            hdr_text = str(kids0[0].get("content") or "")
+            if ping.text not in hdr_text:
+                kids0[0]["content"] = f"{hdr_text} · {ping.text}"
+            patched[0]["allowed_mentions"] = ping.allowed_mentions
+            for extra_page in patched[1:]:
+                extra_page["allowed_mentions"] = {"parse": []}
+            if not validate_payload(patched[0]):
+                return patched
+        raise ValueError("reveal ping cannot fit existing news payload; manual review required")
+
     for game in ctx.games:
         if game.key not in ctx.settings.news_games:
             continue
@@ -534,15 +556,32 @@ async def run_news(ctx: Ctx) -> None:
             ctx.warnings.append(f"{game.short} news: discovery unavailable; no baseline advanced")
             continue
         record = ctx.state.news_record(game.key)
+        rev_ping_cfg = ctx.settings.reveal_ping(game.key)
         if "floor" not in record or record.get("paused"):
             record.update(floor=ctx.now, route=fp, paused=False)
             record.setdefault("records", {})
+            if rev_ping_cfg:
+                from .reveal_ping import ensure_reveal_baseline
+
+                ensure_reveal_baseline(record, ctx.now)
             if not ephemeral:
                 ctx.state.save()
             ctx.report.append(f"🌱 {game.short} news: silent baseline; historical articles not posted")
             continue
         record.setdefault("route", fp)
         records = record.setdefault("records", {})
+        sched_game = (ctx.state.data.get("schedule") or {}).get(game.key)
+        if rev_ping_cfg:
+            from .reveal_ping import ensure_reveal_baseline
+
+            known_reruns: list[str] = []
+            if isinstance(sched_game, dict):
+                for srec in sched_game.values():
+                    bdict = ((srec.get("data") or {}).get("banners") or {}) if isinstance(srec, dict) else {}
+                    for rname in bdict.get("reruns") or []:
+                        if isinstance(rname, str) and rname:
+                            known_reruns.append(rname)
+            ensure_reveal_baseline(record, ctx.now, known_rerun_names=known_reruns)
         eligible = [row for row in rows if record["floor"] < row["ts"] <= ctx.now
                     and row["ts"] >= ctx.now - 48 * 3600]
         failures = attempted = delivered = edited = 0
@@ -560,7 +599,6 @@ async def run_news(ctx: Ctx) -> None:
             if not any(row["id"] == key for row in eligible):
                 eligible.append(saved_row)
         eligible.sort(key=lambda value: (value["ts"], value["id"]))
-        sched_game = (ctx.state.data.get("schedule") or {}).get(game.key)
         sched_url_updated: dict[str, int] = {}
         if isinstance(sched_game, dict):
             for srec in sched_game.values():
@@ -638,6 +676,13 @@ async def run_news(ctx: Ctx) -> None:
                             f"({len(msgs)} -> {len(payloads)}); skipped in-place edit"
                         )
                         continue
+                    saved_ping_raw = str(rec.get("reveal_ping") or "").strip()
+                    if saved_ping_raw:
+                        from .config import parse_ping
+
+                        saved_ping = parse_ping(saved_ping_raw)
+                        if saved_ping:
+                            payloads = await _attach_news_ping(game, item, payloads, saved_ping)
                     deleted_404 = False
                     for mid, payload in zip(msgs, payloads):
                         res = await ctx.webhook.edit(hook, mid, payload)
@@ -700,9 +745,38 @@ async def run_news(ctx: Ctx) -> None:
                 if rec is None:
                     rec = {"status": "partial", "ts": row["ts"], "row": row,
                            "signature": signature, "messages": []}
-                for payload in payloads[len(rec["messages"]):]:
+                reveal_match = None
+                should_reveal_ping = False
+                if rev_ping_cfg and len(rec["messages"]) == 0:
+                    from .reveal_ping import classify_character_reveal, evaluate_reveal_ping_decision
+
+                    reveal_match = classify_character_reveal(game.key, item)
+                    if reveal_match is not None:
+                        should_reveal_ping, _ = evaluate_reveal_ping_decision(
+                            record,
+                            reveal_match,
+                            published_ts=int(item.published_ts or row["ts"] or 0),
+                        )
+                        if should_reveal_ping:
+                            payloads = await _attach_news_ping(game, item, payloads, rev_ping_cfg)
+                elif rec.get("reveal_ping"):
+                    from .config import parse_ping
+
+                    resumed_ping = parse_ping(str(rec["reveal_ping"]))
+                    if resumed_ping:
+                        payloads = await _attach_news_ping(game, item, payloads, resumed_ping)
+                start_page_idx = len(rec["messages"])
+                for rel_idx, payload in enumerate(payloads[start_page_idx:]):
                     result = await ctx.webhook.send(hook, payload, stop_on_ambiguous=True)
                     if result.ambiguous or (result.ok and not result.message_id):
+                        # Discord may have accepted page 1 and its mention. Treat that reveal
+                        # as delivered for dedup until an operator reconciles the held article.
+                        if start_page_idx == 0 and rel_idx == 0 and reveal_match is not None:
+                            from .reveal_ping import commit_reveal_delivery
+
+                            commit_reveal_delivery(record, reveal_match,
+                                                   published_ts=int(item.published_ts or row["ts"] or 0),
+                                                   now=ctx.now, pinged=should_reveal_ping)
                         rec["ambiguous"] = True
                         records[row["id"]] = rec
                         if not ephemeral:
@@ -711,6 +785,18 @@ async def run_news(ctx: Ctx) -> None:
                     if not result.ok:
                         raise ValueError(f"Discord delivery failed ({result.status}); retry required")
                     rec["messages"].append(result.message_id)
+                    if start_page_idx == 0 and rel_idx == 0 and reveal_match is not None:
+                        from .reveal_ping import commit_reveal_delivery
+
+                        commit_reveal_delivery(
+                            record,
+                            reveal_match,
+                            published_ts=int(item.published_ts or row["ts"] or 0),
+                            now=ctx.now,
+                            pinged=should_reveal_ping,
+                        )
+                        if should_reveal_ping:
+                            rec["reveal_ping"] = rev_ping_cfg.text
                     records[row["id"]] = rec
                     if not ephemeral:
                         ctx.state.save()
@@ -724,8 +810,13 @@ async def run_news(ctx: Ctx) -> None:
                 if not ephemeral:
                     ctx.state.save()
                 delivered += 1
+                reveal_note = (
+                    f" [reveal ping: {reveal_match.character}]"
+                    if (reveal_match is not None and should_reveal_ping)
+                    else ""
+                )
                 ctx.report.append(f"📰 {game.short} news: delivered {item.id} ({len(payloads)} message(s), "
-                                  f"{sum(len(p['components']) for p in payloads)} container(s))")
+                                  f"{sum(len(p['components']) for p in payloads)} container(s)){reveal_note}")
             except Exception as exc:  # noqa: BLE001 — hold single article without aborting remaining news
                 failures += 1
                 ctx.warnings.append(f"{game.short} news {row['id']}: {type(exc).__name__}: {exc}")

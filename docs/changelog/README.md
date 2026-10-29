@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [News YouTube watch links](CHANGELOG.md#2026-10-29--news-youtube-watch-links).
+Latest: [Optional character reveal mentions](CHANGELOG.md#2026-10-29--optional-character-reveal-mentions).
+
+Previous: [News YouTube watch links](CHANGELOG.md#2026-10-29--news-youtube-watch-links).
 
 Previous: [Maintenance timing safeguards and actionable persistence summary](CHANGELOG.md#2026-10-29--maintenance-timing-safeguards-and-actionable-persistence-summary).
 

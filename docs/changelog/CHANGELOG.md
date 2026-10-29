@@ -1,5 +1,9 @@
 # Changelog — current entries
 
+## 2026-10-29 — Optional character reveal mentions
+
+- Add default-off, dedicated role mentions for recognized official-news character reveals; exclude recognized video and other non-reveals, deduplicate retained characters and identical publication timestamps, and preserve different-time pings. Detection is heuristic, not guaranteed for unknown formats or incomplete historic rosters. See configuration for limits and ambiguous-delivery handling.
+
 ## 2026-10-29 — News YouTube watch links
 
 - Render verified YouTube player, watch, shorts, live and short-link media as a visible canonical YouTube watch URL in the existing article position. Preserve numeric start offsets; leave non-YouTube media fallback links and playable native videos unchanged. No unrelated YouTube video is inferred when the original source does not provide one.
@@ -10,7 +14,7 @@
 - Parse labelled maintenance ranges before single timestamps, including explicit end dates and supported cross-day / dual-offset ranges. Reject invalid offset minutes.
 - Recognize supported extension and TBA postponement notices; retain official timing evidence across maintenance-only runs and route-compatible peer merges. Suppress cadence estimates while a recognized postponement is active, and allow newer authoritative reschedules. A delay with no recognized notice cannot be inferred automatically.
 - Permit bounded silent timing corrections through the active window independently of the six-hour media-upgrade window and its retry budget. Preserve Kuro `bg_hash` as a corroborating signed-URL renewal binder.
-- Report the workflow's observed state-persistence result in the run summary; include regression tests for persistence and failure paths. Character-reveal pings and the Twitter video-size change remain on hold.
+- Report the workflow's observed state-persistence result in the run summary; include regression tests for persistence and failure paths. The Twitter video-size change remains separate from this repository.
 
 ## 2026-10-27 — Redlib Tier-1 fleet expansion (24 → 27) and inline-video / crosspost media parity
 
