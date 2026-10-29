@@ -22,10 +22,11 @@
 - Turn on character-reveal mentions with exactly two settings: `NEWS_REVEAL_PING` (the switch)
   and `PING_NEWS_REVEAL` (one role list covering every game). The per-game
   `PING_NEWS_REVEAL_<GAME>` overrides and the `PING_REVEAL` aliases are gone.
-- Archive the run summary to `polishing and refining/game express summary.txt` only when a run
-  has warnings or errors, and commit it with the state, so a bad run's evidence is in the
-  repository instead of being pasted by hand. Clean runs write nothing, so the every-5-minute
-  monitor still commits only when state moves. It is a workflow step, not a runtime setting.
+- Report the observed state-persistence outcome as its own run-summary section
+  (`committed and pushed` / `no staged changes observed` / `failed` / `cancelled` / `not confirmed`),
+  so a run that posted but did not persist is visible without reading the job log. The summary is
+  never written into the repository: `polishing and refining/` stays operator and agent notes, and
+  the every-5-minute monitor still commits only `state/state.json` plus the announcement id.
 - Credit the launcher-API documentation the two launcher adapters were written from
   (DynamiByte's HoyoPlay and Wuthering Waves endpoint notes, and the WuWa research they build on),
   and pin those credits in the documentation-hygiene test.

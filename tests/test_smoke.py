@@ -21943,16 +21943,14 @@ def test_reveal_ping_edit_guard_skips_reflow_and_lost_mention_instead_of_truncat
         assert f"<@&{role}>" in json.dumps(patches[0]["payload"]), "mention restored on the retried edit"
 
 
-def test_run_summary_is_archived_only_when_the_run_needs_attention():
-    """The archive lives in the live commit step, not in a runtime setting.
+def test_run_summary_never_writes_into_the_operator_notes_folder():
+    """`polishing and refining/` is operator/agent notes only — the monitor must never write there.
 
-    A clean run must not create a file the 5-minute monitor would commit every time, and a run
-    with warnings or errors must leave its summary in the repository. This runs the real
-    shell/python block from `monitor.yml` rather than a copy of its logic.
+    An earlier draft archived the step summary into that folder whenever a run had warnings or
+    errors. That made a 5-minute monitor commit a file the operator keeps by hand, so the archive
+    is gone: the summary stays in the job summary, the warnings/errors stay in the annotations,
+    and the live commit step stages only state plus the discovered announcement id.
     """
-    import subprocess
-    import sys
-
     import yaml
 
     root = Path(__file__).resolve().parents[1]
@@ -21960,42 +21958,15 @@ def test_run_summary_is_archived_only_when_the_run_needs_attention():
     wf = yaml.safe_load(workflow)
     steps = wf["jobs"]["monitor"]["steps"]
     persist = next(s for s in steps if s.get("id") == "persist_state")
-    assert "<<'PY'" in persist["run"], "the archive must not add another LIVE step"
-    script = persist["run"].split("<<'PY'\n", 1)[1].split("\nPY", 1)[0]
-    assert "SUMMARY_ARCHIVE_PATH" not in (root / "gamexpress" / "runner.py").read_text(encoding="utf-8")
-    assert "SUMMARY_ARCHIVE_PATH" not in workflow
-
-    def run(text: str | None):
-        """Run the workflow block in a throwaway directory and return the archived text (or None).
-
-        The archive is read inside the temporary directory: returning its path and reading it
-        after the `with` block would inspect a deleted directory and always look 'clean'.
-        """
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
-            if text is not None:
-                step = Path(tmp) / "step.md"
-                step.write_text(text, encoding="utf-8")
-                env["GITHUB_STEP_SUMMARY"] = str(step)
-            proc = subprocess.run([sys.executable, "-c", script, "polishing and refining/summary.txt"],
-                                  cwd=tmp, capture_output=True, text=True, timeout=120, env=env)
-            assert proc.returncode == 0, proc.stderr
-            target = Path(tmp) / "polishing and refining" / "summary.txt"
-            return target.read_text(encoding="utf-8") if target.is_file() else None
-
-    clean = ("### Game-Express abc — alpha (primary)\n"
-             "- 📰 GI news: delivered 47218605 (1 message(s), 1 container(s))\n"
-             "- sources: hoyolab: 3 ok / 0 fail\n")
-    assert run(clean) is None, "a clean run must not create a commit-magnet file"
-    warned = run(clean + "- ⚠️ WW: no announcement source answered this run\n")
-    assert warned is not None and "⚠️ WW: no announcement source answered this run" in warned
-    errored = run(clean + "- ❌ orchestration failed: boom\n")
-    assert errored is not None and "❌ orchestration failed: boom" in errored
-    # No step summary at all (dry-run/test mode, or a skipped run) is a silent no-op.
-    assert run(None) is None
-
-    # The same step stages that file with the state.
-    assert 'git add -f "polishing and refining/game express summary.txt"' in persist["run"]
+    assert "polishing and refining" not in workflow, \
+        "the monitor must not read or write the operator notes folder"
+    assert "GITHUB_STEP_SUMMARY" not in persist["run"], "the commit step must not inspect the summary"
+    assert "<<'PY'" not in persist["run"], "the commit step must stay plain shell"
+    assert 'git add state/state.json' in persist["run"]
+    assert 'git add -f config/program_announcements.json' in persist["run"]
+    assert "result=unchanged" in persist["run"] and "result=pushed" in persist["run"]
+    names = [s.get("name") for s in steps]
+    assert "Summarize live state persistence" in names
 
 
 def test_live_news_probe_cli_guards_without_network():

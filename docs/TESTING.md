@@ -603,10 +603,10 @@ Verification for the delta on top of the revision above (same offline suite, Pyt
   (Game `40838508714`, Twitter `40838524872`, Reddit `40838516409`). Their check-run annotations
   contain only GitHub's Ubuntu-migration notice — no warning or error annotation. This is a
   status/annotation check, not a delivery or playback audit.
-- Run-summary archive: `test_run_summary_archives_only_a_run_that_needs_attention` proves a clean
-  run writes only the Actions step summary (no commit-magnet file), a warned run writes the same
-  sanitized text to `SUMMARY_ARCHIVE_PATH`, a webhook secret in a warning never reaches the file,
-  and `monitor.yml` both supplies the path and stages the file in the state commit.
+- Run summary location: `test_run_summary_never_writes_into_the_operator_notes_folder` proves the
+  monitor never reads or writes `polishing and refining/`, that the live commit step stays plain
+  shell staging only `state/state.json` and `config/program_announcements.json`, and that it always
+  publishes its own persistence result (`unchanged` / `pushed`) for the summary step.
 - Credit hygiene is now pinned: the documentation-hygiene test asserts that `docs/CREDITS.md`
   keeps the [HoyoPlay](https://gist.github.com/DynamiByte/0ad250bbe1930e2736a6d4e6e842bcb2) and
   [WuWa launcher](https://gist.github.com/DynamiByte/d839bf9f671c975b6666d0f6e6634641) endpoint
