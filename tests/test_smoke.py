@@ -21229,6 +21229,10 @@ def test_reveal_ping_default_off_isolation_and_multi_era_plus_unseen_future_clas
         ("starrail", "Extraterrestrial Satellite Communication | Dan Heng • Imbibitor Lunae", '"My past..."', "Dan Heng • Imbibitor Lunae"),
         ("starrail", "Amphoreus' Saga of Heroes | Castorice", '"Life and death walk hand in hand."', "Castorice"),
         ("starrail", "Aha Instant | Ellen", '"Do you guys have shark tail care services here too?"', "Ellen"),
+        # Reddit archive titles are useful formatting examples, not original HoYoLAB captures.
+        ("starrail", '"Extraterrestrial Satellite Communication" | Rappa', '"Quote."', "Rappa"),
+        ("starrail", '"Amphoreus\' Saga of Heroes" | #Castorice', '"Quote."', "Castorice"),
+        ("zzz", 'Agent Record | "Trigger"', '"Quote."', "Trigger"),
         # ZZZ `Agent Record` + early `[Agent Record]`
         ("zzz", "Agent Record | Miyabi", '"Order cannot be broken."', "Miyabi"),
         ("zzz", '"Leave the housekeeping to me." — Victoria: Lycaon', '[Agent Record]\nVoice: Kobayashi Chikahiro', "Lycaon"),

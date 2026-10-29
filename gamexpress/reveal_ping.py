@@ -103,8 +103,8 @@ _GI_TITLE_DOT_RE = re.compile(
 )
 
 _HSR_SERIES_RE = re.compile(
-    r"^(?:extraterrestrial\s+satellite\s+communication|amphoreus'?\s+saga\s+of\s+heroes|"
-    r"aha\s+instant)\s*[|丨:：—–\-]\s*(.+?)\s*$",
+    r"^[\"“「『]?(?:extraterrestrial\s+satellite\s+communication|amphoreus'?\s+saga\s+of\s+heroes|"
+    r"aha\s+instant)[\"”」』]?\s*[|丨:：—–\-]\s*(.+?)\s*$",
     re.I,
 )
 _ZZZ_SERIES_RE = re.compile(
@@ -304,13 +304,17 @@ def classify_character_reveal(game_key: str, item) -> RevealMatch | None:
 
     m_hsr = _HSR_SERIES_RE.match(title)
     if m_hsr:
-        cname = clean_character_name(m_hsr.group(1))
+        cname = clean_character_name(re.sub(r"^#(?=[A-Z])", "", m_hsr.group(1)))
         if cname:
             return RevealMatch(cname, canonical_character_key(cname), "hsr_satellite_series")
 
     m_zzz = _ZZZ_SERIES_RE.match(title)
     if m_zzz:
-        cname = clean_character_name(m_zzz.group(1))
+        raw_name = m_zzz.group(1).strip()
+        # In this named series a complete quoted value is a name, not an epithet.
+        if re.fullmatch(r'[\"“「『][^\"”」』]{1,48}[\"”」』]', raw_name):
+            raw_name = raw_name[1:-1]
+        cname = clean_character_name(raw_name)
         if cname:
             return RevealMatch(cname, canonical_character_key(cname), "zzz_agent_record")
 

@@ -170,29 +170,3 @@ jobs:
               }
             }
             core.warning('No merge method is enabled in Settings → General → Pull Requests.');
-
-  # Temporary read-only investigation: no production secrets, Discord or state writes.
-  live-news-review:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
-        with:
-          python-version: '3.14.9'
-      - run: python -m pip install -q -r requirements.txt pyyaml
-      - name: Read-only live Genshin news probe
-        run: python tools/live_news_probe.py genshin
-      - name: Read-only live Star Rail news probe
-        if: always()
-        run: python tools/live_news_probe.py starrail
-      - name: Read-only live ZZZ news probe
-        if: always()
-        run: python tools/live_news_probe.py zzz
-      - name: Read-only live WuWa news probe
-        if: always()
-        run: python tools/live_news_probe.py wuwa
