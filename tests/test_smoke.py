@@ -21581,5 +21581,49 @@ def test_reveal_ping_cannot_fit_keeps_original_news_delivery():
         assert not ctx.state.news_record("wuwa").get("reveal_times")
 
 
+def test_reveal_ping_location_matches_user_astra_yao_capture():
+    """The published ping-location capture puts the mention after the source byline timestamp."""
+    import copy
+    from unittest.mock import patch
+
+    from gamexpress.cards import news_payloads
+    from gamexpress.runner import run_news
+    from gamexpress.sources import hoyolab
+
+    role = "1296268365593186426"
+    timestamp = 1793160008
+    body = "Astra Yao speaks of her music and New Eridu."
+    image = "https://upload-os-bbs.hoyolab.com/upload/community/2026/10/26/14ab33dbc78de84b8970f5d103a6dcc7_6351797617886405560.png"
+    article = Item("hoyolab", "starrail", "47228524", "https://www.hoyolab.com/article/47228524",
+                   "Extraterrestrial Satellite Communication | Astra Yao", body, timestamp,
+                   article_blocks=[{"kind": "image", "url": image}, {"kind": "text", "text": body}],
+                   author="Honkai: Star Rail")
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = make_ctx(Path(tmp) / "state.json", NEWS_ENABLED="1", NEWS_GAMES="starrail", NEWS_REVEAL_PING="1",
+                       PING_NEWS_REVEAL=role,
+                       DISCORD_WEBHOOK_NEWS_STARRAIL="https://discord.com/api/webhooks/100000000000000099/hsr_tok")
+        ctx.now = timestamp - 60
+        with patch.object(hoyolab, "discover_news", return_value=[]):
+            asyncio.run(run_news(ctx))
+        ctx.now = timestamp + 30
+        row = {"id": "47228524", "ts": timestamp}
+        with (patch.object(hoyolab, "discover_news", return_value=[row]),
+              patch.object(hoyolab, "news_article", return_value=article),
+              patch("gamexpress.media.news_media_available", return_value=True)):
+            asyncio.run(run_news(ctx))
+        posts = [s["payload"] for s in ctx.webhook.sent if s["method"] == "POST"]
+        assert len(posts) == 1
+        header = posts[0]["components"][0]["components"][0]["content"]
+        assert header == ("## [Extraterrestrial Satellite Communication | Astra Yao]"
+                          "(https://www.hoyolab.com/article/47228524)\n"
+                          "-# HoYoLAB · Honkai: Star Rail · <t:1793160008:f> · <@&1296268365593186426>")
+        plain = news_payloads(GAMES["starrail"], article)[0]
+        restored = copy.deepcopy(posts[0])
+        restored["components"][0]["components"][0]["content"] = plain["components"][0]["components"][0]["content"]
+        restored["allowed_mentions"] = plain["allowed_mentions"]
+        assert restored == plain
+        assert posts[0]["allowed_mentions"] == {"parse": [], "roles": [role]}
+
+
 if __name__ == "__main__":
     sys.exit(main())
