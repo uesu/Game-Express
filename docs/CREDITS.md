@@ -51,6 +51,7 @@ scripts or re-host their images — cards link to the URLs those databases publi
 - [Hum-Bao/hoyoverse-codes](https://github.com/Hum-Bao/hoyoverse-codes) (redeem-validated code lists)
 - [gripcrip-blip/codehub · PromoGacha](https://github.com/gripcrip-blip/codehub)
 - [DuolaD/HoYo_Versioncatcher](https://github.com/DuolaD/HoYo_Versioncatcher) (HoYoPlay launcher endpoint references)
+- **[DynamiByte](https://github.com/DynamiByte)** — the [HoyoPlay launcher API endpoint notes](https://gist.github.com/DynamiByte/0ad250bbe1930e2736a6d4e6e842bcb2) and the [Wuthering Waves launcher API endpoint notes](https://gist.github.com/DynamiByte/d839bf9f671c975b6666d0f6e6634641) that document the `hyp/hyp-connect/api` base with `launcher_id`, Kuro's `<appId>_<appKey>/<gameId>` CDN path (`50004_…` + `G153`), the stable `launcher-config` endpoint and the rotating `functionCode.background` hash that `sources/launcher.py` and `sources/kuro.py` follow. The WuWa notes credit [Cheu3172/Wuwa-Web-Request](https://github.com/Cheu3172/Wuwa-Web-Request) for most of the original endpoint discovery.
 - [TwintailTeam/TwintailLauncher](https://github.com/TwintailTeam/TwintailLauncher) / [TwintailTeam/game-manifests](https://github.com/TwintailTeam/game-manifests) and [TomyJan/GenshinImpact-Client-Version](https://github.com/TomyJan/GenshinImpact-Client-Version) — open-source launcher/manifest references documenting the Kuro `G153` global launcher index and `background/{hash}/en.json` schemas (`sources/kuro.py`)
 - [RSSHub](https://github.com/DIYgod/RSSHub) (Kuro news endpoints)
 - [wuthering.gg](https://wuthering.gg/codes)
@@ -112,6 +113,11 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 
 - **The definitive database for all HoYoverse and Wuthering Waves (Release, Beta & CBT)**: https://gachabase.net/ · https://nanoka.cc/
 - **More Database**: https://endfield.teamstardust.org/ · https://silver.teamstardust.org/ · https://www.ntegame.com/ · https://irminsul.gg/ · https://perlica.moe/ · https://endfieldtools.dev/ · https://anantacodex.com/
+
+### Launcher API research
+
+- **[DynamiByte](https://github.com/DynamiByte) (Leandro Baldassarre)** — [HoyoPlay endpoints](https://gist.github.com/DynamiByte/0ad250bbe1930e2736a6d4e6e842bcb2) and [Wuthering Waves launcher endpoints](https://gist.github.com/DynamiByte/d839bf9f671c975b6666d0f6e6634641). These describe the URL shapes and constants the two launcher adapters call; every response is still fetched and validated live by Game-Express, and a gist describing an endpoint is not proof that its payload is stable.
+- **[Cheu3172/Wuwa-Web-Request](https://github.com/Cheu3172/Wuwa-Web-Request)** — the original WuWa launcher/web request research credited by the WuWa notes above.
 
 ### Additional source research supplied for feature 5
 

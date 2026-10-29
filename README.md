@@ -761,6 +761,8 @@ Historical records are preserved in
   [DuolaD/HoYo_Versioncatcher](https://github.com/DuolaD/HoYo_Versioncatcher),
   [TwintailTeam/game-manifests](https://github.com/TwintailTeam/game-manifests) and
   [TomyJan/GenshinImpact-Client-Version](https://github.com/TomyJan/GenshinImpact-Client-Version),
+  [DynamiByte](https://github.com/DynamiByte) (HoyoPlay and Wuthering Waves launcher API notes,
+  with [Cheu3172/Wuwa-Web-Request](https://github.com/Cheu3172/Wuwa-Web-Request)) and
   the [gengamer.in](https://genshin-countdown.gengamer.in/) and
   [gachacountdown.online](https://gachacountdown.online/) countdowns, the Fandom wikis and their
   editors, [nitter](https://github.com/zedeus/nitter), [redlib](https://github.com/redlib-org/redlib)

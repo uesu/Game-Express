@@ -19,6 +19,9 @@
 - Hold a backstage CMS edit instead of publishing a truncated card when re-attaching a retained
   reveal mention now needs a continuation page or no longer fits.
 - Accept trailing-slash and `/watch/` YouTube player URLs when rendering the visible watch link.
+- Credit the launcher-API documentation the two launcher adapters were written from
+  (DynamiByte's HoyoPlay and Wuthering Waves endpoint notes, and the WuWa research they build on),
+  and pin those credits in the documentation-hygiene test.
 
 ## 2026-10-29 — Follow-up regression guards
 

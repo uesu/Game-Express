@@ -15946,6 +15946,10 @@ def test_monitor_916_unnumbered_convene_inference_sibling_merge_and_credits_hygi
             "https://github.com/torikushiii/hoyoverse-api",
             "https://github.com/TwintailTeam/game-manifests",
             "https://github.com/TomyJan/GenshinImpact-Client-Version",
+            # Both launcher adapters were written from these notes; never drop the credits again.
+            "https://gist.github.com/DynamiByte/0ad250bbe1930e2736a6d4e6e842bcb2",
+            "https://gist.github.com/DynamiByte/d839bf9f671c975b6666d0f6e6634641",
+            "https://github.com/Cheu3172/Wuwa-Web-Request",
             "https://genshin-countdown.gengamer.in/",
             "https://gachacountdown.online/",
             "https://github.com/corenting/eddrit",
@@ -21880,6 +21884,19 @@ def test_reveal_ping_edit_guard_skips_reflow_and_lost_mention_instead_of_truncat
             "edit must be held, not posted truncated"
         assert any("skipped in-place edit" in w for w in ctx.warnings), ctx.warnings
         assert len(ctx.state.news_record("wuwa")["records"]["x"]["messages"]) == 1
+        # The held edit is retried, not abandoned: the same article edited again to a body that
+        # fits with its mention is applied in place on the next run (no permanent stale card).
+        retry = Item("kuro", "wuwa", "x", "https://example.com/x", "Resonator Reveal | Stella", "", ts,
+                     article_blocks=[{"kind": "text", "text": "Edited short reveal body."}])
+        retry_row = dict(row, modified_ts=ts + 7200)
+        ctx.now = ts + 7800
+        with (patch.object(kuro, "discover_news", return_value=[retry_row]),
+              patch.object(kuro, "news_article", return_value=retry),
+              patch("gamexpress.media.news_media_available", return_value=True)):
+            asyncio.run(run_news(ctx))
+        patches = [s for s in ctx.webhook.sent if s["method"] == "PATCH"]
+        assert len(patches) == 1, patches
+        assert f"<@&{role}>" in json.dumps(patches[0]["payload"]), "mention restored on the retried edit"
 
 
 def test_live_news_probe_cli_guards_without_network():

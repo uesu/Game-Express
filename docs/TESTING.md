@@ -603,6 +603,16 @@ Verification for the delta on top of the revision above (same offline suite, Pyt
   (Game `40838508714`, Twitter `40838524872`, Reddit `40838516409`). Their check-run annotations
   contain only GitHub's Ubuntu-migration notice — no warning or error annotation. This is a
   status/annotation check, not a delivery or playback audit.
+- Credit hygiene is now pinned: the documentation-hygiene test asserts that `docs/CREDITS.md`
+  keeps the [HoyoPlay](https://gist.github.com/DynamiByte/0ad250bbe1930e2736a6d4e6e842bcb2) and
+  [WuWa launcher](https://gist.github.com/DynamiByte/d839bf9f671c975b6666d0f6e6634641) endpoint
+  notes and [Cheu3172/Wuwa-Web-Request](https://github.com/Cheu3172/Wuwa-Web-Request), so the
+  launcher adapters can never silently lose their attribution. A host sweep of the runtime code
+  (113 hosts) found no other uncredited provider: the remainder are Discord's CDN, the jsDelivr
+  mirror of an already-credited code list, a short-link resolver, the donate button, video-host
+  exclusions and a test-only `fixture.invalid`.
+- The CMS-edit guard retries instead of abandoning: a held edit is applied on the next run once the
+  article fits again (`test_reveal_ping_edit_guard_skips_reflow_and_lost_mention_instead_of_truncating`).
 - `tools/live_news_probe.py` (developer tool, read-only: no webhooks, secrets or state writes)
   repeatedly checks one game's current discovery window for reveal matches and mention fit.
   The suite only verifies that it exists and rejects a missing or unknown game argument, so a
