@@ -583,12 +583,14 @@ Verification for the delta on top of the revision above (same offline suite, Pyt
     against publisher titles, not the earlier report's 2,179-post figures.
   - Cost: 141 µs/article (WuWa) and 168 µs/article (Genshin) including HTML body extraction on
     this host, with zero HTTP inside the classifier.
-- `python -m gamexpress benchmark --iterations 200 --beta-enabled` (same host, uncommitted tree):
-  short news default-off **94.31 µs** median, medium two-page **591.44 µs**, long expansion-off
-  **1730.24 µs**, long expansion-on **2195.34 µs**, both-on **6470.50 µs**. `output_equal=True`,
-  `main_1e071d8_sha256_equal=True`, timestamp-parser calls when disabled **0**, extra
-  HTTP/webhook **0**. Beta-enabled local-only pipeline: 16 initial pages, 16 retained-revision
-  pages, quiet silent, live HTTP **0**.
+- `python -m gamexpress benchmark --iterations 300` on the clean head (Python 3.11.2):
+  short news default-off **93.06 µs** median, medium two-page **588.02 µs**, long
+  expansion-off **1738.38 µs**, long expansion-on **2256.49 µs**, both-on **6522.99 µs**;
+  token formatting 1.60 µs, `strftime` 16 epochs 26.64 µs. Default-off invariants:
+  `output_equal=True`, `main_1e071d8_sha256_equal=True`, timestamp-parser calls when
+  disabled **0**, extra HTTP/webhook **0**. Protocol counts stay at 1 message / 1 media GET
+  / 1 POST for short news, 2 / 1 / 2 for the medium fixture and 4 / 18 / 4 with expansion on.
+  `--beta-enabled` (local-only) still renders 16 pages with 0 live HTTP and 0 webhook posts.
 - Read-only production replay of the live state blob at `2026-10-29T12:00:00Z`, with no live
   inputs and no writes: the four released games resolve an upcoming **estimated** preload /
   maintenance pair (UTC) — GI Nov 2 03:00 / Nov 3 22:00, HSR Nov 9 06:00 / Nov 10 22:00,
