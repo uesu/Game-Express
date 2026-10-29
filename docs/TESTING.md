@@ -492,3 +492,63 @@ Gachabase HTML regression: `test_feature5_gachabase_html_revisions_and_changed_e
 uses a reduced SSR fixture to cover changed existing IDs, relative links/entities, category and
 diff pairing, script/style exclusion, blank versus explicit quiet revisions, and error pages.
 Public-source smoke checks are separate read-only checks, never part of the offline suite.
+
+## 2026-10-29 update verification
+
+Author-session verification on Python 3.11.2, based on main `5f20422` and the
+implementation reviewed from draft PR #83 (`e581968`). The current session stays
+on `arena/fb3eb040-game-express`; it does not modify that earlier PR's branch.
+
+- `python -m compileall -q gamexpress tests .github/scripts`, `python -m gamexpress validate`,
+  `python -m gamexpress preview --out <temporary-directory>`, `ruff check .`, and
+  `git diff --check` passed.
+- Standalone smoke: **506/506**, schedule regressions: **20/20**, placeholder:
+  **3/3**; `python -m pytest -q`: **529 passed**. These are overlapping runner
+  totals, not 1,058 distinct tests.
+- New guards exercise unofficial/Miliastra authors, historical quoted title
+  reconstructions, privacy-enhanced YouTube video exclusion, and best-effort
+  workflow-summary writes. All-six-game milestone tests use explicit operator
+  timings with cadence disabled, mocked source/webhook boundaries, exact
+  pre-start/start decisions and real temporary state reloads. Existing tests
+  separately cover cadence, official precedence, extensions and postponements.
+- Read-only GitHub API checks found successful production runs: Game
+  `40832660096`, Twitter `40832670145`, Reddit `40832659879`. Downloading their
+  logs failed at the Actions log host under this environment's network policy;
+  successful run status is **not** a complete log/annotation or delivery audit.
+- Replayed production state blob `53e4aed12dcbe1386c9fb49e9c8379ff3112c9f1`
+  through `maintenance.resolve_version_plans` at `2026-10-29T12:00:00Z`, without
+  new official inputs or overrides. Upcoming **estimated** preload/maintenance
+  starts (UTC): GI Nov 2 03:00 / Nov 3 22:00; HSR Nov 9 06:00 / Nov 10 22:00;
+  WuWa Nov 10 02:00 / Nov 11 20:00; ZZZ Nov 30 04:00 / Dec 1 22:00. HNA and
+  ANANTA produced no dates. This proves retained-state decisions, not current
+  upstream availability, enabled production destinations or future delivery.
+
+### Local CPU benchmarks (not live latency)
+
+Executed `python -m gamexpress benchmark --iterations 100 --json` against both
+an isolated `git archive 5f20422` export and the updated tree on the same host.
+Selected medians in microseconds (base → updated):
+
+| Case | Base | Updated |
+|---|---:|---:|
+| Short news, default off | 96.16 | 96.05 |
+| Medium news, two pages | 572.28 | 573.94 |
+| Long news, expansion off | 1791.71 | 1795.37 |
+| Long news, expansion on | 2274.52 | 2300.72 |
+| Long news, expansion + timestamps | 6831.73 | 6734.98 |
+
+Default-off output parity passed; timestamp converter calls when disabled: zero.
+A separate 10,000-call `classify_character_reveal` measurement on the reconstructed
+`Extraterrestrial Satellite Communication | Ellen` static-title fixture measured
+26.55 µs median / 50.72 µs p95. Production-state resolver replay medians over
+100 calls/game were GI 215.85, HSR 211.44, ZZZ 125.19, WuWa 99.74, HNA 2.40,
+ANANTA 2.42 µs. Timed regions performed no HTTP, webhook or production writes.
+Small differences are host noise, not an end-to-end speed guarantee.
+
+**Release limits:** historical 2,179-post precision/recall figures from the linked
+report are not independently reproduced; unfamiliar future formats and incomplete
+rosters remain heuristic limitations. No production workflow dispatch, Discord
+playback test, production sync or merge was performed. Twitter's optional 350 MiB
+handoff remains separate and off by default; higher limits are not proof of proxy
+playback reliability. Final-head CI and workflow annotations must be reviewed on
+the PR before release.

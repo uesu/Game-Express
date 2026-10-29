@@ -19,6 +19,9 @@ are ignored except the tracked template. Never copy live state back over product
 | **[TESTING.md](TESTING.md)** | the manual test bench, what you should see in Discord, the local commands |
 | **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** | symptom → fix |
 
+Character-reveal mention configuration and limitations are in [CONFIGURATION.md](CONFIGURATION.md#official-news-explicit-opt-in-default-off);
+local verification and benchmark results are in [TESTING.md](TESTING.md#2026-10-29-update-verification).
+
 ## Official news & milestone alerts — off by default
 
 The [root README's third feature](../README.md#3--official-news-optional-off-by-default)

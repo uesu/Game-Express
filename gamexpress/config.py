@@ -521,6 +521,7 @@ class Settings:
     news_expand_max_pages: int = 12
     news_expand_max_chars: int = 120000
     news_expand_max_media: int = 120
+    news_reveal_ping: bool = False
     maintenance_enabled: bool = False
     maintenance_games: set[str] = field(default_factory=set)
     beta_enabled: bool = False
@@ -603,6 +604,26 @@ class Settings:
         names = [f"PING_{f}_{g}" for g in self._game_slugs(game_key)] + [f"PING_{f}"]
         if feature not in ("maintenance", "beta"):
             names.append("PING_ROLE_ID")
+        for name in names:
+            p = parse_ping(_env(self.env, name))
+            if p is not None:
+                return p
+        return Ping()
+
+    def reveal_ping(self, game_key: str) -> Ping:
+        """Opt-in new-character reveal ping for official news.
+
+        Strictly off unless `NEWS_REVEAL_PING=1` AND an explicit `PING_NEWS_REVEAL*` / `PING_REVEAL*`
+        role is configured. Never inherits `PING_ROLE_ID` or `PING_NEWS`."""
+        if self.no_ping or not self.news_reveal_ping:
+            return Ping()
+        slugs = self._game_slugs(game_key)
+        names = [
+            *(f"PING_NEWS_REVEAL_{g}" for g in slugs),
+            *(f"PING_REVEAL_{g}" for g in slugs),
+            "PING_NEWS_REVEAL",
+            "PING_REVEAL",
+        ]
         for name in names:
             p = parse_ping(_env(self.env, name))
             if p is not None:
@@ -758,6 +779,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         news_expand_max_pages=max(1, _int(env, "NEWS_EXPAND_MAX_PAGES", 12)),
         news_expand_max_chars=max(1, _int(env, "NEWS_EXPAND_MAX_CHARS", 120000)),
         news_expand_max_media=max(1, _int(env, "NEWS_EXPAND_MAX_MEDIA", 120)),
+        news_reveal_ping=_bool(env, "NEWS_REVEAL_PING", False),
         maintenance_enabled=maintenance_enabled,
         maintenance_games=_game_set_env(
             env, "MAINTENANCE_GAMES", aliases, default=(), all_games=ALL_MAINTENANCE_GAMES
