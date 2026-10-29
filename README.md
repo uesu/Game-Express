@@ -164,6 +164,11 @@ news and maintenance alerts. Existing schedule/code retry behavior remains at th
 pre-PR baseline (`stop_on_ambiguous=False` by default); ANANTA news is inactive and
 Wangyue is excluded.
 
+Optional `NEWS_REVEAL_PING=1` with dedicated `PING_NEWS_REVEAL_<GAME>` settings
+adds heuristic static-character reveal mentions to the byline, with retained-character
+and publication-minute deduplication. It is off by default; see
+[configuration and limitations](docs/CONFIGURATION.md#official-news-explicit-opt-in-default-off).
+
 - **Source-order content & independent policies:** one full message when it fits;
   by default (`NEWS_EXPAND_FULL=0`), the **7,000-character / maximum-two-page
   per-article policy** remains intact (1 message when fitting → up to 2 validated

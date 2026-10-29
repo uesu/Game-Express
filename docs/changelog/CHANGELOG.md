@@ -1,5 +1,26 @@
 # Changelog — current entries
 
+## 2026-10-29 — Follow-up regression guards
+
+- Exclude non-official and Miliastra-authored reveal candidates, recognize quoted Star Rail series without a pipe, and exclude YouTube privacy-enhanced embedded videos. Tests are requirement-derived reconstructions, not historical accuracy evidence.
+- Add explicit-timing milestone boundary and persisted-restart tests across all six configured games. Make workflow summary-output failure best effort without hiding persistence failures.
+
+## 2026-10-29 — Optional character reveal mentions
+
+- Add default-off, dedicated role mentions for recognized official-news character reveals; exclude recognized video and other non-reveals, deduplicate retained characters and the same publication minute, and preserve pings in different minutes. Detection is heuristic, not guaranteed for unknown formats or incomplete historic rosters. See configuration for limits and ambiguous-delivery handling.
+
+## 2026-10-29 — News YouTube watch links
+
+- Render verified YouTube player, watch, shorts, live and short-link media as a visible canonical YouTube watch URL in the existing article position. Preserve numeric start offsets; leave non-YouTube media fallback links and playable native videos unchanged. No unrelated YouTube video is inferred when the original source does not provide one.
+- Add offline coverage for the HSR player URL, all configured games, both timestamp and expanded-page settings, source immutability, untrusted hosts and non-YouTube/native media.
+
+## 2026-10-29 — Maintenance timing safeguards and actionable persistence summary
+
+- Parse labelled maintenance ranges before single timestamps, including explicit end dates and supported cross-day / dual-offset ranges. Reject invalid offset minutes.
+- Recognize supported extension and TBA postponement notices; retain official timing evidence across maintenance-only runs and route-compatible peer merges. Suppress cadence estimates while a recognized postponement is active, and allow newer authoritative reschedules. A delay with no recognized notice cannot be inferred automatically.
+- Permit bounded silent timing corrections through the active window independently of the six-hour media-upgrade window and its retry budget. Preserve Kuro `bg_hash` as a corroborating signed-URL renewal binder.
+- Report the workflow's observed state-persistence result in the run summary; include regression tests for persistence and failure paths. The Twitter video-size change remains separate from this repository.
+
 ## 2026-10-27 — Redlib Tier-1 fleet expansion (24 → 27) and inline-video / crosspost media parity
 
 - Expand `DEFAULT_REDDIT` from `24` to `27` entries (`0` deletions) by adding three verified working clearnet Redlib instances to Tier 1: `https://r.naa.gg` (`Nachtalb/redlib` GraphQL engine), `https://redlib.thepixora.com` (`PR #603` GraphQL comments patch), and `https://redlib.r4fo.com`, while explicitly excluding `https://redlib.cow.rip` (Cloudflare + custom verification wall).

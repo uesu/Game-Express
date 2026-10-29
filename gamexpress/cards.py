@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlsplit
 
 from .config import Game, Ping, Settings
 from .textutil import strip_invisible, truncate
@@ -136,6 +136,37 @@ def safe_url(url: str | None) -> str | None:
     if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in u):
         return None
     return u.replace("(", "%28").replace(")", "%29")
+
+
+def _youtube_watch_url(url: str) -> str | None:
+    """Canonicalize a verified YouTube video URL without guessing from another host or article."""
+    try:
+        parsed = urlsplit(url)
+        if parsed.scheme.lower() not in ("http", "https") or parsed.username or parsed.password:
+            return None
+        host = (parsed.hostname or "").lower()
+        parts = parsed.path.strip("/").split("/")
+        query = parse_qs(parsed.query)
+        candidate = None
+        if host in ("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com",
+                    "youtube-nocookie.com", "www.youtube-nocookie.com"):
+            if parsed.path == "/watch":
+                values = query.get("v", [])
+                candidate = values[0] if len(values) == 1 else None
+            elif len(parts) == 2 and parts[0] in ("embed", "shorts", "live", "v"):
+                candidate = parts[1]
+        elif host in ("youtu.be", "www.youtu.be") and len(parts) == 1:
+            candidate = parts[0]
+        if candidate and re.fullmatch(r"[A-Za-z0-9_-]{11}", candidate):
+            result = f"https://www.youtube.com/watch?v={candidate}"
+            # Preserve an unambiguous, numeric start offset from a watch or embedded player.
+            starts = query.get("t") or query.get("start") or []
+            if len(starts) == 1 and re.fullmatch(r"\d{1,9}s?", starts[0]):
+                result += f"&t={starts[0]}"
+            return result
+    except ValueError:
+        pass
+    return None
 
 
 def _is_x_url(url: str) -> bool:
@@ -735,7 +766,9 @@ def news_payloads(
         if not url:
             raise ValueError("unsupported article media URL")
         if block["kind"] == "link" or (block["kind"] == "video" and not re.search(r"\.(?:mp4|webm)(?:[?#]|$)", url, re.I)):
-            units.append(text(f"[Open original media]({url})"))
+            # Embedded YouTube URLs are player endpoints; show a usable watch link instead.
+            # Other hosts retain the existing fallback rather than guessing a video match.
+            units.append(text(_youtube_watch_url(url) or f"[Open original media]({url})"))
         else:
             # A separate inline gallery preserves each text/image relationship.
             units.append(gallery([url]))
