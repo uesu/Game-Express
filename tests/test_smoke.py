@@ -21882,6 +21882,22 @@ def test_reveal_ping_edit_guard_skips_reflow_and_lost_mention_instead_of_truncat
         assert len(ctx.state.news_record("wuwa")["records"]["x"]["messages"]) == 1
 
 
+def test_live_news_probe_cli_guards_without_network():
+    """The read-only live probe is a developer tool: it must exist, reject unknown games, and
+    never reach the network from a test (it requires an explicit game argument)."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    probe = Path(__file__).resolve().parents[1] / "tools" / "live_news_probe.py"
+    assert probe.is_file()
+    for argv in ([], ["not-a-game"], ["genshin", "extra"]):
+        proc = subprocess.run([sys.executable, str(probe), *argv],
+                              capture_output=True, text=True, timeout=120)
+        assert proc.returncode != 0, argv
+        assert "Pass one of: genshin, starrail, zzz, wuwa" in (proc.stderr + proc.stdout), argv
+
+
 def test_reveal_ping_location_matches_user_astra_yao_capture():
     """The published ping-location capture puts the mention after the source byline timestamp."""
     import copy

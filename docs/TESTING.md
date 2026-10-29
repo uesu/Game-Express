@@ -559,8 +559,8 @@ Verification for the delta on top of the revision above (same offline suite, Pyt
 
 - `python -m compileall -q gamexpress tests .github/scripts`, `ruff check .`,
   `python -m gamexpress validate`, `python -m gamexpress preview --out <temp>` passed.
-- Standalone smoke **510/510**; `python -m pytest -q tests` **533 passed** (overlapping
-  totals, not 1,043 distinct tests). Schedule regressions and the placeholder guard unchanged.
+- Standalone smoke **511/511**; `python -m pytest -q tests` **534 passed** (overlapping
+  totals, not 1,045 distinct tests). Schedule regressions and the placeholder guard unchanged.
 - New guards and the requirement each pins (each fails on the pre-delta code):
   `test_maintenance_window_phrasings_are_read_for_every_game` (`updated and maintained at …`,
   clock-only end after a dated start, clock-only extension, reschedule that quotes the abandoned
@@ -603,5 +603,9 @@ Verification for the delta on top of the revision above (same offline suite, Pyt
   (Game `40838508714`, Twitter `40838524872`, Reddit `40838516409`). Their check-run annotations
   contain only GitHub's Ubuntu-migration notice — no warning or error annotation. This is a
   status/annotation check, not a delivery or playback audit.
-- Limits: one live-source availability and no Discord playback test were performed in this
+- `tools/live_news_probe.py` (developer tool, read-only: no webhooks, secrets or state writes)
+  repeatedly checks one game's current discovery window for reveal matches and mention fit.
+  The suite only verifies that it exists and rejects a missing or unknown game argument, so a
+  test run never reaches the network.
+- Limits: no live-source availability and no Discord playback test were performed in this
   session; unfamiliar publisher formats and incomplete historic rosters remain heuristic.
