@@ -158,8 +158,8 @@ def clean_character_name(raw: str) -> str:
         return ""
     s = _TRAILING_PAREN_RE.sub("", str(raw).strip())
     # Profile titles write `Astral Precision — Suoming` or `"Epithet" Name`: keep the character side.
-    if re.search(r"\s(?:—|–|--)\s", s):
-        parts = [p.strip() for p in re.split(r"\s(?:—|–|--)\s", s) if p.strip()]
+    if re.search(r"[—–]|\s--\s", s):
+        parts = [p.strip() for p in re.split(r"[—–]|\s--\s", s) if p.strip()]
         if parts:
             s = parts[-1]
     elif " - " in s:

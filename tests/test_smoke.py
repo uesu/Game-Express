@@ -21235,6 +21235,9 @@ def test_reveal_ping_default_off_isolation_and_multi_era_plus_unseen_future_clas
         # WuWa `Stars Intertwined`, `Resonator Reveal`, and `Profile Reveal` (canonicalized to `"suoming"`)
         ("wuwa", "Post-Lament Anthropocene: Stars Intertwined | Suoming", '"Every variable is accounted for."', "Suoming"),
         ("wuwa", "Profile Reveal | Power of Ten — Suoming", '"Calculations complete."', "Suoming"),
+        # Captured Kuro profile titles use em dashes without spaces.
+        ("wuwa", "Profile Reveal | Howling Flame—Lupa", '"Quote."', "Lupa"),
+        ("wuwa", "Profile Reveal | Magnetism Before Light—Augusta", '"Quote."', "Augusta"),
         ("wuwa", "Resonator Reveal | Rebecca", '"Let us tear Night City apart!"', "Rebecca"),
         # Layer 2 unseen future planet/arc series (`<New Series> | <Character>`) across HSR 5.0 / HNA / Ananta
         ("starrail", "Lushaka's Deep-Sea Chronicle | Nereia", (
