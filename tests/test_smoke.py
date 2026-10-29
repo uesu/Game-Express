@@ -22020,6 +22020,183 @@ def test_reveal_ping_location_matches_user_astra_yao_capture():
         assert posts[0]["allowed_mentions"] == {"parse": [], "roles": [role]}
 
 
+def test_reveal_ping_covers_every_game_from_its_oldest_format_to_a_future_one():
+    """Every game, every era: 2020 WuWa/Genshin titles through 2026 and an unseen future series.
+
+    The publish pattern changed several times per game (``Profile Reveal:`` -> ``Profile Reveal |``
+    -> ``Stars Intertwined``, ``[Character Tales]`` -> ``◆`` dossier, quoted -> unquoted series,
+    and future names nobody has seen yet). Each row here is a title shape the publisher really
+    used, or a structural shape reserved for series that do not exist yet.
+    """
+    from gamexpress.config import load_games
+    from gamexpress.models import Item
+    from gamexpress.reveal_ping import classify_character_reveal
+
+    games = load_games()
+    img = "https://upload-os-bbs.hoyolab.com/upload/community/2026/10/26/era.png"
+    rows = [
+        # Genshin 2020 -> 2021 -> 2022 -> 2024 -> 2026 -> future region
+        ("genshin", '[Character Tales] - "Vago Mundo" Zhongli',
+         '"Osmanthus wine tastes the same as I remember..."', "Zhongli"),
+        ("genshin", 'Character Introduction — "Lone Glimmer" Skirk', '"From beyond the rift..."', "Skirk"),
+        ("genshin", '"Astute Luminary" · Nahida',
+         "◆ Physic of Purity\n◆ Lesser Lord Kusanali\n◆ Gnosis: Dendro", "Nahida"),
+        ("genshin", "Candlight's Lingering Radiance · Linnea",
+         '◆ Name: Linnea\n◆ Title: Frostweaver\n◆ Moon Wheel: Cryo\n◆ Constellation: Lucerna Borealis',
+         "Linnea"),
+        ("genshin", "Echoes Beyond the Firmament",
+         "◆ Name: Dainsleif\n◆ Title: Bough Keeper\n◆ Abyssal Core: Khaenri'ah\n"
+         "◆ Constellation: Viator", "Dainsleif"),
+        ("genshin", "The Pale Star · Columbina",
+         '\"Hush, the sleigh bells ring.\"\n◆ Name: Columbina\n◆ Title: Damselette\n'
+         "◆ Snezhnaya Sigil: Cryo\n◆ Constellation: Columbina", "Columbina"),
+        # Star Rail 2023 -> 2024 -> 2025 -> 2026 -> future planet
+        ("starrail", "Extraterrestrial Satellite Communication | Dan Heng • Imbibitor Lunae",
+         '"My past..."', "Dan Heng • Imbibitor Lunae"),
+        ("starrail", '"Extraterrestrial Satellite Communication" | Rappa', '"Quote."', "Rappa"),
+        ("starrail", "Amphoreus' Saga of Heroes | Castorice", '"Life and death."', "Castorice"),
+        ("starrail", "Aha Instant | Ellen", '"Shark tail care services?"', "Ellen"),
+        ("starrail", "Lushaka's Deep-Sea Chronicle | Nereia",
+         '"Every tide remembers its oath."\nNereia watches the trench.\nEnglish Voice: Jane Doe', "Nereia"),
+        # ZZZ 2024 early body marker -> 2025 -> 2026 -> full-name alias
+        ("zzz", '"Leave the housekeeping to me." — Victoria: Lycaon',
+         "[Agent Record]\nVoice: Kobayashi Chikahiro", "Lycaon"),
+        ("zzz", "Agent Record | Miyabi", '"Order cannot be broken."', "Miyabi"),
+        ("zzz", 'Agent Record | "Trigger"', '"Quote."', "Trigger"),
+        ("zzz", "Agent Record | Evelyn Chevalier", '"Quote."', "Evelyn Chevalier"),
+        # WuWa 2023 legacy separator -> 2024 -> 2025 series -> 2026 form-suffixed name
+        ("wuwa", "Profile Reveal: Snow Waltz — Sanhua", '"Quote."', "Sanhua"),
+        ("wuwa", "Profile Reveal | Howling Flame—Lupa", '"Quote."', "Lupa"),
+        ("wuwa", "Post-Lament Anthropocene: Stars Intertwined | Suoming", '"Every variable."', "Suoming"),
+        ("wuwa", "Resonator Reveal | Rebecca", '"Tear Night City apart!"', "Rebecca"),
+        ("wuwa", "Profile Reveal | Vessel of Sounds — Rover: Aero", '"Quote."', "Rover: Aero"),
+        # HNA / ANANTA: no corpus exists, so these pin the structural fallback only
+        ("hna", "Sovereign Nexus Dossier | Seraphina",
+         '"Bind your Anima to mine."\nAffiliation: Astral Sanctum\nSeraphina awaits.', "Seraphina"),
+        ("ananta", "Esper Manifest | Kaede",
+         '"The city never sleeps."\nKaede watches the skyline.\nAffiliation: NTE Division', "Kaede"),
+    ]
+    for gk, title, body, expected in rows:
+        it = Item("kuro" if gk == "wuwa" else "hoyolab", gk, "era", "https://www.hoyolab.com/article/1",
+                  title, body, 1793160008, article_blocks=[{"kind": "text", "text": body},
+                                                           {"kind": "image", "url": img}],
+                  author=games[gk].name)
+        match = classify_character_reveal(gk, it)
+        assert match is not None, f"{gk}: missed era pattern {title!r}"
+        assert match.character == expected, f"{gk}: {title!r} -> {match.character!r}"
+    assert {gk for gk, *_ in rows} == set(games), "every configured game needs at least one era row"
+
+    # A long, lore-heavy reveal is still recognised, but only with the strongest evidence
+    # (opening quote AND a dossier key); a long notice with just one of them is not.
+    pad = "lorem ipsum dolor sit amet consectetur adipiscing elit " * 200
+    def long_item(title, body):
+        return Item("hoyolab", "hna", "long", "https://www.hoyolab.com/article/2", title, body, 0,
+                    article_blocks=[{"kind": "text", "text": body},
+                                    {"kind": "image", "url": img}], official=True)
+    assert classify_character_reveal("hna", long_item(
+        "Sovereign Nexus Dossier | Seraphina",
+        '"Bind your Anima to mine."\nAffiliation: Astral Sanctum\nSeraphina awaits. ' + pad))
+    assert classify_character_reveal("hna", long_item(
+        "Sovereign Nexus Dossier | Seraphina", '"Just a quote." Seraphina waves. ' + pad)) is None
+    assert classify_character_reveal("hna", long_item(
+        "Skyline Festival Preview | Seraphina", "Affiliation: none\nCome join us. " + pad)) is None
+
+
+def test_reveal_ping_prefix_on_every_game_survives_both_page_policies():
+    """End-to-end `run_news` for every game with a news adapter, short and oversized articles.
+
+    The mention must sit in the byline at the TOP of the card (after the source/game/time, before
+    any body text), page one must carry the roles and every continuation must carry none, and the
+    documented page policies must hold: default = 1 message (or one labelled excerpt for an
+    oversized article), `NEWS_EXPAND_FULL=1` = the whole article across bounded pages.
+    """
+    import copy
+    from unittest.mock import patch
+
+    from gamexpress import cards
+    from gamexpress.config import load_games
+    from gamexpress.models import Item
+    from gamexpress.runner import run_news
+    from gamexpress.sources import hoyolab, kuro
+
+    games = load_games()
+    role = "1296268365593186426"
+    hook = "https://discord.com/api/webhooks/100000000000000099/g_tok"
+    img = "https://upload-os-bbs.hoyolab.com/upload/community/2026/10/26/ping.png"
+    titles = {
+        "genshin": ('"Astute Luminary" · Nahida',
+                    "◆ Physic of Purity\n◆ Lesser Lord Kusanali\n◆ Gnosis: Dendro", "Nahida"),
+        "starrail": ("Extraterrestrial Satellite Communication | Dan Heng • Imbibitor Lunae",
+                     '"My past, my future."', "Dan Heng • Imbibitor Lunae"),
+        "zzz": ("Agent Record | Miyabi", '"Order cannot be broken."', "Miyabi"),
+        "wuwa": ("Profile Reveal | Eternal Blaze — Changli", '"A blade remembers."', "Changli"),
+        "hna": ("Sovereign Nexus Dossier | Seraphina",
+                '"Bind your Anima to mine."\nAffiliation: Astral Sanctum\nSeraphina awaits.', "Seraphina"),
+    }
+    filler = "Paragraph about this new character's past and combat style. " * 200
+    tail = "FINAL-MARKER-SENTINEL"
+    assert set(titles) == {k for k, g in games.items() if (g.hoyolab_gid or g.kuro_news)}
+
+    for gk, (title, body, expected) in titles.items():
+        for long_body in (False, True):
+            for expand in (False, True):
+                text = body + ("\n" + filler + tail if long_body else "")
+                article = Item("kuro" if gk == "wuwa" else "hoyolab", gk, "p1",
+                               "https://www.hoyolab.com/article/1", title, text, 1793160008,
+                               article_blocks=[{"kind": "text", "text": text},
+                                               {"kind": "image", "url": img}],
+                               author=games[gk].name)
+                source = kuro if gk == "wuwa" else hoyolab
+                with tempfile.TemporaryDirectory() as tmp:
+                    env = dict(NEWS_ENABLED="1", NEWS_GAMES=gk, NEWS_REVEAL_PING="1",
+                               PING_NEWS_REVEAL=role,
+                               **{f"DISCORD_WEBHOOK_NEWS_{g}": hook for g in
+                                  ("GENSHIN", "STARRAIL", "ZZZ", "WUWA", "HNA", "ANANTA", "GI", "HSR")})
+                    if expand:
+                        env["NEWS_EXPAND_FULL"] = "1"
+                    ctx = make_ctx(Path(tmp) / "state.json", **env)
+                    ctx.now = 1793160000
+                    with patch.object(source, "discover_news", return_value=[]):
+                        asyncio.run(run_news(ctx))
+                    ctx.now = 1793160030
+                    row = {"id": "p1", "ts": 1793160008}
+                    with (patch.object(source, "discover_news", return_value=[row]),
+                          patch.object(source, "news_article", return_value=article),
+                          patch("gamexpress.media.news_media_available", return_value=True)):
+                        asyncio.run(run_news(ctx))
+                    posts = [s["payload"] for s in ctx.webhook.sent if s["method"] == "POST"]
+                case = f"{gk} long={long_body} expand={expand}"
+                assert posts, f"{case}: nothing posted ({ctx.warnings})"
+                assert all(not cards.validate_payload(p) for p in posts), case
+                header = posts[0]["components"][0]["components"][0]["content"]
+                byline = header.splitlines()[-1]
+                assert byline.startswith("-# ") and byline.rstrip().endswith(f"<@&{role}>"), (case, byline)
+                assert header.splitlines()[0].startswith("## ["), case
+                assert posts[0]["allowed_mentions"] == {"parse": [], "roles": [role]}, case
+                assert all(p["allowed_mentions"] == {"parse": []} for p in posts[1:]), case
+                # The mention is the only difference from the untouched card. An oversized
+                # article is an excerpt (or a reflowed page set) whose budget shrinks by the
+                # mention itself, so there the header plus validity are what is compared.
+                plain = cards.news_payloads(games[gk], article, expand_full=expand)
+                plain_header = plain[0]["components"][0]["components"][0]["content"]
+                assert byline.replace(f" · <@&{role}>", "") == plain_header.splitlines()[-1], case
+                restored = copy.deepcopy(posts[0])
+                restored["components"][0]["components"][0]["content"] = plain_header
+                restored["allowed_mentions"] = plain[0]["allowed_mentions"]
+                # At the page boundary the mention itself changes where the reflow cuts, so a
+                # byte-identical card is only required when the article is not at that boundary.
+                if not long_body:
+                    assert restored == plain[0], case
+                if not long_body:
+                    assert len(posts) == 1 or expand, case
+                elif expand:
+                    assert 2 <= len(posts) <= cards.NEWS_EXPAND_MAX_PAGES, case
+                    assert tail in json.dumps(posts), case
+                else:
+                    assert len(posts) == 1 and "Excerpt" in json.dumps(posts), case
+                assert expected  # the era test pins classification for this title
+
+
 def test_reveal_author_video_and_historical_quoted_title_guards():
     """Requirement-derived reconstructions, not independently fetched historical captures."""
     from dataclasses import replace

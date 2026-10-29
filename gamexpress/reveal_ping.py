@@ -383,7 +383,11 @@ def classify_character_reveal(game_key: str, item) -> RevealMatch | None:
     # --- Layer 2: Dynamic unseen-future `<Series> | <Character>` structural detector ---
     # Covers future arc/planet series renames (e.g. HSR 5.0+, ZZZ 4.0+, WuWa 4.0+, HNA, Ananta)
     # without matching event notices, patch summaries, or gag comics (`Episode 6 | Retreat`).
-    if 1 <= image_count <= 5 and 40 <= len(body) <= 3600 and not _BODY_BOILERPLATE_RE.search(body):
+    # A reveal can carry a long body (a lore-heavy introduction). Length alone must not hide it,
+    # but a long body needs the strongest evidence: an opening quote AND a dossier key, so a
+    # sprawling event notice cannot become a "character".
+    long_body = len(body) > 3600
+    if 1 <= image_count <= 5 and len(body) >= 40 and not _BODY_BOILERPLATE_RE.search(body):
         m_pipe = _GENERIC_PIPE_RE.match(title)
         if m_pipe:
             series_prefix, raw_cand = m_pipe.group(1).strip(), m_pipe.group(2).strip()
@@ -398,7 +402,8 @@ def classify_character_reveal(game_key: str, item) -> RevealMatch | None:
                     )
                     mentions_name = bool(re.search(rf"\b{re.escape(primary_tok)}\b", body))
                     signals = int(has_quote) + int(has_dossier) + int(mentions_name)
-                    if signals >= 2 and (has_quote or has_dossier):
+                    if (signals >= 2 and (has_quote or has_dossier)
+                            and (not long_body or (has_quote and has_dossier))):
                         return RevealMatch(cname, canonical_character_key(cname), "dynamic_future_reveal")
 
     return None
