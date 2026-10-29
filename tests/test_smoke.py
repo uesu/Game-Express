@@ -21899,6 +21899,64 @@ def test_reveal_ping_edit_guard_skips_reflow_and_lost_mention_instead_of_truncat
         assert f"<@&{role}>" in json.dumps(patches[0]["payload"]), "mention restored on the retried edit"
 
 
+def test_run_summary_archives_only_a_run_that_needs_attention():
+    """A clean run must not commit an ever-changing summary file; a run with warnings/errors
+    writes the same sanitized summary to `SUMMARY_ARCHIVE_PATH` so the evidence is in the repo
+    instead of being pasted by hand. The workflow stages exactly that file."""
+    from unittest.mock import patch
+
+    import yaml
+
+    from gamexpress.runner import write_summary
+
+    def quiet(call):
+        # write_summary also prints `::warning::`/`::error::` annotations for the runner; the
+        # standalone harness treats an uncaptured workflow command as a failure, so capture it.
+        with contextlib.redirect_stdout(io.StringIO()):
+            return call()
+
+    def ctx_with(warnings, errors):
+        ctx = make_ctx(Path(tempfile.mkdtemp()) / "state.json", NEWS_ENABLED="1")
+        ctx.fetcher = types.SimpleNamespace(summary=lambda: "hoyolab: 3 ok / 0 fail")
+        ctx.report.append("📰 GI news: delivered 47218605 (1 message(s), 1 container(s))")
+        ctx.warnings.extend(warnings)
+        ctx.errors.extend(errors)
+        return ctx
+
+    with tempfile.TemporaryDirectory() as tmp:
+        archive = Path(tmp) / "polishing and refining" / "game express summary.txt"
+        step = Path(tmp) / "step.md"
+        env = {"SUMMARY_ARCHIVE_PATH": str(archive), "GITHUB_STEP_SUMMARY": str(step)}
+        with patch.dict(os.environ, env, clear=False):
+            quiet(lambda: write_summary(ctx_with([], [])))
+            assert step.read_text(encoding="utf-8").strip(), "the step summary is always written"
+            assert not archive.exists(), "a clean run must not create a commit-magnet file"
+
+            quiet(lambda: write_summary(ctx_with(["WW: no announcement source answered this run"], [])))
+            body = archive.read_text(encoding="utf-8")
+            assert "⚠️ WW: no announcement source answered this run" in body
+            assert "delivered 47218605" in body and "sources: hoyolab: 3 ok / 0 fail" in body
+
+    # A secret in a warning must never reach the archived file.
+    with tempfile.TemporaryDirectory() as tmp:
+        archive = Path(tmp) / "summary.txt"
+        secret = "https://discord.com/api/webhooks/1234567890/abcdefSECRETtoken"
+        with patch.dict(os.environ, {"SUMMARY_ARCHIVE_PATH": str(archive),
+                                     "DISCORD_WEBHOOK_NEWS_GI": secret}, clear=False):
+            quiet(lambda: write_summary(ctx_with([f"post failed for {secret}"], [])))
+        body = archive.read_text(encoding="utf-8")
+        assert "abcdefSECRETtoken" not in body and "[REDACTED]" in body
+
+    # The live workflow supplies the path and stages the file with the state commit.
+    wf = yaml.safe_load((Path(__file__).resolve().parents[1] / ".github/workflows/monitor.yml")
+                        .read_text(encoding="utf-8"))
+    steps = wf["jobs"]["monitor"]["steps"]
+    live = next(s for s in steps if s.get("id") == "run")
+    assert live["env"]["SUMMARY_ARCHIVE_PATH"] == "polishing and refining/game express summary.txt"
+    persist = next(s for s in steps if s.get("id") == "persist_state")["run"]
+    assert 'git add -f "polishing and refining/game express summary.txt"' in persist
+
+
 def test_live_news_probe_cli_guards_without_network():
     """The read-only live probe is a developer tool: it must exist, reject unknown games, and
     never reach the network from a test (it requires an explicit game argument)."""

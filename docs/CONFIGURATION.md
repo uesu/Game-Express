@@ -271,6 +271,7 @@ A schedule/code-only selector does not count as toggling news off.
 | `NEWS_TIMESTAMPS` | `0` | Opt-in render-time `<t:EPOCH:…>` conversion for exact TZ-qualified news dates/times |
 | `NEWS_EXPAND_FULL` | `0` | Opt-in multi-page full articles beyond 2 pages (bounded at `NEWS_EXPAND_MAX_PAGES = 12`, `NEWS_EXPAND_MAX_CHARS = 120000`, `NEWS_EXPAND_MAX_MEDIA = 120`) |
 | `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | Canonical game keys; removing a game pauses its existing news state |
+| `SUMMARY_ARCHIVE_PATH` | set by `monitor.yml` to `polishing and refining/game express summary.txt` | When a run produces warnings or errors, its step summary is also written to this file and committed with the state, so the evidence is reviewable in the repository. A clean run writes nothing, so a healthy monitor still commits only when state actually changes |
 
 Each run attempts all discovered eligible unposted articles in publication order,
 without a fixed article-count cap or ten-attempt game cap. A failed article remains

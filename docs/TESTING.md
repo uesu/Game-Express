@@ -559,8 +559,8 @@ Verification for the delta on top of the revision above (same offline suite, Pyt
 
 - `python -m compileall -q gamexpress tests .github/scripts`, `ruff check .`,
   `python -m gamexpress validate`, `python -m gamexpress preview --out <temp>` passed.
-- Standalone smoke **511/511**; `python -m pytest -q tests` **534 passed** (overlapping
-  totals, not 1,045 distinct tests). Schedule regressions and the placeholder guard unchanged.
+- Standalone smoke **512/512**; `python -m pytest -q tests` **535 passed** (overlapping
+  totals, not 1,047 distinct tests). Schedule regressions and the placeholder guard unchanged.
 - New guards and the requirement each pins (each fails on the pre-delta code):
   `test_maintenance_window_phrasings_are_read_for_every_game` (`updated and maintained at …`,
   clock-only end after a dated start, clock-only extension, reschedule that quotes the abandoned
@@ -603,6 +603,10 @@ Verification for the delta on top of the revision above (same offline suite, Pyt
   (Game `40838508714`, Twitter `40838524872`, Reddit `40838516409`). Their check-run annotations
   contain only GitHub's Ubuntu-migration notice — no warning or error annotation. This is a
   status/annotation check, not a delivery or playback audit.
+- Run-summary archive: `test_run_summary_archives_only_a_run_that_needs_attention` proves a clean
+  run writes only the Actions step summary (no commit-magnet file), a warned run writes the same
+  sanitized text to `SUMMARY_ARCHIVE_PATH`, a webhook secret in a warning never reaches the file,
+  and `monitor.yml` both supplies the path and stages the file in the state commit.
 - Credit hygiene is now pinned: the documentation-hygiene test asserts that `docs/CREDITS.md`
   keeps the [HoyoPlay](https://gist.github.com/DynamiByte/0ad250bbe1930e2736a6d4e6e842bcb2) and
   [WuWa launcher](https://gist.github.com/DynamiByte/d839bf9f671c975b6666d0f6e6634641) endpoint

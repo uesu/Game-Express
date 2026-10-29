@@ -183,6 +183,11 @@ jobs:
           ONLY: ${{ inputs.only != 'all' && inputs.only || '' }}
           GAME: ${{ inputs.game }}
           REPOST: ${{ inputs.repost }}
+          # A run with warnings or errors writes its step summary to this file, and the persist
+          # step below commits it with the state. Clean runs write nothing, so a healthy monitor
+          # still commits only when something actually moved. Evidence lives in the repo instead
+          # of being pasted by hand into an issue.
+          SUMMARY_ARCHIVE_PATH: polishing and refining/game express summary.txt
         run: python -m gamexpress run
 
       - name: LIVE · commit state (also after a partial failure, so nothing is ever posted twice)
@@ -198,6 +203,9 @@ jobs:
           # what lets a later test run resolve the same announcement by id through fxtwitter and show
           # the real link and the real key art. Same pattern as posted_tweets.json in the X monitor.
           git add -f config/program_announcements.json 2>/dev/null || true
+          # Archived run summary (written only by a run with warnings/errors), so the evidence
+          # that explains a bad run survives in the repository with the state it belongs to.
+          git add -f "polishing and refining/game express summary.txt" 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "state unchanged — nothing to commit"
             echo "result=unchanged" >> "$GITHUB_OUTPUT"

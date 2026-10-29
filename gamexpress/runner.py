@@ -10,6 +10,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import aiohttp
 
@@ -439,6 +440,26 @@ def write_summary(ctx: Ctx) -> None:
                 fh.write(text + "\n")
         except OSError as exc:
             log.warning("Could not append workflow summary (%s)", type(exc).__name__)
+    _archive_summary(ctx, text)
+
+
+def _archive_summary(ctx: Ctx, text: str) -> None:
+    """Keep the run summary as a reviewable file when the run needs attention.
+
+    A clean run already shows its summary on the Actions page, so archiving it would commit a
+    changed file on every 5-minute run. A run with warnings or errors is the evidence an
+    operator (or a later review) needs, so only that one is written to `SUMMARY_ARCHIVE_PATH`,
+    which the live workflow stages and commits with the state file.
+    """
+    archive = str(os.getenv("SUMMARY_ARCHIVE_PATH") or "").strip()
+    if not archive or not (ctx.warnings or ctx.errors):
+        return
+    try:
+        target = Path(archive)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text + "\n", encoding="utf-8")
+    except OSError as exc:
+        log.warning("Could not write the summary archive (%s)", type(exc).__name__)
 
 
 async def run_news(ctx: Ctx) -> None:
