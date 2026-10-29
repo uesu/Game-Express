@@ -548,6 +548,9 @@ def mark_test(payload: dict, note: str = TEST_NOTE) -> dict:
 NEWS_DONATE = "https://ko-fi.com/jieunlatte"
 NEWS_COMMUNITY = "https://discord.gg/HyrVP9wRXu"
 NEWS_EXPAND_MAX_PAGES = 12
+# Default policy: whole-article smart fitting across at most this many messages
+# (~4,000 text chars each) instead of truncating a long article to one excerpt.
+NEWS_DEFAULT_MAX_PAGES = 4
 NEWS_EXPAND_MAX_CHARS = 120000
 NEWS_EXPAND_MAX_MEDIA = 120
 
@@ -685,6 +688,85 @@ def _split_expanded_text(content: str, max_chars: int) -> list[str] | None:
                     return None
                 out.append(buf)
     return out if out and "".join(out) == content else None
+
+
+
+def _smart_fit_news(
+    units: list[dict],
+    *,
+    page_prefix,
+    page_payload,
+    max_pages: int,
+) -> tuple[list[dict] | None, str]:
+    """Fit the WHOLE article into at most `max_pages` messages, or explain why it cannot be.
+
+    "Dynamic smart container fitting": paragraphs are kept whole, and only a paragraph that does
+    not fit the room left on the open page is continued in the next message - always at a
+    markdown-safe boundary, never inside a link, bold run, or bracket. Nothing is dropped, and
+    the page shape is the one the card already uses (title/byline + cover on page one,
+    `-# Page n` + divider on continuations, buttons on the last page), so the JSON structure is
+    identical under every policy and only the ceilings differ.
+    """
+    limit_notice = ("**Excerpt — this article exceeds the delivery safety limit.** "
+                    "Read Post opens the complete article and remaining media.")
+    content_notice = ("**Excerpt — this article contains content that exceeds single-message limits.** "
+                      "Read Post opens the complete article and remaining media.")
+
+    page_units: list[dict] = []
+    for unit in units:
+        if unit["type"] != 10:
+            page_units.append(unit)
+            continue
+        pieces = _split_expanded_text(unit["content"], max(1, MAX_TEXT_TOTAL - 32))
+        if pieces is None:
+            return None, content_notice
+        page_units.extend(text(piece) for piece in pieces)
+
+    if not any(unit["type"] == 10 for unit in page_units):
+        return None, limit_notice
+
+    pages, current = [], page_prefix(1)
+    have_body = False
+    index = 0
+    while index < len(page_units):
+        unit = page_units[index]
+        trial = list(current)
+        if unit["type"] == 10 and have_body and trial[-1]["type"] == 10:
+            trial[-1] = text(trial[-1]["content"] + unit["content"])
+        else:
+            trial.append(unit)
+        if not validate_payload(page_payload(trial, final=True)):
+            current, have_body = trial, True
+            index += 1
+            continue
+        # The next unit does not fit: continue it in the exact room still open on this page.
+        if unit["type"] == 10:
+            room = MAX_TEXT_TOTAL - text_length(current) - 40
+            pieces = _split_expanded_text(unit["content"], room) if room > 160 else None
+            if pieces and len(pieces) > 1:
+                trial = list(current)
+                if have_body and trial[-1]["type"] == 10:
+                    trial[-1] = text(trial[-1]["content"] + pieces[0])
+                else:
+                    trial.append(text(pieces[0]))
+                if not validate_payload(page_payload(trial, final=True)):
+                    current, have_body = trial, True
+                    page_units[index] = text("".join(pieces[1:]))
+                    continue
+        if not have_body or len(pages) >= max_pages:
+            return None, limit_notice
+        pages.append(page_payload(current))
+        current, have_body = page_prefix(len(pages) + 1) + [unit], True
+        if validate_payload(page_payload(current, final=True)):
+            return None, content_notice
+        index += 1
+    if not have_body:
+        return None, limit_notice
+    pages.append(page_payload(current, final=True))
+    if 1 <= len(pages) <= max_pages and all(not validate_payload(page) for page in pages):
+        return pages, ""
+    return None, content_notice
+
 
 
 def news_payloads(
@@ -931,6 +1013,18 @@ def news_payloads(
                 if len(pages) == 2 and all(not validate_payload(page) for page in pages):
                     return pages
         # Never publish a partial full article: fall through to the excerpt.
+
+    # Beyond the old two-page / 7,000-character envelope the card used to be truncated to one
+    # excerpt. The whole article is now smart fitted across pages, and only an article that
+    # cannot fit inside the default page ceiling still falls back to that labelled excerpt.
+    else:
+        pages, notice = _smart_fit_news(
+            units, page_prefix=page_prefix, page_payload=page_payload,
+            max_pages=max(1, NEWS_DEFAULT_MAX_PAGES),
+        )
+        if pages:
+            return pages
+        excerpt_notice = notice
 
     # Oversized article: retain the opening text, ONE lead image, and source access.
     # This deliberately replaces the previous multi-message full-body policy.

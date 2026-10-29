@@ -463,7 +463,9 @@ Publication time uses the official index's UTC+8 `startTime`, falling back to
 
 Full HTML/Quill blocks retain text/media order and heading/list readability.
 First try one full message. Multiple containers share the message-wide 4,000
-text-character / 40-component limits. On overflow, <=7,000 normalized characters
+text-character / 40-component limits. Long articles are smart fitted across pages (up to
+`NEWS_DEFAULT_MAX_PAGES = 4`) before any excerpt is considered. Legacy note: on overflow,
+<=7,000 normalized characters
 may use at most two independently validated pages; otherwise send one labelled
 excerpt container, at most one lead image, and Read Post for the full original.
 Overflow keeps half the words of the already budget-fitting opening excerpt;

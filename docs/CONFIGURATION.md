@@ -278,8 +278,10 @@ retryable and does not prevent other eligible articles from being attempted. Thi
 is not unlimited crawling or guaranteed same-run delivery: source pagination,
 48-hour freshness/future holds, silent baselines, state capacity, media validation,
 partial-delivery safeguards, Discord retries and job timeouts remain. By default
-(`NEWS_EXPAND_FULL=0`), the maximum two messages / 7,000-character policy per article
-remains intact; setting `NEWS_EXPAND_FULL=1` lifts that ceiling up to an explicit
+(`NEWS_EXPAND_FULL=0`), an article is still delivered in full: anything inside the
+two-message / 7,000-character envelope keeps that exact layout, and a longer article is
+**smart fitted** across up to `NEWS_DEFAULT_MAX_PAGES = 4` messages rather than being
+truncated. Setting `NEWS_EXPAND_FULL=1` lifts that ceiling up to an explicit
 12-page / 120,000-character / 120-media cap before excerpt fallback.
 
 Migration: `NEWS_MAX_POSTS_PER_RUN` is retired and ignored. Remove a leftover
@@ -419,10 +421,20 @@ supported news games (`genshin`, `starrail`, `hna`, `zzz`, `wuwa`):
 ### Full-content paging and overflow
 
 Keep fitting full articles unchanged in one message (possibly multiple containers).
-By default (`NEWS_EXPAND_FULL=0`), if one message fails, at most two actual messages
-are permitted when normalized source text plus title/byline once is `<= 7,000`
-characters and both payloads validate independently against `4,000` text characters /
-`40` components / `1–10` gallery items.
+By default (`NEWS_EXPAND_FULL=0`), one message is tried first. When normalized source
+text plus title/byline once is `<= 7,000` characters, at most two actual messages are
+permitted, each validating independently against `4,000` text characters / `40`
+components / `1–10` gallery items. A longer article is **smart fitted** with the same
+validation and the same payload shape, page after page, up to
+`NEWS_DEFAULT_MAX_PAGES = 4`; only what cannot fit inside that ceiling falls back to the
+one-container labelled excerpt with a single lead image. Nothing in the JSON structure,
+the official HTML or the sources changes: title/byline plus cover on page one,
+`-# Page N` plus divider on every continuation, and the three buttons on the last page.
+
+The fit is markdown-safe and loss-free: paragraphs are kept whole, and a paragraph that
+does not fit the room still open on the page is continued in the next message at a
+boundary that never splits a link, a bold run or a bracket. Concatenating the pages
+reproduces the article text exactly, so no sentence is silently dropped.
 
 When `NEWS_EXPAND_FULL=1` is explicitly enabled, the 2-page / 7,000-character policy
 ceiling is lifted up to an explicit operational safety bound (`NEWS_EXPAND_MAX_PAGES = 12`,

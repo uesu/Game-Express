@@ -150,6 +150,11 @@ _DOSSIER_SIGNAL_RE = re.compile(
     re.I | re.M,
 )
 
+# A whole line wrapped in one emphasis marker (`**◆Name: Mitya**`, `_◆ Title: …_`, `~~…~~`).
+# `textutil.news_blocks` renders a bold HoYoLAB run as `**…**`, so production bodies really do
+# carry these markers; the matchers below must read the key, never the marker.
+_LINE_EMPHASIS_RE = re.compile(r"(?m)^([ \t]*)(\*\*\*|\*\*|~~|__|\*|_)(?=\S)(.+?)(?<=\S)\2[ \t]*$")
+
 _TRAILING_PAREN_RE = re.compile(r"\s*[\(（][^\)）]{1,40}[\)）]\s*$")
 _QUOTE_WRAP_RE = re.compile(r"^[\s\"“”'‘’「」『』《》〈〉•·✦◆▌\-—–:：|丨]+|[\s\"“”'‘’「」『』《》〈〉•·✦◆▌\-—–:：|丨]+$")
 
@@ -265,6 +270,23 @@ def _article_body_and_counts(item) -> tuple[str, int, bool]:
     return body, len(image_urls), has_video
 
 
+def unmark_lines(text: str) -> str:
+    """Drop whole-line markdown emphasis (`**◆Name: Mitya**` -> `◆Name: Mitya`).
+
+    The production renderer bolds HoYoLAB dossier lines, and every Genshin, HSR, ZZZ and WuWa
+    reveal since 2020 has shipped with those keys bold. Classification reads the key, never the
+    marker; inline emphasis inside a sentence is left alone.
+    """
+    if not text:
+        return text
+    for _ in range(3):  # `***bold italic***` and other nested wrappers
+        stripped = _LINE_EMPHASIS_RE.sub(r"\1\3", text)
+        if stripped == text:
+            break
+        text = stripped
+    return text
+
+
 def _match_genshin_diamond_dossier(title: str, body: str) -> RevealMatch | None:
     """Match Genshin V2.0–V7.x+ `◆` character reveal blocks (including future power labels)."""
     kvs = [(k.strip(), v.strip()) for k, v in _DIAMOND_KV_RE.findall(body)]
@@ -319,6 +341,8 @@ def classify_character_reveal(game_key: str, item) -> RevealMatch | None:
         return None
     if _TITLE_EXCLUDE_RE.search(title):
         return None
+    # Keys are matched on the marker-free view of the body, because the renderer bolds them.
+    body = unmark_lines(body)
 
     gk = (game_key or "").lower()
 

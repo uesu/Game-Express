@@ -6502,7 +6502,9 @@ def test_news_ordered_html_quill_gifs_videos_links_and_unknown_embeds():
 
 
 def test_news_overflow_one_message_one_container_lead_only_and_emoji_buttons():
-    item = news_item(body="Complete source sentence. " * 500)
+    # Beyond the default page ceiling (4 pages ~ 16,000 text chars) the card falls back to one
+    # labelled excerpt with a single lead image; inside the ceiling the whole article is paged.
+    item = news_item(body="Complete source sentence. " * 2500)
     item.article_blocks += [{"kind": "image", "url": "https://example.com/lead.gif"},
                             {"kind": "image", "url": "https://example.com/second.png"}]
     payloads = cards.news_payloads(GAMES["genshin"], item)
@@ -6579,7 +6581,7 @@ def test_news_single_message_failed_send_retries_without_delivery_checkpoint():
             asyncio.run(run_news(ctx))
         ctx.now += 20
         row = {"id": "100", "ts": ctx.now - 10}
-        item = news_item(body="A full article sentence. " * 300)
+        item = news_item(body="A full article sentence. " * 40)
         ctx.webhook = ScriptedWebhook([], [SendResult(False, 503)])
         with patch.object(hoyolab, "discover_news", return_value=[row]), patch.object(hoyolab, "news_article", return_value=item):
             asyncio.run(run_news(ctx))
@@ -6999,6 +7001,9 @@ def test_news_text_only_short_and_overflow_component_budget_are_explicit():
     assert "Excerpt" not in json.dumps(ps)
     item.article_blocks = [{"kind": "image", "url": f"https://example.com/{i}.png"} for i in range(100)]
     ps = cards.news_payloads(GAMES["wuwa"], item)
+    # A hundred single-image galleries for a SHORT text still resolve to the excerpt path: the
+    # smart fitting added in this change is about text that overflows the 4,000-character budget,
+    # and a media-heavy card keeps the existing one-lead-image excerpt with the buttons intact.
     assert len(ps) == 1 and len(ps[0]["components"]) == 1
     assert not cards.validate_payload(ps[0]) and "Excerpt" in json.dumps(ps)
     assert sum(c["type"] == 12 for c in ps[0]["components"][0]["components"]) == 1
@@ -7160,18 +7165,28 @@ def test_news_moderate_overflow_two_pages_all_games_and_long_excerpt():
         assert all(p["allowed_mentions"] == {"parse": []} for p in pages)
         item.article_blocks[0]["text"] = body * 3
         long = cards.news_payloads(GAMES[key], item)
-        assert len(long) == 1 and len(long[0]["components"]) == 1
-        assert 'Excerpt' in str(long) and not cards.validate_payload(long[0])
+        # Three times the body is still delivered in full: smart fitting continues across pages
+        # instead of truncating to one excerpt, and every page keeps the shared payload shape.
+        assert 2 <= len(long) <= cards.NEWS_DEFAULT_MAX_PAGES
+        assert all(not cards.validate_payload(p) for p in long)
+        assert 'Excerpt' not in str(long)
+        assert all(p["allowed_mentions"] == {"parse": []} for p in long)
+        assert long[-1]["components"][0]["components"][-1]["type"] == 1
+        whole = ''.join(c["content"] for p in long for c in p["components"][0]["components"]
+                        if c["type"] == 10 and not c["content"].startswith(("## ", "-# Page")))
+        assert whole == body * 3
 
 
 def test_news_moderate_ceiling_and_unsplittable_fallback():
-    for wanted in (7000, 7001):
+    # There is no 7,000-character cliff any more: 6,999 and 7,001 chars are both delivered whole
+    # across pages, because the page split is decided by Discord's 4,000-char text budget only.
+    for wanted in (6999, 7001):
         item = news_item(body="probe")
         header = cards.news_payloads(GAMES["wuwa"], item)[0]["components"][0]["components"][0]
         n = wanted - len(header["content"])
         item.article_blocks[0]["text"] = 'a' * 3400 + '\n\n' + 'b' * (n - 3402)
         pages = cards.news_payloads(GAMES["wuwa"], item)
-        assert len(pages) == (2 if wanted == 7000 else 1)
+        assert len(pages) == 2
         assert all(not cards.validate_payload(p) for p in pages)
     item = news_item(body='a' * 4500)  # no safe paragraph boundary
     pages = cards.news_payloads(GAMES["wuwa"], item)
@@ -7745,10 +7760,15 @@ def test_news_video_cover_policy_pagination_and_excerpt_keep_existing_limits():
     ps = cards.news_payloads(GAMES['genshin'], item)
     assert len(ps) == 2 and urls(ps) == [video]
     assert all(not cards.validate_payload(p) for p in ps)
+    # Three times the text no longer collapses to an excerpt: the article is smart fitted whole.
     item.article_blocks[0]['text'] *= 3
     ps = cards.news_payloads(GAMES['genshin'], item)
-    assert len(ps) == 1 and urls(ps) == [cover]
-    assert any('**Excerpt' in c.get('content', '') for co in ps[0]['components'] for c in co['components'])
+    assert 2 <= len(ps) <= cards.NEWS_DEFAULT_MAX_PAGES
+    assert all(not cards.validate_payload(p) for p in ps)
+    assert not any('**Excerpt' in c.get('content', '') for p in ps for co in p['components'] for c in co['components'])
+    assert urls(ps) == [video]          # the native video still owns the cover slot
+    assert "Page 2" in json.dumps(ps)
+    assert "Page 4" in json.dumps(ps)
 
 
 def _captured_kuro_lucilla_5626():
@@ -8764,11 +8784,13 @@ def test_news_expand_full_disabled_equality_multipage_order_cover_video_and_fall
     )
     frozen = copy.deepcopy(item)
 
-    # Disabled: identical to original single-message excerpt fallback.
+    # Disabled: the same packer as the expanded policy, whole article, no excerpt.
     default_out = cards.news_payloads(GAMES["zzz"], item)
     disabled_out = cards.news_payloads(GAMES["zzz"], item, timestamps=False, expand_full=False)
-    assert disabled_out == default_out and len(default_out) == 1
-    assert "Excerpt" in json.dumps(default_out)
+    assert disabled_out == default_out
+    assert 2 <= len(default_out) <= cards.NEWS_DEFAULT_MAX_PAGES
+    assert "Excerpt" not in json.dumps(default_out)
+    assert all(not cards.validate_payload(p) for p in default_out)
 
     # Enabled: multi-page full article > 2 pages preserving ALL text, media, videos, links, and order!
     expanded = cards.news_payloads(GAMES["zzz"], item, timestamps=False, expand_full=True)
@@ -8915,11 +8937,16 @@ def test_reproducible_offline_benchmark_command_and_bypass_invariants():
         rc = gxmain.main(["benchmark", "--iterations", "20", "--json"])
     assert rc == 0
     data = json.loads(out.getvalue())
-    assert data["default_long_messages"] == 1
-    assert data["expanded_long_messages"] > 2
+    # The default policy smart fits the whole long article; the expanded policy reuses the same
+    # packer, so it reports the same page count while keeping its own (larger) ceilings.
+    assert 2 <= data["default_long_messages"] <= 4
+    assert data["long_default_pages"] == data["default_long_messages"]
+    assert data["long_default_complete"] is True
+    assert data["expanded_long_messages"] == data["default_long_messages"]
     assert data["disabled_output_equal"] is True
+    assert data["main_baseline_sha256_equal"] is True
     assert data["request_counts"]["short_default_off"]["webhook_posts"] == 1
-    assert data["request_counts"]["long_expand_off"]["webhook_posts"] == 1
+    assert data["request_counts"]["long_expand_off"]["webhook_posts"] == data["default_long_messages"]
     assert data["request_counts"]["long_expand_on"]["webhook_posts"] == data["expanded_long_messages"]
     assert data["default_short_messages"] == 1
     assert data["default_medium_messages"] == 2
@@ -10196,12 +10223,17 @@ def test_followup_4_default_off_preservation_7000_policy_and_production_baseline
             assert "-# Page 1" in json.dumps(p2_abs[0]) and "-# Page 2" in json.dumps(p2_abs[1])
             assert any(c["type"] == 1 for c in p2_abs[1]["components"][-1]["components"])
             assert not any(c["type"] == 1 for c in p2_abs[0]["components"][-1]["components"])
-            # Over-7,000 labelled excerpt fallback intact:
-            assert p3_abs == p3_fls and len(p3_abs) == 1
-            dumped_ex = json.dumps(p3_abs[0], ensure_ascii=False)
-            assert "**Excerpt — this article exceeds Discord's single-message limits.**" in dumped_ex
-            assert dumped_ex.count("https://upload-os-bbs.hoyolab.com/upload/cover.jpg") == 1
-            assert "inline1.jpg" not in dumped_ex
+            # A >7,000-character article is no longer truncated: the whole text is smart fitted
+            # across pages (< NEWS_DEFAULT_MAX_PAGES), every page valid, nothing dropped.
+            assert p3_abs == p3_fls and 2 <= len(p3_abs) <= cards.NEWS_DEFAULT_MAX_PAGES
+            dumped_full = json.dumps(p3_abs, ensure_ascii=False)
+            assert "**Excerpt" not in dumped_full
+            assert "inline1.jpg" in dumped_full
+            whole_text = "".join(c["content"] for page in p3_abs
+                                 for c in page["components"][0]["components"]
+                                 if c["type"] == 10 and not c["content"].startswith(("## ", "-# Page")))
+            assert whole_text.count("Detailed patch adjustment entry on October 25, 2026.") == 200
+            assert len(whole_text) >= 200 * len("Detailed patch adjustment entry on October 25, 2026.")
     assert spy_calls == 0
 
     # 4. Production regression baseline shapes (#432 ZZZ 47150244, #436 ZZZ 47150315 4-issue short
@@ -10287,8 +10319,9 @@ def test_followup_4_default_off_preservation_7000_policy_and_production_baseline
     assert bench["timestamp_converter_calls_when_off"] == 0
     assert bench["default_short_messages"] == 1
     assert bench["default_medium_messages"] == 2
-    assert bench["default_long_messages"] == 1
-    assert bench["expanded_long_messages"] == 4
+    assert 2 <= bench["default_long_messages"] <= bench["long_default_pages"]
+    assert bench["long_default_complete"] is True
+    assert bench["expanded_long_messages"] == bench["default_long_messages"]
     assert bench["request_counts"]["basis"] == "derived_from_rendered_payloads_not_live_http"
     assert len(bench["benchmarks"]) == 12
 
@@ -11275,6 +11308,11 @@ def test_final_acceptance_baseline_parity_shared_callers_and_template():
         return hashlib.sha256(raw).hexdigest()
 
     # Exact canonical JSON SHA-256 digests generated directly by `main` (`1e071d82eba82baa0a2977f33d6f8180d3677aaf`).
+    # `fit1`/`fit2`/`fixture`/`prod` digests are pre-PR main (1e071d8) byte-identical: ordinary
+    # articles, articles that already used a second page, and the captured production cards did
+    # not change. `over7k` is the one deliberate delta: main truncated a >7,000-character article
+    # to a single excerpt, and the default policy now smart fits the whole article into pages
+    # (new digests below, generated from this head on every game, all pages valid, no excerpt).
     MAIN_1E071D8_SHA256 = {
         "fixture:hoyolab_genshin_46604275_full.json": (1, "a87d0dc74d042fb12d9f89490b67ade96546133168e0c5394eaf321480816598"),
         "fixture:hoyolab_starrail_46814308_full.json": (1, "d0833d351eacad7c690c566948618a52f6f21e867b21cc9c0e0f44a78a4876b0"),
@@ -11282,19 +11320,19 @@ def test_final_acceptance_baseline_parity_shared_callers_and_template():
         "fixture:hoyolab_zzz_46863847_full.json": (1, "8245162cd633f95510ee9d2b6b7b0c1c07801d1247445432ec968ff1aebfb14d"),
         "fit1:genshin": (1, "a101b39d74127d0aa21048c8bdc3d1f319473ebec9a0c344c3470482e614fffd"),
         "fit2:genshin": (2, "e51aa14e026237d44a6539222f82bae18f3ff836c9813462904abee33b37c083"),
-        "over7k:genshin": (1, "c6d362d112bf97c5dc54575edd2a64aadbb12ab06d2ddd8abfb1db1741222646"),
+        "over7k:genshin": (3, "c68dc2c6e2179a7c1e57622bdd34400bbc14bee07f0ed8e49dece09322ee160d"),
         "fit1:starrail": (1, "a101b39d74127d0aa21048c8bdc3d1f319473ebec9a0c344c3470482e614fffd"),
         "fit2:starrail": (2, "e51aa14e026237d44a6539222f82bae18f3ff836c9813462904abee33b37c083"),
-        "over7k:starrail": (1, "c6d362d112bf97c5dc54575edd2a64aadbb12ab06d2ddd8abfb1db1741222646"),
+        "over7k:starrail": (3, "c68dc2c6e2179a7c1e57622bdd34400bbc14bee07f0ed8e49dece09322ee160d"),
         "fit1:hna": (1, "a101b39d74127d0aa21048c8bdc3d1f319473ebec9a0c344c3470482e614fffd"),
         "fit2:hna": (2, "e51aa14e026237d44a6539222f82bae18f3ff836c9813462904abee33b37c083"),
-        "over7k:hna": (1, "c6d362d112bf97c5dc54575edd2a64aadbb12ab06d2ddd8abfb1db1741222646"),
+        "over7k:hna": (3, "c68dc2c6e2179a7c1e57622bdd34400bbc14bee07f0ed8e49dece09322ee160d"),
         "fit1:zzz": (1, "a101b39d74127d0aa21048c8bdc3d1f319473ebec9a0c344c3470482e614fffd"),
         "fit2:zzz": (2, "e51aa14e026237d44a6539222f82bae18f3ff836c9813462904abee33b37c083"),
-        "over7k:zzz": (1, "c6d362d112bf97c5dc54575edd2a64aadbb12ab06d2ddd8abfb1db1741222646"),
+        "over7k:zzz": (3, "c68dc2c6e2179a7c1e57622bdd34400bbc14bee07f0ed8e49dece09322ee160d"),
         "fit1:wuwa": (1, "a101b39d74127d0aa21048c8bdc3d1f319473ebec9a0c344c3470482e614fffd"),
         "fit2:wuwa": (2, "e51aa14e026237d44a6539222f82bae18f3ff836c9813462904abee33b37c083"),
-        "over7k:wuwa": (1, "c6d362d112bf97c5dc54575edd2a64aadbb12ab06d2ddd8abfb1db1741222646"),
+        "over7k:wuwa": (3, "c68dc2c6e2179a7c1e57622bdd34400bbc14bee07f0ed8e49dece09322ee160d"),
         "prod:zzz_436": (1, "1bae1ccb24aa17d136f564038cc0a4545c066be4315fcc85d84f48448eea1417"),
         "prod:zzz_444": (1, "d2038dc109cd2f15c5df47e6da5e2887434914dd48f90dbec430e686b529b1de"),
     }
@@ -22102,6 +22140,161 @@ def test_reveal_ping_covers_every_game_from_its_oldest_format_to_a_future_one():
         "Skyline Festival Preview | Seraphina", "Affiliation: none\nCome join us. " + pad)) is None
 
 
+def test_reveal_ping_reads_the_bold_dossier_keys_of_real_2026_genshin_reveals():
+    """The two live Genshin 2026 reveals the ping must cover: HoYoLAB 46884007 and 44627867.
+
+    Both ship their dossier keys bold, so `news_blocks` renders `**◆Name: Mitya**`. Reading the
+    raw body meant the classifier saw the marker instead of the key and returned nothing, so a
+    real character reveal would never ping. These rows are built through the same renderer the
+    monitor uses, and an event notice reusing the same bold diamond style must still be refused.
+    """
+    import json as _json
+
+    from gamexpress.models import Item
+    from gamexpress.reveal_ping import classify_character_reveal
+    from gamexpress.textutil import news_blocks
+
+    def article(lines, title, url):
+        ops = []
+        for kind, value in lines:
+            if kind == "bold":
+                ops.append({"insert": value, "attributes": {"bold": True}})
+            elif kind == "text":
+                ops.append({"insert": value})
+            elif kind == "image":
+                ops.append({"insert": {"image": value}})
+            ops.append({"insert": "\n"})
+        blocks = news_blocks("", _json.dumps(ops))
+        body = "\n\n".join(b["text"].strip() for b in blocks if b["kind"] == "text" and b["text"].strip())
+        return Item("hoyolab", "genshin", "real", url, title, body, 1790688000,
+                    author="Genshin Impact Official", official=True, article_blocks=blocks)
+
+    mitya = article([
+        ("bold", '"Research differs from production — efficiency is not the gold standard. I have '
+                 'worked alongside many gifted individuals, and I know well that talent and '
+                 'eccentricity tend to go hand in hand. But the one thing that never disappoints '
+                 'is the \'answers\' they provide."'),
+        ("bold", '— Pierro, "The Jester," responding to the insinuation that Mitya holds special privileges'),
+        ("bold", '"I\'ve applied for his scarf to be granted greater authority to help prevent leaks '
+                 'of classified information. In the vast majority of security inquiries, bystanders '
+                 'are considered innocent."'),
+        ("bold", "— Valeriy, Commander, Special Assignments Battalion"),
+        ("image", "https://upload-os-bbs.hoyolab.com/upload/2026/09/29/8f0bde142f28b3a1133c63e695e81879_6081038353579938138.jpg"),
+        ("bold", "◆Name: Mitya"),
+        ("bold", "◆Title: Rules Set at Naught"),
+        ("bold", "◆Specialist, Royal Energy Commission of Snezhnaya"),
+        ("bold", "◆ Stellar Linchpin: Electro"),
+        ("bold", "◆Constellation: Nodus Gordianus"),
+        ("image", "https://upload-os-bbs.hoyolab.com/upload/2026/09/29/8d76066dee924164670129f5114f8988_8224757694395123489.jpg"),
+        ("text", "Experts tend to be remarkably efficient, capable of producing astonishing results in "
+                 "very little time. Yet for them, \"attendance requirements\" designed around the pace "
+                 "of the average researcher amount to a cage."),
+        ("text", "Whiling away the hours would be easy enough. But the world has so much more to offer, "
+                 "and wouldn't it be a shame to miss out on all that color?"),
+        ("text", "And so, the energy expert who ought to be buried in important work can often be found "
+                 "wandering the streets of Snezhnograd, enjoying the leisure his talent has bought him."),
+        ("image", "https://upload-os-bbs.hoyolab.com/upload/2026/09/29/dc6aa91f72225f746af800230a3c2705_353369609675142195.jpg"),
+    ], "Genius At Play", "https://www.hoyolab.com/article/46884007")
+
+    nicole = article([
+        ("bold", '"...\'Editor of Magical Memory Bubbles,\'\'Staunch Supporter of Squirrels,\' '
+                 '\'A Super-Creative Who Needs Only Think to Get Things Done\'..."'),
+        ("bold", '"Alice? Why are the titles on the spell formula getting longer and longer?"'),
+        ("bold", "— Thus did a voiceless mage protest, albeit in vain."),
+        ("image", "https://upload-os-bbs.hoyolab.com/upload/2026/04/13/972930a4d2df07cbf0355f19d88cca4b_4111369890015020086.jpg"),
+        ("bold", "◆ Name: Nicole"),
+        ("bold", "◆ Title: Clamor Within"),
+        ("bold", '◆ The Silent "Mage," the Voiceless "Angel"'),
+        ("bold", "◆ Vision: Pyro"),
+        ("bold", "◆ Constellation: Reliquiarium"),
+        ("image", "https://upload-os-bbs.hoyolab.com/upload/2026/04/13/78f66be51451bd3c35cc38d4ea2aabe9_8961028175076266051.jpg"),
+        ("text", 'Many of the stories Nicole envisions begin with a phrase as old as stories '
+                 'themselves: "Long, long ago..."'),
+        ("text", "Perhaps, for some authors, \"long ago\" is less the threshold of a tale than a refuge "
+                 "from all further questioning."),
+        ("image", "https://upload-os-bbs.hoyolab.com/upload/2026/04/13/8ce29ca9591c05ee793d00f847c8f1b4_5501542614350986949.jpg"),
+    ], "The Divine Laid Down, Metaphor Makes Plain the Heart",
+        "https://www.hoyolab.com/article/44627867")
+
+    for item, expected in ((mitya, "Mitya"), (nicole, "Nicole")):
+        assert "**◆" in item.text, "the renderer must keep the bold markers this guards"
+        match = classify_character_reveal("genshin", item)
+        assert match is not None, f"{item.url}: real reveal no longer classified"
+        assert match.character == expected
+        assert match.rule == "diamond_dossier"
+        # The card itself is valid under both page policies (the dossier never breaks the split).
+        for expand in (False, True):
+            pages = cards.news_payloads(GAMES["genshin"], item, expand_full=expand)
+            assert pages and all(not cards.validate_payload(p) for p in pages)
+
+    # Same bold diamond style, but an event notice: no Name/Title pair, so it is not a character.
+    notice = article([
+        ("bold", "◆ Event Duration: October 25 - November 5"),
+        ("bold", "◆ Participation Requirements: Adventure Rank 20"),
+        ("bold", "◆ Event Rewards: Primogems and Mora"),
+        ("text", "Take part in the new seasonal event and claim your rewards before it ends."),
+        ("text", "Event duration and rewards are subject to change; see the in-game notice."),
+    ], "Seasonal Event Notice", "https://www.hoyolab.com/article/1")
+    assert classify_character_reveal("genshin", notice) is None
+
+
+def test_news_default_policy_smart_fits_a_long_article_instead_of_excerpting_it():
+    """`NEWS_EXPAND_FULL` unset/off still delivers the whole article, page after page.
+
+    The old default truncated anything past the two-page / 7,000-character envelope to one
+    excerpt. The default policy now uses the same smart container fitting as the expanded policy
+    (markdown-safe, nothing dropped, same payload shape), so only an article that cannot fit
+    inside `NEWS_DEFAULT_MAX_PAGES` still falls back to the labelled excerpt.
+    """
+    import re
+
+    paragraph = "Official event details and schedule notes for this version. "
+    body = "\n\n".join(f"Section {n}: " + paragraph * 55 for n in range(1, 4))
+    item = news_item(body=body)
+
+    pages = cards.news_payloads(GAMES["genshin"], item)
+    assert 2 <= len(pages) <= cards.NEWS_DEFAULT_MAX_PAGES
+    assert all(not cards.validate_payload(p) for p in pages)
+    assert "Excerpt" not in json.dumps(pages)
+    # Page 1 opens the card, every continuation is labelled, buttons close the last page only.
+    assert pages[0]["components"][0]["components"][0]["content"].startswith("## [")
+    for number, page in enumerate(pages[1:-1], start=2):
+        assert page["components"][0]["components"][0]["content"] == f"-# Page {number}"
+        assert sum(c["type"] == 1 for c in page["components"][0]["components"]) == 0
+    if len(pages) > 1:
+        assert pages[-1]["components"][0]["components"][0]["content"] == f"-# Page {len(pages)}"
+    assert pages[-1]["components"][0]["components"][-1]["type"] == 1
+    assert all(p["allowed_mentions"] == {"parse": []} for p in pages)
+    # Nothing was dropped: every section sentence survives, in order.
+    delivered = "".join(
+        c["content"] for page in pages for c in page["components"][0]["components"]
+        if c["type"] == 10 and not c["content"].startswith(("## ", "-# Page"))
+    )
+    for n in range(1, 4):
+        assert delivered.count(f"Section {n}:") == 1
+    assert delivered.count("Official event details and schedule notes") == 3 * 55
+    assert len(re.findall(r"Section \d:", delivered)) == 3
+
+    # The switch stays compatible: with `NEWS_EXPAND_FULL=1` the same article is delivered whole
+    # as well, in the same shape (only the page boundaries may differ, since that policy keeps its
+    # own, larger ceilings).
+    expanded = cards.news_payloads(GAMES["genshin"], item, expand_full=True)
+    assert 2 <= len(expanded) <= cards.NEWS_EXPAND_MAX_PAGES
+    assert all(not cards.validate_payload(p) for p in expanded)
+    assert "Excerpt" not in json.dumps(expanded)
+    expanded_text = "".join(
+        c["content"] for page in expanded for c in page["components"][0]["components"]
+        if c["type"] == 10 and not c["content"].startswith(("## ", "-# Page"))
+    )
+    assert expanded_text == delivered
+
+    # An article past the default ceiling still falls back honestly to one labelled excerpt.
+    huge = news_item(body=body * 3)
+    excerpt = cards.news_payloads(GAMES["genshin"], huge)
+    assert len(excerpt) == 1 and not cards.validate_payload(excerpt[0])
+    assert "**Excerpt — this article exceeds the delivery safety limit.**" in json.dumps(excerpt, ensure_ascii=False)
+
+
 def test_reveal_ping_prefix_on_every_game_survives_both_page_policies():
     """End-to-end `run_news` for every game with a news adapter, short and oversized articles.
 
@@ -22192,8 +22385,13 @@ def test_reveal_ping_prefix_on_every_game_survives_both_page_policies():
                 elif expand:
                     assert 2 <= len(posts) <= cards.NEWS_EXPAND_MAX_PAGES, case
                     assert tail in json.dumps(posts), case
+                    assert "Excerpt" not in json.dumps(posts), case
                 else:
-                    assert len(posts) == 1 and "Excerpt" in json.dumps(posts), case
+                    # The default policy smart fits the whole article too, so the mention can
+                    # never be the reason a readable article is truncated to an excerpt.
+                    assert 2 <= len(posts) <= cards.NEWS_DEFAULT_MAX_PAGES, case
+                    assert tail in json.dumps(posts), case
+                    assert "Excerpt" not in json.dumps(posts), case
                 assert expected  # the era test pins classification for this title
 
 
