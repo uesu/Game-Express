@@ -8806,7 +8806,8 @@ def test_news_expand_full_disabled_equality_multipage_order_cover_video_and_fall
         if c["type"] == 10
     )
     assert "Excerpt" not in flattened_all
-    assert f"[Open original media]({yt_embed})" in flattened_all
+    assert "https://www.youtube.com/watch?v=drFgtruoPe8" in flattened_all
+    assert f"[Open original media]({yt_embed})" not in flattened_all
     assert "Closing official summary paragraph." in flattened_all
     for marker in expected_sections:
         assert marker in flattened_all
@@ -9890,7 +9891,8 @@ def test_followup_3_complete_expanded_news_disabled_parity_strips_and_failure_ma
     assert [
         it["media"]["url"] for p in link_vid_pages for co in p["components"] for c in co["components"] if c["type"] == 12 for it in c["items"]
     ] == [cover_url]
-    assert f"[Open original media]({yt_link})" in json.dumps(link_vid_pages)
+    assert yt_link in json.dumps(link_vid_pages)
+    assert "[Open original media]" not in json.dumps(link_vid_pages)
 
     # 8) Explicit 12-page / 120,000-char / 120-media / single-unit safety bounds & honest labelled excerpt fallback:
     assert cards.NEWS_EXPAND_MAX_PAGES == 12
@@ -21111,6 +21113,56 @@ def test_range_rejects_invalid_zone_minutes():
     assert not find_datetimes("2026/09/30 04:00 (UTC+08:99)", 1790000000)
     assert not find_time_ranges("2026/09/30 04:00 - 11:00 (UTC+08:99)", 1790000000)
     assert not find_time_ranges("2026/09/30 04:00 (UTC+08:99) - 11:00 (UTC+08:00)", 1790000000)
+
+
+def test_news_youtube_embeds_render_watch_links_for_all_games_without_guessing():
+    from copy import deepcopy
+
+    from gamexpress.textutil import news_blocks
+
+    # The actual player form from the HSR screenshot; no network or production write.
+    video = "rCxNRV9gdzo"
+    embed = f"https://www.youtube.com/embed/{video}?enablejsapi=1&enablejsapi=1"
+    blocks = news_blocks(f'<p>Before</p><iframe src="{embed}"></iframe><p>After</p>')
+    assert any(b.get("url") == embed for b in blocks)
+    for game_key in ("genshin", "starrail", "zzz", "wuwa", "hna", "ananta"):
+        item = news_item(title="Trailer", body="")
+        item.game = game_key
+        item.article_blocks = deepcopy(blocks)
+        original = deepcopy(item)
+        for timestamps in (False, True):
+            for expanded in (False, True):
+                pages = cards.news_payloads(GAMES[game_key], item, timestamps=timestamps, expand_full=expanded)
+                assert all(not cards.validate_payload(page) for page in pages)
+                texts = [c.get("content", "") for p in pages for co in p["components"]
+                         for c in co["components"] if c["type"] == 10]
+                assert f"https://www.youtube.com/watch?v={video}" in texts
+                assert not any("Open original media" in t for t in texts)
+                assert texts.index("Before") < texts.index(f"https://www.youtube.com/watch?v={video}") < texts.index("After")
+        assert item == original
+
+    for source in (f"https://youtu.be/{video}", f"https://youtube.com/shorts/{video}",
+                   f"https://www.youtube-nocookie.com/embed/{video}",
+                   f"https://www.youtube.com/watch?feature=share&v={video}"):
+        assert cards._youtube_watch_url(source) == f"https://www.youtube.com/watch?v={video}"
+    assert cards._youtube_watch_url(f"https://youtube.com/embed/{video}?start=45") == (
+        f"https://www.youtube.com/watch?v={video}&t=45"
+    )
+    assert cards._youtube_watch_url(f"https://youtu.be/{video}?t=45s") == (
+        f"https://www.youtube.com/watch?v={video}&t=45s"
+    )
+    for invalid in (f"https://youtube.com.evil.example/embed/{video}",
+                    f"https://youtube.com@evil.example/embed/{video}",
+                    f"https://youtube.com/embed/{video}x", "https://youtube.com/channel/example",
+                    f"https://youtube.com/watch?v={video}&v=dQw4w9WgXcQ"):
+        assert cards._youtube_watch_url(invalid) is None
+    other = news_item(body="")
+    other.article_blocks = [{"kind": "link", "url": "https://example.org/player/123"}]
+    payload = cards.news_payloads(GAMES["starrail"], other)
+    assert "[Open original media](https://example.org/player/123)" in json.dumps(payload)
+    native = news_item(body="")
+    native.article_blocks = [{"kind": "video", "url": "https://example.org/video.mp4"}]
+    assert "https://example.org/video.mp4" in json.dumps(cards.news_payloads(GAMES["starrail"], native))
 
 
 if __name__ == "__main__":

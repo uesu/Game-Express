@@ -1,5 +1,10 @@
 # Changelog — current entries
 
+## 2026-10-29 — News YouTube watch links
+
+- Render verified YouTube player, watch, shorts, live and short-link media as a visible canonical YouTube watch URL in the existing article position. Preserve numeric start offsets; leave non-YouTube media fallback links and playable native videos unchanged. No unrelated YouTube video is inferred when the original source does not provide one.
+- Add offline coverage for the HSR player URL, all configured games, both timestamp and expanded-page settings, source immutability, untrusted hosts and non-YouTube/native media.
+
 ## 2026-10-29 — Maintenance timing safeguards and actionable persistence summary
 
 - Parse labelled maintenance ranges before single timestamps, including explicit end dates and supported cross-day / dual-offset ranges. Reject invalid offset minutes.
