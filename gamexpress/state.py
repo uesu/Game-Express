@@ -45,6 +45,21 @@ def _safe_int(value, default: int = 0) -> int:
         return default
 
 
+def timing_notice_key(value) -> tuple[int, int]:
+    """Ordering of persisted official maintenance notices; malformed peer state is ignored."""
+    if not isinstance(value, dict) or not isinstance(value.get("postponed"), bool):
+        return (0, 0)
+    rank, ts = _safe_int(value.get("rank")), _safe_int(value.get("ts"))
+    if not (38 <= rank < 100 and ts > 0):
+        return (0, 0)
+    if not value["postponed"]:
+        start = _safe_int(value.get("start_ts"))
+        end = _safe_int(value.get("end_ts"))
+        if start <= 0 or (value.get("end_ts") is not None and end <= start):
+            return (0, 0)
+    return (rank, ts)
+
+
 class State:
     def __init__(self, path: Path, data: dict | None = None) -> None:
         self.path = path
@@ -220,6 +235,10 @@ class State:
                     if not isinstance(vrec, dict):
                         continue
                     dst = _as_dict_slot(versions, ver)
+                    other_notice = vrec.get("timing_notice")
+                    if timing_notice_key(other_notice) > timing_notice_key(dst.get("timing_notice")):
+                        dst["timing_notice"] = copy.deepcopy(other_notice)
+                        imported += 1
                     if "launch_media" in vrec and "launch_media" not in dst:
                         dst["launch_media"] = copy.deepcopy(vrec["launch_media"])
                     if isinstance(vrec.get("seen_media"), list) and vrec["seen_media"]:

@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Redlib Tier-1 fleet expansion (24 → 27) and inline-video / crosspost media parity](CHANGELOG.md#2026-10-27--redlib-tier-1-fleet-expansion-24--27-and-inline-video--crosspost-media-parity).
+Latest: [Maintenance timing safeguards and actionable persistence summary](CHANGELOG.md#2026-10-29--maintenance-timing-safeguards-and-actionable-persistence-summary).
+
+Previous: [Redlib Tier-1 fleet expansion (24 → 27) and inline-video / crosspost media parity](CHANGELOG.md#2026-10-27--redlib-tier-1-fleet-expansion-24--27-and-inline-video--crosspost-media-parity).
 
 Previous: [CI annotation hygiene, zizmor action pin alignment, and beta post-merge edge-case hardening](CHANGELOG.md#2026-10-25--ci-annotation-hygiene-zizmor-action-pin-alignment-and-beta-post-merge-edge-case-hardening).
 

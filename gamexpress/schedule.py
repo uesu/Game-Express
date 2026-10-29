@@ -45,9 +45,35 @@ from .timeparse import find_datetimes, find_duration_hours, find_time_ranges, pa
 log = logging.getLogger("gamexpress.schedule")
 
 MAINT_RE = re.compile(
-    r"update\s+(?:and\s+)?maintenance|maintenance\s+(?:notice|preview|details|announcement|time)|"
+    r"update\s+(?:and\s+)?maintenance|maintenance\s+(?:notice|preview|details|announcement|time|"
+    r"exten(?:ded|sion)|postpone(?:d|ment)|delay(?:ed)?|reschedul(?:ed|ing)|adjust(?:ed|ment))|"
+    r"(?:version\s+)?update\s+(?:time\s+)?(?:postpone(?:d|ment)|delay(?:ed)?|reschedul(?:ed|ing)|"
+    r"adjust(?:ed|ment)|exten(?:ded|sion))|"
     r"update\s+details|version\s+update\s+(?:notice|details)|pre-?install(?:ation)?|pre-?download|pre-?load",
     re.I)
+# Sub-system / store / web / returnee-event maintenance notices that mention "Version X.Y" in
+# passing (e.g. Kuro #3691 `[Reprise of Tides] Returnee Event`, PlayStation Store payment notices)
+# must never overwrite the version's client-update maintenance window.
+SUBSYSTEM_MAINT_TITLE = re.compile(
+    r"\b(?:payment(?:\s+system)?|playstation\s*®?\s*store|top-?up(?:\s+center)?|returnee\s+event|"
+    r"serenitea\s+pot|miliastra|hoyolab|web\s+event|account\s+(?:system|center)|forum|"
+    r"customer\s+service|co-?op\s+mode)\b|^\s*\[[^\]]+\]\s*maintenance\s+notice\s*$",
+    re.I,
+)
+MAINT_EXTEND_RE = re.compile(
+    r"\b(?:maintenance[^\n.]{0,80}?exten(?:ded|sion)\s+(?:until|to)|"
+    r"will\s+be\s+extended\s+(?:until|to)|"
+    r"(?:expected|scheduled|estimated)\s+(?:maintenance\s+)?(?:completion|end)\s+time[^\n.]{0,50}?"
+    r"(?:extended|adjusted|changed|updated)\s+(?:until|to)|"
+    r"now\s+(?:expected|scheduled|estimated)\s+to\s+(?:end|conclude|finish)\s+(?:at|around))\b",
+    re.I,
+)
+MAINT_POSTPONE_RE = re.compile(
+    r"\b(?:(?:version\s+(?:\d+\.\d+\s+)?update|update\s+(?:and\s+)?maintenance|maintenance)"
+    r"[^\n.]{0,70}?(?:postpone(?:d|ment)|delay(?:ed)?)(?:\s+(?:until\s+further\s+notice|to\s+a\s+later\s+date))?|"
+    r"(?:postpone|delay)\s+the\s+version\s+(?:\d+\.\d+\s+)?update)\b",
+    re.I,
+)
 PROGRAM_EXCLUDE = re.compile(
     r"\b(recap|replay|re-?watch|highlights?|vod|thank(?:s| you) for (?:watching|tuning)|"
     r"has (?:ended|concluded)|"
@@ -315,16 +341,22 @@ def wants(game: Game):
 
 def classify(game: Game, item: Item) -> str | None:
     lead = f"{item.title}\n{item.text[:400]}"
-    if MAINT_RE.search(item.title or "") or (item.source == "x" and MAINT_RE.search(lead)):
+    title_str = item.title or ""
+    is_subsys_maint = bool(
+        title_str
+        and SUBSYSTEM_MAINT_TITLE.search(title_str)
+        and not re.search(r"\bversion\s+\d+\.\d+\s+(?:update|maintenance)", title_str, re.I)
+    )
+    if not is_subsys_maint and (MAINT_RE.search(title_str) or (item.source == "x" and MAINT_RE.search(lead))):
         return "maintenance"
     if _any(program_patterns(game), lead) and not PROGRAM_EXCLUDE.search(lead) \
-            and not NOT_PROGRAM_TITLE.search(item.title or "") \
+            and not NOT_PROGRAM_TITLE.search(title_str) \
             and not extract_codes_from_text(lead):      # a codes post is not an announcement
         return "program"
     banner_rx = "|".join([DEFAULT_BANNER_RE] + game.banner_patterns)
-    if re.search(banner_rx, f"{item.title or ''}\n{item.text[:200]}", re.I):
+    if re.search(banner_rx, f"{title_str}\n{item.text[:200]}", re.I):
         return "banner"
-    if MAINT_RE.search(lead):
+    if not is_subsys_maint and MAINT_RE.search(lead):
         return "maintenance"
     return None
 
@@ -386,9 +418,20 @@ def extract_labelled(text: str, ref: int | None) -> dict:
             if found:
                 f.setdefault("preinstall_ts", found[0].ts)
         else:
+            rngs = find_time_ranges(value, ref)
+            if rngs:
+                f.setdefault("maint_start_ts", rngs[0][0])
+                f.setdefault("maint_end_ts", rngs[0][1])
+                continue
             found = find_datetimes(value, ref)
             if found:
                 f.setdefault("maint_start_ts", found[0].ts)
+                if (
+                    len(found) > 1
+                    and found[1].ts > found[0].ts
+                    and re.search(r"[-–—~〜]|\bto\b|\buntil\b", value[found[0].end:found[1].start], re.I)
+                ):
+                    f.setdefault("maint_end_ts", found[1].ts)
     return f
 
 
@@ -397,6 +440,15 @@ def extract_maintenance(item: Item) -> dict:
     ref = item.published_ts or None
     f: dict = extract_labelled(text, ref)   # labelled values win; the loop only setdefaults
     for s in sentences(text):
+        extension = MAINT_EXTEND_RE.search(s)
+        if extension:
+            # Only a timestamp following the extension phrase is evidence of the new end;
+            # the sentence may also quote the original window or later unrelated dates.
+            after = [dt for dt in find_datetimes(s, ref) if dt.start >= extension.end()]
+            if after:
+                f["maint_end_ts"] = after[0].ts
+                f["maint_extended"] = True
+            continue
         rngs = find_time_ranges(s, ref)
         if rngs and (MAINT_WORDS.search(s) or "maintenance" in s.lower()) and not MAINT_EXCLUDE.search(s):
             f.setdefault("maint_start_ts", rngs[0][0])
@@ -411,8 +463,19 @@ def extract_maintenance(item: Item) -> dict:
         if MAINT_WORDS.search(s) and not MAINT_EXCLUDE.search(s):
             f.setdefault("maint_start_ts", found[0].ts)
             if len(found) > 1 and found[1].ts > found[0].ts and \
-                    re.search(r"[-–~]|\bto\b|\buntil\b", s[found[0].end:found[1].start]):
+                    re.search(r"[-–—~〜]|\bto\b|\buntil\b", s[found[0].end:found[1].start], re.I):
                 f.setdefault("maint_end_ts", found[1].ts)
+    postpone_text = f"{item.title or ''}\n{text[:500]}"
+    postponed = MAINT_POSTPONE_RE.search(postpone_text)
+    if postponed and re.search(r"\b(?:not|never)\s+(?:(?:be|been)\s+)?(?:postponed|delayed)\b", postponed.group(), re.I):
+        postponed = None
+    # A TBA notice can quote the original window; those dates are not a replacement.
+    tba = postponed and re.search(r"\b(?:until further notice|to a later date)\b", postpone_text, re.I)
+    if postponed and (tba or ("maint_start_ts" not in f and "maint_end_ts" not in f)):
+        if tba:
+            for key in ("maint_start_ts", "maint_end_ts", "preinstall_ts"):
+                f.pop(key, None)
+        f["maint_postponed"] = True
     if "maint_start_ts" in f and "maint_end_ts" not in f:
         hours = find_duration_hours(text)
         if hours:
@@ -559,7 +622,12 @@ def extract(game: Game, item: Item) -> Extract | None:
             fields["version_name"] = vn
     elif kind == "maintenance":
         fields = extract_maintenance(item)
-        if not fields.get("maint_start_ts") and not fields.get("preinstall_ts"):
+        if (
+            not fields.get("maint_start_ts")
+            and not fields.get("preinstall_ts")
+            and not (fields.get("maint_extended") and fields.get("maint_end_ts"))
+            and not fields.get("maint_postponed")
+        ):
             return None
     else:
         fields = extract_banner(item)
@@ -702,7 +770,7 @@ def _unmark_estimated(data: dict, key: str) -> None:
 def apply_estimates(data: dict, prov: dict, estimates: dict | None, now: int) -> list[str]:
     """Fill program / maintenance times a countdown site predicts, but ONLY fields no official
     source has given yet (PRIORITY['countdown'] is the lowest). Returns the keys it estimated."""
-    if not estimates:
+    if not estimates or data.get("maint_postponed"):
         return []
     added: list[str] = []
     for key in ESTIMATED_KEYS:
@@ -1732,6 +1800,41 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
             # post overwrite the card's air time, link and key art.
             program_items.append(e)
         elif e.kind == "maintenance":
+            if f.get("maint_postponed") and not f.get("maint_start_ts"):
+                pri = PRIORITY.get(src, 10)
+                cur_start_prov = prov.get("maint_start_ts")
+                cur_post_prov = prov.get("maint_postponed")
+                if all(pair is None or pri > pair[0] or (pri == pair[0] and ts >= pair[1])
+                       for pair in (cur_start_prov, cur_post_prov)):
+                    data["maint_postponed"] = True
+                    prov["maint_postponed"] = [pri, ts]
+                    # Clear only unconfirmed estimated timestamps; if an already-announced official
+                    # start date was explicitly postponed without a replacement date, clear it too.
+                    for k_clear in ("maint_start_ts", "maint_end_ts", "preinstall_ts"):
+                        k_prov = prov.get(k_clear)
+                        if k_prov is None or k_prov[0] < PRIORITY["override"]:
+                            data.pop(k_clear, None)
+                            prov.pop(k_clear, None)
+                            _unmark_estimated(data, k_clear)
+                put("compensation", f.get("compensation"), src, ts)
+                continue
+            if f.get("maint_start_ts"):
+                post_prov = prov.get("maint_postponed")
+                pri = PRIORITY.get(src, 10)
+                if post_prov is None or pri > post_prov[0] or (pri == post_prov[0] and ts >= post_prov[1]):
+                    data.pop("maint_postponed", None)
+                    prov.pop("maint_postponed", None)
+                else:
+                    # An older or lower-priority notice cannot revive a postponed milestone.
+                    put("compensation", f.get("compensation"), src, ts)
+                    continue
+            if f.get("maint_extended") and not f.get("maint_start_ts"):
+                ext_end = f.get("maint_end_ts")
+                cur_start = data.get("maint_start_ts")
+                if ext_end and cur_start and int(ext_end) > int(cur_start):
+                    put("maint_end_ts", ext_end, src, ts)
+                put("compensation", f.get("compensation"), src, ts)
+                continue
             for k in ("preinstall_ts", "maint_start_ts", "maint_end_ts", "compensation"):
                 put(k, f.get(k), src, ts)
         elif e.kind == "banner":
@@ -1948,6 +2051,9 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                     prov[key] = [PRIORITY["override"], now]
                 data[key] = ts
                 _unmark_estimated(data, key)
+                if key == "maint_start_ts":
+                    data.pop("maint_postponed", None)
+                    prov.pop("maint_postponed", None)
     for key in ("program_name", "version_name", "compensation"):
         if override.get(key):
             data[key] = override[key]

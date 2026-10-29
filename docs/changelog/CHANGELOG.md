@@ -1,5 +1,12 @@
 # Changelog — current entries
 
+## 2026-10-29 — Maintenance timing safeguards and actionable persistence summary
+
+- Parse labelled maintenance ranges before single timestamps, including explicit end dates and supported cross-day / dual-offset ranges. Reject invalid offset minutes.
+- Recognize supported extension and TBA postponement notices; retain official timing evidence across maintenance-only runs and route-compatible peer merges. Suppress cadence estimates while a recognized postponement is active, and allow newer authoritative reschedules. A delay with no recognized notice cannot be inferred automatically.
+- Permit bounded silent timing corrections through the active window independently of the six-hour media-upgrade window and its retry budget. Preserve Kuro `bg_hash` as a corroborating signed-URL renewal binder.
+- Report the workflow's observed state-persistence result in the run summary; include regression tests for persistence and failure paths. Character-reveal pings and the Twitter video-size change remain on hold.
+
 ## 2026-10-27 — Redlib Tier-1 fleet expansion (24 → 27) and inline-video / crosspost media parity
 
 - Expand `DEFAULT_REDDIT` from `24` to `27` entries (`0` deletions) by adding three verified working clearnet Redlib instances to Tier 1: `https://r.naa.gg` (`Nachtalb/redlib` GraphQL engine), `https://redlib.thepixora.com` (`PR #603` GraphQL comments patch), and `https://redlib.r4fo.com`, while explicitly excluding `https://redlib.cow.rip` (Cloudflare + custom verification wall).

@@ -20861,5 +20861,257 @@ def test_live_persistence_summary_reports_observed_outcomes():
 
 
 
+def test_wuwa_labelled_maintenance_time_range_cross_day_dual_tz_and_subsystem_maint_filter():
+    """Verify:
+    1) Real WuWa `✦Maintenance Time: YYYY-MM-DD 04:00 - YYYY-MM-DD 11:00 (UTC+8)` parses `04:00`..`11:00`
+       (fixing the labelled single-TZ bug where `find_datetimes` previously matched `11:00` as start!).
+    2) Cross-day/cross-year named ranges and dual-TZ ranges parse cleanly in `find_time_ranges`.
+    3) Subsystem / store / returnee-event maintenance notices (`[Reprise of Tides] Returnee Event`,
+       `[Fantasies of the Thousand Gateways] Maintenance Notice`, PlayStation Store payment notices)
+       never classify as version-update maintenance."""
+    from gamexpress import timeparse
+    # 1. Real WuWa 3.7 maintenance notice format (`04:00 - 11:00 (UTC+8)`).
+    ww_notice = Item(
+        "kuro", "wuwa", "5476", "https://wutheringwaves.kurogames.com/en/main/news/detail/5476",
+        "Wuthering Waves Version 3.7 Update Maintenance Notice",
+        "Dear Rovers,\n✦Maintenance Time: 2026-09-30 04:00 - 2026-09-30 11:00 (UTC+8)\n"
+        "✦Maintenance Compensation: Astrite x300, Crystal Solvent x2",
+        1790650000,
+    )
+    ext = schedule.extract(GAMES["wuwa"], ww_notice)
+    assert ext is not None and ext.kind == "maintenance" and ext.version == "3.7"
+    assert ext.fields["maint_start_ts"] == 1790712000  # 2026-09-30 04:00 UTC+8
+    assert ext.fields["maint_end_ts"] == 1790737200    # 2026-09-30 11:00 UTC+8
+
+    # 2. Cross-year named range & dual-TZ range parsing.
+    rng_nye = timeparse.find_time_ranges("December 31, 2027, 23:00 - January 1, 2028, 04:00 (UTC+8)")
+    assert rng_nye == [(1830265200, 1830283200)]
+    rng_dual = timeparse.find_time_ranges("2026-09-30 04:00 (UTC+8) - 2026-09-30 11:00 (UTC+8)")
+    assert rng_dual == [(1790712000, 1790737200)]
+    rng_named_dual = timeparse.find_time_ranges("September 30, 2026, at 04:00 (UTC+8) - 11:00 (UTC+8)")
+    assert rng_named_dual == [(1790712000, 1790737200)]
+
+    # 3. Subsystem / returnee-event / payment maintenance notices mentioning "Version X.Y" -> ignored by `schedule`.
+    for gkey, bad_title, bad_body in (
+        ("wuwa", "Notice on the Upgrade and Maintenance of the [Reprise of Tides] Returnee Event",
+         "We will upgrade the Returnee Event in Version 3.8. Maintenance Time: 2026-11-10 04:00 - 2026-11-10 08:00 (UTC+8)"),
+        ("wuwa", "[Fantasies of the Thousand Gateways] Maintenance Notice",
+         "Version 3.8 mode maintenance: 2026-11-10 04:00 - 2026-11-10 06:00 (UTC+8)"),
+        ("genshin", "PlayStation®Store Payment System Maintenance Notice",
+         "During Version 7.2, payment maintenance runs 2026/11/03 06:00 - 09:00 (UTC+8)."),
+    ):
+        sub_it = Item("kuro" if gkey == "wuwa" else "hoyolab", gkey, "sub1", "https://example.com/1", bad_title, bad_body, 1793000000)
+        assert schedule.classify(GAMES[gkey], sub_it) is None
+
+
+def test_maintenance_mid_patch_7h_extension_tba_postponement_and_kuro_bg_hash_renewal():
+    """Verify:
+    1) Standalone maintenance extension notice at +6.5h into a 7h WuWa maintenance updates `maint_end_ts`
+       to the extended timestamp (`13:00`, never the cited original `11:00`) and silently PATCHes the
+       posted `Maintenance Started` card inside `ACTIVE_WINDOW_S` without unlocking media past `6h`.
+    2) Official TBA postponement notice suppresses unconfirmed `"estimated"` cadence predictions until
+       a rescheduled official date or override arrives.
+    3) Kuro launcher `bg_hash` corroborates expiring `?auth_key=` Tier-1 video renewal when identical
+       and blocks renewal when `bg_hash` changes in Phase II."""
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress import maintenance
+    from gamexpress.discord import SendResult
+    from gamexpress.sources import kuro as kuro_mod
+
+    # 1. 7h WuWa maintenance (`04:00` -> `11:00 UTC+8`) extended at `10:30` (`+6.5h`) to `13:00 UTC+8`!
+    start_04 = 1794427200   # 2026-11-12 04:00 UTC+8
+    end_11 = start_04 + 7 * 3600
+    end_13 = start_04 + 9 * 3600
+    vid_launch = "https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/video/3.8_bg.mp4?auth_key=1794500000-0-0-ok"
+
+    base_notice = Item(
+        "kuro", "wuwa", "7001", "https://wutheringwaves.kurogames.com/en/main/news/detail/7001",
+        "Wuthering Waves Version 3.8 Update Maintenance Notice",
+        "✦Maintenance Time: 2026-11-12 04:00 - 2026-11-12 11:00 (UTC+8)\n✦Maintenance Compensation: Astrite x300",
+        start_04 - 86400,
+    )
+    ext_notice = Item(
+        "kuro", "wuwa", "7002", "https://wutheringwaves.kurogames.com/en/main/news/detail/7002",
+        "Version 3.8 Maintenance Extension Notice",
+        "Dear Rovers, Version 3.8 update maintenance originally scheduled to end at 2026-11-12 11:00 (UTC+8) "
+        "will be extended until 2026-11-12 13:00 (UTC+8). Maintenance Compensation: Astrite x420.",
+        start_04 + int(6.5 * 3600) - 60,
+    )
+    ext_parsed = schedule.extract(GAMES["wuwa"], ext_notice)
+    assert ext_parsed is not None and ext_parsed.fields.get("maint_extended") is True
+    assert ext_parsed.fields["maint_end_ts"] == end_13
+
+    with tempfile.TemporaryDirectory() as tmp:
+        st = State(Path(tmp) / "m_ext.json")
+        st.maintenance_record("wuwa").update({
+            "seeded_at": start_04 - 3600,
+            "versions": {"3.8": {"preload": {"status": "seeded", "ts": start_04 - 151200}}},
+        })
+
+        class _OkMediaFetcher:
+            async def verify_media(self, _u):
+                return True
+
+        # Post `Maintenance Started` at `04:01` (`start_04 + 60`) with Tier-2 artwork.
+        art_launch = "https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/images/3.8_kv.webp"
+        wh1 = ScriptedWebhook([], [SendResult(True, 200, "ww-38-maint-msg")])
+        ctx1 = make_ctx(
+            Path(tmp) / "m_ext.json",
+            now=start_04 + 60,
+            items={"wuwa": [base_notice]},
+            versions={"wuwa": {"live": "3.7", "pre": "3.8", "pre_media": {"version": "3.8", "artwork": art_launch}}},
+            MAINTENANCE_ENABLED="1",
+            MAINTENANCE_GAMES="wuwa",
+            DISCORD_WEBHOOK_MAINTENANCE_WUWA="https://discord.com/api/webhooks/100000000000000088/m_tok",
+        )
+        ctx1.games = [GAMES["wuwa"]]
+        ctx1.state = st
+        ctx1.fetcher = _OkMediaFetcher()
+        ctx1.webhook = wh1
+        with patch.object(kuro_mod, "launcher_media", new=AsyncMock(return_value={})):
+            asyncio.run(maintenance.run(ctx1))
+        assert len(wh1.sends) == 1
+        m_entry = st.maintenance_record("wuwa")["versions"]["3.8"]["maintenance"]
+        assert m_entry["end_ts"] == end_11 and m_entry["media_tier"] == 2
+        # Prior media edit failures/caps must not block an official timing correction.
+        m_entry["edit_attempts"] = maintenance.MAX_LATE_MEDIA_ATTEMPTS
+        m_entry["edit_count"] = maintenance.MAX_LATE_EDITS
+
+        # At `10:31` (`+6.5h` > `LATE_MEDIA_EDIT_WINDOW_S`), extension notice arrives AND a Tier-1 video appears:
+        # `End Time` MUST silently PATCH to `end_13`, while `media_url` MUST stay locked to `art_launch`!
+        wh2 = ScriptedWebhook([SendResult(True, 200, "ww-38-maint-msg")], [])
+        ctx2 = make_ctx(
+            Path(tmp) / "m_ext.json",
+            now=start_04 + int(6.5 * 3600),
+            items={"wuwa": [base_notice, ext_notice]},
+            versions={"wuwa": {"live": "3.7", "pre": "3.8", "pre_media": {"version": "3.8", "video": vid_launch, "artwork": art_launch}}},
+            MAINTENANCE_ENABLED="1",
+            MAINTENANCE_GAMES="wuwa",
+            DISCORD_WEBHOOK_MAINTENANCE_WUWA="https://discord.com/api/webhooks/100000000000000088/m_tok",
+        )
+        ctx2.games = [GAMES["wuwa"]]
+        ctx2.state = st
+        ctx2.fetcher = _OkMediaFetcher()
+        ctx2.webhook = wh2
+        with patch.object(kuro_mod, "launcher_media", new=AsyncMock(return_value={})):
+            asyncio.run(maintenance.run(ctx2))
+        assert len(wh2.edits) == 1
+        assert f"<t:{end_13}:t>" in json.dumps(wh2.edits[0][1])
+        assert m_entry["end_ts"] == end_13
+        assert m_entry["media_url"] == art_launch and m_entry["media_tier"] == 2
+
+    # 2. Official TBA postponement suppresses unconfirmed cadence estimates until rescheduled.
+    postpone_it = Item(
+        "hoyolab", "genshin", "8001", "https://www.hoyolab.com/article/8001",
+        "Version 7.3 Update Postponement Notice",
+        "Dear Travelers, due to project schedule adjustments, the Version 7.3 update will be postponed until further notice.",
+        1796000000,
+    )
+    sched_recs = {
+        "7.1": {"status": "posted", "data": {"version": "7.1", "maint_start_ts": 1790128800}, "prov": {"maint_start_ts": [50, 1790000000]}},
+        "7.2": {"status": "posted", "data": {"version": "7.2", "maint_start_ts": 1793757600}, "prov": {"maint_start_ts": [50, 1793600000]}},
+    }
+    plans_postponed = maintenance.resolve_version_plans(
+        GAMES["genshin"], sched_recs, [postpone_it], {"live": "7.2"}, {}, 1797200000
+    )
+    assert plans_postponed["7.3"]["postponed"] is True
+    assert plans_postponed["7.3"]["maint_start_ts"] is None
+    assert plans_postponed["7.3"]["preinstall_ts"] is None
+
+    resched_it = Item(
+        "hoyolab", "genshin", "8002", "https://www.hoyolab.com/article/8002",
+        "Version 7.3 Update Maintenance Preview",
+        "Update maintenance begins 2026/12/23 06:00 (UTC+8) and is estimated to take 5 hours.",
+        1797500000,
+    )
+    plans_resched = maintenance.resolve_version_plans(
+        GAMES["genshin"], sched_recs, [postpone_it, resched_it], {"live": "7.2"}, {}, 1797600000
+    )
+    assert plans_resched["7.3"]["postponed"] is False
+    assert plans_resched["7.3"]["maint_provenance"] == "official"
+    assert plans_resched["7.3"]["maint_start_ts"] is not None
+
+    # 3. Kuro `bg_hash` corroborates same-asset `?auth_key=` renewal and rejects Phase II `bg_hash` swaps!
+    u_tok1 = "https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/video/bg.mp4?auth_key=1794400000-0-0-a"
+    u_tok2 = "https://hw-media-cdn-mingchao.kurogame.com/akiwebsite/website2.0/video/bg.mp4?auth_key=1794500000-0-0-b"
+    m_locked = maintenance._build_asset_meta(u_tok1, "3.8", extra={"bg_hash": "dOlPEc8xvpP8r4k2lyIOK6p0R7hNNqRf"})
+    m_same = maintenance._build_asset_meta(u_tok2, "3.8", extra={"bg_hash": "dOlPEc8xvpP8r4k2lyIOK6p0R7hNNqRf"})
+    m_phase2 = maintenance._build_asset_meta(u_tok2, "3.8", extra={"bg_hash": "99999999999999999999999999999999"})
+    assert maintenance._corroborated_same_asset(u_tok2, m_same, u_tok1, m_locked, "3.8") is True
+    assert maintenance._corroborated_same_asset(u_tok2, m_phase2, u_tok1, m_locked, "3.8") is False
+
+def test_maintenance_postponement_survives_old_notices_and_new_notice_reschedules():
+    from gamexpress import maintenance
+
+    postponed_at = 1796000000
+    saved = {"7.3": {"data": {"version": "7.3", "maint_postponed": True},
+                     "prov": {"maint_postponed": [50, postponed_at]}}}
+    def notice(source, ts):
+        return Item(source, "genshin", str(ts), "https://example.com/notice", "Version 7.3 Update Maintenance Notice",
+                    "Update maintenance begins 2026/12/23 06:00 (UTC+8) and takes 5 hours.", ts)
+    for old in (notice("hoyolab", postponed_at - 1), notice("x", postponed_at + 1)):
+        plan = maintenance.resolve_version_plans(GAMES["genshin"], saved, [old], {}, {}, postponed_at + 100)["7.3"]
+        assert plan["postponed"] and plan["maint_start_ts"] is None
+    newer = notice("hoyolab", postponed_at + 1)
+    plan = maintenance.resolve_version_plans(GAMES["genshin"], saved, [newer], {}, {}, postponed_at + 100)["7.3"]
+    assert not plan["postponed"] and plan["maint_provenance"] == "official" and plan["maint_start_ts"]
+
+
+def test_maintenance_timing_notice_persists_and_peer_merge_respects_resolution():
+    from gamexpress import maintenance
+
+    now = 1796000000
+    game = GAMES["genshin"]
+    postponed = Item("hoyolab", "genshin", "p", "https://example.com/p",
+                     "Version 7.3 Update Postponement Notice",
+                     "Version 7.3 update will be postponed until further notice.", now)
+    initial = maintenance.resolve_version_plans(game, {}, [postponed], {}, {}, now + 1)["7.3"]
+    assert initial["postponed"] and initial["timing_notice"]
+    local_versions = {"7.3": {"timing_notice": initial["timing_notice"]}}
+    later = maintenance.resolve_version_plans(game, {}, [], {}, {}, now + 3600,
+                                              maintenance_versions=local_versions)["7.3"]
+    assert later["postponed"] and later["maint_start_ts"] is None
+    new = Item("hoyolab", "genshin", "r", "https://example.com/r",
+               "Version 7.3 Update Maintenance Notice",
+               "Update maintenance begins 2026/12/23 06:00 (UTC+8) and takes 5 hours.", now + 10)
+    resolved = maintenance.resolve_version_plans(game, {}, [new], {}, {}, now + 20,
+                                                 maintenance_versions=local_versions)["7.3"]
+    assert not resolved["postponed"] and resolved["timing_notice"]["start_ts"]
+    local_versions["7.3"]["timing_notice"] = resolved["timing_notice"]
+    with tempfile.TemporaryDirectory() as tmp:
+        state = State(Path(tmp) / "state.json")
+        state.maintenance_record("genshin")["versions"] = local_versions
+        peer = {"maintenance": {"genshin": {"versions": {"7.3": {"timing_notice": initial["timing_notice"]}}}}}
+        state.merge_peer(peer, include_maintenance=True)
+        saved = state.maintenance_record("genshin")["versions"]["7.3"]["timing_notice"]
+        assert saved == resolved["timing_notice"]
+        plan = maintenance.resolve_version_plans(game, {}, [], {}, {}, now + 3600,
+                                                 maintenance_versions=local_versions)["7.3"]
+        assert not plan["postponed"] and plan["maint_start_ts"] == resolved["maint_start_ts"]
+
+
+def test_postponement_with_original_date_does_not_revive_original_window():
+    item = Item("hoyolab", "genshin", "tba", "https://example.com/tba", "Version 7.3 Update Postponement Notice",
+                "Version 7.3 update originally scheduled for 2026/12/23 06:00 (UTC+8) "
+                "will be postponed until further notice.", 1796000000)
+    result = schedule.extract(GAMES["genshin"], item)
+    assert result and result.fields.get("maint_postponed") and "maint_start_ts" not in result.fields
+
+
+def test_extension_uses_timestamp_after_extension_phrase_not_unrelated_date():
+    item = Item("kuro", "wuwa", "ext", "https://example.com/ext", "Version 3.8 Maintenance Extension Notice",
+                "Maintenance originally ending 2026/11/12 11:00 (UTC+8) will be extended until "
+                "2026/11/12 13:00 (UTC+8); rewards expire on 2026/11/13 13:00 (UTC+8).", 1794427200)
+    result = schedule.extract(GAMES["wuwa"], item)
+    assert result and result.fields["maint_end_ts"] == 1794459600
+
+
+def test_range_rejects_invalid_zone_minutes():
+    assert not find_datetimes("2026/09/30 04:00 (UTC+08:99)", 1790000000)
+    assert not find_time_ranges("2026/09/30 04:00 - 11:00 (UTC+08:99)", 1790000000)
+    assert not find_time_ranges("2026/09/30 04:00 (UTC+08:99) - 11:00 (UTC+08:00)", 1790000000)
+
+
 if __name__ == "__main__":
     sys.exit(main())
