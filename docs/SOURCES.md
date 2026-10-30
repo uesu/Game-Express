@@ -647,6 +647,12 @@ blank-heading / hotfix behavior and Sunbringer `19850203` source-link shape were
 | Verified static media | `https://static.nanoka.cc/assets/{gi,hsr,zzz,ww}/...webp` | Exact per-namespace asset paths (`avatardrawcard`, `rank/_dependencies/textures/..._Rank_{1..6}`, `lightconemaxfigures`, `relicfigures/IconRelic_{id}_{slot}`, `UI_Gacha_AvatarImg_*`, `UI_Gacha_EquipIcon_*`, ZZZ `icon`/`icon2`/listing stems, and ID-verified WuWa nanoka assets). Missing/404 assets omit cleanly; newly uploaded single images, fallback-icon-to-splash promotions, and `1..N` gallery additions publish visual-asset updates on subsequent revisions and lock in `locked_images` |
 | Listing index | `https://static.nanoka.cc/<game>/<revision>/{weapon,equipment,lightcone,relicset,echo}.json` | One GET per kind per revision: rarity, max ATK and substat name for every id, so the card never has to guess them |
 
+Diff-link routes are the sites' own path segments, captured 2026-10-30 from the served
+changelog pages rather than guessed: `characters|weapons|artifacts` (Genshin),
+`characters|lightcones|relics|planar-ornaments` (Star Rail — a planar set has its own route,
+a cavern relic set lives under `relics`), `agents|w-engines|drive-discs` (ZZZ). WuWa has no
+gachabase route at all, so its comparison link is Encore's `diff` page instead.
+
 Per-game namespaces and labels are declared in `config/games.json` (`beta.nanoka`,
 `beta.changelog`) and mapped in `gamexpress/beta.py::NANOKA_KINDS`:
 
