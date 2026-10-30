@@ -136,6 +136,12 @@ class BetaPatch:
     item_keys: list[str] = field(default_factory=list)
     more: bool = False
     batch_id: str = ""
+    # Set when the changelog could not be read and the card was built from the data listings
+    # instead — narrower coverage, stated in the run summary rather than hidden.
+    coverage_note: str = ""
+    # Tracked items the changelog listed for this revision. When it exceeds what the card
+    # delivered, the run summary says so instead of a gap passing unseen (no log access needed).
+    listed: int = 0
 
 
 @dataclass

@@ -18486,6 +18486,314 @@ def test_feature5_active_beta_gating_skips_live_and_past_cycles_with_zero_extra_
         ) == ["7.3.50"]
 
 
+def test_feature5_sveltekit_data_stream_is_read_when_the_page_is_not():
+    """`/changelog/beta/__data.json` carries the same revisions — and the display names.
+
+    The fixture is a devalue stream shaped exactly like the live one (one flat array whose
+    integers are references); ZZZ Rev. 19997538 is the revision whose page the runner could not
+    read on 2026-10-30.
+    """
+    from gamexpress import beta as beta_mod
+
+    raw = (BETA_FIX / "zzz_changelog_data.jsonl").read_text(encoding="utf-8")
+    revs = beta_mod._parse_gachabase_data(
+        raw, base_url="https://zzz.gachabase.net/changelog/beta?lang=en")
+    assert [r["label"] for r in revs] == ["v3.4.1 Rev. 19997538", "v3.4.1 Rev. 19834130"]
+    top = revs[0]
+    assert top["date"] == "2026-10-30" and not top["no_changes"]
+    # A localization key is never a name — `_clean` drops it and the caller falls back to
+    # the listing or the honest `W-Engine (ID 14166)` label.
+    assert [e["name"] for e in top["entries"]] == [
+        "Caesar", "Pyrois", "Robin", "", "ID: 54024", "ID: 34300"]
+    caesar = top["entries"][0]
+    assert caesar["url"] == "https://zzz.gachabase.net/agents/1071/caesar/beta?lang=en"
+    assert caesar["diff"].endswith("&lang=en") and caesar["section"] == "Agents"
+    assert top["entries"][3]["section"] == "W-Engines"
+    # A revision whose lists did not stream is skipped, never reported as "no changes".
+    assert revs[1]["no_changes"] and revs[1]["entries"] == []
+    # The stream reaches the same candidate list the page does.
+    chars, equip = beta_mod._candidate_entries(
+        "zzz", beta_mod.NANOKA_KINDS["zzz"], top["entries"], {}, set(), set(), set())
+    assert [beta_mod._entry_id(c) for c in chars] == ["1071", "1551", "1661"]
+    # Bangboo are listed but not a tracked card role, exactly as the page path behaves.
+    assert sorted(beta_mod._entry_id(e) for e in equip) == ["14166", "34300"]
+    assert beta_mod._parse_gachabase_data("Access denied") == []
+    assert beta_mod._parse_gachabase_data("") == []
+
+
+def test_feature5_changelog_falls_back_to_the_data_endpoint_after_403():
+    from gamexpress import beta as beta_mod
+
+    stream = (BETA_FIX / "zzz_changelog_data.jsonl").read_text(encoding="utf-8")
+
+    class BlockedPageFetcher:
+        def __init__(self):
+            self.calls = []
+
+        async def get_text(self, url, **_kw):
+            self.calls.append(url)
+            if url.endswith("/__data.json?lang=en"):
+                return stream
+            return None                      # the page and its alternates answer 403
+
+        async def get_json(self, _url, **_kw):
+            return None
+
+        async def verify_media(self, _url):
+            return True
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fetcher = BlockedPageFetcher()
+        ctx = _beta_ctx(Path(tmp) / "state.json", fetcher, BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        revisions, extra = asyncio.run(
+            beta_mod._fetch_changelog_revisions(ctx, GAMES["zzz"], beta_mod._budget(ctx), 2))
+        assert extra >= 1
+        assert any(url.endswith("/__data.json?lang=en") for url in fetcher.calls)
+        assert revisions[0]["label"] == "v3.4.1 Rev. 19997538"
+        assert revisions[0]["entries"][0]["name"] == "Caesar"
+
+
+def test_feature5_late_changelog_entries_are_delivered_for_a_settled_revision():
+    """ZZZ 19997538 listed 7 agents; the read that posted the card saw 4 and settled forever.
+
+    A revision that has just posted is re-read for entries it never delivered — bounded to
+    BETA_LATE_RECHECKS reads inside BETA_LATE_RECHECK_H hours, and only entries absent from
+    `processed` can produce a card.
+    """
+    from gamexpress import beta as beta_mod
+    from gamexpress.state import stable_hash
+
+    version = "3.4.1+19997538"
+    rev_id = stable_hash(["zzz", version])
+
+    def entry(item_id, slug, name):
+        return (f"[![](https://i.gachabase.net/x/q:50/f:webp/plain/zzz/assets/{item_id}.png)\\\n"
+                f"\\\n{name}](https://zzz.gachabase.net/agents/{item_id}/{slug}/beta?lang=en) "
+                f"[See Changes](https://zzz.gachabase.net/diff/agents/{item_id}/{slug}"
+                f"?prev=beta_3.4.1_19851435&cur=beta_3.4.1_19997538&lang=en)")
+
+    changelog = "\n\n".join([
+        "# CHANGELOG - v3.4.X",
+        "## v3.4.1 Rev. 19997538 \\| 29th October 2026",
+        "### Agents",
+        "UPDATED", entry(1661, "1661", "Robin"),
+        "UPDATED", entry(1601, "sunbringer", "Sunbringer"),
+        "UPDATED", entry(1391, "ju-fufu", "Ju Fufu"),
+        "UPDATED", entry(1331, "vivian", "Vivian"),
+        # The page gained this one after the card went out.
+        "UPDATED", entry(1071, "caesar", "Caesar"),
+    ])
+
+    manifest = {"zzz": {"live": "3.3", "latest": version,
+                        "available": ["3.3", "3.4.1+19851435", version],
+                        "new": {"character": [], "weapon": [], "equipment": []}}}
+
+    class LateFetcher:
+        def __init__(self):
+            self.calls = []
+
+        async def get_json(self, url, **_kw):
+            self.calls.append(url)
+            if url.endswith("/manifest.json"):
+                return manifest
+            if "/zzz/" in url and "/character/" in url:
+                return _beta_json("zzz_character_1551.json")
+            return None
+
+        async def get_text(self, url, **_kw):
+            self.calls.append(url)
+            return changelog
+
+        async def verify_media(self, _url):
+            return True
+
+    def settled_record(ctx, *, late_checks=0, processed=(1331, 1391, 1601, 1661), ts=None):
+        record = ctx.state.beta_record("zzz")
+        record.update({
+            "source_version": version, "latest_rev": rev_id,
+            "revisions": {rev_id: {
+                "status": "posted", "ts": ctx.now - 600 if ts is None else ts,
+                "source_version": version,
+                "more": False, "late_checks": late_checks,
+                "processed": [f"character:zzz:{i}" for i in processed],
+            }},
+        })
+        ctx.state.save()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "state.json"
+        fetcher = LateFetcher()
+        ctx = _beta_ctx(path, fetcher, BETA_ENABLED="1", DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        settled_record(ctx)
+
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest,
+                                                 beta_mod._budget(ctx)))
+        assert patch is not None
+        assert [c.name for c in patch.characters] == ["Caesar"]
+        assert patch.listed == 1      # this batch listed exactly what it delivered
+        assert ctx.state.beta_record("zzz")["revisions"][rev_id]["late_checks"] == 1
+
+        # Once every entry is delivered the revision is closed and the changelog is not re-read.
+        stored = ctx.state.beta_record("zzz")
+        stored["revisions"][rev_id]["processed"].append("character:zzz:1071")
+        ctx.state.save()
+        assert asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest,
+                                                beta_mod._budget(ctx))) is None
+        assert ctx.state.beta_record("zzz")["revisions"][rev_id]["late_checks"] == 2
+        # The third poll stops before any page request at all.
+        calls_before = len(fetcher.calls)
+        assert asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest,
+                                                beta_mod._budget(ctx))) is None
+        assert len(fetcher.calls) == calls_before
+        assert ctx.state.beta_record("zzz")["revisions"][rev_id]["late_checks"] == 2
+
+    # The window is bounded: past BETA_LATE_RECHECK_H a settled revision costs no request.
+    with tempfile.TemporaryDirectory() as tmp:
+        quiet = _RecordingFetcher({})
+        ctx2 = _beta_ctx(Path(tmp) / "state.json", quiet, BETA_ENABLED="1",
+                         DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"], now=1793000000 + 7 * 3600)
+        settled_record(ctx2, ts=1793000000)
+        assert asyncio.run(beta_mod.build_patch(ctx2, GAMES["zzz"], manifest,
+                                                beta_mod._budget(ctx2))) is None
+        assert quiet.calls == []
+
+
+def test_feature5_engine_identifiers_and_cn_names_never_become_titles():
+    """ZZZ build 19997538 ships 1661 as `Avatar_Female_Size02_Robin` with no EN weapon names.
+
+    The card still has to say Robin, must never print `ID 1661`, and must never open an English
+    card with a CJK title — the CN name becomes a marked note instead.
+    """
+    from gamexpress import beta as beta_mod
+
+    agent = {"id": 1661, "name": "Avatar_Female_Size02_Robin",
+             "code_name": "Avatar_Female_Size02_Robin_En"}
+    assert beta_mod._safe_entry_name(
+        {"name": ""}, agent, None, "1661", zh_data={"name": "(Test1)知更鸟"}, label="Agents",
+    ) == "Robin"
+    # The identifier→name convention is deliberately narrow.
+    assert beta_mod._name_from_identifier("Avatar_Male_Size03_JuFufu") == "Ju Fufu"
+    assert beta_mod._name_from_identifier("Weapon_S_1661") == ""
+    assert beta_mod._name_from_identifier("Item_Weapon_S_1661_Name") == ""
+    assert beta_mod._name_from_identifier("EquipmentSuit_34300_name") == ""
+    assert beta_mod._name_from_identifier("TestKey_PlaceHolder") == ""
+
+    weapon = {"id": 14166, "name": "Item_Weapon_S_1661_Name", "code_name": "Weapon_S_1661"}
+    listing = {"en": "Item_Weapon_S_1661_Name", "zh": "知更鸟专属音擎"}
+    name = beta_mod._safe_entry_name({"name": ""}, weapon, listing, "14166", label="W-Engines")
+    assert name == "W-Engine (ID 14166)"
+    assert beta_mod._is_fallback_name(name)
+    assert beta_mod._slug(name, "14166") == "14166"
+    assert beta_mod._zh_entry_name(listing, None) == "知更鸟专属音擎"
+    assert beta_mod._zh_entry_name({"zh": "(Test1)知更鸟"}, None) == ""
+    # Placeholders retained by an older build can never come back as a name.
+    assert beta_mod._usable_name("ID 1661") == ""
+    assert beta_mod._usable_name("知更鸟专属音擎 (ID 14166)") == ""
+    assert beta_mod._usable_name("Robin") == "Robin"
+
+
+def test_feature5_diff_lines_never_render_empty_bold_or_a_literal_subtext_marker():
+    from gamexpress import beta as beta_mod
+    from gamexpress.models import BetaEquipment
+
+    previous = BetaEquipment(id="zzz:14166", name="Robin's W-Engine",
+                             effect_title="Robin Test Engine", lines=["+5% HP"], tag="[NEW]")
+    current = BetaEquipment(id="zzz:14166", name="Robin's W-Engine",
+                            effect_title="", lines=["+6% HP"], tag="[CHANGED]")
+    lines = beta_mod._diff_equipment(previous, current).lines
+    assert ("**[CHANGED]** Effect renamed from ~~Robin Test Engine~~ → "
+            "*new name not in this build yet*.") in lines
+    assert not any("****" in line for line in lines)
+
+    note = "-# 🌐 CN/CHS client values updated (20%/22%/24%); EN text lags in this build."
+    rendered, tag = beta_mod._change_line("", note)
+    assert rendered == note and tag == "[CHANGED]"
+
+
+def test_feature5_raw_engine_enums_never_reach_a_dossier():
+    from gamexpress import beta as beta_mod
+
+    assert beta_mod._display_enum("CampUnknownRealm") == "Unknown Realm"
+    assert beta_mod._display_enum("Cunning Hares") == "Cunning Hares"
+    assert beta_mod._display_enum("Mockingbird") == "Mockingbird"
+    data = _beta_json("zzz_character_1661.json")
+    data["camp"] = {"18": "CampUnknownRealm"}
+    assert beta_mod._zzz_character(data)["camp"] == "Unknown Realm"
+
+
+def test_feature5_unlocalized_weapon_shows_the_cn_name_as_a_note_not_a_title():
+    from gamexpress import cards
+    from gamexpress.models import BetaEquipment, BetaPatch
+
+    patch = BetaPatch(
+        game_key="zzz", beta_version="3.4.1", rev_label="v3.4.1 Rev. 19997538", rev_id="r-note",
+        equipment=[BetaEquipment(
+            id="zzz:14166", name="W-Engine (ID 14166)", category_label="W-Engines", rarity=4,
+            tag="[NEW]",
+            lines=["-# 🌐 No EN name in this build yet — CN/CHS name: 知更鸟专属音擎.",
+                   "* **Base ATK** 48", "HP 12%"],
+        )], item_keys=["weapon:zzz:14166"])
+    payloads, _ = cards.beta_payloads_with_map(
+        GAMES["zzz"], patch, settings(BETA_ENABLED="1", DISCORD_WEBHOOK_BETA=HOOK), None)
+    text = json.dumps(payloads, ensure_ascii=False)
+    assert "### W-Engine (ID 14166)" in text
+    assert "-# 🌐 No EN name in this build yet — CN/CHS name: 知更鸟专属音擎." in text
+
+
+def test_feature5_unreadable_changelog_still_diffs_the_build_listings():
+    """A 403 changelog must still find new/renamed items, and the summary must say so."""
+    from gamexpress import beta as beta_mod
+
+    previous_listing = {
+        "1601": {"icon": "Weapon_S_1601", "rank": 4, "en": "Item_Weapon_S_1601_Name"},
+    }
+    current_listing = dict(previous_listing, **{
+        "14166": {"icon": "Weapon_S_1661", "rank": 4, "en": "Item_Weapon_S_1661_Name",
+                  "zh": "知更鸟专属音擎"},
+    })
+
+    class ListingOnlyFetcher:
+        def __init__(self):
+            self.calls = []
+
+        async def get_json(self, url, **_kw):
+            self.calls.append(("json", url))
+            if url.endswith("/manifest.json"):
+                return {"zzz": {"live": "3.3", "latest": "3.4.1+19997538",
+                                "available": ["3.3", "3.4.1+19851435", "3.4.1+19997538"],
+                                "new": {"character": [], "weapon": [], "equipment": []}}}
+            if "/zzz/" in url and url.endswith("/weapon.json"):
+                return current_listing if "19997538" in url else previous_listing
+            if "/zzz/" in url and "/weapon/14166" in url:
+                return _beta_json("zzz_weapon_14166.json")
+            return None
+
+        async def get_text(self, url, **_kw):
+            self.calls.append(("text", url))
+            return None  # what a real 403 looks like to the fetcher
+
+        async def verify_media(self, _url):
+            return True
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fetcher = ListingOnlyFetcher()
+        ctx = _beta_ctx(Path(tmp) / "state.json", fetcher, BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        record = ctx.state.beta_record("zzz")
+        record["source_version"] = "3.4.1+19851435"
+        record["latest_rev"] = "previous-revision"
+        ctx.state.save()
+        asyncio.run(beta_mod.run(ctx))
+
+        # The block was found without the changelog …
+        assert any("/zzz/3.4.1+19997538/en/weapon/14166.json" in url for _k, url in fetcher.calls)
+        # … the run summary says the coverage was narrower, and no warning was raised for it.
+        assert any("changelog unavailable; new and listing-changed items only" in r
+                   for r in ctx.report), ctx.report
+        assert not any("changelog" in w for w in ctx.warnings), ctx.warnings
+
+
 def test_feature5_legacy_epoch1_state_resets_once_and_preserves_route_and_ambiguous_holds():
     """Pre-Prime-Formatting (epoch-1) state resets once so active betas repost cleanly."""
     from gamexpress import beta as beta_mod
@@ -19280,11 +19588,15 @@ def test_feature5_zzz_passive_potential_sveltekit_hotfix_and_cn_reconciliation()
     assert sk_revs[0]["entries"][0]["url"] == "https://zzz.gachabase.net/agents/1601/sunbringer/beta?lang=en"
     assert "lang=en" in sk_revs[0]["entries"][0]["diff"]
 
+    # No EN name and no readable identifier: the title stays an honest slot label and the CN
+    # name is carried as a note, so an English card never opens with a CJK title.
     zh_fallback_name = beta_mod._safe_entry_name(
-        {}, {"name": "Weapon_S_14160_Name"}, {"en": "", "zh": "日冕遗蜕"}, "14160"
+        {}, {"name": "Weapon_S_14160_Name"}, {"en": "", "zh": "日冕遗蜕"}, "14160",
+        label="W-Engines",
     )
-    assert zh_fallback_name == "日冕遗蜕 (ID 14160)"
+    assert zh_fallback_name == "W-Engine (ID 14160)"
     assert beta_mod._slug(zh_fallback_name, "14160") == "14160"
+    assert beta_mod._zh_entry_name({"en": "", "zh": "日冕遗蜕"}, None) == "日冕遗蜕"
 
     # 3. Comma-safe multi-[TBD] CN reconciliation, missing CN section recovery, and equipment CN sync.
     en_kit = {"sections": [beta_mod.BetaSectionEntry(

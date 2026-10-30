@@ -573,6 +573,20 @@ Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
 - **Never let an unresolved backend key reach a card.** `TestKey_PlaceHolder`,
   `Robin_Skill_Normal_Title`, `EquipmentSuit_34300_name`, `missing.webp` and friends are the
   database saying it has no data yet (`beta._is_key`, `beta._usable_image`).
+- **A blocked page is not a blind spot.** When the changelog page cannot be read, the
+  SvelteKit `__data.json` stream is parsed instead (`beta._parse_gachabase_data`), and the
+  per-build listings are diffed so new, renamed or re-specced items are still found. The
+  summary says the coverage was narrower; nothing is silently skipped.
+- **Never lose a late entry.** GachaBase can render a fresh revision over several minutes, so a
+  revision that has just posted is re-read for entries the first read did not list
+  (`BETA_LATE_RECHECKS` inside `BETA_LATE_RECHECK_H` hours, only entries missing from
+  `processed`). After that window it is final and costs no request. When the changelog listed
+  more tracked items than the card delivered, the run summary says so — no log access needed.
+- **A name is never a key and never a CJK title.** When only an engine identifier exists
+  (`Avatar_Female_Size02_Robin`), the human token is mined (`beta._name_from_identifier`) and a
+  key, a `(Test1)` placeholder or an earlier `ID 1661` fallback is refused (`_usable_name`).
+  With no English name anywhere, the title is the slot plus the id (`W-Engine (ID 14166)`) and
+  the CN/CHS name becomes a marked note, never the English heading.
 - **Keep the budget bounded.** `BETA_MIN_POLL_MINUTES`, `BETA_MAX_CHARACTERS`,
   `BETA_MAX_CHANGES`, `BETA_MAX_EQUIPMENT`, `BETA_MAX_REQUESTS` are all clamped in
   `beta._budget`; a bad value must fall back to a bounded default, never to unbounded. A

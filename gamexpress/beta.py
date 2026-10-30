@@ -15,6 +15,11 @@ WHAT IT DOES
     character/weapon details can use Encore's explicitly selected beta API after
     matching resource-version and stable-build checks within the same request budget.
     Its official legacy endpoint is tried only when the primary Encore read is unusable.
+    When the changelog page itself is blocked, the SvelteKit `__data.json` stream is read
+    instead, and the per-build listings are diffed so new or renamed items are still found
+    (the run summary states that narrower coverage). A revision that has just posted is
+    re-read briefly for entries its first page did not list, and the summary reports any
+    difference between what the changelog listed and what the card delivered.
 
 DESIGN GUARANTEES
     * Disabled by default: `BETA_ENABLED=1` is an explicit opt-in. Per-game opt-in
@@ -42,6 +47,7 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import json
 import logging
 import re
 from collections import Counter
@@ -704,6 +710,10 @@ def _change_line(old_frag: str, new_frag: str, label: str = "") -> tuple[str, st
     still reads as the skill it is: `DMG taken is reduced by ~~30~~ -> **40**%`.
     """
     body, parts = _diff_parts(old_frag, new_frag)
+    if body.strip().startswith("-#"):
+        # A source note (`-# 🌐 CN/CHS values updated …`) is a subtext line, never a bullet.
+        # Prefixing it with `**[CHANGED]**` printed the `-#` marker literally inside the bullet.
+        return body, "[CHANGED]"
     if not parts:
         return f"**[CHANGED]** {body}", "[CHANGED]"
     tags: list[str] = []
@@ -1382,6 +1392,121 @@ def _parse_sveltekit_revisions(raw: str, base_url: str = "") -> list[dict]:
     return out
 
 
+# --------------------------------------------------------------------------- SvelteKit data
+# `/changelog/beta/__data.json` carries the same revisions as the page, as SvelteKit's devalue
+# stream: newline-delimited JSON whose nodes hold a flat array, with integers acting as indexes
+# into it. On 2026-10-30 the rendered page answered 403 to the runner while this endpoint still
+# resolved, and it also carries the display names the page omits (`Caesar`, `Robin`).
+def _devalue(flat: list, ref: Any, depth: int = 0) -> Any:
+    """Resolve one devalue reference inside `flat` (see sveltejs/devalue)."""
+    if depth > 32:
+        return None
+    if isinstance(ref, bool) or ref is None or isinstance(ref, str):
+        return ref
+    if isinstance(ref, int):
+        if ref < 0 or ref >= len(flat):  # -1 undefined, -2 NaN, -3/inf …: nothing to render
+            return None
+        value = flat[ref]
+        # A primitive stored in the array IS the value; only containers are walked further.
+        return _devalue(flat, value, depth + 1) if isinstance(value, (dict, list)) else value
+    if isinstance(ref, list):
+        return [_devalue(flat, item, depth + 1) for item in ref]
+    if isinstance(ref, dict):
+        return {k: _devalue(flat, v, depth + 1) for k, v in ref.items() if k != "uses"}
+    return ref
+
+
+_DATA_SECTIONS = {
+    "agents": "Agents",
+    "wEngines": "W-Engines",
+    "bangboo": "Bangboo",
+    "driveDiscs": "Drive Discs",
+    "relics": "Drive Discs",
+}
+
+
+def _parse_gachabase_data(raw: str, base_url: str = "") -> list[dict]:
+    """Parse the SvelteKit `__data.json` stream into the same revision dicts as the page.
+
+    Every field is read by name from the resolved object; a revision whose lists did not arrive
+    is skipped rather than reported as empty, so an incomplete stream can never claim that a
+    build had no changes.
+    """
+    if not raw or '"type"' not in raw or '"data"' not in raw:
+        return []
+    origin = urlsplit(base_url) if base_url else None
+    base_root = f"{origin.scheme}://{origin.netloc}" if (origin and origin.netloc) else ""
+
+    out: list[dict] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            payload = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        flat = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(flat, list):
+            continue
+        revs_ref = next(
+            (node["revisions"] for node in flat
+             if isinstance(node, dict) and isinstance(node.get("revisions"), int)),
+            None,
+        )
+        if revs_ref is None:
+            continue
+        revisions = _devalue(flat, revs_ref)
+        for rev in revisions if isinstance(revisions, list) else []:
+            if not isinstance(rev, dict) or not isinstance(rev.get("revision"), dict):
+                continue
+            meta = rev["revision"]
+            rev_num = meta.get("design_revision")
+            ver = str(meta.get("version") or "")
+            if not isinstance(rev_num, int) or not ver:
+                continue
+            present = [key for key in _DATA_SECTIONS if isinstance(rev.get(key), list)]
+            if not present:
+                continue                 # lists not streamed: never guess "no changes"
+            entries: list[dict] = []
+            for key in present:
+                for item in rev.get(key) or []:
+                    if not isinstance(item, dict) or item.get("status") == "removed":
+                        continue
+                    href = str(item.get("href") or "")
+                    diff = str(item.get("diff") or "")
+                    if not href and not diff:
+                        continue
+                    name = item.get("name")
+                    if isinstance(name, dict):
+                        name = name.get("text") or name.get("key") or ""
+                    url = (f"{base_root}{href}" if base_root and href.startswith("/") else href)
+                    if url and "?" not in url:
+                        url = f"{url}?lang=en"
+                    full_diff = (urljoin(base_root + "/", diff)
+                                 if base_root and diff.startswith("/") else diff)
+                    if full_diff and "lang=" not in full_diff:
+                        full_diff = f"{full_diff}&lang=en" if "?" in full_diff else f"{full_diff}?lang=en"
+                    entries.append({
+                        "name": _clean(name),
+                        "url": url,
+                        "diff": _normalize_gachabase_lang(full_diff),
+                        "image": "",
+                        "section": _DATA_SECTIONS[key],
+                    })
+            ts = meta.get("design_timestamp") or meta.get("resource_timestamp")
+            out.append({
+                "label": f"v{ver} Rev. {rev_num}",
+                "date": (datetime.fromtimestamp(int(ts), timezone.utc).strftime("%Y-%m-%d")
+                         if isinstance(ts, int) and ts > 0 else ""),
+                "entries": entries,
+                "no_changes": bool(present) and not entries,
+                "zh_check_advised": False,
+            })
+    out.sort(key=lambda r: int(re.findall(r"\d+", r["label"])[-1]), reverse=True)
+    return out
+
+
 def parse_changelog(markdown: str, *, base_url: str = "") -> list[dict]:
     """Parse a gachabase beta changelog or SvelteKit home page into revisions.
 
@@ -1941,7 +2066,7 @@ def _zzz_character(data: dict) -> dict:
     camp = ""
     for v in (data.get("camp") or {}).values():
         if isinstance(v, str) and v:
-            camp = v
+            camp = _display_enum(v)
             break
 
     sections: list[BetaSectionEntry] = []
@@ -3309,10 +3434,34 @@ async def _fetch_changelog_revisions(
             text = await ctx.fetcher.get_text(
                 home_url, source="beta-changelog", headers=hdrs, retries=0
             )
+    if text is None and "gachabase.net" in ch_url.lower():
+        # Last door: SvelteKit serves the same page as a data endpoint, and Cloudflare rules that
+        # answer 403 to the rendered HTML (datacenter IPs, 2026-10-30) sometimes still pass it.
+        # Best effort by design — it is tried once, only after three failed routes, and a failure
+        # costs one request and no behaviour change.
+        parsed_ch = urlsplit(ch_url)
+        data_url = (f"{parsed_ch.scheme}://{parsed_ch.netloc}"
+                    f"{parsed_ch.path.rstrip('/')}/__data.json?lang=en") if parsed_ch.netloc else ""
+        can_try_data = bool(data_url) and (
+            budget is None
+            or (
+                budget["max_requests"] >= 8
+                and current_requests + extra + 1 <= budget["max_requests"]
+                and _take_shared_request(budget, 1)
+            )
+        )
+        if can_try_data:
+            extra += 1
+            text = await ctx.fetcher.get_text(
+                data_url, source="beta-changelog", headers=hdrs, retries=0
+            )
     if not text:
         log.info("%s beta: changelog unavailable (%s); using static manifest fallback", game.short, ch_url)
         return [], extra
     revisions = parse_changelog(text, base_url=ch_url)
+    if not revisions and '"data"' in text[:4096] and '"revisions"' in text:
+        # The SvelteKit data stream, when the page itself could not be read.
+        revisions = _parse_gachabase_data(text, base_url=ch_url)
     if not revisions:
         log.info("%s beta: changelog unreadable/blocked (%s); using static manifest fallback", game.short, ch_url)
     return revisions, extra
@@ -3771,8 +3920,14 @@ def _diff_equipment(previous: BetaEquipment, current: BetaEquipment) -> BetaEqui
     if previous.stats_line != current.stats_line:
         changes.append(_change_line(previous.stats_line, current.stats_line)[0])
     if previous.effect_title != current.effect_title:
-        changes.append(f"**[CHANGED]** Effect renamed from ~~{previous.effect_title}~~ → "
-                       f"**{current.effect_title}**.")
+        if current.effect_title.strip():
+            changes.append(f"**[CHANGED]** Effect renamed from ~~{previous.effect_title}~~ → "
+                           f"**{current.effect_title}**.")
+        elif previous.effect_title.strip():
+            # The new EN name is not in this build yet. Saying so beats `→ ****`, which Discord
+            # renders as bold-nothing and reads like a rendering bug.
+            changes.append(f"**[CHANGED]** Effect renamed from ~~{previous.effect_title}~~ → "
+                           "*new name not in this build yet*.")
     old_lines, new_lines = previous.lines, current.lines
     matcher = difflib.SequenceMatcher(None, old_lines, new_lines, autojunk=False)
     for opcode, i1, i2, j1, j2 in matcher.get_opcodes():
@@ -3913,16 +4068,149 @@ def _data_gallery_candidates(
     return urls
 
 
+_FALLBACK_NAME_RE = re.compile(r"^(?:ID\s*\d+|.+\(ID\s*\d+\))$", re.I)
+_ENGINE_WORD_RE = re.compile(r"[A-Z]+(?![a-z])|[A-Z][a-z]*|[a-z]+|\d+")
+# Words that name the slot or the engine, never the thing itself. Anything left after these
+# is removed is the human part of an identifier.
+_ENGINE_NAME_NOISE = {
+    "avatar", "female", "male", "size", "weapon", "item", "equipment", "equipmentsuit",
+    "suit", "relic", "lightcone", "disc", "bangboo", "monster", "npc", "skin",
+    "name", "desc", "title", "shortdesc", "test", "testkey", "test1", "placeholder",
+    "en", "cn", "chs", "cht", "jp", "kr", "ko", "s", "a", "b", "c", "g", "m", "w",
+}
+
+
+_NON_NAME_ID_PREFIX_RE = re.compile(
+    r"^(?:Item_|EquipmentSuit_|TestKey_|Test_|Weapon_|Lightcone_|Relic|Skill_|UI_|"
+    r"Sprite|Assets|AvatarSkin_|MonsterSkill|Skin_)",
+    re.I,
+)
+
+
+def _is_fallback_name(name: str) -> bool:
+    """True for names this module synthesizes when upstream has no readable one."""
+    return bool(_FALLBACK_NAME_RE.match(_clean(name)))
+
+
+def _is_test_label(value: str) -> bool:
+    """Localization placeholders such as `(Test1)知更鸟` or `TestKey_PlaceHolder`."""
+    text = _clean(value)
+    return bool(
+        not text
+        or re.search(r"\((?:test|wip|tmp)\s*\d*\)", text, re.I)
+        or re.search(r"(?:^|_)(?:test|testkey|placeholder|wip)(?:\d|_)", text, re.I)
+        or "占位" in text
+    )
+
+
+def _name_from_identifier(value: Any) -> str:
+    """The human name inside an engine identifier, or "" when there is none.
+
+    Brand-new beta items ship before their localization does: ZZZ build 19997538 describes
+    agent 1661 as `Avatar_Female_Size02_Robin` (detail and listing `en`, `code_name`
+    `Avatar_Female_Size02_Robin_En`). The one non-structural token — Robin — is the agent's
+    name, and it is already the name the game's own skin key uses (`AvatarSkin_Robin_Name_000`).
+    Only identifier shapes are touched, and only when a plainly human token survives; a
+    serial like `Weapon_S_1661` or `EquipmentSuit_34300_name` yields "" so the caller keeps
+    its honest "W-Engine (ID …)" label instead of inventing one.
+    """
+    text = str(value or "").strip()
+    if not text or " " in text or "_" not in text:
+        return ""
+    # Only engine identifiers that carry a name are worth reading. `TestKey_…`,
+    # `Item_…_Name`, `EquipmentSuit_…` and asset paths never do.
+    if _NON_NAME_ID_PREFIX_RE.match(text):
+        return ""
+    tokens = [t for t in _ENGINE_WORD_RE.findall(text) if not t.isdigit()]
+    if not tokens:
+        return ""
+    kept = [t for t in tokens if t.lower() not in _ENGINE_NAME_NOISE]
+    # A single-token remainder is a name ("Robin", "Trigger"); a multi-token one is a
+    # camel-cased name ("JuFufu" -> "Ju Fufu"). Anything longer is a path, not a name.
+    if not kept or len(kept) > 3 or any(len(t) < 2 for t in kept):
+        return ""
+    name = " ".join(kept)
+    return name if len(name) >= 3 else ""
+
+
+# A fallback title names the slot, so it reads `W-Engine (ID 14166)`, not `W-Engines (ID 14166)`
+# under a heading that already says W-Engines. Explicit so no plural is guessed at.
+_SLOT_SINGULAR = {
+    "Agents": "Agent", "Characters": "Character", "Resonators": "Resonator",
+    "W-Engines": "W-Engine", "Light Cones": "Light Cone", "Weapons": "Weapon",
+    "Drive Discs": "Drive Disc", "Artifacts": "Artifact", "Echoes": "Echo",
+    "Relics & Ornaments": "Relic / Ornament",
+}
+
+
+def _slot_singular(label: str) -> str:
+    text = _clean(label)
+    return _SLOT_SINGULAR.get(text, text)
+
+
+def _zh_entry_name(listing: dict | None, zh_data: dict | None) -> str:
+    """A real CN/CHS display name for an item, never a key or a `(Test1)` placeholder."""
+    zh_localized = (listing or {}).get("zh") if isinstance(listing, dict) else ""
+    zh_listing_name = _clean(
+        zh_localized.get("name") if isinstance(zh_localized, dict) else zh_localized
+    )
+    zh_detail_name = _clean(zh_data.get("name")) if isinstance(zh_data, dict) else ""
+    for candidate in (zh_listing_name, zh_detail_name):
+        if candidate and not _is_key(candidate) and not _is_test_label(candidate):
+            return candidate
+    return ""
+
+
+def _display_enum(value: Any) -> str:
+    """Readable words for a raw engine enum (`CampUnknownRealm` -> `Unknown Realm`).
+
+    Only identifier shapes are rewritten: one token with internal capitals and no spaces.
+    Real faction names ("Mockingbird", "Cunning Hares", "Obol Squad") pass through untouched,
+    and a leading `Camp` marker is dropped because it names the field, not the faction.
+    """
+    text = _clean(value)
+    if not text or " " in text or "_" in text or text.islower() or text.isupper():
+        return text
+    parts = re.findall(r"[A-Z][a-z0-9]*|[a-z0-9]+", text)
+    if len(parts) < 2:
+        return text
+    if parts[0] == "Camp":
+        parts = parts[1:]
+    return " ".join(parts)
+
+
+def _usable_name(value: Any) -> str:
+    """A human-readable display name, or "" when the string is not one.
+
+    Rejects localization keys (`EquipmentSuit_34300_name`), engine identifiers
+    (`Weapon_S_1661`), and our own earlier fallbacks (`ID 1661`,
+    `知更鸟专属音擎 (ID 14166)`) so a placeholder can never be promoted into a real name
+    and then reused forever through a retained snapshot.
+    """
+    name = _clean(value)
+    if not name or _is_key(name) or "_" in name:
+        return ""
+    if _FALLBACK_NAME_RE.match(name):
+        return ""
+    return name
+
+
 def _safe_entry_name(
     entry: dict,
     data: dict,
     listing: dict | None,
     item_id: str,
     zh_data: dict | None = None,
+    extra_names: tuple[str, ...] = (),
+    label: str = "",
 ) -> str:
+    slot = _slot_singular(label) if label else ""
+    fallback = f"{slot} (ID {item_id})" if slot else f"ID {item_id}"
     if "_encore" in data:
-        return _clean(data.get("name")) or f"ID {item_id}"
-    entry_name = str(entry.get("name") or "").strip()
+        return (_usable_name(data.get("name")) or _name_from_identifier(data.get("name"))
+                or fallback)
+    raw_entry_name = str(entry.get("name") or "").strip()
+    entry_name = raw_entry_name
     if (
         entry_name.lower().startswith("id:")
         or _is_key(entry_name)
@@ -3930,28 +4218,41 @@ def _safe_entry_name(
     ):
         entry_name = ""
     localized = (listing or {}).get("en") if isinstance(listing, dict) else ""
-    listing_name = _clean(localized.get("name") if isinstance(localized, dict) else localized)
+    listing_name = _clean(
+        (localized.get("en") or localized.get("name") or "")
+        if isinstance(localized, dict) else localized
+    )
     if _is_key(listing_name):
         listing_name = ""
     data_name = _clean(data.get("name")) if isinstance(data, dict) else ""
     if _is_key(data_name):
         data_name = ""
-    resolved = entry_name or listing_name or data_name
+    # `extra_names` carries what the caller knows and the source does not — most importantly
+    # the name this item already had in the retained snapshot — refused when it is a key or
+    # one of our own placeholders, so a bad name can never become permanent.
+    resolved = (entry_name or listing_name or data_name
+                or next((n for n in map(_usable_name, extra_names) if n), ""))
     if resolved:
         return resolved
-    zh_localized = (listing or {}).get("zh") if isinstance(listing, dict) else ""
-    zh_listing_name = _clean(
-        zh_localized.get("name") if isinstance(zh_localized, dict) else zh_localized
-    )
-    zh_detail_name = _clean(zh_data.get("name")) if isinstance(zh_data, dict) else ""
-    for zh_cand in (zh_listing_name, zh_detail_name):
-        if zh_cand and not _is_key(zh_cand):
-            return f"{zh_cand} (ID {item_id})"
-    return f"ID {item_id}"
+    # No readable name yet: brand-new items ship as identifiers before localization lands
+    # (`Avatar_Female_Size02_Robin`), which still names the item.
+    for candidate in (data.get("name") if isinstance(data, dict) else "",
+                      data.get("code_name") if isinstance(data, dict) else "",
+                      listing_name, raw_entry_name, *extra_names):
+        derived = _name_from_identifier(candidate)
+        if derived:
+            return derived
+    # A CN/CHS name is never presented as the English one — `_zh_entry_name` is rendered by
+    # the caller as a marked note instead. Only the slot label and the id are left.
+    return fallback
 
 
 def _slug(value: str, fallback_id: str = "") -> str:
     """Gachabase's stable URL fallback; source-provided URLs always win."""
+    if _FALLBACK_NAME_RE.match(_clean(value)):
+        # `W-Engine (ID 14160)` and `ID 14160` both address the item by id; a slot word in the
+        # path would be a guess, and the id-only route is the one already proven to resolve.
+        return str(fallback_id or "").strip() or "item"
     raw = re.sub(r"\s*\(ID\s*\d+\)\s*$", "", str(value or "").strip(), flags=re.I)
     m_id = re.fullmatch(r"id\s*:?\s*(\d+)", raw, re.I)
     if m_id:
@@ -4440,6 +4741,43 @@ def _synthesize_kit_overview(
     return f"**{name}** is {article} {lead} {noun}{camp_clause}{mech_clause}."
 
 
+# A just-published revision is re-read this many times, within this window, for entries the first
+# read did not list. Upstream serves the page from a cache that can still be filling in: ZZZ
+# 19997538 described 4 of its 7 updated agents on the read that posted the card, and a settled
+# revision is otherwise never looked at again — those 3 would have been lost silently.
+BETA_LATE_RECHECKS = 2
+BETA_LATE_RECHECK_H = 3
+
+
+def _late_revision(record: dict, now: int) -> str:
+    """The version to re-read for late changelog entries, or "" when nothing is worth re-reading."""
+    latest = str(record.get("latest_rev") or "")
+    saved = (record.get("revisions") or {}).get(latest) if latest else None
+    if not isinstance(saved, dict) or saved.get("status") not in ("posted", "silent"):
+        return ""
+    if saved.get("more") or int(saved.get("late_checks") or 0) >= BETA_LATE_RECHECKS:
+        return ""
+    if now - int(saved.get("ts") or 0) > BETA_LATE_RECHECK_H * 3600:
+        return ""
+    version = str(record.get("source_version") or "")
+    return version if version == str(saved.get("source_version") or version) else ""
+
+
+def _pending_entries(ns: str, entries: list[dict], processed: set[str]) -> list[dict]:
+    """Changelog entries for a tracked card role that this revision has not delivered yet."""
+    pending = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        role = _entry_role(ns, str(entry.get("url") or ""))
+        item_id = _entry_id(entry)
+        if role not in ("character", "weapon", "relic") or not item_id:
+            continue
+        if _entry_key(ns, role, item_id) not in processed:
+            pending.append(entry)
+    return pending
+
+
 async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatch | None:
     """Build the next bounded beta card batch without guessing unavailable source data."""
     ns = _game_ns(game)
@@ -4453,30 +4791,60 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
     _upgrade_legacy_beta_record(record)
     live_cycle = _live_cycle(ctx, game, m_game)
     version = _next_data_version(record, m_game, live_cycle=live_cycle)
+    late_version = ""
     if not version:
-        return None
+        late_version = _late_revision(record, int(getattr(ctx, "now", 0) or 0))
+        if not late_version:
+            return None
+        version = late_version
+
 
     if _changelog_url(game) and not _take_shared_request(budget):
         ctx.warnings.append(f"{game.short} beta: run-wide request budget reached before changelog; deferred")
         return None
     revisions, extra_ch_reqs = await _fetch_changelog_revisions(ctx, game, budget, 2)
+    changelog_missing = bool(_changelog_url(game)) and not revisions
     source_revision = _changelog_for_version(revisions, version)
     rev_label, rev_key = _revision_label(source_revision, version)
+    # No changelog means the item list is narrower than upstream's page. That is stated once in
+    # the run summary (not as a warning — a blocked third party is not a monitor fault).
+    coverage_note = ("changelog unavailable; new and listing-changed items only"
+                     if changelog_missing else "")
     rev_id = stable_hash([game.key, version])
     rev_records = record.get("revisions") if isinstance(record.get("revisions"), dict) else {}
     saved = rev_records.get(rev_id) if isinstance(rev_records, dict) else None
-    if str(record.get("latest_rev") or "") == rev_id and (
-            str(record.get("source_version") or "") == version or not record.get("source_version")):
-        return None
-    if isinstance(saved, dict) and saved.get("status") in ("posted", "silent") and not saved.get("more"):
-        return None
+    late_pending: list[dict] | None = None
+    if late_version:
+        processed_before = set(saved.get("processed") or []) if isinstance(saved, dict) else set()
+        late_pending = _pending_entries(
+            ns, list(source_revision.get("entries") or []) if source_revision else [],
+            processed_before,
+        )
+        if not late_pending:
+            if isinstance(saved, dict):
+                saved["late_checks"] = int(saved.get("late_checks") or 0) + 1
+                ctx.state.save()
+            return None
+        if isinstance(saved, dict):
+            saved["late_checks"] = int(saved.get("late_checks") or 0) + 1
+            ctx.state.save()
+        ctx.report.append(
+            f"{game.short} {version}: {len(late_pending)} late changelog entr(ies) — "
+            "delivering what the first read of the revision missed"
+        )
+    else:
+        if str(record.get("latest_rev") or "") == rev_id and (
+                str(record.get("source_version") or "") == version or not record.get("source_version")):
+            return None
+        if isinstance(saved, dict) and saved.get("status") in ("posted", "silent") and not saved.get("more"):
+            return None
 
     snapshots = record.get("snapshots") if isinstance(record.get("snapshots"), dict) else {}
     known_snapshots = dict(snapshots)
     patch = BetaPatch(
         game_key=game.key, beta_version=_display_version(version), rev_label=rev_label,
         rev_id=rev_id, source_url=_changelog_url(game) or f"{STATIC_BASE}/{ns}/{version}",
-        source_version=version, source_revision=rev_key,
+        source_version=version, source_revision=rev_key, coverage_note=coverage_note,
     )
     if source_revision and source_revision.get("no_changes") and (
             record.get("source_version") or snapshots):
@@ -4487,30 +4855,38 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
     new_char_ids = manifest_new_ids(manifest, ns, kinds["new_keys"]["character"])
     new_weapon_ids = manifest_new_ids(manifest, ns, kinds["new_keys"]["weapon"])
     new_relic_ids = manifest_new_ids(manifest, ns, kinds["new_keys"]["relic"])
-    source_entries = list(source_revision.get("entries") or []) if source_revision else []
+    source_entries = (late_pending if late_pending is not None else
+                      (list(source_revision.get("entries") or []) if source_revision else []))
+    patch.listed = len([e for e in source_entries
+                        if _entry_role(ns, str(e.get("url") or "")) in ("character", "weapon", "relic")])
     requests = (2 + extra_ch_reqs) if _changelog_url(game) else 1
     previous_ver = str(record.get("source_version") or "").strip()
-    # When GachaBase changelog failed (`extra_ch_reqs >= 1`) during an intra-cycle beta hotfix,
-    # diff static.nanoka.cc's `character.json` across the two builds so non-new buffed/reworked
-    # characters (e.g. Potential Awakening updates) are discovered without GachaBase HTML.
+    # When GachaBase is unreachable (on 2026-10-30 it answered 403 to
+    # every route, datacenter IPs blocked), the changelog cannot say WHICH items changed. The
+    # nanoka listings can: `character.json`, `weapon.json` and the relic listing carry each item's
+    # icon, rarity and display name per build, so diffing two builds still finds new, renamed and
+    # re-specced items without the changelog. Coverage is narrower than the changelog (a change
+    # that only touches skill text is invisible here), so the gap is reported instead of hidden.
     if (
         not source_entries
-        and extra_ch_reqs >= 1
+        and changelog_missing
         and previous_ver
         and previous_ver != version
         and _major_minor(previous_ver) == _major_minor(version)
         and budget["max_requests"] >= 12
-        and requests + 2 <= budget["max_requests"]
-        and _take_shared_request(budget, 2)
     ):
-        requests += 2
-        char_list_kind = kinds["new_keys"]["character"]
-        prev_c_idx = await _listing(ctx.fetcher, ns, previous_ver, char_list_kind)
-        cur_c_idx = await _listing(ctx.fetcher, ns, version, char_list_kind)
-        if prev_c_idx and cur_c_idx:
-            for cid, cval in cur_c_idx.items():
-                if str(cid).isdigit() and prev_c_idx.get(cid) != cval:
-                    source_entries.append(_fallback_entry(ns, "character", str(cid)))
+        for role in ("character", "weapon", "relic"):
+            if requests + 2 > budget["max_requests"] or not _take_shared_request(budget, 2):
+                break
+            requests += 2
+            list_kind = kinds["new_keys"][role]
+            prev_idx = await _listing(ctx.fetcher, ns, previous_ver, list_kind)
+            cur_idx = await _listing(ctx.fetcher, ns, version, list_kind)
+            if not prev_idx or not cur_idx:
+                continue
+            for item_id, value in cur_idx.items():
+                if str(item_id).isdigit() and prev_idx.get(item_id) != value:
+                    source_entries.append(_fallback_entry(ns, role, str(item_id)))
 
     char_entries, equip_entries = _candidate_entries(
         ns, kinds, source_entries, snapshots, new_char_ids, new_weapon_ids, new_relic_ids)
@@ -4619,7 +4995,11 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             continue
 
         rarity = _parse_rarity(ns, data.get("rarity"), built.get("rarity") or 5) or 5
-        name = _safe_entry_name(entry, data, None, item_id, zh_data=zh_data)
+        name = _safe_entry_name(
+            entry, data, None, item_id, zh_data=zh_data,
+            extra_names=(str(((previous_snapshot or {}).get("data") or {}).get("name") or ""),),
+            label=str(kinds["character_label"]),
+        )
         previous_revision = str((previous_snapshot or {}).get("revision") or "")
         # Self-heal pre-BETA_NORM_REV WuWa nanoka snapshots (which stored Lv. 20 param[-1]
         # multipliers) by re-building the historical revision at Lv. 10 before diffing.
@@ -4887,7 +5267,11 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
         previous = (_equipment_from_snapshot(previous_snapshot)
                     if str((previous_snapshot or {}).get("kind") or "") == role else None)
         is_new = item_id in (new_weapon_ids if role == "weapon" else new_relic_ids) and previous is None
-        name = _safe_entry_name(entry, data, listing_entry, item_id)
+        name = _safe_entry_name(
+            entry, data, listing_entry, item_id,
+            extra_names=(str(((previous_snapshot or {}).get("data") or {}).get("name") or ""),),
+            label=str(kinds[role]["label"]),
+        )
         previous_revision = str((previous_snapshot or {}).get("revision") or "")
         # Self-heal legacy R1/S1 nanoka weapon snapshots (`equip_norm_rev < BETA_EQUIP_NORM_REV`)
         # from `previous_revision` once so unchanged weapons stay `equal` and real edits diff R1–R5.
@@ -4907,7 +5291,10 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             if hist_eq_data:
                 hist_fields = _equip_from_detail(ns, detail_kind, hist_eq_data, l_dict or {})
                 if hist_fields.get("lines") or hist_fields.get("stats_line"):
-                    hist_name = _safe_entry_name(entry, hist_eq_data, listing_entry, item_id)
+                    hist_name = _safe_entry_name(
+                        entry, hist_eq_data, listing_entry, item_id,
+                        label=str(kinds[role]["label"]),
+                    )
                     hist_eq = BetaEquipment(
                         id=snap_key, name=hist_name, category_label=str(kinds[role]["label"]),
                         rarity=hist_fields.get("rarity") or rarity,
@@ -4955,7 +5342,7 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             tok in ln
             for ln in current.lines
             for tok in ("[value unavailable]", "[TBD]", "???")
-        ) or name.startswith("ID ")
+        ) or _is_fallback_name(name)
         if (
             "_encore" not in data
             and (
@@ -4974,19 +5361,22 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
                 ctx.fetcher, ns, version, detail_kind, item_id, locale="zh"
             )
             if zh_eq_data:
-                if name.startswith("ID "):
-                    zh_resolved_name = _safe_entry_name(
-                        entry, data, listing_entry, item_id, zh_data=zh_eq_data
-                    )
-                    if zh_resolved_name != name:
-                        name = zh_resolved_name
-                        current.name = name
                 zh_fields = _equip_from_detail(
                     ns, detail_kind, zh_eq_data,
                     listing_entry if isinstance(listing_entry, dict) else {},
                 )
                 did_zh_eq = _reconcile_en_with_zh_equipment(current, zh_fields)
-                if did_zh_eq or eq_snap["data"].get("name") != current.name:
+                # The CN/CHS name is a note, never the title: an English card that opens with
+                # `知更鸟专属音擎` reads like a broken locale. The zh detail is already being
+                # fetched here to fill missing values, so naming it costs nothing extra.
+                if _is_fallback_name(name):
+                    zh_name = _zh_entry_name(listing_entry, zh_eq_data)
+                    if zh_name and not any("CN/CHS name" in ln for ln in current.lines):
+                        current.lines.insert(
+                            0, f"-# 🌐 No EN name in this build yet — CN/CHS name: {zh_name}."
+                        )
+                if (did_zh_eq or eq_snap["data"].get("name") != current.name
+                        or eq_snap["data"].get("lines") != current.lines):
                     eq_snap = _equipment_snapshot(current, version, ctx.now, role)
 
         prev_eq_img = str(((previous_snapshot or {}).get("data") or {}).get("image_url") or "")
@@ -5279,7 +5669,9 @@ async def _deliver(ctx, game: Game, patch: BetaPatch, record: dict, ephemeral: b
     ctx.report.append(
         f"🧪 {game.short} {patch.beta_version} beta ({patch.rev_label}): "
         f"{len(payloads)} page(s) — {names}"
+        + (f"; changelog listed {patch.listed} item(s)" if patch.listed > len(patch.item_keys) else "")
         + (f", {len(patch.equipment)} equipment entr(ies)" if patch.equipment else "")
+        + (f"; {patch.coverage_note}" if patch.coverage_note else "")
         + ("; next bounded batch pending" if patch.more else "")
         + (" [DRY RUN]" if ephemeral and not ctx.settings.test_mode else "")
     )
