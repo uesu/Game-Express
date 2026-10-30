@@ -679,6 +679,22 @@ Where the data comes from (`gamexpress/beta.py`, see [SOURCES.md](SOURCES.md#bet
   keeps the old full snapshot rather than stalling forever. When nothing moved against the
   released build, no card is posted for that item and the run summary says why
   (`beta kit matches the released … kit — no value change to post`).
+- **Direction follows the kit, not the arrow.** `[BUFF]` / `[NERF]` are decided by what the value
+  does in play: a cheaper Ultimate or EX cost, a shorter cooldown / charge time, or an easier
+  trigger requirement is a buff although the number fell, and `DMG taken reduced by 30% → 40%` is a
+  buff for the same reason. Where the tag contradicts the number the card says why in one clause
+  (`*(cheaper to use)*`, `*(the skill comes back later)*`). A threshold, duration, stack count,
+  range or chance can move either way, so those stay a plain `[CHANGED]` with no direction — the
+  guide's "unsure? drop the directional tag" rule. A name / reaction / keyword / type swap is
+  `[CHANGED]`; prose alone is `[TEXT FIX]`.
+- **A mixed-build revision says so on the card.** Upstream sometimes publishes one build inside
+  another's revision: on 2026-10-30 ZZZ served 3.4.2 material inside the 3.4.1 hotfix 19997538 and
+  said so in its own changelog and news comment. Two game-agnostic signals put one `**Note:**` line
+  under the header — the changelog flagging itself (`Partial data`, `Mixed data`, `Datamined`,
+  `take it with a grain of salt`, …; a generic "values may change" beta banner is not a flag), or a same-version hotfix that renames or adds far more blocks
+  than a hotfix normally does. The note names the reliable part (*the point values*) and calls
+  renames and new mechanics provisional; it never withholds the card and never invents a reason.
+  The run summary repeats it (`mixed-data caveat on the card`).
 - **A diff card explains itself before it lists anything.** The paragraph under the header is prose,
   not another changelog: a verdict (`comes out ahead` / `is toned down` / `is rebalanced` / `is
   renamed … rather than rebalanced` / `gains new material`), where the movement actually lands

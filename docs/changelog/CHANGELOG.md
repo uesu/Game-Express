@@ -1,5 +1,31 @@
 # Changelog — current entries
 
+## 2026-10-30 — Beta: direction follows the kit, and mixed-build revisions say so
+
+- **A number going down is not automatically a nerf.** `[BUFF]` / `[NERF]` now follow what the
+  change does in play: a cheaper Ultimate, a shorter cooldown, a shorter charge time or an easier
+  trigger requirement is a **buff** even though the number fell, and a rising cost is a **nerf**.
+  Where the tag reads backwards against the number, the card says why —
+  `**[BUFF]** Max Energy: ~~140~~ → **130** *(cheaper to use)*`,
+  `**[NERF]** Cooldown: ~~16s~~ → **17s** *(the skill comes back later)*`.
+- **What cannot be reasoned about is not guessed.** A threshold, a duration, a stack count, a
+  range or a chance can move either way in play (a higher Anomaly Mastery threshold is harder to
+  reach; a higher HP threshold triggers a shield sooner), so those are reported as a plain
+  `[CHANGED]` with no direction and no invented explanation. A name, reaction, keyword or type swap
+  is also `[CHANGED]`; only prose that changed with nothing functional behind it stays `[TEXT FIX]`.
+- **A revision that mixes two builds carries a caveat instead of reading as settled.** On
+  2026-10-30 Hoyo pushed 3.4.2 material into the ZZZ 3.4.1 hotfix 19997538, and both the changelog
+  and the tracker's own news comment said so. Two game-agnostic signals now put one line under the
+  patch header: the changelog flagging itself (`Partial data`, `Mixed data`, `Datamined`, `take it
+  with a grain of salt`, … — a generic “values may change” beta banner is not a flag), or a hotfix
+  that renames or adds far more blocks than a hotfix normally
+  does. Either way the note names the reliable part — *“the point values below are the part to
+  trust; renames and new mechanics are provisional”* — and the run summary records it, so a card is
+  never silently presenting another build's data as final.
+- **A retirement is one statement in every diff path.** Lines dropped inside a changed block are
+  now stated once (`Removed from this revision — ~~excerpt~~` plus a count), the same way a whole
+  retired block already was, and a renamed block no longer prints "Renamed from …" twice.
+
 ## 2026-10-30 — Beta: released kits are diffs, and the card explains itself
 
 - From the second post of a revision onward a beta card is a **diff**, not a re-print. A revision

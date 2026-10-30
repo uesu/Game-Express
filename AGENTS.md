@@ -590,6 +590,19 @@ Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
   The card then shows only what moved — `~~old~~ → **new**` with `[BUFF]` / `[NERF]` / `[NEW]` /
   `[TEXT FIX]` — plus a one-line tally (`1 buff • 14 unchanged block(s) omitted`), because a wall
   of `[CHANGED]` cannot be read as "this is new" or "this was buffed".
+- **Direction follows the kit, and doubt is not a direction.** `beta._direction` decides
+  `[BUFF]` / `[NERF]` from what the value does in play — cost, cooldown, charge time and trigger
+  requirements invert (cheaper / faster / easier is a buff) — and the nearest subject word before
+  the number decides which rule applies. Thresholds, durations, stack counts, ranges and chances
+  are genuinely ambiguous, so they return `[CHANGED]` instead of a guess;
+  `beta._direction_reason` adds a one-clause "why" only where the tag contradicts the number. A
+  name / reaction / keyword / type swap is `[CHANGED]`; prose alone is `[TEXT FIX]`.
+- **A mixed build is never presented as settled.** `beta._data_warning` reads a changelog that
+  flags itself (`Partial data`, `Mixed data`, `Datamined`, …; never a generic “values may change”) and `beta._mixed_build_note` also
+  treats a same-version hotfix with far more renames/additions than a hotfix normally carries as a
+  likely mixed push. Either way one `**Note:**` line goes under the card header naming the part to
+  trust (the point values) and what to read as provisional, and the run summary repeats it. Never
+  withhold the card and never invent a cause — say what was measured.
 - **A revision card explains itself before it lists anything.** The `overview` paragraph of a
   diff card is prose a person would write, not a second changelog: a verdict, where the movement
   lands, what is new, and what was left alone — `beta._revision_explanation`. It may only state
