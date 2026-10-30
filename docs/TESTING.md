@@ -505,6 +505,16 @@ unchanged block, the header range and a validating payload;
 guards the other direction — a released baseline must not invent `Faction set to …` out of a field
 the released reader never published.
 
+### A padded line is not a clipped snapshot
+
+`test_feature5_a_padded_source_line_does_not_disable_the_diff` drives a `3.8.1 → 3.8.3` pair whose
+first kit carries a trailing space and a blank line, and asserts the snapshot stays
+`truncated: False` and the second card is a real diff. Without the fix, that item was marked
+clipped forever and every revision re-printed the whole kit as `[CHANGED]`.
+`test_feature5_the_snapshot_still_calls_a_real_clip_truncated` keeps the guard honest in the other
+direction: a 161-line block, a 1 500-character line and an over-long title must still report
+`truncated`.
+
 ### Encore beta fallback regression coverage
 
 Captured `encore_{hsin,suoming,lily,weapon}_live.json` fixtures retain relevant API fields and

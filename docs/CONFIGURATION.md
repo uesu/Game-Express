@@ -606,6 +606,10 @@ later builds. It retains the prior readable kit in bounded state, so a later cha
 `~~old~~ → **new**` inline rather than re-posting an entire kit.
 
 Full-content digests suppress unchanged long kits even when retained text is clipped.
+The digest trims whitespace on both sides, so a padded or blank source line is never mistaken for
+a clipped block: only a real clip (a line over 1 400 characters, a block over 160 lines, the
+60 000-character budget, or a capped field such as the 240-character title) marks a snapshot
+`truncated`.
 If changed content exceeds retained limits, or a legacy snapshot lacks a full-content digest,
 the next inspected revision uses a labelled full `[CHANGED]` snapshot without invented inline
 direction. Retained text limits and state pruning stay bounded. A full snapshot with no comparable
