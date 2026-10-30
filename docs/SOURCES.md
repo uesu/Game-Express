@@ -681,17 +681,31 @@ each with its own attribute table and a shared `Skill Table`, and its own `Versi
 | `skill` | `a`/`b`/`c` = Active Skill / Additional Ability / Bangboo Chain Attack; each has `{"1".."N": {name, desc, property, param}}` |
 | `skill_prop` | the numeric table the `param` placeholders point at: `{main, growth, format}` per `Prop` id |
 
-`skill_prop` is where a skill's numbers come from: `value(level) = main + growth x (level - 1)`,
-and format `%` divides by 100. Two Bangboo confirm the arithmetic from both sides. Charley: `main`
-`80000` + `8000 x 5` = **1200%** at Lv. 6, 439.5% / 1,618.5% / 231% for the other rows. Booltergeist:
-nanoka opens at Lv. 1 (480% / 281%, 834% / 119%) and gachabase prints Lv. 6 (720% / 421.5%, 1251% /
-178.5%) — a 10% growth per level, exactly what the formula produces.
+`skill_prop` is where a skill's numbers come from: `value(level) = (main + growth x (level - 1)) /
+100`, and `format` is the literal unit printed after it — `%`, `% HP`, `Energy`. Every row in these
+files is fixed-point hundredths (`80000` -> 800%, `660` -> 6.6%, `275` -> 2.75), and a unit that
+starts with a letter is spaced (`4 Energy`), one that starts with a symbol is not (`9.6%`, `24s`).
+A build that ships a .NET placeholder instead (`"{0:0.#%} HP"`) is read the same way: the unit is
+whatever follows the closing brace.
+
+Three Bangboo confirm the arithmetic from both sides. Charley: `80000` + `8000 x 5` = **1200%** at
+Lv. 6, 439.5% / 1,618.5% / 231% for the other rows. Booltergeist: nanoka opens at Lv. 1 (480% /
+281%, 834% / 119%) and gachabase prints Lv. 6 (720% / 421.5%, 1251% / 178.5%). Ariel: 772% -> 1158%
+and 828% -> 1242% at the same 10% growth, plus the value shapes that are *not* percentages —
+`6.6% HP` -> `9.6% HP`, `2.75 Energy` -> `4 Energy`, and a flat `20%` that does not move because its
+growth is 0. Ariel also shows the widest row set so far: five attributes on one skill (three buffs,
+DMG, Daze) against Charley's two.
 
 The level is the one gachabase displays, **6 / 1 / 6** (`_ZZZ_BANGBOO_SKILL_LEVEL`: the two
 upgradeable skills, then the ability with no upgrade track), on both an S-rank and an A-rank
 Bangboo. It is not the block's length: the sliders run to the table's own length (10 / 5 / 10 here)
 while the displayed value stays 6 / 1 / 6, and nanoka simply starts every slider at 1. A block that
 publishes fewer levels than the cap is read at its own last level rather than inventing one.
+
+A Bangboo that already shipped is ordinary equipment to this monitor: Ariel is in the 3.3 live
+build, so a 3.4.1 rebalance of it goes through `_released_equipment` and prints
+`~~1158%~~ → **1200%**` for the row that moved, with every unchanged skill left out — never a
+second full kit. A Bangboo that is genuinely new is `[NEW]` and prints its whole kit once.
 
 The prose is translated in some builds and not others — Booltergeist ships real English ("Cursed
 Spotlight", "Specialty Scare Actor", "Mischief Maker on the Loose"), while Charley ships
@@ -711,7 +725,9 @@ not.
 
 Stats are the page's max-promotion line, and only what the file states exactly: `break_stun` 103 →
 Impact, `crit` 500 + the max-rank `extra` 4500 → `5,000 / 100` = **50%** CRIT Rate, `crit_dmg` →
-100%, `pen_ratio` → 0%, `element_abnormal_power` 110 → Anomaly Mastery. The two sites name that last
+100%, `pen_ratio` → 0%, `element_abnormal_power` 110 → Anomaly Mastery. Every S-rank Bangboo on the
+two sites shares that block (Charley and Ariel are both 4,210 / 8,863 / 666 — 103 / 50% / 100% / 0%
+/ 110), so it is printed once per card and never guessed from the level table. The two sites name that last
 field differently — gachabase "Anomaly Mastery", nanoka "Anomaly Proficiency" — and the card uses
 gachabase's, because that is the page its link opens. HP/ATK/DEF are **not** printed: both pages
 level-scale them (Charley 4,210 / 8,863 / 666, Booltergeist 3,827 / 6,570 / 781 at Lv. 60) and no
