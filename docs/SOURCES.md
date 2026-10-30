@@ -681,21 +681,31 @@ and a shared `Skill Table`, and its own `Version Diff` picker. The page is serve
 | `skill` | `a`/`b`/`c` = Active / Talent / QTE; each has `{"1".."N": {name, desc, property, param}}` |
 | `skill_prop` | the numeric table the `param` placeholders point at: `{main, growth, format}` per `Prop` id |
 
-`skill_prop` is where the card's numbers come from — Charley's `1001` of `80000` with format `%`
-is the 800% the page shows, and the same table yields 293% / 1,079% / 154% for the other slots. The
-prose is not: `desc`, each skill's `name`, and some `property`/`param` entries are localization keys
-(`Bangboo_Desc_54024`, `Bangboo_ActiveSkill_Title_54024`) whose English text is not in the JSON at
-3.4.1. A keyed string is dropped, never printed: a skill with text renders
-`Active Skill: <text>` followed by `Active Skill attributes: DMG Multiplier 800% · Daze Multiplier
-293%`, and Charley's three blocks render as the two attribute lines only — no key ever reaches a
-card. The card is `[NEW]` when the manifest's `new.bangboo` lists the id, its heading is the
-`Bangboo` kind label (so `set_kind` stays empty and no `*Bangboo*` line is repeated under it), and
-no Lv. 60 HP/ATK/DEF total is printed: the page's totals include promotion bonuses that the file
-does not expose as a formula, so only values that can be read exactly are shown. A block that is keys on both sides — Charley's Talent
-names *and* its `param` values are keys, so no number exists to show — prints
-`-# Talent: only localization keys in this build — omitted until translated.` instead of
-disappearing, and a `<zh>` cross-check cannot fill it: `_reconcile_en_with_zh_equipment` only
-resolves `[value unavailable]` / `[TBD]` / `???` placeholders, which a keyed slot never is. Nanoka's per-version diff feed
+`skill_prop` is where a skill's numbers come from: `value(level) = main + growth x (level - 1)`,
+and format `%` divides by 100. Charley's Active Skill is `80000 + 8000 x 5 = 1200%` at level 6,
+and the same table yields 439.5% / 1,618.5% / 231% for the other slots. The level is the cap the
+served page's own sliders stop at — 6 for Active Skill and QTE, 1 for a Talent with no upgrade
+track (`_ZZZ_BANGBOO_SKILL_LEVEL`) — not the length of the block: the file lists up to 10 levels,
+and a block publishing fewer is read at its own last level.
+
+The prose is not readable: `desc`, each skill's `name`, and some `property`/`param` entries are
+localization keys (`Bangboo_Desc_54024`, `Bangboo_ActiveSkill_Title_54024`) whose English text is
+not in the JSON at 3.4.1 — the page itself prints those keys raw. A key is dropped, never printed:
+a skill with text renders `Active Skill: <text>` before its attribute line, and Charley's three
+blocks (keys on every side) render as the two attribute lines, the note
+`-# Some skill text is still untranslated in this build; only the skill table is shown.`, and — for
+a block with no numbers either — `-# Talent: only localization keys in this build — omitted until
+translated.` A `<zh>` cross-check cannot fill those: `_reconcile_en_with_zh_equipment` resolves
+`[value unavailable]` / `[TBD]` / `???` placeholders, which a keyed slot never is.
+
+Stats are the page's max-promotion line, and only what the file states exactly: `break_stun` 103 →
+Impact, `crit` 500 + the max-rank `extra` 4500 → `5,000 / 100` = **50%** CRIT Rate, `crit_dmg` →
+100%, `pen_ratio` → 0%, `element_abnormal_power` 110 → Anomaly Mastery. HP/ATK/DEF are **not**
+printed: the page's Lv. 60 totals (4,210 / 8,863 / 666) follow from no factor that fits all three
+(`level[].hp_max` sums to 3,500 against 4,210 while the ATK blocks sum to 10,803 against 8,863), so
+they are left out rather than approximated. The card is `[NEW]` when the manifest's `new.bangboo`
+lists the id, and its heading is the `Bangboo` kind label (`set_kind` stays empty, so no `*Bangboo*`
+line repeats under it). Nanoka's per-version diff feed
 (`ww/3.8.1/diff/en.json`, `/diff#anchor` pages elsewhere) is deliberately not read: the card's
 diff is computed from two retained snapshots, which is what lets it print `~~old~~ → **new**`
 per value.
