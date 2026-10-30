@@ -473,6 +473,16 @@ the old revision path and proves the card stays a labelled full snapshot rather 
 "no changes" post. `test_feature5_header_range_uses_versions_then_build_ids_and_never_fakes_a_pair`
 covers the version pair, the same-version build-id pair and the fallback.
 
+### Revision-diff links
+
+`test_feature5_encore_diff_link_matches_the_sites_own_grammar` pins the exact Encore URL its UI
+produces (2026-10-30 capture), including cross-cycle game versions, build-id stripping and every
+case that must stay empty. `test_feature5_every_game_uses_the_diff_database_that_serves_it` proves
+WuWa never gets a gachabase diff and the other three never get an Encore one, for characters and
+weapons alike, and `test_feature5_diff_link_renders_on_every_games_card` renders a card per game
+and asserts the `[Revision diff](…)` link reaches the payload while every page still validates.
+The WuWa end-to-end diff test also asserts the built card's link.
+
 ### Encore beta fallback regression coverage
 
 Captured `encore_{hsin,suoming,lily,weapon}_live.json` fixtures retain relevant API fields and

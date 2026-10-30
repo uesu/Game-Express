@@ -659,10 +659,42 @@ Per-game namespaces and labels are declared in `config/games.json` (`beta.nanoka
 
 **Wuthering Waves** has no gachabase site, so its revision comes from the manifest's
 `new` lists alone. That is the correct scope there: the manifest says exactly what is
-new in `latest`, and there is no public per-revision diff to summarise. Each internal fallback
+new in `latest`; the public pair-by-pair comparison lives on Encore instead (see
+[Encore's version comparison page](#encore-version-comparison-page-wuwa) below). Each internal fallback
 also keeps that manifest id explicitly rather than reparsing it from the human-facing singular
 `ww.nanoka.cc/character/<id>/`, `weapon/<id>/` or `relic/<id>/` URL; this keeps new WuWa
 characters, weapons and echoes on the same bounded detail/delivery path as the other games.
+
+### Encore version comparison page (WuWa)
+
+Encore also publishes a **version-comparison page** that is exactly the per-revision diff
+Wuthering Waves otherwise lacks. Its own UI builds this query (observed 2026-10-30):
+
+```
+https://encore.moe/diff?firstGameVer=3.8.0&secondGameVer=3.8.0
+        &firstVer=Beta_3.8.2&secondVer=Beta_3.8.3&route=character&id=1512&lang=en
+```
+
+`firstVer` / `secondVer` are the beta **patch** versions (`Beta_<x.y.z>`), `firstGameVer` /
+`secondGameVer` the game version each patch belongs to (`3.8.x` → `3.8.0`), `route` is
+`character` or `weapon`, and `id` is the numeric item id. `https://encore.moe/diff?lang=en` is
+the same tool without a comparison selected.
+
+Feature 5 builds this URL for a WuWa item only from values the card actually knows — the two
+beta patch versions it compared (`beta._encore_diff_url`). A cold start, an unreadable version,
+or the same patch twice yields no link rather than one that would open an empty comparison; a
+card compared with the released build keeps the beta-to-beta link, because that is the pair the
+database can name, and its subtext already says which baseline it used. The card renders it as
+the standard `[Revision diff](…)` link, so every game carries a source comparison: Encore for
+WuWa, gachabase for the other three (`beta._diff_url`).
+
+**Limitations.** This is a client-side page, not a documented JSON endpoint: the bot links to it
+and never scrapes it, so it adds no request, no schedule and no failure mode. It is not used to
+discover changed ids — WuWa revision scope still comes from the nanoka manifest. The query
+grammar is observation evidence from the site's own URLs, not a published contract; if Encore
+changes it, the link degrades to its landing page and the card content is unaffected. Only the
+`character` and `weapon` routes were observed, so an echo item carries no comparison link rather
+than a guessed `route=` value.
 
 ### Encore beta API fallback for WuWa
 
