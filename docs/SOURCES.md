@@ -643,6 +643,7 @@ blank-heading / hotfix behavior and Sunbringer `19850203` source-link shape were
 | Before/after diff | `https://zzz.gachabase.net/diff/agents/1601/sunbringer?prev=beta_3.4.1_19842923&cur=beta_3.4.1_19850203&lang=en` | Linked from a changelog entry or deterministically surfaced from a retained before/after build; it is **not fetched** by the monitor — readable structured JSON snapshots create the card's inline diff |
 | Character kit | `https://static.nanoka.cc/<game>/<revision>/{en,zh}/character/<id>.json` | One bounded `en` GET per newly revealed or already-snapshotted candidate (including ZZZ `passive.level` Core Passive & Additional Ability, named Mindscape Cinema titles, and `potential_detail` Potential Awakening), plus a `zh` cross-check when EN lags (`???`, `[TBD]`, `/-`, missing CN sections, changelog CN-lag advisory, or unchanged EN multipliers on a new revision) |
 | Weapon / W-Engine / light cone | `https://static.nanoka.cc/<game>/<revision>/{en,zh}/{weapon,lightcone}/<id>.json` | Stats (including ZZZ max-modification substat scaling from `rand_property` + `stars`) + inline `S1–S5` / `R1–R5` refinement/superimposition scaling (`6%/7%/8%/9%/10%`, falling back cleanly to `S1` / `R1` when tiers `2..5` are missing, unclear, or zero-padded), `zh` parameter cross-check for `[value unavailable]` / `[TBD]` / `???`, and zero-request `zh` listing name fallback (`<zh> (ID <id>)`) when `en` is unlocalized |
+| Bangboo | `https://static.nanoka.cc/zzz/<revision>/{en,zh}/bangboo/<id>.json` | Skill numbers resolved through `skill_prop`; prose keys dropped rather than printed (see the table above) |
 | Disc drive / relic set / artifact / echo | `https://static.nanoka.cc/<game>/<revision>/{en,zh}/{equipment,relicset,artifact,echo}/<id>.json` | 2-piece / 4-piece set bonuses and verified per-piece icon galleries (GI artifacts live in one `artifact.json`) |
 | Verified static media | `https://static.nanoka.cc/assets/{gi,hsr,zzz,ww}/...webp` | Exact per-namespace asset paths (`avatardrawcard`, `rank/_dependencies/textures/..._Rank_{1..6}`, `lightconemaxfigures`, `relicfigures/IconRelic_{id}_{slot}`, `UI_Gacha_AvatarImg_*`, `UI_Gacha_EquipIcon_*`, ZZZ `icon`/`icon2`/listing stems, and ID-verified WuWa nanoka assets). Missing/404 assets omit cleanly; newly uploaded single images, fallback-icon-to-splash promotions, and `1..N` gallery additions publish visual-asset updates on subsequent revisions and lock in `locked_images` |
 | Listing index | `https://static.nanoka.cc/<game>/<revision>/{weapon,equipment,lightcone,relicset,echo}.json` | One GET per kind per revision: rarity, max ATK and substat name for every id, so the card never has to guess them |
@@ -650,7 +651,7 @@ blank-heading / hotfix behavior and Sunbringer `19850203` source-link shape were
 Diff-link routes are the sites' own path segments, captured 2026-10-30 from the served
 changelog pages rather than guessed: `characters|weapons|artifacts` (Genshin),
 `characters|lightcones|relics|planar-ornaments` (Star Rail — a planar set has its own route,
-a cavern relic set lives under `relics`), `agents|w-engines|drive-discs` (ZZZ). WuWa has no
+a cavern relic set lives under `relics`), `agents|w-engines|drive-discs|bangboo` (ZZZ). WuWa has no
 gachabase route at all, so its comparison link is Encore's `diff` page instead.
 
 The `__data.json` stream behind those pages groups items under per-game key names, also captured
@@ -660,17 +661,41 @@ of them has to stay in `gamexpress/beta.py::_DATA_SECTIONS`, because a key that 
 that whole group in silence — which is how a Star Rail stream kept only its `relics` and a
 Genshin stream produced no revision at all.
 
-Two listed groups have no card kind: ZZZ's `bangboo` and Genshin's `materials`/`items`.
+Two listed groups have no card kind: Genshin's `materials`/`items` (a material has no kit worth
+carding) and any route the code does not recognise — that case is a reported warning, never a
+silent skip. ZZZ's `bangboo` used to be the third; it is a card now.
 
 A Bangboo is a real first-class record, not an agent variant — captured from the served pages on
 2026-10-30 (`/bangboo` index and `/bangboo/54024` for Charley): an S/A rank, a promotion stat block
 (HP · ATK · DEF · Impact · CRIT Rate · CRIT DMG · PEN Ratio · Anomaly Proficiency), promotion
 materials, three skills labelled a / b / c (Active, Talent, QTE) each with its own attribute table
 and a shared `Skill Table`, and its own `Version Diff` picker. The page is served out of
-`zzz/<revision>/bangboo.json`; the per-item file that carries the skill prose is the
-`en/bangboo/<id>.json` counterpart of `en/character|weapon|equipment/<id>.json`, which is the one
-shape no capture has shown yet. Until it does, a listed Bangboo is reported as skipped rather than
-guessed into a card. Nanoka's per-version diff feed
+`zzz/<revision>/bangboo.json`; the per-item file is
+`zzz/<revision>/{en,zh}/bangboo/<id>.json`, the same layout as the other kinds:
+
+| Field | Holds |
+|---|---|
+| `rarity` | raw `2..4`; the zzz `+1` mapping makes `4` the five-star S rank the site prints |
+| `stats` | base HP / ATK / DEF plus `break_stun` (Impact) and the Lv. 1 growth rates |
+| `level` | promotion ranks `"1"`..`"6"`, each with `level_min`/`level_max`, `materials`, and `extra` (CRIT Rate / CRIT DMG) |
+| `skill` | `a`/`b`/`c` = Active / Talent / QTE; each has `{"1".."N": {name, desc, property, param}}` |
+| `skill_prop` | the numeric table the `param` placeholders point at: `{main, growth, format}` per `Prop` id |
+
+`skill_prop` is where the card's numbers come from — Charley's `1001` of `80000` with format `%`
+is the 800% the page shows, and the same table yields 293% / 1,079% / 154% for the other slots. The
+prose is not: `desc`, each skill's `name`, and some `property`/`param` entries are localization keys
+(`Bangboo_Desc_54024`, `Bangboo_ActiveSkill_Title_54024`) whose English text is not in the JSON at
+3.4.1. A keyed string is dropped, never printed: a skill with text renders
+`Active Skill: <text>` followed by `Active Skill attributes: DMG Multiplier 800% · Daze Multiplier
+293%`, and Charley's three blocks render as the two attribute lines only — no key ever reaches a
+card. The card is `[NEW]` when the manifest's `new.bangboo` lists the id, its heading is the
+`Bangboo` kind label (so `set_kind` stays empty and no `*Bangboo*` line is repeated under it), and
+no Lv. 60 HP/ATK/DEF total is printed: the page's totals include promotion bonuses that the file
+does not expose as a formula, so only values that can be read exactly are shown. A block that is keys on both sides — Charley's Talent
+names *and* its `param` values are keys, so no number exists to show — prints
+`-# Talent: only localization keys in this build — omitted until translated.` instead of
+disappearing, and a `<zh>` cross-check cannot fill it: `_reconcile_en_with_zh_equipment` only
+resolves `[value unavailable]` / `[TBD]` / `???` placeholders, which a keyed slot never is. Nanoka's per-version diff feed
 (`ww/3.8.1/diff/en.json`, `/diff#anchor` pages elsewhere) is deliberately not read: the card's
 diff is computed from two retained snapshots, which is what lets it print `~~old~~ → **new**`
 per value.
