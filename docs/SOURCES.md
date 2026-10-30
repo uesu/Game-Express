@@ -653,6 +653,21 @@ changelog pages rather than guessed: `characters|weapons|artifacts` (Genshin),
 a cavern relic set lives under `relics`), `agents|w-engines|drive-discs` (ZZZ). WuWa has no
 gachabase route at all, so its comparison link is Encore's `diff` page instead.
 
+The `__data.json` stream behind those pages groups items under per-game key names, also captured
+2026-10-30: ZZZ `agents|wEngines|bangboo|driveDiscs`, Star Rail
+`characters|lightcones|relics|planarOrnaments`, Genshin `characters|weapons|artifacts`. Every one
+of them has to stay in `gamexpress/beta.py::_DATA_SECTIONS`, because a key that is absent drops
+that whole group in silence — which is how a Star Rail stream kept only its `relics` and a
+Genshin stream produced no revision at all.
+
+Two listed groups have no card kind: ZZZ's `bangboo` and Genshin's `materials`/`items`. Nanoka
+serves `zzz/<revision>/bangboo.json` and a `/bangboo/<id>` page, and the ZZZ 3.4.1 beta carries a
+new Bangboo (54024), so a Bangboo card is feasible once its detail JSON shape is confirmed; until
+then the run reports the skipped group rather than hiding it. Nanoka's per-version diff feed
+(`ww/3.8.1/diff/en.json`, `/diff#anchor` pages elsewhere) is deliberately not read: the card's
+diff is computed from two retained snapshots, which is what lets it print `~~old~~ → **new**`
+per value.
+
 Per-game namespaces and labels are declared in `config/games.json` (`beta.nanoka`,
 `beta.changelog`) and mapped in `gamexpress/beta.py::NANOKA_KINDS`:
 
