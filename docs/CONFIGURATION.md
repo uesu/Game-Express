@@ -702,7 +702,11 @@ Where the data comes from (`gamexpress/beta.py`, see [SOURCES.md](SOURCES.md#bet
   whole (`patch.more`), and a `BETA_MAX_REQUESTS` too small to ever fund a baseline (under 10)
   keeps the old full snapshot rather than stalling forever. When nothing moved against the
   released build, no card is posted for that item and the run summary says why
-  (`beta kit matches the released … kit — no value change to post`).
+  (`beta kit matches the released … kit — no value change to post`). An item the source cannot
+  describe at all is recorded once so the batch can settle (WuWa weapons are deferred instead,
+  because their source does answer later) and the run summary names it —
+  `beta: weapon id … has no readable text in this build; recorded as seen` — so a skipped item is
+  never a silent one.
 - **Direction follows the kit, not the arrow.** `[BUFF]` / `[NERF]` are decided by what the value
   does in play: a cheaper Ultimate or EX cost, a shorter cooldown / charge time, or an easier
   trigger requirement is a buff although the number fell, and `DMG taken reduced by 30% → 40%` is a

@@ -505,6 +505,12 @@ unchanged block, the header range and a validating payload;
 guards the other direction — a released baseline must not invent `Faction set to …` out of a field
 the released reader never published.
 
+### A skipped item is never a silent one
+
+`test_feature5_an_unreadable_weapon_is_recorded_and_reported_never_silent` serves a weapon detail
+with no readable text and asserts the item is kept off the card, still recorded in `item_keys` (so
+the batch settles instead of retrying forever) and named in `ctx.report`.
+
 ### A padded line is not a clipped snapshot
 
 `test_feature5_a_padded_source_line_does_not_disable_the_diff` drives a `3.8.1 → 3.8.3` pair whose
