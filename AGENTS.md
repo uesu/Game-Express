@@ -603,6 +603,15 @@ Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
   is omitted outright, never listed as `No changes.`, and the header names the comparison itself
   (`beta._rev_range_label`: `Patch Notes: Rev. 3.8.1 → 3.8.3`, or the build ids `19834130 →
   19851435` when only the build moved) so every `~~old~~ → **new**` below has an anchor.
+- **Every beta card links the item's newest beta-to-beta comparison.** `beta._diff_url` picks the
+  database that serves the game — Encore for WuWa (`beta._encore_diff_url`, the query grammar its
+  own UI builds: `firstVer=Beta_3.8.2&secondVer=Beta_3.8.3&route=character&id=1512&lang=en`),
+  gachabase for the other three — and returns "" rather than invent one (cold start, same patch
+  twice, an unreadable version). When a card is compared with the released build instead, the link
+  still opens the beta-to-beta comparison: that is the only pair the database can name, and the
+  card's own subtext says which baseline it used. The link is a citation, not a data source — it
+  costs no request and never decides what the card says. WuWa has no gachabase site, so a
+  gachabase diff URL there would be a dead link; that is why the dispatch lives in one helper.
 - **Direction follows the kit, and doubt is not a direction.** `beta._direction` decides
   `[BUFF]` / `[NERF]` from what the value does in play — cost, cooldown, charge time and trigger
   requirements invert (cheaper / faster / easier is a buff) — and the nearest subject word before

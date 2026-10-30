@@ -298,6 +298,10 @@ that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA
   (`???`, `[TBD]`, `/-` incomplete ratios, unchanged EN parameters on a new revision, or an
   upstream changelog note advising to double-check Chinese), the monitor cross-checks `/zh/`
   within the bounded request ceiling and reconciles authoritative CN values cleanly.
+- **A source comparison on every card.** Each changed item links its own revision diff — Encore's
+  version comparison for WuWa (`/diff?firstVer=Beta_3.8.1&secondVer=Beta_3.8.3&route=character&id=1512`),
+  gachabase's for Genshin, Star Rail and ZZZ — built only from the two patches the card compared.
+  The link is a citation the reader can check; it costs no request and never changes the card.
 - **Content-driven pages.** Beta cards can use five pages, ten or more, according to the
   readable content in each batch; there is no fixed beta page cap. Long equipment effects,
   character text, parameter rows and revision changes continue seamlessly on validated pages
