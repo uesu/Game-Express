@@ -1692,6 +1692,13 @@ def _parse_gachabase_data(raw: str, base_url: str = "") -> list[dict]:
             if not isinstance(rev_num, int) or not ver:
                 continue
             present = [key for key in _DATA_SECTIONS if isinstance(rev.get(key), list)]
+            # A list on the revision that no card kind knows about (a group gachabase starts
+            # streaming later, such as Genshin's materials) would otherwise disappear here with
+            # nothing downstream able to notice: `present` only ever names known keys.
+            unknown = sorted(
+                key for key, value in rev.items()
+                if isinstance(value, list) and key not in _DATA_SECTIONS
+            )
             if not present:
                 continue                 # lists not streamed: never guess "no changes"
             entries: list[dict] = []
@@ -1729,6 +1736,7 @@ def _parse_gachabase_data(raw: str, base_url: str = "") -> list[dict]:
                 "no_changes": bool(present) and not entries,
                 "zh_check_advised": False,
                 "data_warning": "",
+                "unknown_groups": unknown,
             })
     out.sort(key=lambda r: int(re.findall(r"\d+", r["label"])[-1]), reverse=True)
     return out
@@ -4517,7 +4525,9 @@ def _meta_label(game_key: str, field: str) -> str:
     if field == "faction":
         return "Faction" if game_key == "zzz" else "Affiliation"
     if field == "sub_type":
-        return "Type"
+        # Every reader but WuWa's Encore one puts the item's *substat* here — the card prints it
+        # as `**Substat:** CRIT DMG 48%` — so that is what the label says.
+        return "Substat"
     if field == "weapon_class":
         return "Weapon class"
     if field == "set_kind":
@@ -4574,6 +4584,14 @@ def _metadata_changes(game_key: str, previous: Any, current: Any,
         if require_both and not (old_text and new_text):
             # Against the live build a field can be missing because the released reader never
             # published it. "Faction set to X" would be an artifact of the baseline, not a change.
+            continue
+        # WuWa's Encore reader stores the weapon type in both fields (`weapon_class = sub_type`),
+        # which is what keeps `**Substat:**` from repeating the class already in the badge.
+        # Reported as metadata it would be the same change twice, so the weapon-class row is left
+        # to say it once.
+        if (field == "sub_type" and "weapon_class" in fields
+                and old_text == str(getattr(previous, "weapon_class", "") or "").strip()
+                and new_text == str(getattr(current, "weapon_class", "") or "").strip()):
             continue
         label = _meta_label(game_key, field)
         if old_text and new_text:
@@ -6059,6 +6077,15 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
         ctx.warnings.append(
             f"{game.short} beta: {len(unkinded)} listed change(s) have no card kind "
             f"({', '.join(labels)}) — skipped")
+    unknown_groups = [
+        str(key) for key in ((source_revision or {}).get("unknown_groups") or []) if str(key)
+    ]
+    if unknown_groups:
+        # Reported rather than parsed: a group nobody defined a card kind for cannot be carded,
+        # but it must never look like a revision that simply had nothing in it.
+        ctx.warnings.append(
+            f"{game.short} beta: changelog lists group(s) with no card kind "
+            f"({', '.join(unknown_groups)}) — not read")
     requests = (2 + extra_ch_reqs) if _changelog_url(game) else 1
     previous_ver = str(record.get("source_version") or "").strip()
     # When GachaBase is unreachable (on 2026-10-30 it answered 403 to

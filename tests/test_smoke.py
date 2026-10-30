@@ -19296,6 +19296,115 @@ def test_feature5_a_new_bangboo_reaches_the_card_end_to_end():
     assert "**Impact:** 103" in body and "**Anomaly Mastery:** 110" in body, body[:2000]
 
 
+def test_feature5_an_equipment_metadata_move_is_labelled_the_way_the_card_prints_it():
+    """`sub_type` is a substat on every reader but WuWa's Encore one, and never said twice."""
+    from gamexpress import beta as beta_mod
+    from gamexpress.models import BetaEquipment
+
+    fields = ("name", *beta_mod._BETA_EQUIP_META_FIELDS)
+
+    def item(**kw):
+        base = dict(id="x:1", name="Item", category_label="Weapons", rarity=5, tag="[CHANGED]")
+        base.update(kw)
+        return BetaEquipment(**base)
+
+    # Every other reader: `sub_type` holds the substat, and the card renders it as `**Substat:**`.
+    for game, category, old, new in (
+        ("zzz", "W-Engines", "Percent HP", "Percent ATK"),
+        ("gi", "Weapons", "CRIT Rate 22%", "ATK 22%"),
+        ("hsr", "Light Cones", "HP 43.2%", "ATK 43.2%"),
+        ("wuwa", "Weapons", "CRIT Rate", "ATK"),
+    ):
+        lines = beta_mod._metadata_changes(
+            game,
+            item(category_label=category, sub_type=old, weapon_class="Sword"),
+            item(category_label=category, sub_type=new, weapon_class="Sword"),
+            fields,
+        )
+        assert lines == [f"**[ADJUSTMENT]** Substat changed from ~~{old}~~ → **{new}**."], (game, lines)
+
+    # The Encore reader publishes the weapon type in both fields; say it once.
+    lines = beta_mod._metadata_changes(
+        "wuwa",
+        item(sub_type="Sword", weapon_class="Sword"),
+        item(sub_type="Rectifier", weapon_class="Rectifier"),
+        fields,
+    )
+    assert lines == ["**[ADJUSTMENT]** Weapon class changed from ~~Sword~~ → **Rectifier**."], lines
+
+    # …but a class that moves on its own is still reported, and so is a genuinely stale substat.
+    lines = beta_mod._metadata_changes(
+        "wuwa",
+        item(sub_type="Sword", weapon_class="Sword"),
+        item(sub_type="Sword", weapon_class="Broadblade"),
+        fields,
+    )
+    assert lines == [
+        "**[ADJUSTMENT]** Weapon class changed from ~~Sword~~ → **Broadblade**."], lines
+    lines = beta_mod._metadata_changes(
+        "wuwa",
+        item(sub_type="Sword", weapon_class="Broadblade"),
+        item(sub_type="Rectifier", weapon_class="Broadblade"),
+        fields,
+    )
+    assert lines == [
+        "**[ADJUSTMENT]** Substat changed from ~~Sword~~ → **Rectifier**."], lines
+
+
+def test_feature5_the_two_metadata_labels_agree_with_the_rendered_card():
+    """A label that disagrees with the card's own row is a defect, not a wording choice."""
+    from gamexpress import beta as beta_mod
+    from gamexpress import cards as cards_mod
+
+    # The stats formatter is what actually prints the substat.
+    rendered = cards_mod._format_equipment_stats_line("zzz", "Base ATK 594", "Percent HP", "Defense")
+    assert rendered == ["**Base ATK:** 594 | **Substat:** HP%"], rendered
+    assert "Substat" in beta_mod._meta_label("zzz", "sub_type")
+    # The class is the badge on every site that has one.
+    badge = cards_mod._equipment_type_badge("zzz", "W-Engines", 5, "Defense", "Percent HP")
+    assert badge == "S-Rank W-Engine — Defense", badge
+
+
+def test_feature5_a_streamed_group_with_no_card_kind_is_named_not_dropped():
+    """A group gachabase starts streaming later must not vanish at parse time.
+
+    The parser only reads the keys in `_DATA_SECTIONS`, so before this an unknown group produced
+    no entries and no warning — the revision simply looked emptier than it was.
+    """
+    from gamexpress import beta as beta_mod
+
+    raw = (BETA_FIX / "zzz_changelog_data.jsonl").read_text(encoding="utf-8")
+    clean = beta_mod._parse_gachabase_data(
+        raw, base_url="https://zzz.gachabase.net/changelog/beta?lang=en")
+    assert all(rev.get("unknown_groups") == [] for rev in clean), clean
+
+    # Same stream, one group renamed to something no card kind defines.
+    renamed = raw.replace("bangboo", "materials")
+    revs = beta_mod._parse_gachabase_data(
+        renamed, base_url="https://zzz.gachabase.net/changelog/beta?lang=en")
+    assert revs[0]["unknown_groups"] == ["materials"], revs[0]
+
+    # …and the run says so, once, without pretending the revision had no changes.
+    class StreamFetcher:
+        async def get_text(self, url, **_kw):
+            return renamed if url.endswith("/__data.json?lang=en") else None
+
+        async def get_json(self, _url, **_kw):
+            return None
+
+        async def verify_media(self, _url):
+            return True
+
+    manifest = {"zzz": {"live": "3.3", "latest": "3.4.1+19997538",
+                        "available": ["3.3", "3.4.1+19997538"],
+                        "new": {"character": [], "weapon": [], "equipment": [], "bangboo": []}}}
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _beta_ctx(Path(tmp) / "state.json", StreamFetcher(), BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest, beta_mod._budget(ctx)))
+    assert any("no card kind (materials)" in warn for warn in ctx.warnings), ctx.warnings
+
+
 def test_feature5_a_listed_group_with_no_card_kind_is_reported_not_swallowed():
     """ZZZ lists Bangboo; the card has no Bangboo kind, so the run says so instead of hiding it."""
     from gamexpress import beta as beta_mod
@@ -25893,11 +26002,13 @@ def test_feature5_a_metadata_mover_is_labelled_and_a_localization_is_not_a_renam
 
     fields = ("name", *beta_mod._BETA_EQUIP_META_FIELDS)
 
-    # A real move: every affected field is named, and the line is a strikethrough arrow.
+    # A real move: the line is a strikethrough arrow, and it is said ONCE. The Encore reader
+    # stores the weapon type in `sub_type` and `weapon_class` alike, so naming both fields
+    # printed the same change twice (`Type changed…` then `Weapon class changed…`).
     moved = beta_mod._metadata_changes(
         "wuwa", weapon(), weapon(sub_type="Broadblade", weapon_class="Broadblade"), fields)
-    assert "**[ADJUSTMENT]** Type changed from ~~Sword~~ → **Broadblade**." in moved, moved
-    assert "**[ADJUSTMENT]** Weapon class changed from ~~Sword~~ → **Broadblade**." in moved, moved
+    assert moved == [
+        "**[ADJUSTMENT]** Weapon class changed from ~~Sword~~ → **Broadblade**."], moved
 
     # A rename is a name move, not a reclassification.
     renamed = beta_mod._metadata_changes("wuwa", weapon(), weapon(name="Ages of Harvesting"), fields)

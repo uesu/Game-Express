@@ -740,6 +740,21 @@ back to the plain snapshot note ("no direction is inferred") rather than a revea
 live build does not have — Charley 54024, the one genuine 3.4.1 addition — prints its kit once as
 `[NEW]`. Cost: one listing GET per role per run, and only when the manifest claims something new.
 
+**Two fields, two meanings.** `sub_type` holds the item's *substat* on every reader except WuWa's
+Encore one, where it holds the weapon type and is deliberately copied into `weapon_class` — that
+copy is what stops `**Substat:**` from repeating the class already in the badge
+(`S-Rank W-Engine — Defense` … `**Substat:** HP%`). The metadata report labels `sub_type` "Substat"
+to match the card's own row, and skips it when it is that copy, so a WuWa reclassification prints
+one `Weapon class changed from ~~Sword~~ → **Rectifier**` instead of two lines saying the same
+thing.
+
+**A group nobody carded is named, not dropped.** The `__data.json` reader only reads the keys in
+`_DATA_SECTIONS`; any other list on a revision (a group gachabase starts streaming later, such as
+Genshin's materials) used to vanish at parse time with nothing downstream able to notice. It is now
+carried through as `unknown_groups` and reported once per run —
+`changelog lists group(s) with no card kind (materials) — not read` — the same way an unkinded
+entry on the page path already was.
+
 The prose is translated in some builds and not others — Booltergeist ships real English ("Cursed
 Spotlight", "Specialty Scare Actor", "Mischief Maker on the Loose"), while Charley ships
 localization keys (`Bangboo_Desc_54024`, `Bangboo_ActiveSkill_Title_54024`). A key is dropped,
