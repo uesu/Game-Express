@@ -134,11 +134,6 @@ class BetaPatch:
     no_changes: bool = False
     # Bounded batches can resume one source revision without duplicating an earlier page.
     item_keys: list[str] = field(default_factory=list)
-    # How many tracked items the upstream changelog listed for this revision. When it is larger
-    # than `item_keys` the card does not cover the whole page, and the run summary says so — the
-    # one diagnostic that tells an operator (or an agent reading the summary) which upstream items
-    # were intentionally deferred, unreadable, or missed.
-    listed: int = 0
     more: bool = False
     batch_id: str = ""
 
