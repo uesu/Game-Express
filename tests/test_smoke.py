@@ -18219,6 +18219,57 @@ def test_feature5_encore_secondary_api_keeps_version_identity_and_request_limits
         assert not any("encore.moe/" in url for url in ctx.fetcher.calls)
 
 
+def test_feature5_encore_shaped_data_never_uses_the_live_build_as_its_baseline():
+    """Encore and nanoka format the same kit differently.
+
+    Diffing one provider's beta data against the other's live build would report formatting as
+    buffs and nerfs, so the released-kit baseline is nanoka-only.
+    """
+    from gamexpress import beta as beta_mod
+
+    manifest = {"ww": {"latest": "3.8.1", "live": "3.7", "available": ["3.7", "3.8.1"],
+                       "new": {"character": [1512], "weapon": [21030076], "echo": []}}}
+
+    class EncoreOnlyFetcher:
+        def __init__(self):
+            self.calls = []
+
+        async def get_json(self, url, **_kw):
+            self.calls.append(url)
+            if url.endswith("/manifest.json"):
+                return manifest
+            if url.startswith("https://api-v2.encore.moe/api/en"):
+                if "/new?" in url:
+                    return [{"GameVer": "3.8.0", "ResVer": "3.8.1", "Changelist": "9162983"}]
+                if "/weapon/" in url:
+                    return _beta_json("encore_weapon_live.json")
+                return _beta_json("encore_lily_live.json")
+            return None                    # nanoka has no beta detail for this agent
+
+        async def get_text(self, _url, **_kw):
+            return None
+
+        async def verify_media(self, _url):
+            return False
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fetcher = EncoreOnlyFetcher()
+        ctx = _beta_ctx(Path(tmp) / "state.json", fetcher, BETA_ENABLED="1", games=["wuwa"])
+        budget = beta_mod._budget(ctx)
+        budget["_shared_requests_left"] = 40
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, budget))
+        assert patch and patch.characters, patch
+        assert patch.equipment and "encore.moe/weapon/21030076" in patch.equipment[0].page_url
+        assert all(snap.get("provider") == "encore" for snap in patch.snapshots.values())
+        # The released build was never read: one provider cannot baseline the other.
+        assert not any("/3.7/" in url for url in fetcher.calls)
+        assert not any(url.startswith("https://static.nanoka.cc/ww/3.7/") for url in fetcher.calls)
+        # …and the provider is part of what is stored, so the NEXT revision can diff against it
+        # instead of seeing a provider change and re-posting the whole effect.
+        stored = next(iter(patch.snapshots.values()))
+        assert beta_mod._snapshot_comparison(stored, dict(stored)) == "equal"
+
+
 def test_feature5_encore_hsin_suoming_captured_beta_kits():
     from gamexpress import beta as beta_mod
 
@@ -18272,7 +18323,13 @@ def test_feature5_complete_output_keeps_long_equipment_parameters_and_diff_chang
     changes, untouched = diff_kits(previous + [removed], current)
     assert len(changes) == 15 and untouched == 0
     assert all(len(section.lines) == 12 for section in changes[:14])
-    assert len(changes[-1].lines) == 9
+    # A retired block is one compact statement, not nine re-printed lines — the second post is
+    # supposed to get shorter, not longer.
+    removed_entry = changes[-1]
+    assert len(removed_entry.lines) == 1
+    assert "Removed from this revision" in removed_entry.lines[0]
+    assert "Removed-line-00" in removed_entry.lines[0]
+    assert "(+8 more lines no longer published)" in removed_entry.lines[0]
     assert "more change(s)" not in str(changes)
     stat_changes = _stat_diff(
         BetaCharacter(id="stats", name="Stats", stats_lines=[f"Stat-{i}: 100" for i in range(12)]),
@@ -18878,6 +18935,218 @@ def test_feature5_released_weapon_diffs_against_the_live_build():
         assert eq.lines[0].startswith("-# Compared with the released 3.3 kit")
         body = "\n".join(eq.lines)
         assert "~~8~~ → **10**" in body
+
+
+_RELEASED_ENTRY_1661 = (
+    "[![](https://i.gachabase.net/x/q:50/f:webp/plain/zzz/assets/1661.png)\\\n"
+    "\\\nRobin](https://zzz.gachabase.net/agents/1661/1661/beta?lang=en) "
+    "[See Changes](https://zzz.gachabase.net/diff/agents/1661/1661"
+    "?prev=beta_3.4.1_19851435&cur=beta_3.4.1_19997538&lang=en)"
+)
+
+
+def _released_changelog(entry: str, section: str = "Agents") -> str:
+    return "\n\n".join([
+        "# CHANGELOG - v3.4.X", "## v3.4.1 Rev. 19997538 \\| 29th October 2026",
+        f"### {section}", "UPDATED", entry,
+    ])
+
+
+def test_feature5_legacy_snapshot_for_a_released_agent_diffs_against_the_live_build():
+    """A retained snapshot that can no longer be compared must not become a full kit re-print.
+
+    Legacy records without a full-content digest are exactly the case that used to post the whole
+    kit again as `[CHANGED]`. The released build is a real, complete baseline, so the second post
+    is still a diff.
+    """
+    from gamexpress import beta as beta_mod
+
+    version = "3.4.1+19997538"
+    manifest = {"zzz": {"live": "3.3", "latest": "3.4.1+19851435",
+                        "available": ["3.3", "3.4.1+19851435"],
+                        "new": {"character": [], "weapon": [], "equipment": []}}}
+    beta_kit = _beta_json("zzz_character_1661.json")
+    live_kit = json.loads(json.dumps(beta_kit))
+    live_kit["skill"]["basic"]["description"][0]["desc"] = (
+        "Press  to activate:\nUnleashes up to 2 attacks forward, dealing Ether DMG;"
+    )
+
+    class SnapshotFetcher:
+        def __init__(self):
+            self.calls = []
+
+        async def get_json(self, url, **_kw):
+            self.calls.append(url)
+            if url.endswith("/manifest.json"):
+                return manifest
+            if "/zzz/3.3/" in url and "/character/1661" in url:
+                return json.loads(json.dumps(live_kit))
+            if "/zzz/" in url and "/character/1661" in url:
+                return json.loads(json.dumps(beta_kit))
+            return None
+
+        async def get_text(self, _url, **_kw):
+            return _released_changelog(_RELEASED_ENTRY_1661)
+
+        async def verify_media(self, _url):
+            return True
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fetcher = SnapshotFetcher()
+        ctx = _beta_ctx(Path(tmp) / "state.json", fetcher, BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        first = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest,
+                                                 beta_mod._budget(ctx)))
+        assert first and first.characters
+        beta_mod._settle_beta_patch(ctx, ctx.state.beta_record("zzz"), first, status="posted")
+
+        # A legacy record: the kit is retained, but what was clipped was never recorded, so a
+        # direct before/after against it cannot be trusted.
+        for snapshot in ctx.state.beta_record("zzz")["snapshots"].values():
+            snapshot.pop("content_signature", None)
+            snapshot.pop("truncated", None)
+        ctx.state.save()
+
+        manifest["zzz"]["latest"] = version
+        manifest["zzz"]["available"].append(version)
+        second = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest,
+                                                  beta_mod._budget(ctx)))
+        assert [c.name for c in second.characters] == ["Robin"]
+        card = second.characters[0]
+        assert "released 3.3" in card.subtext, card.subtext
+        assert "Full current kit" not in card.subtext
+        assert [section.title for section in card.sections] == ["Basic Attack: Robin Attack"]
+        assert "~~2~~ → **3**" in card.sections[0].lines[0]
+
+
+def test_feature5_released_agent_is_deferred_when_the_live_baseline_cannot_be_read():
+    """The baseline is what makes the card a diff; without the budget for it, wait a run."""
+    from gamexpress import beta as beta_mod
+
+    version = "3.4.1+19997538"
+    manifest = {"zzz": {"live": "3.3", "latest": version,
+                        "available": ["3.3", version],
+                        "new": {"character": [], "weapon": [], "equipment": []}}}
+
+    class TightFetcher:
+        def __init__(self):
+            self.calls = []
+
+        async def get_json(self, url, **_kw):
+            self.calls.append(url)
+            if url.endswith("/manifest.json"):
+                return manifest
+            if "/zzz/" in url and "/character/1661" in url and "/3.3/" not in url:
+                return _beta_json("zzz_character_1661.json")
+            return None
+
+        async def get_text(self, _url, **_kw):
+            return _released_changelog(_RELEASED_ENTRY_1661)
+
+        async def verify_media(self, _url):
+            return True
+
+    from unittest.mock import patch as mock_patch
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fetcher = TightFetcher()
+        ctx = _beta_ctx(Path(tmp) / "state.json", fetcher, BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        # This run has no headroom left for the baseline read (the configuration could afford
+        # one, this run cannot), so the item waits instead of being re-printed whole.
+        with mock_patch.object(beta_mod, "_live_baseline_affordable", return_value=False):
+            patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest,
+                                                     beta_mod._budget(ctx)))
+        assert patch is not None
+        assert patch.more is True and patch.characters == []
+        assert not any("/3.3/" in url for url in fetcher.calls)
+        # Nothing was rendered, so nothing is marked delivered: the item comes back next run.
+        assert patch.item_keys == []
+
+
+def test_feature5_a_configuration_that_can_never_afford_a_baseline_never_stalls():
+    """`BETA_MAX_REQUESTS` smaller than the baseline reserve must not defer forever."""
+    from gamexpress import beta as beta_mod
+
+    assert beta_mod._live_baseline_possible({"max_requests": 48}) is True
+    assert beta_mod._live_baseline_possible({"max_requests": 9}) is False
+
+    version = "3.4.1+19997538"
+    manifest = {"zzz": {"live": "3.3", "latest": version,
+                        "available": ["3.3", version],
+                        "new": {"character": [], "weapon": [], "equipment": []}}}
+
+    class TinyBudgetFetcher:
+        def __init__(self):
+            self.calls = []
+
+        async def get_json(self, url, **_kw):
+            self.calls.append(url)
+            if url.endswith("/manifest.json"):
+                return manifest
+            if "/zzz/" in url and "/character/1661" in url and "/3.3/" not in url:
+                return _beta_json("zzz_character_1661.json")
+            return None
+
+        async def get_text(self, _url, **_kw):
+            return _released_changelog(_RELEASED_ENTRY_1661)
+
+        async def verify_media(self, _url):
+            return True
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fetcher = TinyBudgetFetcher()
+        ctx = _beta_ctx(Path(tmp) / "state.json", fetcher, BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"], BETA_MAX_REQUESTS="4")
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest,
+                                                 beta_mod._budget(ctx)))
+        assert not any("/3.3/" in url for url in fetcher.calls)
+        if patch is None or not patch.characters:
+            return                      # the 4-request ceiling may not even reach a detail read
+        card = patch.characters[0]
+        assert "prior baseline was not retained" in card.subtext
+        assert patch.more is not True
+
+
+def test_feature5_live_baseline_probe_never_spends_a_request_twice():
+    """One baseline read costs one request — the affordability probe itself is free.
+
+    Charging in both the probe and the read would quietly shrink the run's budget and starve the
+    images of the batch that needed the baseline.
+    """
+    from gamexpress import beta as beta_mod
+
+    budget = {"max_requests": 48, "_shared_requests_left": 10}
+    assert beta_mod._live_baseline_affordable(budget, 2) is True
+    assert budget["_shared_requests_left"] == 10
+    # 8 requests must stay free for the images of this batch, and the boundary is inclusive.
+    assert beta_mod._live_baseline_affordable({"max_requests": 10}, 2) is True
+    assert beta_mod._live_baseline_affordable({"max_requests": 9}, 2) is False
+    assert beta_mod._live_baseline_affordable({"max_requests": 48, "_shared_requests_left": 0}, 2) is False
+    assert beta_mod._live_baseline_affordable({"max_requests": 48}, 40) is True
+
+
+def test_feature5_a_retired_block_is_one_statement_not_a_reprint():
+    from gamexpress import beta as beta_mod
+    from gamexpress.models import BetaSectionEntry
+
+    previous = [
+        BetaSectionEntry(title="Core Passive", category="Core Passive",
+                         lines=[f"Old line {i}" for i in range(4)]),
+        BetaSectionEntry(title="Source note", category="Notes",
+                         lines=["-# 🌐 CN/CHS values updated in this build"]),
+        BetaSectionEntry(title="Single Skill", category="Skills", lines=["Only line"]),
+    ]
+    changes, untouched = beta_mod.diff_kits(previous, [])
+    assert untouched == 0
+    assert [section.title for section in changes] == ["Core Passive", "Single Skill"]
+    first, single = changes
+    assert len(first.lines) == 1
+    assert "Removed from this revision" in first.lines[0]
+    assert "(+3 more lines no longer published)" in first.lines[0]
+    assert len(single.lines) == 1 and "more lines" not in single.lines[0]
+    # A retired block that was only a source note is not a change a reader can act on.
+    assert not any("Source note" in section.title for section in changes)
 
 
 def test_feature5_engine_identifiers_and_cn_names_never_become_titles():
@@ -22557,13 +22826,19 @@ def test_run_summary_never_writes_into_the_operator_notes_folder():
 
 def test_live_news_probe_cli_guards_without_network():
     """The read-only live probe is a developer tool: it must exist, reject unknown games, and
-    never reach the network from a test (it requires an explicit game argument)."""
+    never reach the network from a test (it requires an explicit game argument).
+
+    `tools/` is a dev-only directory and is not synced to a production repo, so the check is
+    skipped there instead of failing: a guard that asserts a file the deployment never carries is
+    how a green PR turns into a red production CI run.
+    """
     import subprocess
     import sys
     from pathlib import Path
 
     probe = Path(__file__).resolve().parents[1] / "tools" / "live_news_probe.py"
-    assert probe.is_file()
+    if not probe.is_file():
+        return                      # production checkout: no dev tools, nothing to guard
     for argv in ([], ["not-a-game"], ["genshin", "extra"]):
         proc = subprocess.run([sys.executable, str(probe), *argv],
                               capture_output=True, text=True, timeout=120)

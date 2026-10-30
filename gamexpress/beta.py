@@ -747,6 +747,11 @@ def _change_line(old_frag: str, new_frag: str, label: str = "") -> tuple[str, st
     return f"**{tag}** {body}", tag
 
 
+# A removed block keeps one readable excerpt; the rest of its retired text is counted, not quoted,
+# because a second post should get shorter, not longer.
+_REMOVED_EXCERPT = 150
+
+
 def _norm_title(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(title or "").lower()).strip()
 
@@ -1006,19 +1011,26 @@ def diff_kits(prev_sections: list, cur_sections: list) -> tuple[list[Any], int]:
             values_label=str(getattr(section, "values_label", "")),
         ))
 
-    # A removed skill / node matters too.  Do not silently erase it just because the newer
-    # export no longer contains that title.
+    # A removed skill / node matters too — never silently erased just because the newer export no
+    # longer carries that title. It is stated once, with a readable excerpt, instead of re-printing
+    # every retired line: a dropped block is a fact, not a payload.
     for previous in prev_list:
         if id(previous) in used:
             continue
-        old = _section_lines(previous)
+        old = [line for line in _section_lines(previous) if not line.startswith("-#")]
         if not old:
-            continue
+            continue                # only a source note: nothing a reader could act on
+        excerpt = old[0].strip()
+        if len(excerpt) > _REMOVED_EXCERPT:
+            excerpt = excerpt[: _REMOVED_EXCERPT - 1].rstrip() + "…"
+        line = f"**[CHANGED]** Removed from this revision — ~~{excerpt}~~"
+        if len(old) > 1:
+            rest = len(old) - 1
+            line += f" *(+{rest} more line{'' if rest == 1 else 's'} no longer published)*"
         out.append(BetaSectionEntry(
             title=str(getattr(previous, "title", "")),
             category=str(getattr(previous, "category", "")), tag="[CHANGED]",
-            meta=str(getattr(previous, "meta", "")),
-            lines=[f"**[CHANGED]** Removed from this revision: ~~{line}~~" for line in old],
+            meta=str(getattr(previous, "meta", "")), lines=[line],
         ))
     return out, untouched
 
@@ -4789,10 +4801,30 @@ def _pending_entries(ns: str, entries: list[dict], processed: set[str]) -> list[
 BETA_LIVE_BASELINE_MIN_LEFT = 8
 
 
+def _live_baseline_possible(budget: dict) -> bool:
+    """Whether this configuration can ever fund a baseline.
+
+    A deliberately tiny `BETA_MAX_REQUESTS` must keep the old, honest full snapshot instead of
+    deferring every item forever: a baseline that can never fit is not a reason to stall a batch.
+    """
+    return budget["max_requests"] >= BETA_LIVE_BASELINE_MIN_LEFT + 2
+
+
 def _live_baseline_affordable(budget: dict, requests: int) -> bool:
-    """Spend one request on a released-kit baseline only if the rest of the batch still fits."""
-    return (budget["max_requests"] - requests >= BETA_LIVE_BASELINE_MIN_LEFT
-            and _take_shared_request(budget, 1))
+    """Can one released-kit baseline be added and still leave room for this batch's images?
+
+    Pure: the caller reserves the request when it actually issues it, so an affordability probe
+    can never spend a request twice for one read.
+    """
+    if budget["max_requests"] - requests < BETA_LIVE_BASELINE_MIN_LEFT:
+        return False
+    left = budget.get("_shared_requests_left")
+    if left is None:
+        return True
+    try:
+        return int(left) >= 1
+    except (TypeError, ValueError):
+        return False
 
 
 async def _released_character(
@@ -5218,26 +5250,44 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             previous_snapshot is not None and eidolon_imgs and len(eidolon_imgs) > len(prev_char_gal)
         )
 
-        patch.snapshots[snap_key] = cur_snap
-        if eidolon_imgs:
-            patch.snapshots[snap_key]["gallery_urls"] = list(eidolon_imgs)
-        known_snapshots[snap_key] = patch.snapshots[snap_key]
-        patch.item_keys.append(_entry_key(ns, "character", item_id))
         cmp_mode = (
-            _snapshot_comparison(previous_snapshot, patch.snapshots[snap_key])
+            _snapshot_comparison(previous_snapshot, cur_snap)
             if previous_snapshot is not None
             else "new"
         )
-        # No beta baseline yet, but the agent is already out: diff against the released kit, so
-        # the card carries the values that moved (with ~~old~~ → **new** and a buff/nerf tag)
-        # instead of the entire kit marked [CHANGED], which reads as if everything were new.
+        # An agent players already have is diffed against the build they are running — never
+        # re-printed whole, and never rebaselined as `[CHANGED]` when the retained snapshot can no
+        # longer be compared. That second post is where a reader wants `~~old~~ → **new**` and a
+        # buff/nerf verdict, not forty unchanged skills.
+        #
+        # This runs BEFORE the snapshot and the delivered-item key are recorded: a deferred item
+        # must stay pending, and a stored snapshot would make the next run look unchanged.
         released: BetaCharacter | None = None
-        if previous is None and not is_new and has_live_build and _live_baseline_affordable(budget, requests):
+        # `_encore` data is a different provider's shape: diffing it against a nanoka live build
+        # would invent changes that are only formatting differences.
+        needs_baseline = bool(
+            not is_new and has_live_build and "_encore" not in data
+            and _live_baseline_possible(budget)
+            and (previous is None or cmp_mode == "snapshot")
+        )
+        if needs_baseline and (
+            not _live_baseline_affordable(budget, requests) or not _take_shared_request(budget, 1)
+        ):
+            # The baseline is what makes this a diff instead of a dump, so wait for the next
+            # run's budget rather than spending a card on the whole kit.
+            patch.more = True
+            continue
+        if needs_baseline:
             requests += 1
             released = await _released_character(ctx, ns, kinds, item_id, live_build)
             if released is not None:
                 previous = released
                 cmp_mode = "diff"
+        patch.snapshots[snap_key] = cur_snap
+        if eidolon_imgs:
+            patch.snapshots[snap_key]["gallery_urls"] = list(eidolon_imgs)
+        known_snapshots[snap_key] = patch.snapshots[snap_key]
+        patch.item_keys.append(_entry_key(ns, "character", item_id))
         if previous is None:
             full.sections = _clone_sections(full.sections, "[NEW]" if is_new else "[CHANGED]")
             if not is_new:
@@ -5521,25 +5571,41 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             and ((image and image != prev_eq_img) or (eq_gallery and len(eq_gallery) > len(prev_eq_gal)))
         )
 
-        patch.snapshots[snap_key] = eq_snap
-        if eq_gallery:
-            patch.snapshots[snap_key]["gallery_urls"] = list(eq_gallery)
         if "_encore" in data:
-            patch.snapshots[snap_key].update(provider="encore", provider_revision=data["_encore_revision"])
-        known_snapshots[snap_key] = patch.snapshots[snap_key]
-        patch.item_keys.append(_entry_key(ns, role, item_id))
+            # The provider decides comparability, so it must be on the snapshot BEFORE the
+            # comparison: otherwise an Encore weapon looks provider-changed on every revision and
+            # re-posts its whole effect instead of a diff.
+            eq_snap.update(provider="encore", provider_revision=data["_encore_revision"])
         eq_cmp = (
-            _snapshot_comparison(previous_snapshot, patch.snapshots[snap_key])
+            _snapshot_comparison(previous_snapshot, eq_snap)
             if previous_snapshot is not None
             else "new"
         )
+        # Same rule as characters: a weapon or disc players already own is compared with the live
+        # build, never re-printed whole and never rebaselined — and a deferred item is decided
+        # before its snapshot and delivered-item key are recorded, so it stays pending.
         released_eq: BetaEquipment | None = None
-        if previous is None and not is_new and has_live_build and _live_baseline_affordable(budget, requests):
+        needs_eq_baseline = bool(
+            not is_new and has_live_build and "_encore" not in data
+            and _live_baseline_possible(budget)
+            and (previous is None or eq_cmp == "snapshot")
+        )
+        if needs_eq_baseline and (
+            not _live_baseline_affordable(budget, requests) or not _take_shared_request(budget, 1)
+        ):
+            patch.more = True
+            continue
+        if needs_eq_baseline:
             requests += 1
             released_eq = await _released_equipment(ctx, ns, kinds, role, item_id, live_build)
             if released_eq is not None:
                 previous = released_eq
                 eq_cmp = "diff"
+        patch.snapshots[snap_key] = eq_snap
+        if eq_gallery:
+            patch.snapshots[snap_key]["gallery_urls"] = list(eq_gallery)
+        known_snapshots[snap_key] = patch.snapshots[snap_key]
+        patch.item_keys.append(_entry_key(ns, role, item_id))
         if previous is None:
             patch.equipment.append(current)
         elif eq_cmp == "snapshot":

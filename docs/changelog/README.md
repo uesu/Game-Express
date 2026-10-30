@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Timing phrases, reveal dedup and edit safety](CHANGELOG.md#2026-10-29--timing-phrases-reveal-dedup-and-edit-safety).
+Latest: [Beta: released kits are diffs, and a blocked changelog is not a blind spot](CHANGELOG.md#2026-10-30--beta-released-kits-are-diffs-and-a-blocked-changelog-is-not-a-blind-spot).
+
+Previous: [Timing phrases, reveal dedup and edit safety](CHANGELOG.md#2026-10-29--timing-phrases-reveal-dedup-and-edit-safety).
 
 Previous: [Follow-up regression guards](CHANGELOG.md#2026-10-29--follow-up-regression-guards).
 

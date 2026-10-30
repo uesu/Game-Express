@@ -658,17 +658,25 @@ Where the data comes from (`gamexpress/beta.py`, see [SOURCES.md](SOURCES.md#bet
   no structured changelog endpoint, so it remains manifest-driven; its `ww.nanoka.cc/diff` URL
   is a human resource link, never a poll target.
 - **`https://static.nanoka.cc/<game>/<live build>/{en}/<kind>/<id>.json`** — the build players
-  already run, read **once per item** as a diff baseline when a revision touches an item that is
-  already released and no beta baseline is retained. A beta revision that reworks old characters
-  then posts the handful of values that moved (`~~old~~ → **new**`, tagged `[BUFF]` / `[NERF]` /
-  `[NEW]` for a new skill or mechanic) instead of re-posting every block as `[CHANGED]`, which is
-  indistinguishable from everything being new. This also covers a same-cycle hotfix
-  (`7.1` live vs `7.1.53` beta). Costs one request per item, once — the beta snapshot becomes the
-  baseline from the next revision on — it is skipped unless the run still has 8 requests of
-  headroom for images, and it is skipped entirely when the live build does not serve that item
-  (an unreleased character has no live kit), which falls back to the labelled full snapshot. When
-  nothing moved against the released build, no card is posted for that item and the run summary
-  says why (`beta kit matches the released … kit — no value change to post`).
+  already run, read **once per item** as the diff baseline for anything that is already released.
+  From the second post of a revision onward a card is a diff, not a re-print: the item is compared
+  with the build players have (or with its own retained beta snapshot, which is the same thing one
+  revision later), and only the blocks that moved appear — `~~old~~ → **new**`, tagged `[BUFF]` /
+  `[NERF]`, a new skill or mechanic as `[NEW]`, wording-only edits as `[TEXT FIX]`. A block that
+  disappeared is stated once, `**[CHANGED]** Removed from this revision — ~~excerpt~~`, with a count
+  of the retired lines instead of quoting them all, so a later post gets shorter rather than
+  longer. A retained snapshot that can no longer be compared (a legacy record with no
+  full-content digest, a clipped baseline, a changed provider) is replaced by the released build
+  as the baseline rather than becoming a "full current kit" rebaseline. This also covers a
+  same-cycle hotfix (`7.1` live vs `7.1.53` beta). Costs one request per item, once — the beta
+  snapshot becomes the baseline from the next revision on — it is skipped when the live build does
+  not serve that item (an unreleased character has no live kit), which keeps the labelled full
+  snapshot. The read is only attempted while the run keeps **8 requests** of headroom for the
+  batch's images; below that the item is **deferred to the next run** instead of being re-printed
+  whole (`patch.more`), and a `BETA_MAX_REQUESTS` too small to ever fund a baseline (under 10)
+  keeps the old full snapshot rather than stalling forever. When nothing moved against the
+  released build, no card is posted for that item and the run summary says why
+  (`beta kit matches the released … kit — no value change to post`).
 - **`https://static.nanoka.cc/<game>/<revision>/{en,zh}/<kind>/<id>.json`** — the kit / weapon /
   set detail. English (`en`) is read first; Chinese (`zh`) is queried within the same bounded
   `BETA_MAX_REQUESTS` ceiling only when EN shows lag markers (`???`, `[TBD]`, `/-`), an upstream

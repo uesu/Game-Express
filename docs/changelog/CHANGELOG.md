@@ -1,5 +1,33 @@
 # Changelog — current entries
 
+## 2026-10-30 — Beta: released kits are diffs, and a blocked changelog is not a blind spot
+
+- From the second post of a revision onward a beta card is a **diff**, not a re-print. A revision
+  that touches an agent, weapon or disc already in the live build is compared with the build
+  players run, so the card carries only the values that moved (`~~old~~ → **new**`, tagged
+  `[BUFF]` / `[NERF]`), a new skill or mechanic as `[NEW]`, and wording-only edits as `[TEXT FIX]`.
+  Measured on the captured ZZZ 3.4.1 Rev. 19997538 agent: **2 messages / 7,641 characters** as a
+  full kit versus **1 message / 1,579 characters** as a released-kit diff.
+- A retired skill, node or line is stated once — `**[CHANGED]** Removed from this revision —
+  ~~excerpt~~` plus `(+N more lines no longer published)` — instead of re-printing everything that
+  disappeared, so a later post gets shorter rather than longer.
+- A retained snapshot that can no longer be compared (no full-content digest, a clipped baseline, a
+  changed provider) is rebaselined against the released build instead of becoming a "full current
+  kit" card. Nothing moved against the released build means **no card** for that item, reported in
+  the run summary; an item the live build does not serve yet keeps the labelled full snapshot, and
+  Encore-shaped WuWa data is never diffed against a nanoka live build.
+- Bounded: one extra read per item, only when no trustworthy baseline exists, only while the run
+  keeps 8 requests of headroom — otherwise the item is deferred to the next run instead of being
+  re-printed whole.
+- When GachaBase answers 403 to every route, the SvelteKit `/changelog/beta/__data.json` stream is
+  parsed instead (it also carries the display names the page omits), the per-build listings are
+  diffed so new or renamed items are still found, and the run summary states the narrower coverage.
+  A just-posted revision is re-read at most twice inside three hours for entries its first page did
+  not list, and the summary says when the changelog listed more items than the card delivered.
+- A title is never a key, an `ID <n>` placeholder or a CJK string in an English card: the human
+  token is mined from an engine identifier (`Avatar_Female_Size02_Robin` → `Robin`), and with no
+  English name at all the CN/CHS name becomes a marked note under `W-Engine (ID 14166)`.
+
 ## 2026-10-29 — Timing phrases, reveal dedup and edit safety
 
 - Read the HoYoverse reminder form `The game will be updated and maintained at <date> (UTC+8)`
