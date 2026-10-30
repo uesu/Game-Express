@@ -85,7 +85,10 @@ versions; it does not bypass the settled-version guard.
 **Only the primary card pings.** The role is mentioned once, in the schedule channel; the copy
 is built with no ping at all, so one announcement never notifies the same member twice. The
 copy carries no mention *text* either, so it does not show a dead blue `@role` pill that
-notifies nobody. Edits never ping in either channel.
+notifies nobody. Edits never ping in either channel: every PATCH re-sends the card with the
+**same** mention permissions it was posted with, so the mention keeps rendering — and keeping it
+rendered is what keeps the role colouring the whole message — without notifying anyone, because
+Discord never notifies on an edit.
 
 ---
 

@@ -53,7 +53,9 @@ Expect:
 2. Summary → a burst of `✏️` edit lines, one per live version.
 3. In `#schedule` → no line above the card any more, title ends with the title emoji
    (`<:ananta1:…>` by default — `EMOJI_TITLE`), Discord shows `(edited)`.
-4. **Nobody is notified.** Edits never ping.
+4. **Nobody is notified.** An edit is not a new message, so Discord sends no ping — and the
+   card keeps whatever mention it was posted with, so it still renders (with its role colour)
+   exactly as before the update.
 
 🛑 If anything looks wrong, stop here. No fan-out is involved yet.
 
@@ -134,7 +136,8 @@ Only after several clean cron runs.
 > do not add a second variable next to it.
 
 - Every live card is edited once to add the role to its legend line. Those edits **notify
-  nobody**, so older cards gain a mention that never pinged.
+  nobody**, so older cards gain a mention that never pinged — and from then on they keep it
+  rendered through every later edit instead of losing it to the next update.
 - From then on a new card pings **once**, in `#schedule` only. The game-channel copies stay
   silent — that is the `test_the_game_channel_copy_never_pings` guarantee.
 
