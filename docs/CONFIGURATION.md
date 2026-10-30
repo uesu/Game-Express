@@ -647,6 +647,12 @@ Where the data comes from (`gamexpress/beta.py`, see [SOURCES.md](SOURCES.md#bet
 - **the game's beta changelog** — `https://<game>.gachabase.net/changelog/beta?lang=en`
   for GI / HSR / ZZZ; its matching revision supplies item/diff links and CN-lag advisories.
   HTTP 403 / access-denied blocks degrade cleanly to nanoka's manifest without warning spam.
+  The rendered page is only one of two views of the same data: when it cannot be read, the
+  SvelteKit `/changelog/beta/__data.json` stream is parsed instead, and the per-build character /
+  weapon / relic listings are diffed so new, renamed or re-specced items are still found. A
+  revision whose sections are not streamed at all is skipped rather than reported as "no
+  changes", and the run summary records that coverage was narrower (`beta-changelog 0/3`,
+  `beta-data 15/0` in the source counts) instead of quietly printing a shorter card.
   If a hotfix heading has no listed entries, the runner probes only manifest-new and
   already-snapshotted ids; it does **not** fan out across every character. Wuthering Waves has
   no structured changelog endpoint, so it remains manifest-driven; its `ww.nanoka.cc/diff` URL
@@ -684,6 +690,14 @@ Safety invariants:
   sharing an image lock or baseline. An explicit upstream “No tracked changes detected” build
   advances silently (except on a cold opt-in, which intentionally publishes the current reveal
   once).
+- **Late entries and honest coverage.** GachaBase can render a fresh revision over several
+  minutes, so a revision that has *just* posted is re-read for entries its first read did not
+  list: at most `BETA_LATE_RECHECKS` (2) extra reads inside `BETA_LATE_RECHECK_H` (3) hours, and
+  only for character / weapon / relic entries absent from that build's `processed` set. Once that
+  window closes the revision is final and costs no request. A settled revision is never re-read
+  through the version-comparison path, so a quiet poll costs one manifest GET as before. When the
+  changelog listed more tracked items than the card delivered, the run summary ends with
+  `; changelog listed N item(s)` — a coverage gap is visible without opening the log.
 - **Fail-over aware.** `state["beta"]` merges across peers so a standby never double-posts.
 - **Bounded pages and delivery gap.** Long kits split into sequential Components V2 containers,
   each independently inside Discord's 4,000-character and 40-component limits, labelled
@@ -780,3 +794,28 @@ for deduplication until manually reconciled. If the mention cannot fit the exist
 original article is sent without that ping and a warning is reported; its structure is not changed.
 Matching is heuristic: new formats and unknown
 video representations can be missed. ANANTA has no configured official-news adapter.
+
+### Turning the optional mentions on
+
+Both mentions ship **off**, so a default deployment stays silent; each is one switch plus one
+role list, and nothing else changes.
+
+1. **Character reveal** (`NEWS_REVEAL_PING`) — needs official news to be running. Add the
+   variable `NEWS_REVEAL_PING=1` and the variable `PING_NEWS_REVEAL` holding the role ID(s) for
+   all six games (comma-separated, `everyone` / `here` allowed). Do not point it at
+   `PING_ROLE_ID` — it is deliberately not inherited, and no `PING_NEWS_REVEAL_<GAME>` exists.
+   It fires only on a *character announcement reveal* (Genshin `◆` dossier, HSR
+   `Extraterrestrial Satellite Communication`, ZZZ `Agent Record`, WuWa `Profile Reveal`, HNA /
+   ANANTA dossier series) — not on maintenance notices, events, codes, schedules, outfits,
+   reruns, showcases, previews, web events or gag comics. Verify with one reveal: the mention sits
+   on the card's legend line, `PING_NEWS_REVEAL` set to `none` silences it again.
+2. **Beta revision card** (`PING_BETA`) — needs `BETA_ENABLED=1` and a non-empty `BETA_GAMES`.
+   Add `PING_BETA` (all opted-in games) or `PING_BETA_<GAME>` (`GENSHIN`, `STARRAIL`, `ZZZ`,
+   `WUWA`, plus `GI` / `HSR` / `WW`). It pings on the **first page only** of a batch, once per
+   revision; `PING_ROLE_ID` is not inherited. Unset means silent — which is the state a beta run
+   needs no code change to reach. `python -m gamexpress validate` prints the resolved state on the
+   `beta=` line (`ping=configured` or `ping=off (no PING_BETA set)`), so the switch can be checked
+   without waiting for a revision.
+
+Neither setting adds a source request, a poll or a card: they only add (or withhold) the mention
+on cards that are already being rendered.
