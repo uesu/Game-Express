@@ -18647,7 +18647,9 @@ def test_feature5_every_nanoka_endpoint_the_cards_read_is_the_one_the_site_serve
 
     rev = "3.4.1+19997538"
     for ns, kinds in beta_mod.NANOKA_KINDS.items():
-        for role in ("weapon", "relic"):
+        # Every equipment role the game declares — ZZZ adds `bangboo`, and leaving it out here is
+        # exactly how a renamed kind would 404 with a green suite.
+        for role in [r for r in beta_mod.EQUIP_ROLES if r in kinds]:
             fetcher = RecordingFetcher()
             asyncio.run(beta_mod._detail(fetcher, ns, rev, kinds[role]["detail"], "12345"))
             assert fetcher.urls == [
@@ -18668,6 +18670,15 @@ def test_feature5_every_nanoka_endpoint_the_cards_read_is_the_one_the_site_serve
         "gi": ("weapon", "artifact"),
         "ww": ("weapon", "echo"),
     }
+    # Only ZZZ has a Bangboo kind, and it is the one confirmed against a served file:
+    # `static.nanoka.cc/zzz/3.4.1+19997538/en/bangboo/54023.json` (opened 2026-10-31).
+    assert "bangboo" in beta_mod.NANOKA_KINDS["zzz"]
+    assert beta_mod._detail_url("zzz", rev, "bangboo", "54023") == (
+        "https://static.nanoka.cc/zzz/3.4.1+19997538/en/bangboo/54023.json")
+    assert beta_mod._detail_url("zzz", rev, "bangboo", "54023", "zh") == (
+        "https://static.nanoka.cc/zzz/3.4.1+19997538/zh/bangboo/54023.json")
+    for ns in ("gi", "hsr", "ww"):
+        assert "bangboo" not in beta_mod.NANOKA_KINDS[ns], ns
 
 
 def test_feature5_a_bangboo_is_a_card_kind_of_its_own():
