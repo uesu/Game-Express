@@ -573,6 +573,46 @@ Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
 - **Never let an unresolved backend key reach a card.** `TestKey_PlaceHolder`,
   `Robin_Skill_Normal_Title`, `EquipmentSuit_34300_name`, `missing.webp` and friends are the
   database saying it has no data yet (`beta._is_key`, `beta._usable_image`).
+- **A blocked page is not a blind spot.** When the changelog page cannot be read, the
+  SvelteKit `__data.json` stream is parsed instead (`beta._parse_gachabase_data`), and the
+  per-build listings are diffed so new, renamed or re-specced items are still found. The
+  summary says the coverage was narrower; nothing is silently skipped.
+- **Never lose a late entry.** GachaBase can render a fresh revision over several minutes, so a
+  revision that has just posted is re-read for entries the first read did not list
+  (`BETA_LATE_RECHECKS` inside `BETA_LATE_RECHECK_H` hours, only entries missing from
+  `processed`). After that window it is final and costs no request. When the changelog listed
+  more tracked items than the card delivered, the run summary says so — no log access needed.
+- **A revision of a released item is a diff, not a re-print.** From the second post of a revision
+  onward a card is a diff: when a beta revision touches a character, weapon or disc that is
+  already in the live build, that build's kit is read once and used as the baseline
+  (`beta._released_character` / `beta._released_equipment`) — including when the retained
+  snapshot can no longer be compared, a case that used to become a "full current kit" rebaseline.
+  The card then shows only what moved — `~~old~~ → **new**` with `[BUFF]` / `[NERF]` / `[NEW]` /
+  `[TEXT FIX]` — plus a one-line tally (`1 buff • 14 unchanged block(s) omitted`), because a wall
+  of `[CHANGED]` cannot be read as "this is new" or "this was buffed".
+- **A revision card explains itself before it lists anything.** The `overview` paragraph of a
+  diff card is prose a person would write, not a second changelog: a verdict, where the movement
+  lands, what is new, and what was left alone — `beta._revision_explanation`. It may only state
+  what the diff measured: "nothing was nerfed" requires every measured number to have risen, a
+  value it could not read silences the claim, and a mostly-renamed revision says so
+  (`**Note:** this is largely a terminology pass …`). A full kit with no comparable baseline uses
+  `beta._full_kit_overview` and never implies a direction. Weapons and discs get the same courtesy
+  in one sentence (`beta._equipment_explanation`). Nothing here costs a request.
+- **A retired block is a sentence, not a payload.** A skill, node or line that disappears is one
+  bullet — `**[CHANGED]** Removed from this revision — ~~excerpt~~` plus `(+N more lines no longer
+  published)` — never a re-print of everything that was dropped. A block that only carried a
+  source note is not a change a reader can act on and is skipped. Later posts get shorter.
+- **Never invent the missing side, and never dump instead.** No visible movement means no card for
+  that item, reported in the summary. A live build that does not serve the item (unreleased) keeps
+  the labelled full snapshot, and a `BETA_MAX_REQUESTS` too small to ever fund a baseline keeps it
+  too rather than stalling. When the run is merely short of headroom the item is deferred and
+  retried — the snapshot and the delivered-item key are recorded only after that decision, so a
+  deferral cannot look like "already delivered" on the next run.
+- **A name is never a key and never a CJK title.** When only an engine identifier exists
+  (`Avatar_Female_Size02_Robin`), the human token is mined (`beta._name_from_identifier`) and a
+  key, a `(Test1)` placeholder or an earlier `ID 1661` fallback is refused (`_usable_name`).
+  With no English name anywhere, the title is the slot plus the id (`W-Engine (ID 14166)`) and
+  the CN/CHS name becomes a marked note, never the English heading.
 - **Keep the budget bounded.** `BETA_MIN_POLL_MINUTES`, `BETA_MAX_CHARACTERS`,
   `BETA_MAX_CHANGES`, `BETA_MAX_EQUIPMENT`, `BETA_MAX_REQUESTS` are all clamped in
   `beta._budget`; a bad value must fall back to a bounded default, never to unbounded. A

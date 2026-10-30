@@ -266,6 +266,8 @@ A schedule/code-only selector does not count as toggling news off.
 |---|---|---|
 | `NEWS_ENABLED` | `0` | Explicit news opt-in; independent of the existing schedule/code defaults |
 | `NEWS_GROUP_LONG_STRIPS` | `0` | Opt-in measured grouping; failure keeps article order |
+| `NEWS_REVEAL_PING` | `0` | Opt-in heuristic character-reveal mentions for official news; excludes identified video, deduplicates characters and same source publication minute |
+| `PING_NEWS_REVEAL` | — | The only reveal role setting: one role list (comma/space separated) used for **all** games. No `PING_ROLE_ID`/`PING_NEWS` inheritance and no per-game variant |
 | `NEWS_TIMESTAMPS` | `0` | Opt-in render-time `<t:EPOCH:…>` conversion for exact TZ-qualified news dates/times |
 | `NEWS_EXPAND_FULL` | `0` | Opt-in multi-page full articles beyond 2 pages (bounded at `NEWS_EXPAND_MAX_PAGES = 12`, `NEWS_EXPAND_MAX_CHARS = 120000`, `NEWS_EXPAND_MAX_MEDIA = 120`) |
 | `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | Canonical game keys; removing a game pauses its existing news state |
@@ -276,8 +278,10 @@ retryable and does not prevent other eligible articles from being attempted. Thi
 is not unlimited crawling or guaranteed same-run delivery: source pagination,
 48-hour freshness/future holds, silent baselines, state capacity, media validation,
 partial-delivery safeguards, Discord retries and job timeouts remain. By default
-(`NEWS_EXPAND_FULL=0`), the maximum two messages / 7,000-character policy per article
-remains intact; setting `NEWS_EXPAND_FULL=1` lifts that ceiling up to an explicit
+(`NEWS_EXPAND_FULL=0`), an article is still delivered in full: anything inside the
+two-message / 7,000-character envelope keeps that exact layout, and a longer article is
+**smart fitted** across up to `NEWS_DEFAULT_MAX_PAGES = 4` messages rather than being
+truncated. Setting `NEWS_EXPAND_FULL=1` lifts that ceiling up to an explicit
 12-page / 120,000-character / 120-media cap before excerpt fallback.
 
 Migration: `NEWS_MAX_POSTS_PER_RUN` is retired and ignored. Remove a leftover
@@ -417,10 +421,27 @@ supported news games (`genshin`, `starrail`, `hna`, `zzz`, `wuwa`):
 ### Full-content paging and overflow
 
 Keep fitting full articles unchanged in one message (possibly multiple containers).
-By default (`NEWS_EXPAND_FULL=0`), if one message fails, at most two actual messages
-are permitted when normalized source text plus title/byline once is `<= 7,000`
-characters and both payloads validate independently against `4,000` text characters /
-`40` components / `1–10` gallery items.
+By default (`NEWS_EXPAND_FULL=0`), one message is tried first. When normalized source
+text plus title/byline once is `<= 7,000` characters, at most two actual messages are
+permitted, each validating independently against `4,000` text characters / `40`
+components / `1–10` gallery items. A longer article is **smart fitted** with the same
+validation and the same payload shape, page after page, up to
+`NEWS_DEFAULT_MAX_PAGES = 4`; only what cannot fit inside that ceiling falls back to the
+one-container labelled excerpt with a single lead image. Nothing in the JSON structure,
+the official HTML or the sources changes: title/byline plus cover on page one,
+`-# Page N` plus divider on every continuation, and the three buttons on the last page.
+
+The fit is markdown-safe and loss-free: paragraphs are kept whole, and a paragraph that
+does not fit the room still open on the page is continued in the next message at a
+boundary that never splits a link, a bold run or a bracket. Concatenating the pages
+reproduces the article text exactly, so no sentence is silently dropped.
+
+That also covers an article between `4,000` and `7,000` characters written as one long
+paragraph with no blank line: the two-page layout is tried first (and keeps its exact
+bytes), and when it cannot cut safely the smart fitter continues the paragraph at a word
+boundary instead of truncating the article. Page labels stay truthful when the reveal
+mention reflows page one: a card that was numbered `1..N` is renumbered `1..N+1` in
+delivery order, while a single-message card never gains a label.
 
 When `NEWS_EXPAND_FULL=1` is explicitly enabled, the 2-page / 7,000-character policy
 ceiling is lifted up to an explicit operational safety bound (`NEWS_EXPAND_MAX_PAGES = 12`,
@@ -584,7 +605,9 @@ later builds. It retains the prior readable kit in bounded state, so a later cha
 Full-content digests suppress unchanged long kits even when retained text is clipped.
 If changed content exceeds retained limits, or a legacy snapshot lacks a full-content digest,
 the next inspected revision uses a labelled full `[CHANGED]` snapshot without invented inline
-direction. Retained text limits and state pruning stay bounded.
+direction. Retained text limits and state pruning stay bounded. A full snapshot with no comparable
+baseline never borrows the diff voice: its paragraph says the card is the whole kit and that
+`Nothing is marked as up or down`.
 
 WuWa also has a bounded Encore API beta detail fallback for missing/unreadable current-build
 characters and weapons. It uses explicit `?v=Beta`, an exact `ResVer` match and unchanged
@@ -626,10 +649,49 @@ Where the data comes from (`gamexpress/beta.py`, see [SOURCES.md](SOURCES.md#bet
 - **the game's beta changelog** — `https://<game>.gachabase.net/changelog/beta?lang=en`
   for GI / HSR / ZZZ; its matching revision supplies item/diff links and CN-lag advisories.
   HTTP 403 / access-denied blocks degrade cleanly to nanoka's manifest without warning spam.
+  The rendered page is only one of two views of the same data: when it cannot be read, the
+  SvelteKit `/changelog/beta/__data.json` stream is parsed instead, and the per-build character /
+  weapon / relic listings are diffed so new, renamed or re-specced items are still found. A
+  revision whose sections are not streamed at all is skipped rather than reported as "no
+  changes", and the run summary records that coverage was narrower (`beta-changelog 0/3`,
+  `beta-data 15/0` in the source counts) instead of quietly printing a shorter card.
   If a hotfix heading has no listed entries, the runner probes only manifest-new and
   already-snapshotted ids; it does **not** fan out across every character. Wuthering Waves has
   no structured changelog endpoint, so it remains manifest-driven; its `ww.nanoka.cc/diff` URL
   is a human resource link, never a poll target.
+- **`https://static.nanoka.cc/<game>/<live build>/{en}/<kind>/<id>.json`** — the build players
+  already run, read **once per item** as the diff baseline for anything that is already released.
+  From the second post of a revision onward a card is a diff, not a re-print: the item is compared
+  with the build players have (or with its own retained beta snapshot, which is the same thing one
+  revision later), and only the blocks that moved appear — `~~old~~ → **new**`, tagged `[BUFF]` /
+  `[NERF]`, a new skill or mechanic as `[NEW]`, wording-only edits as `[TEXT FIX]`. A block that
+  disappeared is stated once, `**[CHANGED]** Removed from this revision — ~~excerpt~~`, with a count
+  of the retired lines instead of quoting them all, so a later post gets shorter rather than
+  longer. A retained snapshot that can no longer be compared (a legacy record with no
+  full-content digest, a clipped baseline, a changed provider) is replaced by the released build
+  as the baseline rather than becoming a "full current kit" rebaseline. This also covers a
+  same-cycle hotfix (`7.1` live vs `7.1.53` beta). Costs one request per item, once — the beta
+  snapshot becomes the baseline from the next revision on — it is skipped when the live build does
+  not serve that item (an unreleased character has no live kit), which keeps the labelled full
+  snapshot. The read is only attempted while the run keeps **8 requests** of headroom for the
+  batch's images; below that the item is **deferred to the next run** instead of being re-printed
+  whole (`patch.more`), and a `BETA_MAX_REQUESTS` too small to ever fund a baseline (under 10)
+  keeps the old full snapshot rather than stalling forever. When nothing moved against the
+  released build, no card is posted for that item and the run summary says why
+  (`beta kit matches the released … kit — no value change to post`).
+- **A diff card explains itself before it lists anything.** The paragraph under the header is prose,
+  not another changelog: a verdict (`comes out ahead` / `is toned down` / `is rebalanced` / `is
+  renamed … rather than rebalanced` / `gains new material`), where the movement actually lands
+  (`most of the movement is in Deathless Revival and Life Severing`), what arrived
+  (`[Burning Attack] is new here`), and what was left alone (`The other 14 blocks are untouched and
+  read exactly as they do on the released 3.3 kit.`). `and nothing was nerfed` is only written when
+  every measured number really did move up; a value the diff could not read keeps the paragraph
+  silent rather than optimistic. A revision that is mostly renames carries
+  `**Note:** this is largely a terminology pass — N blocks changed only in wording`, so a rename
+  sweep never reads as a rework. Revised weapons and discs get one sentence in the same voice
+  (`**Nirvana Plume** gets stronger in this revision — nothing nerfed. The biggest change is its
+  Anomaly Proficiency bonus.`). No extra request: the paragraph is built from the diff already on
+  the card.
 - **`https://static.nanoka.cc/<game>/<revision>/{en,zh}/<kind>/<id>.json`** — the kit / weapon /
   set detail. English (`en`) is read first; Chinese (`zh`) is queried within the same bounded
   `BETA_MAX_REQUESTS` ceiling only when EN shows lag markers (`???`, `[TBD]`, `/-`), an upstream
@@ -663,6 +725,14 @@ Safety invariants:
   sharing an image lock or baseline. An explicit upstream “No tracked changes detected” build
   advances silently (except on a cold opt-in, which intentionally publishes the current reveal
   once).
+- **Late entries and honest coverage.** GachaBase can render a fresh revision over several
+  minutes, so a revision that has *just* posted is re-read for entries its first read did not
+  list: at most `BETA_LATE_RECHECKS` (2) extra reads inside `BETA_LATE_RECHECK_H` (3) hours, and
+  only for character / weapon / relic entries absent from that build's `processed` set. Once that
+  window closes the revision is final and costs no request. A settled revision is never re-read
+  through the version-comparison path, so a quiet poll costs one manifest GET as before. When the
+  changelog listed more tracked items than the card delivered, the run summary ends with
+  `; changelog listed N item(s)` — a coverage gap is visible without opening the log.
 - **Fail-over aware.** `state["beta"]` merges across peers so a standby never double-posts.
 - **Bounded pages and delivery gap.** Long kits split into sequential Components V2 containers,
   each independently inside Discord's 4,000-character and 40-component limits, labelled
@@ -740,3 +810,47 @@ settings or batch membership changes after a page was confirmed, delivery holds 
 reconciliation. Legacy partial batches without a signature also hold; do not clear their
 message IDs automatically. Inspect the actual Discord messages and retained source build
 before repairing state. Quiet source output cannot settle an unfinished delivery.
+
+### Character reveal mentions
+
+Two settings, no more: `NEWS_REVEAL_PING=1` turns it on and the single `PING_NEWS_REVEAL`
+role list applies to **all six games** (there is no per-game variant and no inheritance from
+`PING_ROLE_ID` or `PING_NEWS`). It also requires enabled official news. It checks existing
+fetched articles; no additional source requests are made. Announcements in the
+same **source publication minute** within a game share one ping; different minutes are not subject
+to a cooldown.
+Recognized follow-up profiles for retained character names are suppressed. A form suffix is the
+same character (`Rover: Aero` and `Rover: Electro` share one key), and only corroborated full-name
+aliases collapse within 12 hours (`Evelyn` / `Evelyn Chevalier`); names that merely share a word
+(`March` / `March 7th`, `Saber` / `Saber Alter`, `Herta` / `The Herta`) stay distinct. Tracking
+retains up to 200 names and timestamps per game and can be seeded from known schedule reruns; it is
+not a complete historical roster. Ambiguous first-page delivery is held and treated as already pinged
+for deduplication until manually reconciled. If the mention cannot fit the existing card, the
+original article is sent without that ping and a warning is reported; its structure is not changed.
+Matching is heuristic: new formats and unknown
+video representations can be missed. ANANTA has no configured official-news adapter.
+
+### Turning the optional mentions on
+
+Both mentions ship **off**, so a default deployment stays silent; each is one switch plus one
+role list, and nothing else changes.
+
+1. **Character reveal** (`NEWS_REVEAL_PING`) — needs official news to be running. Add the
+   variable `NEWS_REVEAL_PING=1` and the variable `PING_NEWS_REVEAL` holding the role ID(s) for
+   all six games (comma-separated, `everyone` / `here` allowed). Do not point it at
+   `PING_ROLE_ID` — it is deliberately not inherited, and no `PING_NEWS_REVEAL_<GAME>` exists.
+   It fires only on a *character announcement reveal* (Genshin `◆` dossier, HSR
+   `Extraterrestrial Satellite Communication`, ZZZ `Agent Record`, WuWa `Profile Reveal`, HNA /
+   ANANTA dossier series) — not on maintenance notices, events, codes, schedules, outfits,
+   reruns, showcases, previews, web events or gag comics. Verify with one reveal: the mention sits
+   on the card's legend line, `PING_NEWS_REVEAL` set to `none` silences it again.
+2. **Beta revision card** (`PING_BETA`) — needs `BETA_ENABLED=1` and a non-empty `BETA_GAMES`.
+   Add `PING_BETA` (all opted-in games) or `PING_BETA_<GAME>` (`GENSHIN`, `STARRAIL`, `ZZZ`,
+   `WUWA`, plus `GI` / `HSR` / `WW`). It pings on the **first page only** of a batch, once per
+   revision; `PING_ROLE_ID` is not inherited. Unset means silent — which is the state a beta run
+   needs no code change to reach. `python -m gamexpress validate` prints the resolved state on the
+   `beta=` line (`ping=configured` or `ping=off (no PING_BETA set)`), so the switch can be checked
+   without waiting for a revision.
+
+Neither setting adds a source request, a poll or a card: they only add (or withhold) the mention
+on cards that are already being rendered.

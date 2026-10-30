@@ -492,3 +492,134 @@ Gachabase HTML regression: `test_feature5_gachabase_html_revisions_and_changed_e
 uses a reduced SSR fixture to cover changed existing IDs, relative links/entities, category and
 diff pairing, script/style exclusion, blank versus explicit quiet revisions, and error pages.
 Public-source smoke checks are separate read-only checks, never part of the offline suite.
+
+## 2026-10-29 update verification
+
+Author-session verification on Python 3.11.2, based on main `5f20422` and the
+implementation reviewed from draft PR #83 (`e581968`). The current session stays
+on `arena/fb3eb040-game-express`; it does not modify that earlier PR's branch.
+
+- `python -m compileall -q gamexpress tests .github/scripts`, `python -m gamexpress validate`,
+  `python -m gamexpress preview --out <temporary-directory>`, `ruff check .`, and
+  `git diff --check` passed.
+- Standalone smoke: **506/506**, schedule regressions: **20/20**, placeholder:
+  **3/3**; `python -m pytest -q`: **529 passed**. These are overlapping runner
+  totals, not 1,058 distinct tests.
+- New guards exercise unofficial/Miliastra authors, historical quoted title
+  reconstructions, privacy-enhanced YouTube video exclusion, and best-effort
+  workflow-summary writes. All-six-game milestone tests use explicit operator
+  timings with cadence disabled, mocked source/webhook boundaries, exact
+  pre-start/start decisions and real temporary state reloads. Existing tests
+  separately cover cadence, official precedence, extensions and postponements.
+- Read-only GitHub API checks found successful production runs: Game
+  `40832660096`, Twitter `40832670145`, Reddit `40832659879`. Downloading their
+  logs failed at the Actions log host under this environment's network policy;
+  successful run status is **not** a complete log/annotation or delivery audit.
+- Replayed production state blob `53e4aed12dcbe1386c9fb49e9c8379ff3112c9f1`
+  through `maintenance.resolve_version_plans` at `2026-10-29T12:00:00Z`, without
+  new official inputs or overrides. Upcoming **estimated** preload/maintenance
+  starts (UTC): GI Nov 2 03:00 / Nov 3 22:00; HSR Nov 9 06:00 / Nov 10 22:00;
+  WuWa Nov 10 02:00 / Nov 11 20:00; ZZZ Nov 30 04:00 / Dec 1 22:00. HNA and
+  ANANTA produced no dates. This proves retained-state decisions, not current
+  upstream availability, enabled production destinations or future delivery.
+
+### Local CPU benchmarks (not live latency)
+
+Executed `python -m gamexpress benchmark --iterations 100 --json` against both
+an isolated `git archive 5f20422` export and the updated tree on the same host.
+Selected medians in microseconds (base → updated):
+
+| Case | Base | Updated |
+|---|---:|---:|
+| Short news, default off | 96.16 | 96.05 |
+| Medium news, two pages | 572.28 | 573.94 |
+| Long news, expansion off | 1791.71 | 1795.37 |
+| Long news, expansion on | 2274.52 | 2300.72 |
+| Long news, expansion + timestamps | 6831.73 | 6734.98 |
+
+Default-off output parity passed; timestamp converter calls when disabled: zero.
+A separate 10,000-call `classify_character_reveal` measurement on the reconstructed
+`Extraterrestrial Satellite Communication | Ellen` static-title fixture measured
+26.55 µs median / 50.72 µs p95. Production-state resolver replay medians over
+100 calls/game were GI 215.85, HSR 211.44, ZZZ 125.19, WuWa 99.74, HNA 2.40,
+ANANTA 2.42 µs. Timed regions performed no HTTP, webhook or production writes.
+Small differences are host noise, not an end-to-end speed guarantee.
+
+**Release limits:** historical 2,179-post precision/recall figures from the linked
+report are not independently reproduced; unfamiliar future formats and incomplete
+rosters remain heuristic limitations. No production workflow dispatch, Discord
+playback test, production sync or merge was performed. Twitter's optional 350 MiB
+handoff remains separate and off by default; higher limits are not proof of proxy
+playback reliability. Final-head CI and workflow annotations must be reviewed on
+the PR before release.
+
+### 2026-10-29 follow-up — timing phrases, reveal dedup and edit safety
+
+Verification for the delta on top of the revision above (same offline suite, Python 3.11.2).
+
+- `python -m compileall -q gamexpress tests .github/scripts`, `ruff check .`,
+  `python -m gamexpress validate`, `python -m gamexpress preview --out <temp>` passed.
+- Standalone smoke **512/512**; `python -m pytest -q tests` **535 passed** (overlapping
+  totals, not 1,047 distinct tests). Schedule regressions and the placeholder guard unchanged.
+- New guards and the requirement each pins (each fails on the pre-delta code):
+  `test_maintenance_window_phrasings_are_read_for_every_game` (`updated and maintained at …`,
+  clock-only end after a dated start, clock-only extension, reschedule that quotes the abandoned
+  window, `will not be postponed`, all six game keys);
+  `test_reveal_ping_edit_guard_skips_reflow_and_lost_mention_instead_of_truncating` (a CMS edit
+  that would need a continuation page is held, not published truncated);
+  `test_reveal_ping_collapses_a_full_name_variant_but_not_a_different_character` (corroborated
+  aliases collapse; `March` / `March 7th` and `Saber` / `Saber Alter` do not);
+  `test_reveal_ping_form_names_collapse_to_one_character_after_a_real_commit` (form suffixes and
+  the legacy `Profile Reveal:` separator).
+  The YouTube test now also covers trailing-slash and `/watch/` player URLs.
+- Real-corpus replay (read-only clones, no network at test time, not committed):
+  - **Wuthering Waves**, all **712** official Kuro website articles
+    (`TheLovinator1/wutheringwaves`, 2023-02 → 2026-10):
+    **97** classifier matches over **57** unique characters (`61` `Profile Reveal` — including the
+    15 archived `Profile Reveal:` titles, `34` `Stars Intertwined`, `2` `Resonator Reveal`).
+    Every match is a reveal-series title — **0** title-series false positives and **0** unmatched
+    labelled titles. `Rover: Aero` / `Rover: Electro` share one key, as do
+    `Yangyang: Xuanling` / `Yangyang`.
+  - **Genshin Impact**, **1,185** in-game notices (`KQM-git/GINews`, 2020 → 2026):
+    **0** matches — no `◆` bullet list, version notice or top-up notice is mistaken for a reveal.
+  - Corpora are unlabelled outside their own series titles; these are precision/recall proxies
+    against publisher titles, not the earlier report's 2,179-post figures.
+  - Cost: 141 µs/article (WuWa) and 167 µs/article (Genshin) including HTML body extraction on
+    this host, with zero HTTP inside the classifier.
+- `python -m gamexpress benchmark --iterations 300` on the clean head (Python 3.11.2):
+  short news default-off **93.06 µs** median, medium two-page **588.02 µs**, long
+  expansion-off **1738.38 µs**, long expansion-on **2256.49 µs**, both-on **6522.99 µs**;
+  token formatting 1.60 µs, `strftime` 16 epochs 26.64 µs. Default-off invariants:
+  `output_equal=True`, `main_1e071d8_sha256_equal=True`, timestamp-parser calls when
+  disabled **0**, extra HTTP/webhook **0**. Protocol counts stay at 1 message / 1 media GET
+  / 1 POST for short news, 2 / 1 / 2 for the medium fixture and 4 / 18 / 4 with expansion on.
+  `--beta-enabled` (local-only) still renders 16 pages with 0 live HTTP and 0 webhook posts.
+- Read-only production replay of the live state blob at `2026-10-29T12:00:00Z`, with no live
+  inputs and no writes: the four released games resolve an upcoming **estimated** preload /
+  maintenance pair (UTC) — GI Nov 2 03:00 / Nov 3 22:00, HSR Nov 9 06:00 / Nov 10 22:00,
+  WuWa Nov 10 02:00 / Nov 11 20:00, ZZZ Nov 30 04:00 / Dec 1 22:00; every settled milestone
+  stays outside the 12 h delivery window, `postponed=False`, and HNA/ANANTA produce no dates.
+- Live production observation (not a test): the three prod repositories' latest runs are green
+  (Game `40838508714`, Twitter `40838524872`, Reddit `40838516409`). Their check-run annotations
+  contain only GitHub's Ubuntu-migration notice — no warning or error annotation. This is a
+  status/annotation check, not a delivery or playback audit.
+- Run summary location: `test_run_summary_never_writes_into_the_operator_notes_folder` proves the
+  monitor never reads or writes `polishing and refining/`, that the live commit step stays plain
+  shell staging only `state/state.json` and `config/program_announcements.json`, and that it always
+  publishes its own persistence result (`unchanged` / `pushed`) for the summary step.
+- Credit hygiene is now pinned: the documentation-hygiene test asserts that `docs/CREDITS.md`
+  keeps the [HoyoPlay](https://gist.github.com/DynamiByte/0ad250bbe1930e2736a6d4e6e842bcb2) and
+  [WuWa launcher](https://gist.github.com/DynamiByte/d839bf9f671c975b6666d0f6e6634641) endpoint
+  notes and [Cheu3172/Wuwa-Web-Request](https://github.com/Cheu3172/Wuwa-Web-Request), so the
+  launcher adapters can never silently lose their attribution. A host sweep of the runtime code
+  (113 hosts) found no other uncredited provider: the remainder are Discord's CDN, the jsDelivr
+  mirror of an already-credited code list, a short-link resolver, the donate button, video-host
+  exclusions and a test-only `fixture.invalid`.
+- The CMS-edit guard retries instead of abandoning: a held edit is applied on the next run once the
+  article fits again (`test_reveal_ping_edit_guard_skips_reflow_and_lost_mention_instead_of_truncating`).
+- `tools/live_news_probe.py` (developer tool, read-only: no webhooks, secrets or state writes)
+  repeatedly checks one game's current discovery window for reveal matches and mention fit.
+  The suite only verifies that it exists and rejects a missing or unknown game argument, so a
+  test run never reaches the network.
+- Limits: no live-source availability and no Discord playback test were performed in this
+  session; unfamiliar publisher formats and incomplete historic rosters remain heuristic.

@@ -1,6 +1,18 @@
 # Changelog
 
-Latest: [Redlib Tier-1 fleet expansion (24 → 27) and inline-video / crosspost media parity](CHANGELOG.md#2026-10-27--redlib-tier-1-fleet-expansion-24--27-and-inline-video--crosspost-media-parity).
+Latest: [Beta: released kits are diffs, and the card explains itself](CHANGELOG.md#2026-10-30--beta-released-kits-are-diffs-and-the-card-explains-itself).
+
+Previous: [Timing phrases, reveal dedup and edit safety](CHANGELOG.md#2026-10-29--timing-phrases-reveal-dedup-and-edit-safety).
+
+Previous: [Follow-up regression guards](CHANGELOG.md#2026-10-29--follow-up-regression-guards).
+
+Previous: [Optional character reveal mentions](CHANGELOG.md#2026-10-29--optional-character-reveal-mentions).
+
+Previous: [News YouTube watch links](CHANGELOG.md#2026-10-29--news-youtube-watch-links).
+
+Previous: [Maintenance timing safeguards and actionable persistence summary](CHANGELOG.md#2026-10-29--maintenance-timing-safeguards-and-actionable-persistence-summary).
+
+Previous: [Redlib Tier-1 fleet expansion (24 → 27) and inline-video / crosspost media parity](CHANGELOG.md#2026-10-27--redlib-tier-1-fleet-expansion-24--27-and-inline-video--crosspost-media-parity).
 
 Previous: [CI annotation hygiene, zizmor action pin alignment, and beta post-merge edge-case hardening](CHANGELOG.md#2026-10-25--ci-annotation-hygiene-zizmor-action-pin-alignment-and-beta-post-merge-edge-case-hardening).
 

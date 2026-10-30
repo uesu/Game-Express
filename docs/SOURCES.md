@@ -42,6 +42,16 @@ it returns the same posts as structured JSON, with no HTML or JavaScript to scra
 HoYoLAB game IDs: 1 HI3 · 2 Genshin · 6 Star Rail · 8 ZZZ · **9 Honkai: Nexus Anima** (already
 wired for launch day).
 
+Both launcher URLs, the `launcher_id` value, Kuro's `<appId>_<appKey>/<gameId>` path, the
+`launcher-config` endpoint and the rotating `functionCode.background` hash are documented in
+[DynamiByte's HoyoPlay](https://gist.github.com/DynamiByte/0ad250bbe1930e2736a6d4e6e842bcb2) and
+[Wuthering Waves](https://gist.github.com/DynamiByte/d839bf9f671c975b6666d0f6e6634641) endpoint
+notes (the WuWa notes credit
+[Cheu3172/Wuwa-Web-Request](https://github.com/Cheu3172/Wuwa-Web-Request) for most of the original
+discovery). The notes are attribution for the endpoint shape only: every field Game-Express reads is
+validated live against the current response, and `background/{hash}` is re-read from
+`functionCode.background` each time rather than hard-coded.
+
 **Why `getGameBranches` and not `getGamePackages`:** the legacy package list is stale for games
 that moved to Sophon downloads. On 2026-09-24 it still reported GI 5.5.0 while the live game was
 7.1.
@@ -403,6 +413,7 @@ page fetcher, and so were the ennead calendars. The production reachability of t
 | MoonShadow1976 WW asset repos | manually maintained, last updated Jan 2026, so too stale for codes |
 | DuolaD/HoYo_Versioncatcher | launcher-data repo; led us to the HoYoPlay launcher endpoints |
 | TwintailTeam/game-manifests · TomyJan/GenshinImpact-Client-Version | launcher-manifest repos documenting Kuro's `G153` global launcher index and `background/{hash}/en.json` schemas (`sources/kuro.py`) |
+| [DynamiByte launcher-API notes](https://github.com/DynamiByte) | primary documentation of the endpoints used above (`hyp/hyp-connect/api` + `launcher_id`, Kuro `G153` index, `launcher-config`, `background/{hash}/en.json`); attributed in [CREDITS.md](CREDITS.md#launcher-api-research) |
 | genshin.dev | character/game data API, not schedules or codes |
 | gachabase.net · nanoka.cc · sr.yatta.moe · lunaris.moe · ambr.top | databases, listed in [CREDITS.md](CREDITS.md#community-databases-and-research). No public schedule/banner API was verified, so **banner names come from official notices, `Kitsudock-data` (`hub.json`), the `api.ennead.cc` calendars, the Fandom wikis, or `config/overrides.json`** |
 
@@ -452,7 +463,9 @@ Publication time uses the official index's UTC+8 `startTime`, falling back to
 
 Full HTML/Quill blocks retain text/media order and heading/list readability.
 First try one full message. Multiple containers share the message-wide 4,000
-text-character / 40-component limits. On overflow, <=7,000 normalized characters
+text-character / 40-component limits. Long articles are smart fitted across pages (up to
+`NEWS_DEFAULT_MAX_PAGES = 4`) before any excerpt is considered. Legacy note: on overflow,
+<=7,000 normalized characters
 may use at most two independently validated pages; otherwise send one labelled
 excerpt container, at most one lead image, and Read Post for the full original.
 Overflow keeps half the words of the already budget-fitting opening excerpt;

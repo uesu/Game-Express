@@ -164,6 +164,11 @@ news and maintenance alerts. Existing schedule/code retry behavior remains at th
 pre-PR baseline (`stop_on_ambiguous=False` by default); ANANTA news is inactive and
 Wangyue is excluded.
 
+Optional `NEWS_REVEAL_PING=1` with one `PING_NEWS_REVEAL` role for all games
+adds heuristic static-character reveal mentions to the byline, with retained-character
+and publication-minute deduplication. It is off by default; see
+[configuration and limitations](docs/CONFIGURATION.md#official-news-explicit-opt-in-default-off).
+
 - **Source-order content & independent policies:** one full message when it fits;
   by default (`NEWS_EXPAND_FULL=0`), the **7,000-character / maximum-two-page
   per-article policy** remains intact (1 message when fitting → up to 2 validated
@@ -756,6 +761,8 @@ Historical records are preserved in
   [DuolaD/HoYo_Versioncatcher](https://github.com/DuolaD/HoYo_Versioncatcher),
   [TwintailTeam/game-manifests](https://github.com/TwintailTeam/game-manifests) and
   [TomyJan/GenshinImpact-Client-Version](https://github.com/TomyJan/GenshinImpact-Client-Version),
+  [DynamiByte](https://github.com/DynamiByte) (HoyoPlay and Wuthering Waves launcher API notes,
+  with [Cheu3172/Wuwa-Web-Request](https://github.com/Cheu3172/Wuwa-Web-Request)) and
   the [gengamer.in](https://genshin-countdown.gengamer.in/) and
   [gachacountdown.online](https://gachacountdown.online/) countdowns, the Fandom wikis and their
   editors, [nitter](https://github.com/zedeus/nitter), [redlib](https://github.com/redlib-org/redlib)

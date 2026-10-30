@@ -1,5 +1,96 @@
 # Changelog — current entries
 
+## 2026-10-30 — Beta: released kits are diffs, and the card explains itself
+
+- From the second post of a revision onward a beta card is a **diff**, not a re-print. A revision
+  that touches an agent, weapon or disc already in the live build is compared with the build
+  players run, so the card carries only the values that moved (`~~old~~ → **new**`, tagged
+  `[BUFF]` / `[NERF]`), a new skill or mechanic as `[NEW]`, and wording-only edits as `[TEXT FIX]`.
+  Measured on the captured ZZZ 3.4.1 Rev. 19997538 agent: **2 messages / 7,641 characters** as a
+  full kit versus **1 message / 1,579 characters** as a released-kit diff.
+- **A diff card explains itself before it lists anything.** The paragraph under the header is
+  prose a person would write: a verdict (`comes out ahead` / `is toned down` / `is rebalanced` /
+  `is renamed … rather than rebalanced` / `gains new material`), where the movement lands
+  (`most of the movement is in Deathless Revival and Life Severing`), what arrived
+  (`[Burning Attack] is new here`), and what was left alone (`The other 14 blocks are untouched and
+  read exactly as they do on the released 3.3 kit.`). It only states what the diff measured:
+  `and nothing was nerfed` needs every measured number to have risen, an unreadable value keeps it
+  silent, and a revision that is mostly renames says so
+  (`**Note:** this is largely a terminology pass …`). A full kit with no comparable baseline keeps
+  a neutral voice (`Nothing is marked as up or down`), so a snapshot never reads as a buff. Revised
+  weapons and discs get one sentence in the same voice, and the paragraph costs no request.
+- A retired skill, node or line is stated once — `**[CHANGED]** Removed from this revision —
+  ~~excerpt~~` plus `(+N more lines no longer published)` — instead of re-printing everything that
+  disappeared, so a later post gets shorter rather than longer.
+- A retained snapshot that can no longer be compared (no full-content digest, a clipped baseline, a
+  changed provider) is rebaselined against the released build instead of becoming a "full current
+  kit" card. Nothing moved against the released build means **no card** for that item, reported in
+  the run summary; an item the live build does not serve yet keeps the labelled full snapshot, and
+  Encore-shaped WuWa data is never diffed against a nanoka live build.
+- Bounded: one extra read per item, only when no trustworthy baseline exists, only while the run
+  keeps 8 requests of headroom — otherwise the item is deferred to the next run instead of being
+  re-printed whole.
+- When GachaBase answers 403 to every route, the SvelteKit `/changelog/beta/__data.json` stream is
+  parsed instead (it also carries the display names the page omits), the per-build listings are
+  diffed so new or renamed items are still found, and the run summary states the narrower coverage.
+  A just-posted revision is re-read at most twice inside three hours for entries its first page did
+  not list, and the summary says when the changelog listed more items than the card delivered.
+- A title is never a key, an `ID <n>` placeholder or a CJK string in an English card: the human
+  token is mined from an engine identifier (`Avatar_Female_Size02_Robin` → `Robin`), and with no
+  English name at all the CN/CHS name becomes a marked note under `W-Engine (ID 14166)`.
+
+## 2026-10-29 — Timing phrases, reveal dedup and edit safety
+
+- Read the HoYoverse reminder form `The game will be updated and maintained at <date> (UTC+8)`
+  (`maintained`, no "maintenance" noun) and windows whose end is only a clock
+  (`begins at 06:00 (UTC+8) and ends at 11:00 (UTC+8)`, including the midnight case). End-only
+  sentences about events or compensation still never become a maintenance start.
+- Resolve a clock-only extension (`extended to 14:00 (UTC+8)`) on the notice's own day, and adopt
+  the replacement date of a reschedule that quotes the abandoned window. `will not be postponed`
+  is not a postponement.
+- Detect the legacy Kuro separator `Profile Reveal: <epithet> — <character>` again, alongside
+  `Profile Reveal |`, and read form-suffixed names (`Rover: Aero`, `Yangyang: Xuanling`) as one
+  character per base name, so a second form of a known character cannot ping twice.
+- Collapse a *corroborated* full-name alias of the same reveal inside a 12-hour window
+  (`Agent Record | Evelyn` then `Agent Record | Evelyn Chevalier`) so one Agent pings once. A
+  shared word is not evidence: `March` / `March 7th`, `Saber` / `Saber Alter` and `Herta` /
+  `The Herta` stay separate characters.
+- Hold a backstage CMS edit instead of publishing a truncated card when re-attaching a retained
+  reveal mention now needs a continuation page or no longer fits.
+- Accept trailing-slash and `/watch/` YouTube player URLs when rendering the visible watch link.
+- Turn on character-reveal mentions with exactly two settings: `NEWS_REVEAL_PING` (the switch)
+  and `PING_NEWS_REVEAL` (one role list covering every game). The per-game
+  `PING_NEWS_REVEAL_<GAME>` overrides and the `PING_REVEAL` aliases are gone.
+- Report the observed state-persistence outcome as its own run-summary section
+  (`committed and pushed` / `no staged changes observed` / `failed` / `cancelled` / `not confirmed`),
+  so a run that posted but did not persist is visible without reading the job log. The summary is
+  never written into the repository: `polishing and refining/` stays operator and agent notes, and
+  the every-5-minute monitor still commits only `state/state.json` plus the announcement id.
+- Credit the launcher-API documentation the two launcher adapters were written from
+  (DynamiByte's HoyoPlay and Wuthering Waves endpoint notes, and the WuWa research they build on),
+  and pin those credits in the documentation-hygiene test.
+
+## 2026-10-29 — Follow-up regression guards
+
+- Exclude non-official and Miliastra-authored reveal candidates, recognize quoted Star Rail series without a pipe, and exclude YouTube privacy-enhanced embedded videos. Tests are requirement-derived reconstructions, not historical accuracy evidence.
+- Add explicit-timing milestone boundary and persisted-restart tests across all six configured games. Make workflow summary-output failure best effort without hiding persistence failures.
+
+## 2026-10-29 — Optional character reveal mentions
+
+- Add default-off, dedicated role mentions for recognized official-news character reveals; exclude recognized video and other non-reveals, deduplicate retained characters and the same publication minute, and preserve pings in different minutes. Detection is heuristic, not guaranteed for unknown formats or incomplete historic rosters. See configuration for limits and ambiguous-delivery handling.
+
+## 2026-10-29 — News YouTube watch links
+
+- Render verified YouTube player, watch, shorts, live and short-link media as a visible canonical YouTube watch URL in the existing article position. Preserve numeric start offsets; leave non-YouTube media fallback links and playable native videos unchanged. No unrelated YouTube video is inferred when the original source does not provide one.
+- Add offline coverage for the HSR player URL, all configured games, both timestamp and expanded-page settings, source immutability, untrusted hosts and non-YouTube/native media.
+
+## 2026-10-29 — Maintenance timing safeguards and actionable persistence summary
+
+- Parse labelled maintenance ranges before single timestamps, including explicit end dates and supported cross-day / dual-offset ranges. Reject invalid offset minutes.
+- Recognize supported extension and TBA postponement notices; retain official timing evidence across maintenance-only runs and route-compatible peer merges. Suppress cadence estimates while a recognized postponement is active, and allow newer authoritative reschedules. A delay with no recognized notice cannot be inferred automatically.
+- Permit bounded silent timing corrections through the active window independently of the six-hour media-upgrade window and its retry budget. Preserve Kuro `bg_hash` as a corroborating signed-URL renewal binder.
+- Report the workflow's observed state-persistence result in the run summary; include regression tests for persistence and failure paths. The Twitter video-size change remains separate from this repository.
+
 ## 2026-10-27 — Redlib Tier-1 fleet expansion (24 → 27) and inline-video / crosspost media parity
 
 - Expand `DEFAULT_REDDIT` from `24` to `27` entries (`0` deletions) by adding three verified working clearnet Redlib instances to Tier 1: `https://r.naa.gg` (`Nachtalb/redlib` GraphQL engine), `https://redlib.thepixora.com` (`PR #603` GraphQL comments patch), and `https://redlib.r4fo.com`, while explicitly excluding `https://redlib.cow.rip` (Cloudflare + custom verification wall).
