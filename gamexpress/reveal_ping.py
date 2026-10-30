@@ -245,7 +245,10 @@ def _article_body_and_counts(item) -> tuple[str, int, bool]:
             continue
         kind = blk.get("kind")
         url = str(blk.get("url") or "")
-        if kind == "video" or (kind == "link" and _VIDEO_URL_RE.search(url)):
+        if kind == "video" or (kind in ("link", "image") and _VIDEO_URL_RE.search(url)):
+            # A media block is video whatever slot it arrived in: HoYoLAB publishes `vod` as
+            # `video`, but a direct .mp4/.webm in an image slot is the same evidence, and
+            # `Hard Rule 0` must never depend on which slot a publisher chose.
             has_video = True
         elif kind == "image" and url:
             image_urls.add(url)

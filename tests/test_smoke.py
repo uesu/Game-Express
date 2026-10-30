@@ -21808,6 +21808,56 @@ def test_reveal_ping_near_limit_continuation_resumes_after_failure():
         assert retry.state.news_record("wuwa")["records"]["x"]["messages"] == ["page1", "page2"]
 
 
+def test_reveal_ping_refuses_a_video_whatever_slot_it_arrives_in():
+    """`Hard Rule 0` (never ping a video post) must not depend on the block kind a publisher uses.
+
+    HoYoLAB publishes a video as `vod` -> `kind="video"`, which the classifier already refused.
+    A direct `.mp4`/`.webm` delivered in an image slot is the same evidence, so it must be
+    refused too; every real still-image reveal still pings, and the mention-free card is what
+    gets delivered.
+    """
+    import json as _json
+
+    from gamexpress.models import Item
+    from gamexpress.reveal_ping import classify_character_reveal
+    from gamexpress.textutil import news_blocks
+
+    still = "https://upload-os-bbs.hoyolab.com/upload/2026/10/30/still.png"
+    rows = [("bold", "◆Name: Mitya"), ("bold", "◆Title: Rules Set at Naught"),
+            ("bold", "◆ Stellar Linchpin: Electro"), ("bold", "◆Constellation: Nodus Gordianus")]
+
+    def build(media_kind, url):
+        ops = []
+        for kind, value in rows:
+            ops.append({"insert": value, "attributes": {"bold": True}} if kind == "bold"
+                       else {"insert": value})
+            ops.append({"insert": "\n"})
+        ops.append({"insert": {media_kind: url}})
+        blocks = news_blocks("", _json.dumps(ops))
+        body = "\n\n".join(b["text"].strip() for b in blocks if b["kind"] == "text" and b["text"].strip())
+        return Item("hoyolab", "genshin", "z", "https://www.hoyolab.com/article/1",
+                    "Genius At Play", body, 1793160008, author="Official", official=True,
+                    article_blocks=blocks)
+
+    assert classify_character_reveal("genshin", build("image", still)) is not None
+    for url in ("https://upload-os-bbs.hoyolab.com/upload/2026/10/30/clip.mp4",
+                "https://upload-os-bbs.hoyolab.com/upload/2026/10/30/clip.webm",
+                "https://upload-os-bbs.hoyolab.com/upload/2026/10/30/clip.mov"):
+        assert classify_character_reveal("genshin", build("image", url)) is None, url
+    # the publisher's own video slot stays refused, as it always was (`news_blocks` emits this
+    # shape once the Quill `vod` id is resolved through the article's video map)
+    native = build("image", still)
+    native.article_blocks = [b for b in native.article_blocks if b.get("url") != still] + [
+        {"kind": "video", "url": "https://upload-os-bbs.hoyolab.com/upload/2026/10/30/clip.mp4"}]
+    assert classify_character_reveal("genshin", native) is None
+    # a linked video elsewhere in the article is still refused too
+    linked = build("image", still)
+    assert classify_character_reveal("genshin", linked) is not None
+    linked.article_blocks = linked.article_blocks + [
+        {"kind": "link", "url": "https://www.youtube.com/watch?v=psifFhA2QAA"}]
+    assert classify_character_reveal("genshin", linked) is None
+
+
 def test_reveal_ping_collapses_a_full_name_variant_but_not_a_different_character():
     """ZZZ publishes `Agent Record | Evelyn` and `Agent Record | Evelyn Chevalier` minutes apart.
 
