@@ -657,6 +657,18 @@ Where the data comes from (`gamexpress/beta.py`, see [SOURCES.md](SOURCES.md#bet
   already-snapshotted ids; it does **not** fan out across every character. Wuthering Waves has
   no structured changelog endpoint, so it remains manifest-driven; its `ww.nanoka.cc/diff` URL
   is a human resource link, never a poll target.
+- **`https://static.nanoka.cc/<game>/<live build>/{en}/<kind>/<id>.json`** — the build players
+  already run, read **once per item** as a diff baseline when a revision touches an item that is
+  already released and no beta baseline is retained. A beta revision that reworks old characters
+  then posts the handful of values that moved (`~~old~~ → **new**`, tagged `[BUFF]` / `[NERF]` /
+  `[NEW]` for a new skill or mechanic) instead of re-posting every block as `[CHANGED]`, which is
+  indistinguishable from everything being new. This also covers a same-cycle hotfix
+  (`7.1` live vs `7.1.53` beta). Costs one request per item, once — the beta snapshot becomes the
+  baseline from the next revision on — it is skipped unless the run still has 8 requests of
+  headroom for images, and it is skipped entirely when the live build does not serve that item
+  (an unreleased character has no live kit), which falls back to the labelled full snapshot. When
+  nothing moved against the released build, no card is posted for that item and the run summary
+  says why (`beta kit matches the released … kit — no value change to post`).
 - **`https://static.nanoka.cc/<game>/<revision>/{en,zh}/<kind>/<id>.json`** — the kit / weapon /
   set detail. English (`en`) is read first; Chinese (`zh`) is queried within the same bounded
   `BETA_MAX_REQUESTS` ceiling only when EN shows lag markers (`???`, `[TBD]`, `/-`), an upstream

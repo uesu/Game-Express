@@ -18433,7 +18433,7 @@ def test_feature5_active_beta_gating_skips_live_and_past_cycles_with_zero_extra_
                 return _beta_json("zzz_character_1661.json")
             if "/zzz/" in url and url.endswith("/weapon.json"):
                 return _beta_json("zzz_weapon_listing.json")
-            if "/zzz/" in url and "/weapon/14166" in url:
+            if "/zzz/" in url and "/weapon/14166" in url and "/3.3/" not in url:
                 return _beta_json("zzz_weapon_14166.json")
             if "/zzz/" in url and "/weapon/14160" in url:
                 return _beta_json("zzz_weapon_14166.json")
@@ -18589,6 +18589,13 @@ def test_feature5_late_changelog_entries_are_delivered_for_a_settled_revision():
                         "available": ["3.3", "3.4.1+19851435", version],
                         "new": {"character": [], "weapon": [], "equipment": []}}}
 
+    # The build players already run (3.3) says "up to 3 attacks"; this beta says 4. A released
+    # agent with no retained beta baseline is compared against THAT kit, not dumped whole.
+    live_kit = json.loads(json.dumps(_beta_json("zzz_character_1551.json")))
+    live_kit["skill"]["basic"]["description"][0]["desc"] = (
+        "Press  to activate:\nUnleashes up to 3 attacks forward, dealing Ether DMG."
+    )
+
     class LateFetcher:
         def __init__(self):
             self.calls = []
@@ -18597,6 +18604,8 @@ def test_feature5_late_changelog_entries_are_delivered_for_a_settled_revision():
             self.calls.append(url)
             if url.endswith("/manifest.json"):
                 return manifest
+            if "/zzz/3.3/" in url and "/character/" in url:
+                return json.loads(json.dumps(live_kit))
             if "/zzz/" in url and "/character/" in url:
                 return _beta_json("zzz_character_1551.json")
             return None
@@ -18631,6 +18640,12 @@ def test_feature5_late_changelog_entries_are_delivered_for_a_settled_revision():
                                                  beta_mod._budget(ctx)))
         assert patch is not None
         assert [c.name for c in patch.characters] == ["Caesar"]
+        card = patch.characters[0]
+        assert "released 3.3" in card.subtext
+        # Only the value that actually moved is on the card, with the old one struck through.
+        rendered = "\n".join(line for section in card.sections for line in section.lines)
+        assert "~~3~~ → **4**" in rendered
+        assert "Celestial Light" not in rendered or "~~3~~" in rendered
         assert patch.listed == 1      # this batch listed exactly what it delivered
         assert ctx.state.beta_record("zzz")["revisions"][rev_id]["late_checks"] == 1
 
@@ -18657,6 +18672,212 @@ def test_feature5_late_changelog_entries_are_delivered_for_a_settled_revision():
         assert asyncio.run(beta_mod.build_patch(ctx2, GAMES["zzz"], manifest,
                                                 beta_mod._budget(ctx2))) is None
         assert quiet.calls == []
+
+
+def test_feature5_released_agent_diffs_against_the_live_build_not_the_whole_kit():
+    """ZZZ 19997538 rewrote five released agents, and without a beta baseline the card could only
+    dump every skill as [CHANGED] — indistinguishable from everything being new.
+
+    The released build is the baseline instead: one extra read, and the card carries only the
+    values that moved, struck through and re-stated, with a buff/nerf tag.
+    """
+    from gamexpress import beta as beta_mod
+
+    version = "3.4.1+19997538"
+    manifest = {"zzz": {"live": "3.3", "latest": version,
+                        "available": ["3.3", "3.4.1+19851435", version],
+                        "new": {"character": [], "weapon": [], "equipment": []}}}
+    entry = ("[![](https://i.gachabase.net/x/q:50/f:webp/plain/zzz/assets/1661.png)\\\n"
+             "\\\nRobin](https://zzz.gachabase.net/agents/1661/1661/beta?lang=en) "
+             "[See Changes](https://zzz.gachabase.net/diff/agents/1661/1661"
+             "?prev=beta_3.4.1_19851435&cur=beta_3.4.1_19997538&lang=en)")
+    changelog = "\n\n".join([
+        "# CHANGELOG - v3.4.X", "## v3.4.1 Rev. 19997538 \\| 29th October 2026",
+        "### Agents", "UPDATED", entry,
+    ])
+    live_kit = json.loads(json.dumps(_beta_json("zzz_character_1661.json")))
+    live_kit["skill"]["basic"]["description"][0]["desc"] = (
+        "Press  to activate:\nUnleashes up to 2 attacks forward, dealing Ether DMG;"
+    )
+
+    class ReleasedFetcher:
+        def __init__(self):
+            self.calls = []
+
+        async def get_json(self, url, **_kw):
+            self.calls.append(url)
+            if url.endswith("/manifest.json"):
+                return manifest
+            if "/zzz/3.3/" in url and "/character/1661" in url:
+                return json.loads(json.dumps(live_kit))
+            if "/zzz/" in url and "/character/1661" in url:
+                return _beta_json("zzz_character_1661.json")
+            return None
+
+        async def get_text(self, url, **_kw):
+            self.calls.append(url)
+            return changelog
+
+        async def verify_media(self, _url):
+            return True
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fetcher = ReleasedFetcher()
+        ctx = _beta_ctx(Path(tmp) / "state.json", fetcher, BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest,
+                                                 beta_mod._budget(ctx)))
+        assert [c.name for c in patch.characters] == ["Robin"]
+        card = patch.characters[0]
+        assert card.is_new is False
+        # Only the block that moved is on the card; the other 14 are omitted, not re-posted.
+        assert [section.title for section in card.sections] == ["Basic Attack: Robin Attack"]
+        assert card.sections[0].tag == "[BUFF]"
+        assert "~~2~~ → **3**" in card.sections[0].lines[0]
+        assert "released 3.3" in card.subtext and "1 buff" in card.subtext
+        assert "14 unchanged block(s) omitted" in card.subtext
+        # One read of the released build, and the beta snapshot becomes the next baseline.
+        assert sum("/3.3/" in url for url in fetcher.calls) == 1
+        assert "zzz:1661" in patch.snapshots
+
+
+def test_feature5_released_agent_with_no_visible_change_posts_nothing():
+    """No readable movement against the build players run means no card — that is the point."""
+    from gamexpress import beta as beta_mod
+
+    version = "3.4.1+19997538"
+    manifest = {"zzz": {"live": "3.3", "latest": version,
+                        "available": ["3.3", version],
+                        "new": {"character": [], "weapon": [], "equipment": []}}}
+    entry = ("[![](https://i.gachabase.net/x/q:50/f:webp/plain/zzz/assets/1661.png)\\\n"
+             "\\\nRobin](https://zzz.gachabase.net/agents/1661/1661/beta?lang=en) "
+             "[See Changes](https://zzz.gachabase.net/diff/agents/1661/1661"
+             "?prev=beta_3.4.1_19851435&cur=beta_3.4.1_19997538&lang=en)")
+    changelog = "\n\n".join([
+        "# CHANGELOG - v3.4.X", "## v3.4.1 Rev. 19997538 \\| 29th October 2026",
+        "### Agents", "UPDATED", entry,
+    ])
+
+    class SameKitFetcher:
+        async def get_json(self, url, **_kw):
+            if url.endswith("/manifest.json"):
+                return manifest
+            if "/character/1661" in url:
+                return _beta_json("zzz_character_1661.json")   # released build == beta build
+            return None
+
+        async def get_text(self, _url, **_kw):
+            return changelog
+
+        async def verify_media(self, _url):
+            return True
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _beta_ctx(Path(tmp) / "state.json", SameKitFetcher(), BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest,
+                                                 beta_mod._budget(ctx)))
+        assert patch.characters == []
+        assert any("matches the released 3.3" in line for line in ctx.report), ctx.report
+
+
+def test_feature5_agent_missing_from_the_live_build_keeps_the_full_kit_snapshot():
+    """A character the live build does not serve yet still gets the honest full snapshot."""
+    from gamexpress import beta as beta_mod
+
+    version = "3.4.1+19997538"
+    manifest = {"zzz": {"live": "3.3", "latest": version,
+                        "available": ["3.3", version],
+                        "new": {"character": [], "weapon": [], "equipment": []}}}
+    entry = ("[![](https://i.gachabase.net/x/q:50/f:webp/plain/zzz/assets/1661.png)\\\n"
+             "\\\nRobin](https://zzz.gachabase.net/agents/1661/1661/beta?lang=en) "
+             "[See Changes](https://zzz.gachabase.net/diff/agents/1661/1661"
+             "?prev=beta_3.4.1_19851435&cur=beta_3.4.1_19997538&lang=en)")
+    changelog = "\n\n".join([
+        "# CHANGELOG - v3.4.X", "## v3.4.1 Rev. 19997538 \\| 29th October 2026",
+        "### Agents", "UPDATED", entry,
+    ])
+
+    class NoLiveKitFetcher:
+        def __init__(self):
+            self.calls = []
+
+        async def get_json(self, url, **_kw):
+            self.calls.append(url)
+            if url.endswith("/manifest.json"):
+                return manifest
+            if "/zzz/" in url and "/character/1661" in url and "/3.3/" not in url:
+                return _beta_json("zzz_character_1661.json")
+            return None       # the released build has no such agent
+
+        async def get_text(self, _url, **_kw):
+            return changelog
+
+        async def verify_media(self, _url):
+            return True
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fetcher = NoLiveKitFetcher()
+        ctx = _beta_ctx(Path(tmp) / "state.json", fetcher, BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest,
+                                                 beta_mod._budget(ctx)))
+        assert [c.name for c in patch.characters] == ["Robin"]
+        card = patch.characters[0]
+        assert card.is_new is False
+        assert "prior baseline was not retained" in card.subtext
+        assert len(card.sections) > 1
+
+
+def test_feature5_released_weapon_diffs_against_the_live_build():
+    from gamexpress import beta as beta_mod
+
+    version = "3.4.1+19997538"
+    manifest = {"zzz": {"live": "3.3", "latest": version,
+                        "available": ["3.3", version],
+                        "new": {"character": [], "weapon": [], "equipment": []}}}
+    entry = ("[![](https://i.gachabase.net/x/q:50/f:webp/plain/zzz/assets/14166.png)\\\n"
+             "\\\nRobin's Exclusive W-Engine]"
+             "(https://zzz.gachabase.net/w-engines/14166/14166/beta?lang=en) "
+             "[See Changes](https://zzz.gachabase.net/diff/w-engines/14166/14166"
+             "?prev=beta_3.4.1_19851435&cur=beta_3.4.1_19997538&lang=en)")
+    changelog = "\n\n".join([
+        "# CHANGELOG - v3.4.X", "## v3.4.1 Rev. 19997538 \\| 29th October 2026",
+        "### W-Engines", "UPDATED", entry,
+    ])
+    live_weapon = json.loads(json.dumps(_beta_json("zzz_weapon_14166.json")))
+    live_weapon["talents"]["1"]["desc"] = live_weapon["talents"]["1"]["desc"].replace(
+        "DEF increases by 10%", "DEF increases by 8%"
+    )
+
+    class WeaponFetcher:
+        async def get_json(self, url, **_kw):
+            if url.endswith("/manifest.json"):
+                return manifest
+            if "/zzz/3.3/" in url and "/weapon/14166" in url:
+                return json.loads(json.dumps(live_weapon))
+            if "/zzz/" in url and "/weapon/14166" in url:
+                return _beta_json("zzz_weapon_14166.json")
+            if "/zzz/" in url and url.endswith("/weapon.json"):
+                return {"14166": {"icon": "Weapon_S_1661", "rank": 4, "en": "Robin's Exclusive W-Engine"}}
+            return None
+
+        async def get_text(self, _url, **_kw):
+            return changelog
+
+        async def verify_media(self, _url):
+            return True
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _beta_ctx(Path(tmp) / "state.json", WeaponFetcher(), BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest,
+                                                 beta_mod._budget(ctx)))
+        assert patch.equipment, patch
+        eq = patch.equipment[0]
+        assert eq.lines[0].startswith("-# Compared with the released 3.3 kit")
+        body = "\n".join(eq.lines)
+        assert "~~8~~ → **10**" in body
 
 
 def test_feature5_engine_identifiers_and_cn_names_never_become_titles():
@@ -18765,7 +18986,7 @@ def test_feature5_unreadable_changelog_still_diffs_the_build_listings():
                                 "new": {"character": [], "weapon": [], "equipment": []}}}
             if "/zzz/" in url and url.endswith("/weapon.json"):
                 return current_listing if "19997538" in url else previous_listing
-            if "/zzz/" in url and "/weapon/14166" in url:
+            if "/zzz/" in url and "/weapon/14166" in url and "/3.3/" not in url:
                 return _beta_json("zzz_weapon_14166.json")
             return None
 
@@ -19646,6 +19867,9 @@ def test_feature5_zzz_passive_potential_sveltekit_hotfix_and_cn_reconciliation()
                 d = copy.deepcopy(_beta_json("zzz_character_1661.json"))
                 d["name"] = "Miyabi"
                 d["potential_detail"] = {"1": {"level": 6, "name": "Frostbite", "desc": "Ice DMG +30%."}}
+                if "/3.3.4/" in url:
+                    # What the released build still says; the beta is the other side of the diff.
+                    d["potential_detail"] = {"1": {"level": 5, "name": "Frostbite", "desc": "Ice DMG +20%."}}
                 return d
             return None
 

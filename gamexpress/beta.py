@@ -991,6 +991,10 @@ def diff_kits(prev_sections: list, cur_sections: list) -> tuple[list[Any], int]:
             marker = "[ADJUSTMENT]"
         elif "[REWORK]" in tags:
             marker = "[REWORK]"
+        elif all(tag in ("[BUFF]", "[NERF]", "[TEXT FIX]") for tag in tags):
+            # A block that only moved numbers gets the direction, not a vague [CHANGED]: that is
+            # the tag a reader scans for when asking "is this a buff or a nerf?".
+            marker = ("[BUFF]" if tags.count("[BUFF]") >= tags.count("[NERF]") else "[NERF]")
         else:
             marker = "[CHANGED]"
         title = str(getattr(section, "title", ""))
@@ -4778,6 +4782,103 @@ def _pending_entries(ns: str, entries: list[dict], processed: set[str]) -> list[
     return pending
 
 
+# A beta revision usually touches things players already have. Comparing that kit against the
+# build players actually run turns a whole-kit dump into the handful of values that moved, which
+# is the only form in which a reader can tell a buff from a rework. One extra read per item, only
+# when no beta baseline exists, and only while the run can still afford images afterwards.
+BETA_LIVE_BASELINE_MIN_LEFT = 8
+
+
+def _live_baseline_affordable(budget: dict, requests: int) -> bool:
+    """Spend one request on a released-kit baseline only if the rest of the batch still fits."""
+    return (budget["max_requests"] - requests >= BETA_LIVE_BASELINE_MIN_LEFT
+            and _take_shared_request(budget, 1))
+
+
+async def _released_character(
+    ctx, ns: str, kinds: dict, item_id: str, live_build: str
+) -> BetaCharacter | None:
+    """The same agent's kit in the build players already have, as a diff baseline.
+
+    Returns None whenever the live build cannot serve the item (a character that has not been
+    released yet answers 404), so the caller can fall back to the honest full snapshot.
+    """
+    builder = _CHARACTER_BUILDERS.get(ns)
+    if not builder or not live_build or not item_id:
+        return None
+    data = await _detail(ctx.fetcher, ns, live_build, kinds["new_keys"]["character"], item_id)
+    built = builder(data) if isinstance(data, dict) else None
+    if not built or not built.get("sections"):
+        return None
+    return BetaCharacter(
+        id=f"released:{ns}:{item_id}",
+        name=str(built.get("name") or ""),
+        rarity=_parse_rarity(ns, (data or {}).get("rarity"), built.get("rarity") or 5) or 5,
+        element=str(built.get("element") or ""),
+        role=str(built.get("role") or ""),
+        stats_lines=list(built.get("stats_lines") or []),
+        sections=_clone_sections(list(built.get("sections") or []), "[CHANGED]"),
+    )
+
+
+async def _released_equipment(
+    ctx, ns: str, kinds: dict, role: str, item_id: str, live_build: str
+) -> BetaEquipment | None:
+    """The same weapon / disc / relic as it ships in the live build, or None when it has none."""
+    if role not in ("weapon", "relic") or not live_build or not item_id:
+        return None
+    detail_kind = kinds[role]["detail"]
+    data = await _detail(ctx.fetcher, ns, live_build, detail_kind, item_id)
+    if not isinstance(data, dict):
+        return None
+    fields = _equip_from_detail(ns, detail_kind, data, {})
+    if not fields.get("lines") and not fields.get("stats_line"):
+        return None
+    return BetaEquipment(
+        id=f"released:{ns}:{item_id}",
+        name="",
+        category_label=str(kinds[role]["label"]),
+        rarity=fields.get("rarity"),
+        sub_type=str(fields.get("sub_type") or ""),
+        weapon_class=str(fields.get("weapon_class") or ""),
+        set_kind=str(fields.get("set_kind") or ""),
+        set_parts=str(fields.get("set_parts") or ""),
+        tag="[CHANGED]",
+        stats_line=str(fields.get("stats_line") or ""),
+        effect_title=str(fields.get("effect_title") or ""),
+        lines=list(fields.get("lines") or []),
+        glossary=list(fields.get("glossary") or []),
+    )
+
+
+_TALLY_TAGS = ("[BUFF]", "[NERF]", "[NEW]", "[REWORK]", "[ADJUSTMENT]", "[CHANGED]", "[TEXT FIX]")
+
+
+def _change_tally(sections: list) -> str:
+    """`2 buff, 1 nerf, 1 new` — what a card actually contains, counted from its own bullets."""
+    counts: dict[str, int] = {}
+    for section in sections or ():
+        for line in getattr(section, "lines", ()) or ():
+            for tag in _TALLY_TAGS:
+                if str(line).startswith(f"**{tag}**"):
+                    counts[tag] = counts.get(tag, 0) + 1
+                    break
+    words = {
+        "[BUFF]": "buff", "[NERF]": "nerf", "[NEW]": "new mechanic", "[REWORK]": "rework",
+        "[ADJUSTMENT]": "adjustment", "[CHANGED]": "change", "[TEXT FIX]": "wording fix",
+    }
+    parts = []
+    for tag in _TALLY_TAGS:
+        n = counts.get(tag, 0)
+        if not n:
+            continue
+        word = words[tag]
+        if n > 1:
+            word += "es" if word.endswith(("ch", "sh", "x", "s")) else "s"
+        parts.append(f"{n} {word}")
+    return ", ".join(parts)
+
+
 async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatch | None:
     """Build the next bounded beta card batch without guessing unavailable source data."""
     ns = _game_ns(game)
@@ -4797,6 +4898,11 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
         if not late_version:
             return None
         version = late_version
+    # The build players already run. It is the baseline that lets a revision of an already-released
+    # item post its real changes instead of a whole kit, and it applies within one cycle too: a
+    # `7.1` live build against a `7.1.53` beta build is exactly a hotfix diff.
+    live_build = str(m_game.get("live") or "").strip()
+    has_live_build = bool(live_build and live_build != version)
 
 
     if _changelog_url(game) and not _take_shared_request(budget):
@@ -5122,6 +5228,16 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             if previous_snapshot is not None
             else "new"
         )
+        # No beta baseline yet, but the agent is already out: diff against the released kit, so
+        # the card carries the values that moved (with ~~old~~ → **new** and a buff/nerf tag)
+        # instead of the entire kit marked [CHANGED], which reads as if everything were new.
+        released: BetaCharacter | None = None
+        if previous is None and not is_new and has_live_build and _live_baseline_affordable(budget, requests):
+            requests += 1
+            released = await _released_character(ctx, ns, kinds, item_id, live_build)
+            if released is not None:
+                previous = released
+                cmp_mode = "diff"
         if previous is None:
             full.sections = _clone_sections(full.sections, "[NEW]" if is_new else "[CHANGED]")
             if not is_new:
@@ -5150,13 +5266,25 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             if diff_sections:
                 full.sections = diff_sections
                 full.is_new = False
-                old_rev = str((previous_snapshot or {}).get("revision") or "previous revision")
+                old_rev = (f"the released {live_build} kit" if released is not None
+                           else str((previous_snapshot or {}).get("revision") or "previous revision"))
+                tally = _change_tally(diff_sections)
                 full.subtext = (f"-# Revision diff against {old_rev}"
+                                + (f" • {tally}" if tally else "")
                                 + (f" • {unchanged} unchanged block(s) omitted" if unchanged else ""))
                 full.overview = _synthesize_kit_overview(
                     game.key, name, built, full.sections, is_new=False
                 )
                 patch.characters.append(full)
+            elif released is not None:
+                # Nothing readable moved against the build players have, so there is no change to
+                # announce. Posting a full kit here is exactly the noise this baseline removes.
+                char_changed += 1
+                ctx.report.append(
+                    f"{game.short} {name}: beta kit matches the released {live_build} kit — "
+                    "no value change to post"
+                )
+                continue
             elif new_char_img_added or new_char_gal_added:
                 vis_secs: list[BetaSectionEntry] = []
                 if new_char_img_added:
@@ -5405,6 +5533,13 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             if previous_snapshot is not None
             else "new"
         )
+        released_eq: BetaEquipment | None = None
+        if previous is None and not is_new and has_live_build and _live_baseline_affordable(budget, requests):
+            requests += 1
+            released_eq = await _released_equipment(ctx, ns, kinds, role, item_id, live_build)
+            if released_eq is not None:
+                previous = released_eq
+                eq_cmp = "diff"
         if previous is None:
             patch.equipment.append(current)
         elif eq_cmp == "snapshot":
@@ -5417,7 +5552,19 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
         elif eq_cmp == "diff":
             changed = _diff_equipment(previous, current)
             if changed:
+                if released_eq is not None:
+                    changed.lines = [
+                        f"-# Compared with the released {live_build} kit — only changed values are shown",
+                        *changed.lines,
+                    ]
                 patch.equipment.append(changed)
+            elif released_eq is not None:
+                equip_count += 1
+                ctx.report.append(
+                    f"{game.short} {name}: beta {role} matches the released {live_build} build — "
+                    "no value change to post"
+                )
+                continue
             elif eq_media_added:
                 patch.equipment.append(BetaEquipment(
                     id=current.id, name=current.name, category_label=current.category_label,

@@ -582,6 +582,15 @@ Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
   (`BETA_LATE_RECHECKS` inside `BETA_LATE_RECHECK_H` hours, only entries missing from
   `processed`). After that window it is final and costs no request. When the changelog listed
   more tracked items than the card delivered, the run summary says so — no log access needed.
+- **A revision of a released item is a diff, not a re-print.** When a beta revision touches a
+  character, weapon or disc that is already in the live build and no beta baseline exists, the
+  live build's kit is read once and used as the baseline (`beta._released_character` /
+  `beta._released_equipment`). The card then shows only what moved — `~~old~~ → **new**` with
+  `[BUFF]` / `[NERF]` / `[NEW]` — plus a one-line tally (`1 buff • 14 unchanged block(s)
+  omitted`), because a wall of `[CHANGED]` cannot be read as "this is new" or "this was buffed".
+  No visible movement means no card for that item, reported in the summary; a live build that does
+  not serve the item (unreleased) falls back to the labelled full snapshot. Never invent the
+  missing side: the diff only exists when both builds really carry the value.
 - **A name is never a key and never a CJK title.** When only an engine identifier exists
   (`Avatar_Female_Size02_Robin`), the human token is mined (`beta._name_from_identifier`) and a
   key, a `(Test1)` placeholder or an earlier `ID 1661` fallback is refused (`_usable_name`).
