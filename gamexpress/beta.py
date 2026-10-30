@@ -1695,9 +1695,11 @@ def _parse_gachabase_data(raw: str, base_url: str = "") -> list[dict]:
             # A list on the revision that no card kind knows about (a group gachabase starts
             # streaming later, such as Genshin's materials) would otherwise disappear here with
             # nothing downstream able to notice: `present` only ever names known keys.
+            # Only a group that actually carries entries: an empty placeholder list drops
+            # nothing, and warning about it would be noise the reader learns to ignore.
             unknown = sorted(
                 key for key, value in rev.items()
-                if isinstance(value, list) and key not in _DATA_SECTIONS
+                if value and isinstance(value, list) and key not in _DATA_SECTIONS
             )
             if not present:
                 continue                 # lists not streamed: never guess "no changes"

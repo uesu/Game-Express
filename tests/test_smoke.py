@@ -19395,6 +19395,13 @@ def test_feature5_a_streamed_group_with_no_card_kind_is_named_not_dropped():
         renamed, base_url="https://zzz.gachabase.net/changelog/beta?lang=en")
     assert revs[0]["unknown_groups"] == ["materials"], revs[0]
 
+    # An empty placeholder list drops nothing, so it must not raise a warning every run: the
+    # message would then be noise, and noise is what gets ignored when it finally means something.
+    empty = raw.replace('"bangboo":', '"materials": [], "bangboo":', 1)
+    quiet = beta_mod._parse_gachabase_data(
+        empty, base_url="https://zzz.gachabase.net/changelog/beta?lang=en")
+    assert all(rev.get("unknown_groups") == [] for rev in quiet), quiet
+
     # …and the run says so, once, without pretending the revision had no changes.
     class StreamFetcher:
         async def get_text(self, url, **_kw):
