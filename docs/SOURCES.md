@@ -697,9 +697,11 @@ https://encore.moe/diff?firstGameVer=3.8.0&secondGameVer=3.8.0
 ```
 
 `firstVer` / `secondVer` are the beta **patch** versions (`Beta_<x.y.z>`), `firstGameVer` /
-`secondGameVer` the game version each patch belongs to (`3.8.x` → `3.8.0`), `route` is
-`character` or `weapon`, and `id` is the numeric item id. `https://encore.moe/diff?lang=en` is
-the same tool without a comparison selected.
+`secondGameVer` the game version each patch belongs to (`3.8.x` → `3.8.0`), `route` is one of
+`character | weapon | echo | term` (the type list the served compare page renders, captured
+2026-10-30), and `id` is the numeric item id. `https://encore.moe/diff?lang=en` is the same tool
+without a comparison selected. Echoes also have their own pages,
+`https://encore.moe/echo/<id>?lang=en` (436 linked from the served echo index).
 
 Feature 5 builds this URL for a WuWa item only from values the card actually knows — the two
 beta patch versions it compared (`beta._encore_diff_url`). A cold start, an unreadable version,
@@ -713,9 +715,9 @@ WuWa, gachabase for the other three (`beta._diff_url`).
 and never scrapes it, so it adds no request, no schedule and no failure mode. It is not used to
 discover changed ids — WuWa revision scope still comes from the nanoka manifest. The query
 grammar is observation evidence from the site's own URLs, not a published contract; if Encore
-changes it, the link degrades to its landing page and the card content is unaffected. Only the
-`character` and `weapon` routes were observed, so an echo item carries no comparison link rather
-than a guessed `route=` value.
+changes it, the link degrades to its landing page and the card content is unaffected. All four
+types are offered by the page itself, so a WuWa echo links its `echo` comparison; `term` (the
+glossary) is not a card kind and is refused rather than guessed.
 
 ### Encore beta API fallback for WuWa
 
