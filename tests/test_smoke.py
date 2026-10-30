@@ -22450,6 +22450,140 @@ def test_reveal_ping_renumbers_pages_and_keeps_every_article_whole():
             assert labels == [f"-# Page {n}" for n in range(1, len(posts) + 1)], (case, labels)
 
 
+def test_reveal_ping_reflow_is_identical_under_both_page_policies():
+    """The page-one reflow must behave the same with `NEWS_EXPAND_FULL` off and on.
+
+    A byline mention only reflows when page one already sits inside the mention's own width of
+    the 4,000-character cap. That is the single place where the reveal ping and the container
+    fitting touch, so both policies are driven through the real `run_news`: the tail of page one
+    moves into a new message ahead of the pages that already existed, every page is renumbered
+    in delivery order, and the article stays whole. Without the renumber the card would be
+    delivered as `Page 1`, an unlabelled message, then `Page 2`.. (the shape the fix removed).
+    """
+    import copy
+    from unittest.mock import patch
+
+    from gamexpress import cards
+    from gamexpress.config import load_games
+    from gamexpress.models import Item
+    from gamexpress.runner import run_news
+    from gamexpress.sources import hoyolab, kuro
+
+    games = load_games()
+    role = "1296268365593186426"
+    hook = "https://discord.com/api/webhooks/100000000000000099/g_tok"
+    img = "https://upload-os-bbs.hoyolab.com/upload/community/2026/10/30/reflow.png"
+    titles = {
+        "genshin": ('"Astute Luminary" · Nahida',
+                    "◆ Physic of Purity\n◆ Lesser Lord Kusanali\n◆ Gnosis: Dendro"),
+        "starrail": ("Extraterrestrial Satellite Communication | Dan Heng • Imbibitor Lunae",
+                     '"My past, my future."'),
+        "zzz": ("Agent Record | Miyabi", '"Order cannot be broken."'),
+        "wuwa": ("Profile Reveal | Eternal Blaze — Changli", '"A blade remembers."'),
+        "hna": ("Sovereign Nexus Dossier | Seraphina",
+                '"Bind your Anima to mine."\nAffiliation: Astral Sanctum'),
+    }
+    tail = "FINAL-MARKER-SENTINEL"
+    # Paragraph shapes whose first page lands within the mention's width. Ordered so the first
+    # hit is the smallest article; a game whose budget never fills that far falls back to the
+    # single-page reflow below (wuwa today).
+    shapes = ((150, 26), (150, 25), (80, 47), (200, 20), (60, 62), (150, 27), (150, 28))
+
+    def build(gk, paras, plen=150):
+        title, head = titles[gk]
+        body = head + "\n" + "\n\n".join("p" * (plen - 2) + " w" for _ in range(paras)) + "\n\n" + tail
+        return Item("kuro" if gk == "wuwa" else "hoyolab", gk, "p1",
+                    "https://www.hoyolab.com/article/1", title, body, 1793160008,
+                    article_blocks=[{"kind": "text", "text": body}, {"kind": "image", "url": img}],
+                    author=games[gk].name, official=True)
+
+    def plain(gk, item, expand):
+        return cards.news_payloads(games[gk], item, expand_full=expand)
+
+    mention_width = len(f" · <@&{role}>")
+
+    def layout(gk, expand):
+        """A paged article whose page one is nearly full, or None when the budget never fills."""
+        for plen, paras in shapes:
+            item = build(gk, paras, plen)
+            pls = plain(gk, item, expand)
+            if len(pls) >= 2 and cards.text_length(pls[0].get("components") or []) >= 3975:
+                return item, len(pls)
+        return None, 0
+
+    def single_page(gk, expand):
+        """A ONE-message card that the mention alone pushes over the cap (wuwa's budget today)."""
+        for n in range(3700, 4000):
+            item = Item("kuro" if gk == "wuwa" else "hoyolab", gk, "p1",
+                        "https://www.hoyolab.com/article/1", titles[gk][0], "", 1793160008,
+                        article_blocks=[{"kind": "text", "text": "x" * n}])
+            pls = plain(gk, item, expand)
+            if len(pls) == 1:
+                used = cards.text_length(pls[0].get("components") or [])
+                # the mention itself must be what overflows: 4000 exactly is still valid
+                if used <= cards.MAX_TEXT_TOTAL < used + mention_width:
+                    return item
+        return None
+
+    async def deliver(gk, item, expand, ping):
+        source = kuro if gk == "wuwa" else hoyolab
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(NEWS_ENABLED="1", NEWS_GAMES=gk,
+                       **{f"DISCORD_WEBHOOK_NEWS_{g}": hook for g in
+                          ("GENSHIN", "STARRAIL", "ZZZ", "WUWA", "HNA", "ANANTA", "GI", "HSR")})
+            if expand:
+                env["NEWS_EXPAND_FULL"] = "1"
+            if ping:
+                env.update(NEWS_REVEAL_PING="1", PING_NEWS_REVEAL=role)
+            ctx = make_ctx(Path(tmp) / "state.json", **env)
+            ctx.now = 1793160000
+            with patch.object(source, "discover_news", return_value=[]):
+                await run_news(ctx)
+            ctx.now = 1793160030
+            with (patch.object(source, "discover_news",
+                               return_value=[{"id": "p1", "ts": 1793160008}]),
+                  patch.object(source, "news_article", return_value=copy.deepcopy(item)),
+                  patch("gamexpress.media.news_media_available", return_value=True)):
+                await run_news(ctx)
+            return ([s["payload"] for s in ctx.webhook.sent if s["method"] == "POST"], ctx.warnings)
+
+    def labels_of(posts):
+        return [c["content"] for p in posts for co in p["components"]
+                for c in co["components"] if c["type"] == 10 and c["content"].startswith("-# Page")]
+
+    paged = single = 0
+    for gk in titles:
+        for expand in (False, True):
+            item, plain_pages = layout(gk, expand)
+            if item is None:
+                # No paged shape fills page one for this game: use a single-page card instead
+                # (wuwa's page budget leaves room only at the very top of the cap).
+                item = single_page(gk, expand)
+                assert item is not None, (gk, expand)
+            off, _ = asyncio.run(deliver(gk, item, expand, False))
+            on, warnings = asyncio.run(deliver(gk, item, expand, True))
+            case = f"{gk} expand={expand} pages={plain_pages}"
+            assert len(on) == len(off) + 1, (case, len(off), len(on), warnings)
+            assert all(not cards.validate_payload(p) for p in on), case
+            assert on[0]["allowed_mentions"] == {"parse": [], "roles": [role]}, case
+            assert all(p["allowed_mentions"] == {"parse": []} for p in on[1:]), case
+            header = on[0]["components"][0]["components"][0]["content"]
+            assert header.splitlines()[-1].rstrip().endswith(f"<@&{role}>"), (case, header)
+            assert sum(json.dumps(p).count(f"<@&{role}>") for p in on) == 1, case
+            if plain_pages:
+                paged += 1
+                # the unpinged card was already numbered; that is what forces the renumber
+                assert labels_of(off) == [f"-# Page {n}" for n in range(1, len(off) + 1)], case
+                assert labels_of(on) == [f"-# Page {n}" for n in range(1, len(on) + 1)], (case, labels_of(on))
+                assert tail in json.dumps(on, ensure_ascii=False), case
+                assert "Excerpt" not in json.dumps(on, ensure_ascii=False), case
+            else:
+                # a single unlabelled card keeps its shape: two unlabelled messages, mention once
+                single += 1
+                assert labels_of(off) == [] and labels_of(on) == [], case
+    assert paged >= 8 and single >= 1, (paged, single)
+
+
 def test_reveal_ping_prefix_on_every_game_survives_both_page_policies():
     """End-to-end `run_news` for every game with a news adapter, short and oversized articles.
 
