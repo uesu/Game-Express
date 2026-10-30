@@ -1,6 +1,6 @@
 # Changelog — current entries
 
-## 2026-10-30 — Beta: released kits are diffs, and a blocked changelog is not a blind spot
+## 2026-10-30 — Beta: released kits are diffs, and the card explains itself
 
 - From the second post of a revision onward a beta card is a **diff**, not a re-print. A revision
   that touches an agent, weapon or disc already in the live build is compared with the build
@@ -8,6 +8,17 @@
   `[BUFF]` / `[NERF]`), a new skill or mechanic as `[NEW]`, and wording-only edits as `[TEXT FIX]`.
   Measured on the captured ZZZ 3.4.1 Rev. 19997538 agent: **2 messages / 7,641 characters** as a
   full kit versus **1 message / 1,579 characters** as a released-kit diff.
+- **A diff card explains itself before it lists anything.** The paragraph under the header is
+  prose a person would write: a verdict (`comes out ahead` / `is toned down` / `is rebalanced` /
+  `is renamed … rather than rebalanced` / `gains new material`), where the movement lands
+  (`most of the movement is in Deathless Revival and Life Severing`), what arrived
+  (`[Burning Attack] is new here`), and what was left alone (`The other 14 blocks are untouched and
+  read exactly as they do on the released 3.3 kit.`). It only states what the diff measured:
+  `and nothing was nerfed` needs every measured number to have risen, an unreadable value keeps it
+  silent, and a revision that is mostly renames says so
+  (`**Note:** this is largely a terminology pass …`). A full kit with no comparable baseline keeps
+  a neutral voice (`Nothing is marked as up or down`), so a snapshot never reads as a buff. Revised
+  weapons and discs get one sentence in the same voice, and the paragraph costs no request.
 - A retired skill, node or line is stated once — `**[CHANGED]** Removed from this revision —
   ~~excerpt~~` plus `(+N more lines no longer published)` — instead of re-printing everything that
   disappeared, so a later post gets shorter rather than longer.

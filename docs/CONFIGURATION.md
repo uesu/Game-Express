@@ -605,7 +605,9 @@ later builds. It retains the prior readable kit in bounded state, so a later cha
 Full-content digests suppress unchanged long kits even when retained text is clipped.
 If changed content exceeds retained limits, or a legacy snapshot lacks a full-content digest,
 the next inspected revision uses a labelled full `[CHANGED]` snapshot without invented inline
-direction. Retained text limits and state pruning stay bounded.
+direction. Retained text limits and state pruning stay bounded. A full snapshot with no comparable
+baseline never borrows the diff voice: its paragraph says the card is the whole kit and that
+`Nothing is marked as up or down`.
 
 WuWa also has a bounded Encore API beta detail fallback for missing/unreadable current-build
 characters and weapons. It uses explicit `?v=Beta`, an exact `ResVer` match and unchanged
@@ -677,6 +679,19 @@ Where the data comes from (`gamexpress/beta.py`, see [SOURCES.md](SOURCES.md#bet
   keeps the old full snapshot rather than stalling forever. When nothing moved against the
   released build, no card is posted for that item and the run summary says why
   (`beta kit matches the released … kit — no value change to post`).
+- **A diff card explains itself before it lists anything.** The paragraph under the header is prose,
+  not another changelog: a verdict (`comes out ahead` / `is toned down` / `is rebalanced` / `is
+  renamed … rather than rebalanced` / `gains new material`), where the movement actually lands
+  (`most of the movement is in Deathless Revival and Life Severing`), what arrived
+  (`[Burning Attack] is new here`), and what was left alone (`The other 14 blocks are untouched and
+  read exactly as they do on the released 3.3 kit.`). `and nothing was nerfed` is only written when
+  every measured number really did move up; a value the diff could not read keeps the paragraph
+  silent rather than optimistic. A revision that is mostly renames carries
+  `**Note:** this is largely a terminology pass — N blocks changed only in wording`, so a rename
+  sweep never reads as a rework. Revised weapons and discs get one sentence in the same voice
+  (`**Nirvana Plume** gets stronger in this revision — nothing nerfed. The biggest change is its
+  Anomaly Proficiency bonus.`). No extra request: the paragraph is built from the diff already on
+  the card.
 - **`https://static.nanoka.cc/<game>/<revision>/{en,zh}/<kind>/<id>.json`** — the kit / weapon /
   set detail. English (`en`) is read first; Chinese (`zh`) is queried within the same bounded
   `BETA_MAX_REQUESTS` ceiling only when EN shows lag markers (`???`, `[TBD]`, `/-`), an upstream

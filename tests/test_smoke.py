@@ -17680,7 +17680,9 @@ def test_feature5_hotfix_blank_changelog_walks_revisions_and_emits_inline_diff()
         payloads = cards.beta_payloads(GAMES["zzz"], hotfix, None, None)
         assert payloads and all(cards.validate_payload(payload) == [] for payload in payloads)
         rendered = json.dumps(payloads)
-        assert "Revision Changes" in rendered and "Revision diff" in rendered
+        # A revision card explains itself in a sentence, and still carries the machine diff line.
+        assert "comes out ahead in this revision" in rendered and "Revision diff" in rendered
+        assert "Revision Changes" not in rendered
         assert "sunbringer" in rendered and "19850203" in rendered
 
 
@@ -18937,6 +18939,237 @@ def test_feature5_released_weapon_diffs_against_the_live_build():
         assert "~~8~~ → **10**" in body
 
 
+def _explanation_phoenix_sections() -> list:
+    """A revision shaped like the live ZZZ card: buffs, a nerf, a new mechanic, a retirement."""
+    return [
+        BetaSectionEntry(
+            title="Ultimate: Deathless Revival", category="Ultimate", tag="[BUFF]", lines=[
+                "**[BUFF]** DMG Multiplier increased from ~~**2318.1%**~~ → **3669.3%**.",
+                "**[NEW]** Now counts as a **[Burning Attack]**.",
+            ]),
+        BetaSectionEntry(
+            title="Basic Attack: Life Severing", category="Basic Attack", tag="[NERF]", lines=[
+                "**[NERF]** 1st-Hit DMG Multiplier reduced from ~~**63.1%**~~ → **39.3%**.",
+            ]),
+        BetaSectionEntry(
+            title="Dodge: Sway", category="Dodge", tag="[CHANGED]", lines=[
+                "**[CHANGED]** Removed from this revision — ~~Old dodge text~~ "
+                "*(+8 more lines no longer published)*",
+            ]),
+    ]
+
+
+def test_feature5_a_revision_card_explains_itself_like_a_person():
+    """The second post must read as an explanation, not as a changelog of tags.
+
+    `[BUFF] ~~2~~ -> **3**` alone tells a reader what moved but not what the revision *is*.
+    The paragraph above the bullets carries the verdict, where the movement lands, and what was
+    left alone — built from the same measurements, so it cannot contradict the card.
+    """
+    from gamexpress import beta as beta_mod
+
+    text = beta_mod._revision_explanation(
+        "Phoenix", _explanation_phoenix_sections(), unchanged=17,
+        compared_to="the released 3.3 kit",
+    )
+    assert text.startswith("**Phoenix** is rebalanced in this revision"), text
+    assert "most of the movement is in Deathless Revival and Life Severing" in text
+    assert "[Burning Attack] is new here" in text
+    assert "The other 17 blocks are untouched and read exactly as they do on the released 3.3 kit." in text
+    # Prose, not a wall of tags: no bullet markup, no tag prefix, no arrow diff inside it.
+    assert "**[BUFF]**" not in text and "**[NERF]**" not in text
+    assert "\u2192" not in text and "Revision Changes" not in text
+    assert len(text) <= 600, len(text)
+    # Deterministic: the same card always explains itself the same way.
+    assert text == beta_mod._revision_explanation(
+        "Phoenix", _explanation_phoenix_sections(), unchanged=17,
+        compared_to="the released 3.3 kit",
+    )
+
+
+def test_feature5_explanation_never_claims_a_direction_it_did_not_measure():
+    """Honesty: a value the diff could not read means silence, not "nothing was nerfed"."""
+    from gamexpress import beta as beta_mod
+
+    # A `[BUFF]` tag whose measured number actually fell (a cost, say) proves no global claim.
+    falling = [BetaSectionEntry(
+        title="Special Attack: Fire Snatch", category="Special Attack", tag="[BUFF]", lines=[
+            "**[BUFF]** Energy Cost reduced from ~~**80**~~ → **40**.",
+        ])]
+    text = beta_mod._revision_explanation("Phoenix", falling, unchanged=12,
+                                          compared_to="the released 3.3 kit")
+    assert "comes out ahead" in text
+    assert "nothing was nerfed" not in text          # a number did fall; no blanket claim
+    assert "the only block that moved is Fire Snatch" in text
+
+    # Nothing numeric at all -> no direction words, and the rename is stated as such.
+    renamed = [BetaSectionEntry(
+        title="Chain Attack: Against All Odds", category="Chain Attack", tag="[CHANGED]", lines=[
+            "**[CHANGED]** Renamed from ~~Chain Attack~~ → **Chain Attack: Against All Odds**.",
+            "**[TEXT FIX]** Press Normal after use to chain into Basic 3.",
+        ])]
+    text = beta_mod._revision_explanation("Phoenix", renamed, unchanged=9,
+                                          compared_to="the released 3.3 kit")
+    assert "is renamed in this revision rather than rebalanced" in text
+    assert "buff" not in text.lower() and "nerf" not in text.lower()
+
+    # A plain `[CHANGED]` bullet can still carry a before/after pair: that is a value moving,
+    # so the paragraph must not claim "no value moved" just because no tag said buff or nerf.
+    plain = [BetaSectionEntry(
+        title="Talent: Overclock", category="Talent", tag="[CHANGED]",
+        lines=["**[CHANGED]** Duration goes from ~~**12**~~ → **15** seconds."])]
+    text = beta_mod._revision_explanation("Phoenix", plain, unchanged=8,
+                                          compared_to="the released 3.3 kit")
+    assert "no value moved" not in text and "no value changes" not in text
+    assert "the only block that moved is Overclock" in text
+
+
+def test_feature5_a_terminology_pass_says_so_instead_of_looking_like_a_rework():
+    """A rename sweep is labelled as one — the reader is told to check the CN text."""
+    from gamexpress import beta as beta_mod
+
+    sections = [
+        BetaSectionEntry(
+            title="Basic Attack: Sin Pyre", category="Basic Attack", tag="[CHANGED]", lines=[
+                "**[CHANGED]** Renamed from ~~Basic Attack: Hold~~ → **Basic Attack: Sin Pyre**.",
+            ]),
+        BetaSectionEntry(
+            title="EX Special Attack: Dazzle Flame", category="EX Special Attack", tag="[CHANGED]",
+            lines=["**[CHANGED]** Renamed from ~~EX Special Attack: Phase 1~~ → "
+                   "**EX Special Attack: Dazzle Flame**."]),
+        BetaSectionEntry(
+            title="Chain Attack: Against All Odds", category="Chain Attack", tag="[TEXT FIX]",
+            lines=["**[TEXT FIX]** Counts as [Burning Attack]."]),
+    ]
+    text = beta_mod._revision_explanation("Phoenix", sections, unchanged=4,
+                                          compared_to="the released 3.3 kit")
+    assert "**Note:** this is largely a terminology pass" in text
+    assert "2 blocks changed only in wording" in text and "CN text" in text
+    assert "no value changes" in text
+
+
+def test_feature5_a_full_kit_snapshot_never_borrows_the_diff_voice():
+    """No baseline means no direction: the paragraph describes the card and stops there."""
+    from gamexpress import beta as beta_mod
+
+    sections = [BetaSectionEntry(title=f"Skill {i}", category="Skills", tag="[CHANGED]",
+                                 lines=[f"**[CHANGED]** Damage is **{40 + i}%**."])
+                for i in range(6)]
+    text = beta_mod._synthesize_kit_overview(
+        "zzz", "Robin", {"rarity": 5, "element": "Ether", "role": "Support"}, sections,
+        is_new=False,
+    )
+    assert text.startswith("**Robin**'s full kit for this revision — 6 blocks.")
+    assert "Nothing is marked as up or down" in text
+    for claim in ("comes out ahead", "rebalanced", "nerfed", "buff", "untouched"):
+        assert claim not in text, claim
+
+
+def test_feature5_released_diff_card_carries_the_explanation_into_discord():
+    """End to end: the human paragraph is on the delivered card, above the diff bullets."""
+    from gamexpress import beta as beta_mod
+
+    version = "3.4.1+19997538"
+    manifest = {"zzz": {"live": "3.3", "latest": version,
+                        "available": ["3.3", version],
+                        "new": {"character": [], "weapon": [], "equipment": []}}}
+    beta_kit = _beta_json("zzz_character_1661.json")
+    live_kit = json.loads(json.dumps(beta_kit))
+    live_kit["skill"]["basic"]["description"][0]["desc"] = (
+        "Press  to activate:\nUnleashes up to 2 attacks forward, dealing Ether DMG;")
+
+    class ExplainedFetcher:
+        async def get_json(self, url, **_kw):
+            if url.endswith("/manifest.json"):
+                return manifest
+            if "/zzz/3.3/" in url and "/character/1661" in url:
+                return json.loads(json.dumps(live_kit))
+            if "/zzz/" in url and "/character/1661" in url:
+                return json.loads(json.dumps(beta_kit))
+            return None
+
+        async def get_text(self, _url, **_kw):
+            return _released_changelog(_RELEASED_ENTRY_1661)
+
+        async def verify_media(self, _url):
+            return True
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _beta_ctx(Path(tmp) / "state.json", ExplainedFetcher(), BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest,
+                                                 beta_mod._budget(ctx)))
+        card = patch.characters[0]
+        assert card.overview.startswith("**Robin** comes out ahead in this revision"), card.overview
+        assert "the only block that moved is Robin Attack" in card.overview
+        assert "the released 3.3 kit" in card.overview
+        assert "Revision Changes" not in card.overview
+
+        payloads = cards.beta_payloads(GAMES["zzz"], patch)
+        assert payloads and all(cards.validate_payload(p) == [] for p in payloads)
+        body = "\n".join(
+            comp.get("content", "")
+            for payload in payloads for comp in payload["components"][0]["components"]
+            if comp.get("type") == 10
+        )
+        assert "**Robin** comes out ahead in this revision" in body
+        # The explanation sits above the bullets, and the bullets still carry the strike diff.
+        assert body.index("comes out ahead") < body.index("**[BUFF]**")
+        assert "~~2~~ \u2192 **3**" in body
+
+
+def test_feature5_a_revised_weapon_explains_itself_too():
+    """Weapons get the same courtesy: one sentence, then the changed values."""
+    from gamexpress import beta as beta_mod
+
+    text = beta_mod._equipment_explanation(
+        "Nirvana Plume",
+        ["**[BUFF]** Anomaly Proficiency bonus increased from ~~**75**~~ → **90** points.",
+         "**[CHANGED]** Name finalized: ~~Phoenix Test Engine~~ → **Nirvana Plume**."],
+        compared_to="the released 3.3 build",
+    )
+    assert text.startswith("**Nirvana Plume** gets stronger in this revision")
+    assert "The biggest change is its Anomaly Proficiency bonus." in text
+    assert text.endswith("The rest of the effect is untouched and reads as it does on the "
+                         "released 3.3 build.")
+    assert "~~" not in text and "**[" not in text
+
+    # A nerf reads as one, and an unmeasurable change claims no direction at all.
+    assert beta_mod._equipment_explanation(
+        "Cage of Forbidden Sins",
+        ["**[NERF]** ATK reduced from ~~**20%**~~ → **18%**."],
+    ).startswith("**Cage of Forbidden Sins** is toned down in this revision — nothing buffed.")
+    reworded = beta_mod._equipment_explanation(
+        "Candlelight Scheme", ["**[CHANGED]** Effect renamed from ~~Old~~ → **New**."])
+    assert "is reworded in this revision — no value moved" in reworded
+    assert "stronger" not in reworded and "toned down" not in reworded
+
+
+def test_feature5_equipment_explanation_is_rendered_once_under_the_title():
+    """The paragraph is a card line, not metadata: it renders above the effect and only once."""
+    eq = BetaEquipment(
+        id="zzz:14166", name="Robin's Exclusive W-Engine", category_label="W-Engines",
+        rarity=5, weapon_class="Attack", tag="[BUFF]",
+        stats_line="Base ATK 713 | ATK 30%",
+        overview="**Robin's Exclusive W-Engine** gets stronger in this revision — nothing nerfed.",
+        lines=["**[BUFF]** DEF increased from ~~**8%**~~ → **10%**."],
+        image_url="https://static.nanoka.cc/assets/zzz/weapon/14166.webp",
+    )
+    patch = BetaPatch(game_key="zzz", beta_version="3.4.1", rev_label="v3.4.1",
+                      rev_id="eq_explain", equipment=[eq])
+    payloads = cards.beta_payloads(GAMES["zzz"], patch)
+    assert payloads and all(cards.validate_payload(p) == [] for p in payloads)
+    body = "\n".join(
+        comp.get("content", "")
+        for payload in payloads for comp in payload["components"][0]["components"]
+        if comp.get("type") == 10
+    )
+    assert body.count("gets stronger in this revision") == 1
+    assert body.index("gets stronger") < body.index("~~**8%**~~")
+    # A brand-new weapon has nothing to explain, so the field stays empty.
+    assert BetaEquipment(id="zzz:1", name="New Engine").overview == ""
+
+
 _RELEASED_ENTRY_1661 = (
     "[![](https://i.gachabase.net/x/q:50/f:webp/plain/zzz/assets/1661.png)\\\n"
     "\\\nRobin](https://zzz.gachabase.net/agents/1661/1661/beta?lang=en) "
@@ -19503,9 +19736,11 @@ def test_feature5_prime_formatting_style_overview_rework_diff_and_footer_invaria
     assert any("**[REWORK]** *Old:*" in ln and "→ *New:*" in ln for ln in diffed[0].lines)
 
     rev_overview = beta_mod._synthesize_kit_overview(
-        "zzz", "Phoenix", {"rarity": 5, "element": "Fire", "role": "Anomaly"}, diffed, is_new=False
+        "zzz", "Phoenix", {"rarity": 5, "element": "Fire", "role": "Anomaly"}, diffed,
+        is_new=False, mode="diff",
     )
-    assert rev_overview.startswith("**Revision Changes:**") and "rework" in rev_overview
+    assert rev_overview.startswith("**Phoenix**'s kit is reworked in this revision")
+    assert "no value changes" in rev_overview and "Revision Changes" not in rev_overview
 
     long_secs = [
         BetaSectionEntry(

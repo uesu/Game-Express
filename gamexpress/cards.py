@@ -1992,6 +1992,11 @@ def beta_payloads_with_map(
             if eq_parts_line:
                 eq_parts.append(f"*Parts: {eq_parts_line}*")
             eq_parts.extend(_format_equipment_stats_line(game.key, eq_stats, eq_sub, eq_wclass))
+            eq_overview = strip_invisible(str(getattr(eq, "overview", "") or "")).strip()
+            if eq_overview:
+                # A revised weapon reads like a person describing it, not only like a diff.
+                eq_parts.append("")
+                eq_parts.append(eq_overview)
             is_weapon_eq = (
                 any(k in display_cat.lower() for k in ("weapon", "w-engine", "light cone"))
                 and not eq_set_kind

@@ -4629,6 +4629,265 @@ def _reconcile_en_with_zh_equipment(current: BetaEquipment, zh_fields: dict) -> 
     return False
 
 
+_NUM_PAIR_RE = re.compile(r"~~(.+?)~~\s*\u2192\s*\*\*(.+?)\*\*")
+# `* **[BUFF]** text`, `- **[CHANGED]** text` and a bare `**[BUFF]** text` are the same bullet; the
+# leading list marker must not swallow the tag's own asterisks.
+_TAG_PREFIX_RE = re.compile(r"^[\s*\-\u2022]*\*\*\[([A-Z ]+)\]\*\*\s*(.*)$", re.S)
+
+
+def _bullet_parts(line: Any) -> tuple[str, str]:
+    """The `[TAG]` a bullet carries and the sentence after it, from either bullet shape."""
+    text = str(line or "").strip()
+    match = _TAG_PREFIX_RE.match(text)
+    if match is None:
+        return "", text
+    tag = f"[{match.group(1)}]"
+    return (tag if tag in _TALLY_TAGS else "[CHANGED]"), match.group(2).strip()
+
+
+def _first_number(text: Any) -> float | None:
+    """The first readable number in a fragment, or None when there is nothing to compare."""
+    match = re.search(r"-?\d+(?:\.\d+)?", str(text or "").replace(",", ""))
+    if match is None:
+        return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
+
+
+def _relative_move(old: Any, new: Any) -> float | None:
+    """How far a value moved, in percent of where it started — only when both ends read."""
+    before, after = _first_number(old), _first_number(new)
+    if before is None or after is None or before == 0:
+        return None
+    return (after - before) / abs(before) * 100.0
+
+
+def _count(n: int, word: str, plural: str = "") -> str:
+    """`1 block` / `3 blocks` — a card is read by people, so no `block(s)` inside prose."""
+    if n == 1:
+        return f"1 {word}"
+    return f"{n} {plural or word + 's'}"
+
+
+def _block_label(title: Any) -> str:
+    """`Basic Attack: Robin Attack` reads as `Robin Attack` in a sentence."""
+    text = str(title or "").strip()
+    if not text:
+        return ""
+    text = re.sub(r"\s*\([^)]*\)\s*$", "", text).strip() or text
+    if ":" in text:
+        tail = text.rsplit(":", 1)[1].strip()
+        if len(tail) >= 3:
+            return tail
+    return text
+
+
+def _join_words(items: list[str]) -> str:
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    return ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _short_name(label: str, limit: int = 48) -> str:
+    """A block name long enough to wrap the paragraph gets clipped, never dropped."""
+    text = str(label or "").strip()
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "\u2026"
+
+
+def _movement_clause(ranked: list[tuple[str, float]], *, direction: str) -> str:
+    """`the only block that moved is Robin Attack, and nothing nerfed` — no invented magnitude."""
+    if not ranked:
+        return ""
+    names = [_short_name(label) for label, _weight in ranked]
+    if len(names) == 1:
+        clause = f"the only block that moved is {names[0]}"
+    elif len(names) == 2:
+        clause = f"most of the movement is in {names[0]} and {names[1]}"
+    else:
+        clause = (f"most of the movement is in {names[0]} and {names[1]}, with "
+                  f"{_count(len(names) - 2, 'more block', 'more blocks')} touched")
+    return clause + direction
+
+
+def _revision_explanation(
+    name: str, sections: list, *, unchanged: int = 0, compared_to: str = ""
+) -> str:
+    """One readable paragraph: what this revision did, in words, and what it left alone.
+
+    A second post that only lists `[BUFF] ~~2~~ → **3**` lines reads like a machine diff. This is
+    the human half: a verdict, where the movement actually lands, and an honest line about
+    everything the revision did not touch — built only from what the diff already measured.
+    """
+    counts = {tag: 0 for tag in _TALLY_TAGS}
+    per_block: dict[str, float] = {}
+    signed: list[float] = []
+    new_titles: list[str] = []
+    structural: list[str] = []
+    retired = renamed = 0
+    for section in sections or ():
+        fallback_tag = str(getattr(section, "tag", "") or "[CHANGED]")
+        label = _block_label(getattr(section, "title", "")) or "this block"
+        for raw in (getattr(section, "lines", ()) or ()):
+            tag, body = _bullet_parts(raw)
+            if not tag:
+                tag = fallback_tag if fallback_tag in counts else "[CHANGED]"
+            counts[tag] += 1
+            if "Removed from this revision" in body or body.startswith("Removed:"):
+                retired += 1
+            elif re.search(r"\brenamed\b|\bName finalized\b", body, re.I):
+                renamed += 1
+            pair = _NUM_PAIR_RE.search(body)
+            if pair is not None and tag in ("[BUFF]", "[NERF]", "[CHANGED]"):
+                move = _relative_move(pair.group(1), pair.group(2))
+                if move is not None:
+                    per_block[label] = max(per_block.get(label, 0.0), abs(move))
+                    signed.append(move)
+            if tag == "[NEW]":
+                # A new *mechanic* is the interesting thing: `[Overclock] is new here` beats
+                # naming the block that already appears in the movement clause.
+                for mech in re.findall(r"\[([A-Z][A-Za-z0-9' -]{2,24})\]", body):
+                    token = f"[{mech}]"
+                    if mech in ("TBD", "NEW", "BUFF", "NERF", "CHANGED", "ADJUSTMENT",
+                                "REWORK", "TEXT FIX", "STC"):
+                        continue
+                    if token not in new_titles:
+                        new_titles.append(token)
+                        break
+                else:
+                    if label not in new_titles:
+                        new_titles.append(label)
+            elif tag in ("[REWORK]", "[ADJUSTMENT]") and label not in structural:
+                structural.append(label)
+
+    buffs, nerfs = counts["[BUFF]"], counts["[NERF]"]
+    ranked = sorted(per_block.items(), key=lambda item: item[1], reverse=True)
+    # Only claim "nothing was nerfed/raised" when every measured number actually moved that way:
+    # a value the diff could not read carries no direction, so silence is the honest answer.
+    no_down = bool(signed) and all(move >= 0 for move in signed)
+    no_up = bool(signed) and all(move <= 0 for move in signed)
+    direction = ""
+    # "no value moved" is a measurement, not a guess: a plain `[CHANGED]` bullet can still carry
+    # a before/after pair, so these branches only speak when nothing numeric moved at all.
+    quiet = not signed
+    if buffs and nerfs:
+        lead = f"**{name}** is rebalanced in this revision"
+    elif buffs:
+        lead = f"**{name}** comes out ahead in this revision"
+        direction = ", and nothing was nerfed" if no_down else ""
+    elif nerfs:
+        lead = f"**{name}** is toned down in this revision"
+        direction = ", and nothing was buffed" if no_up else ""
+    elif structural and quiet:
+        lead = (f"**{name}**'s kit is reworked in this revision — the mechanics are rebuilt "
+                "and no value changes")
+    elif retired and not renamed and quiet:
+        lead = (f"**{name}**'s kit is trimmed in this revision — "
+                f"{_count(retired, 'block')} retired, and no value moved")
+    elif renamed and quiet:
+        lead = (f"**{name}**'s kit is renamed in this revision rather than rebalanced — "
+                "the wording moves, but no value changes")
+    elif counts["[NEW]"] and quiet:
+        lead = f"**{name}** gains new material in this revision"
+    elif counts["[TEXT FIX]"] and quiet:
+        lead = f"**{name}** only takes wording fixes in this revision — no value moved"
+    else:
+        lead = f"**{name}**'s kit changes in this revision"
+
+    moved_clause = _movement_clause(ranked, direction=direction) if ranked else ""
+    new_names = [_short_name(title) for title in new_titles[:2] if title not in per_block]
+    new_clause = ""
+    if new_names and (moved_clause or not (retired or renamed or structural)):
+        new_clause = (f"{_join_words(new_names)} "
+                      f"{'are' if len(new_names) > 1 else 'is'} new here")
+    tail = ", and ".join(part for part in (moved_clause, new_clause) if part)
+    if tail and not moved_clause:
+        tail += ", and no existing value moved"
+    if tail:
+        lead = f"{lead} — {tail}"
+    sentence = f"{lead}."
+
+    if unchanged:
+        rest = (f"The other {_count(unchanged, 'block')} "
+                f"{'are' if unchanged > 1 else 'is'} untouched")
+        rest += f" and read exactly as they do on {compared_to}." if compared_to else "."
+    elif compared_to:
+        rest = f"Every block moved against {compared_to}."
+    else:
+        rest = ""
+
+    note = ""
+    if renamed and renamed >= max(buffs + nerfs, 1) and renamed >= 2:
+        note = (f"**Note:** this is largely a terminology pass — {_count(renamed, 'block')} "
+                "changed only in wording, so check the CN text before reading them as reworks.")
+    return " ".join(part for part in (sentence, rest, note) if part)
+
+
+def _equipment_explanation(name: str, lines: list, *, compared_to: str = "") -> str:
+    """One sentence for a revised weapon / disc — the same courtesy the agents get."""
+    buffs = nerfs = news = retired = 0
+    best: tuple[float, str] | None = None
+    signed: list[float] = []
+    for raw in lines or ():
+        text = str(raw or "").strip()
+        if text.startswith("-#"):
+            continue
+        tag, body = _bullet_parts(text)
+        if tag == "[BUFF]":
+            buffs += 1
+        elif tag == "[NERF]":
+            nerfs += 1
+        elif tag == "[NEW]":
+            news += 1
+        if "Removed from this revision" in body:
+            retired += 1
+        pair = _NUM_PAIR_RE.search(body)
+        move = _relative_move(pair.group(1), pair.group(2)) if pair else None
+        if move is not None and tag in ("[BUFF]", "[NERF]", "[CHANGED]"):
+            signed.append(move)
+        if move is not None and tag in ("[BUFF]", "[NERF]"):
+            label = re.sub(
+                r"\s+(?:increased|reduced|decreased|lowered|raised|changed|is|are)?\s*"
+                r"(?:from|to)?\s*$", "", body[:pair.start()], flags=re.I,
+            ).strip(" .,;:-\u2014")
+            if not label or len(label) > 60 or "~~" in label or "**" in label:
+                label = "main value"
+            if best is None or abs(move) > best[0]:
+                best = (abs(move), label)
+    no_down = bool(signed) and all(move >= 0 for move in signed)
+    no_up = bool(signed) and all(move <= 0 for move in signed)
+    if buffs and not nerfs:
+        lead = (f"**{name}** gets stronger in this revision"
+                + (" — nothing nerfed" if no_down else ""))
+    elif nerfs and not buffs:
+        lead = (f"**{name}** is toned down in this revision"
+                + (" — nothing buffed" if no_up else ""))
+    elif buffs and nerfs:
+        lead = f"**{name}** is rebalanced in this revision"
+    elif news:
+        lead = f"**{name}** gains new material in this revision"
+    elif retired:
+        lead = f"**{name}** is trimmed in this revision — no value moved"
+    else:
+        lead = f"**{name}** is reworded in this revision — no value moved"
+    detail = ""
+    if best is not None:
+        detail = f"The biggest change is its {best[1]}."
+    rest = ("The rest of the effect is untouched" +
+            (f" and reads as it does on {compared_to}." if compared_to else "."))
+    return " ".join(part for part in (f"{lead}.", detail, rest) if part)
+
+
+def _full_kit_overview(name: str, sections: list) -> str:
+    """A full kit with no comparable baseline: describe the card, never the direction."""
+    return (f"**{name}**'s full kit for this revision — "
+            f"{_count(len(sections or ()), 'block')}. Nothing is marked as up or down: "
+            "no earlier copy could be compared.")
+
+
 def _synthesize_kit_overview(
     game_key: str,
     name: str,
@@ -4636,41 +4895,24 @@ def _synthesize_kit_overview(
     sections: list[BetaSectionEntry],
     *,
     is_new: bool,
+    mode: str = "full",
+    unchanged: int = 0,
+    compared_to: str = "",
 ) -> str:
-    """Generate a concise Prime Formatting kit overview or revision-change summary."""
+    """Generate a concise Prime Formatting kit overview or revision-change summary.
+
+    `mode="diff"` means these sections are a before/after against a real baseline, so the
+    paragraph may talk about direction. `mode="full"` is a whole kit with nothing to compare:
+    it describes the card and never claims a buff or a nerf.
+    """
     if not sections:
         return ""
     if not is_new:
-        counts: dict[str, int] = {}
-        touched: list[str] = []
-        for sec in sections:
-            for ln in sec.lines:
-                m_t = re.match(r"^\*\*(\[[A-Z ]+\])\*\*", ln.strip())
-                t = m_t.group(1) if m_t else (sec.tag or "[CHANGED]")
-                counts[t] = counts.get(t, 0) + 1
-            short = sec.title.split("—")[0].split(":")[0].strip()
-            if short and short not in touched:
-                touched.append(short)
-        badge_parts: list[str] = []
-        for tag, label in (
-            ("[BUFF]", "buff"),
-            ("[NERF]", "nerf"),
-            ("[REWORK]", "rework"),
-            ("[ADJUSTMENT]", "adjustment"),
-            ("[CHANGED]", "change"),
-            ("[NEW]", "addition"),
-            ("[TEXT FIX]", "wording fix"),
-        ):
-            n = counts.get(tag, 0)
-            if n:
-                plural = "es" if label.endswith("x") and n != 1 else ("s" if n != 1 else "")
-                badge_parts.append(f"**{n}** {label}{plural}")
-        digest = ", ".join(badge_parts) if badge_parts else f"**{len(sections)}** updated block(s)"
-        scope = ", ".join(f"[{s}]" for s in touched[:5])
-        if len(touched) > 5:
-            scope += f", +{len(touched) - 5} more"
-        return f"**Revision Changes:** Touching {scope} ({digest})."
-
+        if mode == "diff":
+            return _revision_explanation(
+                name, sections, unchanged=unchanged, compared_to=compared_to
+            )
+        return _full_kit_overview(name, sections)
     rarity = built.get("rarity")
     element = str(built.get("element") or "").strip()
     spec_elem = str(built.get("special_element") or "").strip()
@@ -5323,7 +5565,8 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
                                 + (f" • {tally}" if tally else "")
                                 + (f" • {unchanged} unchanged block(s) omitted" if unchanged else ""))
                 full.overview = _synthesize_kit_overview(
-                    game.key, name, built, full.sections, is_new=False
+                    game.key, name, built, full.sections, is_new=False, mode="diff",
+                    unchanged=unchanged, compared_to=old_rev,
                 )
                 patch.characters.append(full)
             elif released is not None:
@@ -5352,7 +5595,8 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
                 old_rev = str((previous_snapshot or {}).get("revision") or "previous revision")
                 full.subtext = f"-# Visual assets added against {old_rev} • kit text unchanged"
                 full.overview = _synthesize_kit_overview(
-                    game.key, name, built, full.sections, is_new=False
+                    game.key, name, built, full.sections, is_new=False, mode="diff",
+                    unchanged=unchanged, compared_to=old_rev,
                 )
                 patch.characters.append(full)
         elif cmp_mode == "equal" and (new_char_img_added or new_char_gal_added):
@@ -5618,6 +5862,10 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
         elif eq_cmp == "diff":
             changed = _diff_equipment(previous, current)
             if changed:
+                compared = f"the released {live_build} build" if released_eq is not None else ""
+                changed.overview = _equipment_explanation(
+                    name, changed.lines, compared_to=compared
+                )
                 if released_eq is not None:
                     changed.lines = [
                         f"-# Compared with the released {live_build} kit — only changed values are shown",

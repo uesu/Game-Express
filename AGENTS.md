@@ -590,6 +590,14 @@ Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
   The card then shows only what moved — `~~old~~ → **new**` with `[BUFF]` / `[NERF]` / `[NEW]` /
   `[TEXT FIX]` — plus a one-line tally (`1 buff • 14 unchanged block(s) omitted`), because a wall
   of `[CHANGED]` cannot be read as "this is new" or "this was buffed".
+- **A revision card explains itself before it lists anything.** The `overview` paragraph of a
+  diff card is prose a person would write, not a second changelog: a verdict, where the movement
+  lands, what is new, and what was left alone — `beta._revision_explanation`. It may only state
+  what the diff measured: "nothing was nerfed" requires every measured number to have risen, a
+  value it could not read silences the claim, and a mostly-renamed revision says so
+  (`**Note:** this is largely a terminology pass …`). A full kit with no comparable baseline uses
+  `beta._full_kit_overview` and never implies a direction. Weapons and discs get the same courtesy
+  in one sentence (`beta._equipment_explanation`). Nothing here costs a request.
 - **A retired block is a sentence, not a payload.** A skill, node or line that disappears is one
   bullet — `**[CHANGED]** Removed from this revision — ~~excerpt~~` plus `(+N more lines no longer
   published)` — never a re-print of everything that was dropped. A block that only carried a

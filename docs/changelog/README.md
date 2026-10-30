@@ -1,6 +1,6 @@
 # Changelog
 
-Latest: [Beta: released kits are diffs, and a blocked changelog is not a blind spot](CHANGELOG.md#2026-10-30--beta-released-kits-are-diffs-and-a-blocked-changelog-is-not-a-blind-spot).
+Latest: [Beta: released kits are diffs, and the card explains itself](CHANGELOG.md#2026-10-30--beta-released-kits-are-diffs-and-the-card-explains-itself).
 
 Previous: [Timing phrases, reveal dedup and edit safety](CHANGELOG.md#2026-10-29--timing-phrases-reveal-dedup-and-edit-safety).
 

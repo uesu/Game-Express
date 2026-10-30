@@ -109,6 +109,7 @@ class BetaEquipment:
     image_urls: list[str] = field(default_factory=list)
     diff_url: str = ""
     page_url: str = ""
+    overview: str = ""
 
 
 @dataclass
