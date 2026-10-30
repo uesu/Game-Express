@@ -1,5 +1,25 @@
 # Changelog — current entries
 
+## 2026-10-30 — Beta: moving the beta channel no longer silences the feature
+
+- **Adding `DISCORD_WEBHOOK_BETA_<GAME>` after beta had been posting into that game's news channel
+  used to stop beta posting.** The stored route fingerprints the destination it delivered to, and a
+  mismatch was treated as an unfinished migration: every later run reported
+  `destination changed; review beta state before posting` and posted nothing until the state was
+  edited by hand. That protected a half-posted card, but it also silently muted a deliberate move —
+  and moving beta out of the news channels is a normal, documented thing to do.
+- **Now the move is adopted.** `beta._unfinished_deliveries` asks the only question that matters:
+  is any earlier batch still half-posted? If nothing is pending, the next card goes to the new
+  destination and the run summary records it —
+  `ZZZ beta: destination changed — new cards post to DISCORD_WEBHOOK_BETA_ZZZ`. The stored route is
+  updated, so the message appears once.
+- **The real hazard still stops.** With a half-posted batch (its pages already sitting in the old
+  channel), the move is held and reported as
+  `destination changed while 1 delivery is unfinished; reconcile it before posting to the new
+  channel`, because retrying there would split a single card across two channels. Unchanged.
+- Covered by `test_feature5_a_deliberate_destination_move_is_adopted_not_muted`, and documented in
+  `docs/CONFIGURATION.md` (beta settings) and `README.md` (routing).
+
 ## 2026-10-30 — Beta: direction follows the kit, and mixed-build revisions say so
 
 - **A number going down is not automatically a nerf.** `[BUFF]` / `[NERF]` now follow what the

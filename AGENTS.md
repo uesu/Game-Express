@@ -566,6 +566,10 @@ Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
   `DISCORD_WEBHOOK_NEWS_<GAME>`. Never the schedule/codes catch-all, never a mirror, never
   `FORCE_WEBHOOK`. `PING_BETA_<GAME>` > `PING_BETA` only — `PING_ROLE_ID` is deliberately not
   inherited, so turning the feature on cannot start pinging an unrelated role.
+- **A destination change moves, it does not mute.** `beta._unfinished_deliveries` decides: with
+  every earlier batch settled, a changed route is adopted on the next card and reported
+  (`destination changed — new cards post to …`). A half-posted batch keeps the hard stop, because
+  its pages live in the old channel and a retry would split one card across two of them.
 - **Never invent a number or guess a direction.** Values come from the database export or they
   are omitted. `[BUFF]` / `[NERF]` require retained before **and** after snapshots plus an
   unambiguous mechanic rule (for example, higher damage or lower cooldown); otherwise use
