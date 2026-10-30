@@ -660,10 +660,17 @@ of them has to stay in `gamexpress/beta.py::_DATA_SECTIONS`, because a key that 
 that whole group in silence — which is how a Star Rail stream kept only its `relics` and a
 Genshin stream produced no revision at all.
 
-Two listed groups have no card kind: ZZZ's `bangboo` and Genshin's `materials`/`items`. Nanoka
-serves `zzz/<revision>/bangboo.json` and a `/bangboo/<id>` page, and the ZZZ 3.4.1 beta carries a
-new Bangboo (54024), so a Bangboo card is feasible once its detail JSON shape is confirmed; until
-then the run reports the skipped group rather than hiding it. Nanoka's per-version diff feed
+Two listed groups have no card kind: ZZZ's `bangboo` and Genshin's `materials`/`items`.
+
+A Bangboo is a real first-class record, not an agent variant — captured from the served pages on
+2026-10-30 (`/bangboo` index and `/bangboo/54024` for Charley): an S/A rank, a promotion stat block
+(HP · ATK · DEF · Impact · CRIT Rate · CRIT DMG · PEN Ratio · Anomaly Proficiency), promotion
+materials, three skills labelled a / b / c (Active, Talent, QTE) each with its own attribute table
+and a shared `Skill Table`, and its own `Version Diff` picker. The page is served out of
+`zzz/<revision>/bangboo.json`; the per-item file that carries the skill prose is the
+`en/bangboo/<id>.json` counterpart of `en/character|weapon|equipment/<id>.json`, which is the one
+shape no capture has shown yet. Until it does, a listed Bangboo is reported as skipped rather than
+guessed into a card. Nanoka's per-version diff feed
 (`ww/3.8.1/diff/en.json`, `/diff#anchor` pages elsewhere) is deliberately not read: the card's
 diff is computed from two retained snapshots, which is what lets it print `~~old~~ → **new**`
 per value.
