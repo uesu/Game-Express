@@ -591,9 +591,18 @@ Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
   already in the live build, that build's kit is read once and used as the baseline
   (`beta._released_character` / `beta._released_equipment`) — including when the retained
   snapshot can no longer be compared, a case that used to become a "full current kit" rebaseline.
+  When there is no live build to read (an unreleased resonator such as WuWa Lily, whose live path
+  answers 404) the retained snapshot's own revision is rebuilt instead
+  (`beta._previous_revision_character`), so `3.8.1 → 3.8.3` is still a before/after. A rebuild
+  that reads back identical to the current kit is not a baseline — a CDN answering an old version
+  path with the current build must never produce an empty "no changes" card, so the honest
+  labelled full snapshot is posted instead.
   The card then shows only what moved — `~~old~~ → **new**` with `[BUFF]` / `[NERF]` / `[NEW]` /
   `[TEXT FIX]` — plus a one-line tally (`1 buff • 14 unchanged block(s) omitted`), because a wall
-  of `[CHANGED]` cannot be read as "this is new" or "this was buffed".
+  of `[CHANGED]` cannot be read as "this is new" or "this was buffed". A block that did not move
+  is omitted outright, never listed as `No changes.`, and the header names the comparison itself
+  (`beta._rev_range_label`: `Patch Notes: Rev. 3.8.1 → 3.8.3`, or the build ids `19834130 →
+  19851435` when only the build moved) so every `~~old~~ → **new**` below has an anchor.
 - **Direction follows the kit, and doubt is not a direction.** `beta._direction` decides
   `[BUFF]` / `[NERF]` from what the value does in play — cost, cooldown, charge time and trigger
   requirements invert (cheaper / faster / easier is a buff) — and the nearest subject word before
@@ -673,6 +682,12 @@ If changed content exceeds retained limits, or a legacy snapshot lacks a full-co
 the next inspected revision uses a labelled full `[CHANGED]` snapshot without invented inline
 direction. Retained text limits and state pruning stay bounded.
 Do not compare clipped prior text with full new text as an exact diff.
+
+`beta.BETA_SNAPSHOT_*` is a runaway-source guard, not a display limit: it must stay above the
+largest real kit (WuWa Lily's Forte Circuit is 40 lines, the whole kit ~11k characters; the
+bounds allow 60k characters and 160 lines per block). A cap below the real thing does not bound
+the snapshot — it marks the baseline `truncated` and silently disables the diff, which is exactly
+how run #2880 turned a 3.8.3 revision into a five-page kit dump.
 
 ### Encore current-beta detail fallback
 

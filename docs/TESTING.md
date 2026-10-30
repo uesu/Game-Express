@@ -462,6 +462,17 @@ and rendered payloads remain valid. `test_feature5_replaced_blocks_preserve_surp
 covers removal of surplus old stat/equipment lines within a replacement block. Both reproduced
 failures before repair; the existing numeric-direction tests continue to cover complete baselines.
 
+`test_feature5_ww_3_8_3_second_revision_is_a_real_before_after_not_a_kit_dump` reproduces run
+#2880: a 40-line Forte Circuit, two revisions, and a disk round-trip. It asserts the 3.8.3 card
+diffs instead of reprinting (the golden `~~74.28%~~ → **63.62%**` pair, the untouched 40 lines
+absent, the unchanged RC4 block omitted entirely), that the header reads `Rev. 3.8.1 → 3.8.3`,
+and that every page still validates. `test_feature5_clipped_snapshot_rebuilds_the_previous_revision_instead_of_a_kit_dump`
+plants a legacy 32-line-capped snapshot and proves the previous revision is rebuilt for the diff;
+`test_feature5_rebuild_that_matches_the_current_kit_is_not_a_baseline` serves the current kit on
+the old revision path and proves the card stays a labelled full snapshot rather than an empty
+"no changes" post. `test_feature5_header_range_uses_versions_then_build_ids_and_never_fakes_a_pair`
+covers the version pair, the same-version build-id pair and the fallback.
+
 ### Encore beta fallback regression coverage
 
 Captured `encore_{hsin,suoming,lily,weapon}_live.json` fixtures retain relevant API fields and
