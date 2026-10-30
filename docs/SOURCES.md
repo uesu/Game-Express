@@ -666,12 +666,27 @@ carding) and any route the code does not recognise — that case is a reported w
 silent skip. ZZZ's `bangboo` used to be the third; it is a card now.
 
 A Bangboo is a real first-class record, not an agent variant — captured from the served pages on
-2026-10-30 (`/bangboo` index and `/bangboo/54024` for Charley): an S/A rank, a promotion stat block
+2026-10-30/31 (`/bangboo` index and the pages for Charley 54024, Booltergeist 53021, Ariel 54023,
+Ultra Jake 54022 and Overtimeboo 53014): an S/A rank, a promotion stat block
 (HP · ATK · DEF · Impact · CRIT Rate · CRIT DMG · PEN Ratio · Anomaly Proficiency), promotion
 materials, three skills labelled a / b / c (Active Skill, Additional Ability, Bangboo Chain Attack)
-each with its own attribute table and a shared `Skill Table`, and its own `Version Diff` picker. The page is served out of
-`zzz/<revision>/bangboo.json`; the per-item file is
-`zzz/<revision>/{en,zh}/bangboo/<id>.json`, the same layout as the other kinds:
+each with its own attribute table and a shared `Skill Table`, and its own `Version Diff` picker. The
+listing is read from `zzz/<revision>/bangboo.json`.
+
+**What is verified, and what is not.** Every number, label, rank, level cap and skill name in the
+list below is checked against those five served pages, whose gachabase and nanoka copies agree. The
+*field names* of the per-item record are not: the only sample of it reached this repository through
+the agent rather than a fresh capture, so `skill` / `skill_prop` / `stats` / `level` are a shape
+that has been followed, not a shape that has been re-read. DevTools captures of
+`zzz.nanoka.cc/bangboo/<id>` on 2026-10-31 show the page fetching its document, JS, CSS and
+`_app/version.json` and **no per-item JSON at all** — the page is server-rendered — so those
+screenshots confirm the route (`/bangboo/<id>`), the ids and the ranks, and they do not confirm the
+static path. A record that arrives in another shape therefore fails loudly instead of guessing: the
+run reports `has no readable text in this build (<full url>)` naming the exact file it could not
+read, so a moved endpoint or a changed shape is one log line away from being fixed.
+
+The per-item file is `zzz/<revision>/{en,zh}/bangboo/<id>.json`, the same layout as the other
+kinds:
 
 | Field | Holds |
 |---|---|
@@ -703,10 +718,16 @@ Bangboo. It is not the block's length: the sliders run to the table's own length
 while the displayed value stays 6 / 1 / 6, and nanoka simply starts every slider at 1. A block that
 publishes fewer levels than the cap is read at its own last level rather than inventing one.
 
-A Bangboo that already shipped is ordinary equipment to this monitor: Ariel is in the 3.3 live
-build, so a 3.4.1 rebalance of it goes through `_released_equipment` and prints
-`~~1158%~~ → **1200%**` for the row that moved, with every unchanged skill left out — never a
-second full kit. A Bangboo that is genuinely new is `[NEW]` and prints its whole kit once.
+**Released stays released.** Four of the five captured Bangboo shipped before 3.4.1 — Ariel in
+3.1, Ultra Jake in 3.0, Booltergeist in 2.8, Overtimeboo in 1.7 — so a 3.4.1 entry for any of them
+is a rebalance. The manifest's `new` list is a claim, not proof (nanoka keeps an item there while
+it keeps changing), so before an equipment card may say `[NEW]` the **live build's own listing**
+is consulted: an id it already carries is demoted to a change and goes through
+`_released_equipment`, printing `~~1158%~~ → **1200%**` for the row that moved with every unchanged
+skill left out. If the live build lists the item but its old record cannot be read, the card falls
+back to the plain snapshot note ("no direction is inferred") rather than a reveal. Only an id the
+live build does not have — Charley 54024, the one genuine 3.4.1 addition — prints its kit once as
+`[NEW]`. Cost: one listing GET per role per run, and only when the manifest claims something new.
 
 The prose is translated in some builds and not others — Booltergeist ships real English ("Cursed
 Spotlight", "Specialty Scare Actor", "Mischief Maker on the Loose"), while Charley ships

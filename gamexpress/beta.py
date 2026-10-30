@@ -1906,6 +1906,12 @@ def manifest_new_ids(manifest: dict, ns: str, key: str) -> set[str]:
 
 
 # --------------------------------------------------------------------------- detail JSON
+def _detail_url(ns: str, version: str, kind: str, item_id: str,
+                locale: str = LOCALE) -> str:
+    """The static path a per-item record is read from — also what a failure report names."""
+    return f"{STATIC_BASE}/{ns}/{version}/{locale}/{kind}/{item_id}.json"
+
+
 async def _detail(
     fetcher,
     ns: str,
@@ -1917,7 +1923,7 @@ async def _detail(
 ) -> dict | None:
     if not ns or not version or not item_id:
         return None
-    url = f"{STATIC_BASE}/{ns}/{version}/{locale}/{kind}/{item_id}.json"
+    url = _detail_url(ns, version, kind, item_id, locale)
     data = await fetcher.get_json(url, source="beta-data", retries=1)
     return data if isinstance(data, dict) else None
 
@@ -6086,6 +6092,7 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
     gallery_cache: dict[str, list[str]] = {}
     char_new, char_changed, equip_count = 0, 0, 0
     listing_cache: dict[str, dict] = {}
+    live_listing_cache: dict[str, dict] = {}
     encore_revision = None
 
     async def encore_fallback(kind: str, item_id: str) -> dict | None:
@@ -6557,7 +6564,8 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
                     patch.item_keys.append(_entry_key(ns, role, item_id))
                     ctx.report.append(
                         f"{game.short} beta: {role} id {item_id} has no readable text in this "
-                        "build; recorded as seen"
+                        f"build ({_detail_url(ns, version, detail_kind, item_id)}); "
+                        "recorded as seen"
                     )
                 continue
         rarity = fields.get("rarity")
@@ -6580,6 +6588,23 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
         is_new = item_id in {
             "weapon": new_weapon_ids, "relic": new_relic_ids, "bangboo": new_bangboo_ids,
         }.get(role, set()) and previous is None
+        shipped_live = False
+        if is_new and has_live_build and "_encore" not in data:
+            # A manifest `new` list is a claim, not proof: nanoka keeps an item there while it
+            # keeps changing, so a Bangboo that shipped in 3.1 can still be named in
+            # `new.bangboo` on 3.4.1 (Ariel, Ultra Jake, Booltergeist and Overtimeboo are all
+            # pre-3.4.1). The live build's own listing settles it — an item players already have
+            # must be diffed against that build, never reprinted as a new kit.
+            listing_kind_live = str(kinds[role].get("listing") or "")
+            if listing_kind_live and listing_kind_live not in live_listing_cache:
+                if requests + 1 > budget["max_requests"] or not _take_shared_request(budget, 1):
+                    listing_kind_live = ""      # unreadable this run: keep the manifest's claim
+                else:
+                    requests += 1
+                    live_listing_cache[listing_kind_live] = await _listing(
+                        ctx.fetcher, ns, live_build, listing_kind_live)
+            if listing_kind_live and item_id in (live_listing_cache.get(listing_kind_live) or {}):
+                is_new, shipped_live = False, True
         name = _safe_entry_name(
             entry, data, listing_entry, item_id,
             extra_names=(str(((previous_snapshot or {}).get("data") or {}).get("name") or ""),),
@@ -6739,12 +6764,17 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             if released_eq is not None:
                 previous = released_eq
                 eq_cmp = "diff"
+            elif shipped_live:
+                # The live build lists it, so this is not a reveal — but its old kit could not be
+                # read, so there is nothing to diff. The existing snapshot path says exactly that
+                # instead of printing a released item as a brand-new one.
+                eq_cmp = "snapshot"
         patch.snapshots[snap_key] = eq_snap
         if eq_gallery:
             patch.snapshots[snap_key]["gallery_urls"] = list(eq_gallery)
         known_snapshots[snap_key] = patch.snapshots[snap_key]
         patch.item_keys.append(_entry_key(ns, role, item_id))
-        if previous is None:
+        if previous is None and eq_cmp != "snapshot":
             patch.equipment.append(current)
         elif eq_cmp == "snapshot":
             current.tag = "[CHANGED]"

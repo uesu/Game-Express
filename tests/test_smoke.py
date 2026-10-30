@@ -18977,6 +18977,130 @@ def test_feature5_a_released_bangboo_diffs_instead_of_reposting_its_kit():
     assert "No changes" not in body
 
 
+def _bangboo_rebalance_run(*, live_listing: bool, live_detail: bool):
+    """One 3.4.1 run for Ariel, which shipped in 3.1, with the manifest still calling it new."""
+    from gamexpress import beta as beta_mod
+
+    changelog = "\n\n".join([
+        "# CHANGELOG - v3.4.X",
+        "## v3.4.1 Rev. 19997538 \\| 29th October 2026",
+        "### Bangboo",
+        "[![](https://i.gachabase.net/x/q:50/f:webp/plain/zzz/assets/54023.png)\\\\",
+        "\\\\Ariel](https://zzz.gachabase.net/bangboo/54023/ariel/beta?lang=en)",
+    ])
+    manifest = {"zzz": {"live": "3.3", "latest": "3.4.1+19997538",
+                        "available": ["3.3", "3.4.1+19997538"],
+                        "new": {"character": [], "weapon": [], "equipment": [],
+                                "bangboo": ["54023"]}}}
+    files: dict = {
+        "/3.4.1+19997538/en/bangboo/54023": _ariel_like_detail(dmg_main=80000, dmg_growth=8000),
+        "/3.4.1+19997538/bangboo.json": {"54023": {"rank": 4, "en": "Ariel"}},
+        "changelog/beta": changelog,
+    }
+    if live_listing:
+        files["/3.3/bangboo.json"] = {"54023": {"rank": 4, "en": "Ariel"}}
+    if live_detail:
+        files["/3.3/en/bangboo/54023"] = _ariel_like_detail()
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _beta_ctx(Path(tmp) / "state.json", _RecordingFetcher(files), BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        patch = asyncio.run(
+            beta_mod.build_patch(ctx, GAMES["zzz"], manifest, beta_mod._budget(ctx)))
+    return patch, ctx
+
+
+def test_feature5_an_item_the_manifest_calls_new_but_the_live_build_already_ships_is_a_diff():
+    """Ariel shipped in 3.1; `new.bangboo` naming it must not turn it into a reveal.
+
+    The four Bangboo captured on 2026-10-31 are all pre-3.4.1 (Ariel 3.1, Ultra Jake 3.0,
+    Booltergeist 2.8, Overtimeboo 1.7), so this is the ordinary case, not a corner.
+    """
+    patch, ctx = _bangboo_rebalance_run(live_listing=True, live_detail=True)
+
+    assert len(patch.equipment) == 1, (patch.equipment, ctx.report)
+    card = patch.equipment[0]
+    assert card.tag == "[CHANGED]", card.tag
+    body = "\n".join(card.lines)
+    # Only the row that moved, as a before → after, plus the note saying what it was compared to.
+    assert "~~1158%~~ → **1200%**" in body, body
+    assert "Compared with the released 3.3 kit" in body, body
+    assert "Additional Ability" not in body and "Bangboo Chain Attack" not in body, body
+
+
+def test_feature5_a_released_item_whose_live_kit_cannot_be_read_is_a_snapshot_not_a_reveal():
+    """Listed in the live build, unreadable there: say so, never print it as new."""
+    patch, ctx = _bangboo_rebalance_run(live_listing=True, live_detail=False)
+
+    assert len(patch.equipment) == 1, (patch.equipment, ctx.report)
+    card = patch.equipment[0]
+    assert card.tag == "[CHANGED]", card.tag
+    body = "\n".join(card.lines)
+    assert "Full current snapshot" in body and "no direction is inferred" in body, body
+    assert "[NEW]" not in body, body
+
+
+def test_feature5_a_bangboo_absent_from_the_live_build_is_still_a_reveal():
+    """Charley (54024) is the genuine 3.4.1 case: not in the live listing, so [NEW] once."""
+    patch, ctx = _bangboo_rebalance_run(live_listing=True, live_detail=True)
+    assert patch.equipment and patch.equipment[0].tag == "[CHANGED]"
+
+    from gamexpress import beta as beta_mod
+
+    changelog = "\n\n".join([
+        "# CHANGELOG - v3.4.X",
+        "## v3.4.1 Rev. 19997538 \\| 29th October 2026",
+        "### Bangboo",
+        "[![](https://i.gachabase.net/x/q:50/f:webp/plain/zzz/assets/54024.png)\\\\",
+        "\\\\Charley](https://zzz.gachabase.net/bangboo/54024/54024/beta?lang=en)",
+    ])
+    manifest = {"zzz": {"live": "3.3", "latest": "3.4.1+19997538",
+                        "available": ["3.3", "3.4.1+19997538"],
+                        "new": {"character": [], "weapon": [], "equipment": [],
+                                "bangboo": ["54024"]}}}
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _beta_ctx(Path(tmp) / "state.json", _RecordingFetcher({
+            "/3.4.1+19997538/en/bangboo/54024": _beta_json("zzz_bangboo_54024.json"),
+            "/3.4.1+19997538/bangboo.json": {"54024": {"rank": 4, "en": "Charley"}},
+            # The live build knows its Bangboo, and this one is not among them.
+            "/3.3/bangboo.json": {"54023": {"rank": 4, "en": "Ariel"}},
+            "changelog/beta": changelog,
+        }), BETA_ENABLED="1", DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        patch = asyncio.run(
+            beta_mod.build_patch(ctx, GAMES["zzz"], manifest, beta_mod._budget(ctx)))
+    assert [card.name for card in patch.equipment] == ["Charley"], patch.equipment
+    assert patch.equipment[0].tag == "[NEW]", patch.equipment[0].tag
+
+
+def test_feature5_an_unreadable_record_names_the_file_it_could_not_read():
+    """A wrong path or a changed shape has to be visible in the run summary."""
+    from gamexpress import beta as beta_mod
+
+    changelog = "\n\n".join([
+        "# CHANGELOG - v3.4.X",
+        "## v3.4.1 Rev. 19997538 \\| 29th October 2026",
+        "### Bangboo",
+        "[![](https://i.gachabase.net/x/q:50/f:webp/plain/zzz/assets/54024.png)\\\\",
+        "\\\\Charley](https://zzz.gachabase.net/bangboo/54024/54024/beta?lang=en)",
+    ])
+    manifest = {"zzz": {"live": "3.3", "latest": "3.4.1+19997538",
+                        "available": ["3.3", "3.4.1+19997538"],
+                        "new": {"character": [], "weapon": [], "equipment": [], "bangboo": []}}}
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _beta_ctx(Path(tmp) / "state.json", _RecordingFetcher({
+            # A file that parses but carries none of the fields the card reads.
+            "/3.4.1+19997538/en/bangboo/54024": {"id": 54024, "code_name": "Charley"},
+            "/3.4.1+19997538/bangboo.json": {"54024": {"rank": 4, "en": "Charley"}},
+            "changelog/beta": changelog,
+        }), BETA_ENABLED="1", DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        patch = asyncio.run(
+            beta_mod.build_patch(ctx, GAMES["zzz"], manifest, beta_mod._budget(ctx)))
+    assert not patch.equipment
+    joined = " ".join(ctx.report)
+    assert "has no readable text" in joined and "54024" in joined, ctx.report
+    # The exact path, so a moved endpoint is diagnosable without a re-run.
+    assert "https://static.nanoka.cc/zzz/3.4.1+19997538/en/bangboo/54024.json" in joined, ctx.report
+
+
 def test_feature5_a_bangboo_block_shorter_than_the_cap_reads_at_its_own_last_level():
     """The file lists up to 10 levels, the sliders stop at 6, and a short block stays short."""
     from gamexpress import beta as beta_mod
