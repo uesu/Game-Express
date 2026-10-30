@@ -668,8 +668,8 @@ silent skip. ZZZ's `bangboo` used to be the third; it is a card now.
 A Bangboo is a real first-class record, not an agent variant — captured from the served pages on
 2026-10-30 (`/bangboo` index and `/bangboo/54024` for Charley): an S/A rank, a promotion stat block
 (HP · ATK · DEF · Impact · CRIT Rate · CRIT DMG · PEN Ratio · Anomaly Proficiency), promotion
-materials, three skills labelled a / b / c (Active, Talent, QTE) each with its own attribute table
-and a shared `Skill Table`, and its own `Version Diff` picker. The page is served out of
+materials, three skills labelled a / b / c (Active Skill, Additional Ability, Bangboo Chain Attack)
+each with its own attribute table and a shared `Skill Table`, and its own `Version Diff` picker. The page is served out of
 `zzz/<revision>/bangboo.json`; the per-item file is
 `zzz/<revision>/{en,zh}/bangboo/<id>.json`, the same layout as the other kinds:
 
@@ -678,34 +678,49 @@ and a shared `Skill Table`, and its own `Version Diff` picker. The page is serve
 | `rarity` | raw `2..4`; the zzz `+1` mapping makes `4` the five-star S rank the site prints |
 | `stats` | base HP / ATK / DEF plus `break_stun` (Impact) and the Lv. 1 growth rates |
 | `level` | promotion ranks `"1"`..`"6"`, each with `level_min`/`level_max`, `materials`, and `extra` (CRIT Rate / CRIT DMG) |
-| `skill` | `a`/`b`/`c` = Active / Talent / QTE; each has `{"1".."N": {name, desc, property, param}}` |
+| `skill` | `a`/`b`/`c` = Active Skill / Additional Ability / Bangboo Chain Attack; each has `{"1".."N": {name, desc, property, param}}` |
 | `skill_prop` | the numeric table the `param` placeholders point at: `{main, growth, format}` per `Prop` id |
 
 `skill_prop` is where a skill's numbers come from: `value(level) = main + growth x (level - 1)`,
-and format `%` divides by 100. Charley's Active Skill is `80000 + 8000 x 5 = 1200%` at level 6,
-and the same table yields 439.5% / 1,618.5% / 231% for the other slots. The level is the cap the
-served page's own sliders stop at — 6 for Active Skill and QTE, 1 for a Talent with no upgrade
-track (`_ZZZ_BANGBOO_SKILL_LEVEL`) — not the length of the block: the file lists up to 10 levels,
-and a block publishing fewer is read at its own last level.
+and format `%` divides by 100. Two Bangboo confirm the arithmetic from both sides. Charley: `main`
+`80000` + `8000 x 5` = **1200%** at Lv. 6, 439.5% / 1,618.5% / 231% for the other rows. Booltergeist:
+nanoka opens at Lv. 1 (480% / 281%, 834% / 119%) and gachabase prints Lv. 6 (720% / 421.5%, 1251% /
+178.5%) — a 10% growth per level, exactly what the formula produces.
 
-The prose is not readable: `desc`, each skill's `name`, and some `property`/`param` entries are
-localization keys (`Bangboo_Desc_54024`, `Bangboo_ActiveSkill_Title_54024`) whose English text is
-not in the JSON at 3.4.1 — the page itself prints those keys raw. A key is dropped, never printed:
-a skill with text renders `Active Skill: <text>` before its attribute line, and Charley's three
-blocks (keys on every side) render as the two attribute lines, the note
-`-# Some skill text is still untranslated in this build; only the skill table is shown.`, and — for
-a block with no numbers either — `-# Talent: only localization keys in this build — omitted until
-translated.` A `<zh>` cross-check cannot fill those: `_reconcile_en_with_zh_equipment` resolves
-`[value unavailable]` / `[TBD]` / `???` placeholders, which a keyed slot never is.
+The level is the one gachabase displays, **6 / 1 / 6** (`_ZZZ_BANGBOO_SKILL_LEVEL`: the two
+upgradeable skills, then the ability with no upgrade track), on both an S-rank and an A-rank
+Bangboo. It is not the block's length: the sliders run to the table's own length (10 / 5 / 10 here)
+while the displayed value stays 6 / 1 / 6, and nanoka simply starts every slider at 1. A block that
+publishes fewer levels than the cap is read at its own last level rather than inventing one.
+
+The prose is translated in some builds and not others — Booltergeist ships real English ("Cursed
+Spotlight", "Specialty Scare Actor", "Mischief Maker on the Loose"), while Charley ships
+localization keys (`Bangboo_Desc_54024`, `Bangboo_ActiveSkill_Title_54024`). A key is dropped,
+never printed: a translated block renders `Active Skill — Cursed Spotlight: <text>`, one with a
+title only renders `Active Skill — <title>`, one with text only `Active Skill: <text>`, and a block
+that is keys on every side prints `-# Additional Ability: only localization keys in this build —
+omitted until translated.` plus the single note `-# Some skill text is still untranslated in this
+build; only the skill table is shown.` `{0}`-style placeholders in the prose are filled from the
+values already resolved for that row, so a filled number never shows as `{0}` or as the
+`[value unavailable]` fallback. The Active Skill's third row (cooldown) is a bare key in the file
+(`Bangboo_ActiveSkill_Property_CD_54024`) with no `skill_prop` entry behind it, so the card omits it
+— gachabase itself prints that key for Charley and only resolves "24s" for Booltergeist out of a
+locale table the JSON does not expose. A `<zh>` cross-check cannot fill a keyed slot:
+`_reconcile_en_with_zh_equipment` resolves `[value unavailable]` / `[TBD]` / `???`, which a key is
+not.
 
 Stats are the page's max-promotion line, and only what the file states exactly: `break_stun` 103 →
 Impact, `crit` 500 + the max-rank `extra` 4500 → `5,000 / 100` = **50%** CRIT Rate, `crit_dmg` →
-100%, `pen_ratio` → 0%, `element_abnormal_power` 110 → Anomaly Mastery. HP/ATK/DEF are **not**
-printed: the page's Lv. 60 totals (4,210 / 8,863 / 666) follow from no factor that fits all three
-(`level[].hp_max` sums to 3,500 against 4,210 while the ATK blocks sum to 10,803 against 8,863), so
-they are left out rather than approximated. The card is `[NEW]` when the manifest's `new.bangboo`
-lists the id, and its heading is the `Bangboo` kind label (`set_kind` stays empty, so no `*Bangboo*`
-line repeats under it). Nanoka's per-version diff feed
+100%, `pen_ratio` → 0%, `element_abnormal_power` 110 → Anomaly Mastery. The two sites name that last
+field differently — gachabase "Anomaly Mastery", nanoka "Anomaly Proficiency" — and the card uses
+gachabase's, because that is the page its link opens. HP/ATK/DEF are **not** printed: both pages
+level-scale them (Charley 4,210 / 8,863 / 666, Booltergeist 3,827 / 6,570 / 781 at Lv. 60) and no
+factor fits those against `stats` + `level[]` (`level[].hp_max` sums to 3,500 against 4,210 while
+the ATK blocks sum to 10,803 against 8,863), so they are left out rather than approximated. Rank
+follows the same zzz `+1` mapping as everything else: raw `4` is the **S-Rank** of `ID: 54024`, raw
+`3` the **A-Rank** of Booltergeist. The card is `[NEW]` when the manifest's `new.bangboo` lists the
+id, and its heading is the `Bangboo` kind label (`set_kind` stays empty, so no `*Bangboo*` line
+repeats under it). Nanoka's per-version diff feed
 (`ww/3.8.1/diff/en.json`, `/diff#anchor` pages elsewhere) is deliberately not read: the card's
 diff is computed from two retained snapshots, which is what lets it print `~~old~~ → **new**`
 per value.
