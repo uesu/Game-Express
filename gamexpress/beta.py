@@ -3520,6 +3520,65 @@ def _snapshot_item_id(key: object, snapshot: dict) -> str:
     return candidate.rsplit(":", 1)[-1]
 
 
+BETA_LATE_RECHECK_H = 6
+
+
+def _settled_revision_version(record: dict, now: int) -> str:
+    """The newest revision's version when it is settled but could still owe late changelog entries.
+
+    `_next_data_version` returns "" once everything available has been published. That is the
+    normal end state, and it is also the only state in which GachaBase can add items to a revision
+    we already posted: the page finishes rendering a few minutes after publication. Returning the
+    settled version lets `build_patch` re-read that one changelog (a single request it already
+    pays for nothing else) and deliver only entries the revision never processed.
+    """
+    version = str(record.get("source_version") or "").strip()
+    latest = str(record.get("latest_rev") or "").strip()
+    if not version or not latest:
+        return ""
+    revision = (record.get("revisions") or {}).get(latest)
+    if not isinstance(revision, dict):
+        return ""
+    if revision.get("status") not in ("posted", "silent") or revision.get("more"):
+        return ""
+    if not (revision.get("processed") or []):
+        return ""
+    # Bounded: a page finishes rendering within minutes, so only the first hours after a card are
+    # worth re-reading. Outside that window a settled revision costs no request at all.
+    posted_ts = int(revision.get("ts") or 0)
+    if not posted_ts or now - posted_ts >= BETA_LATE_RECHECK_H * 3600:
+        return ""
+    return version
+
+
+def _late_changelog_entries(ns: str, entries: list[dict], saved) -> list[dict]:
+    """Changelog entries of an already-settled revision that were never delivered.
+
+    GachaBase builds a revision's page over a few minutes, so a poll that lands early can read a
+    partial item list (ZZZ v3.4.1 Rev. 19997538: 7 updated agents on the finished page, 4 read by
+    the first poll). Without this, the settle guard would finalise that revision and the rest of
+    the page would never be posted. Only entries with a tracked role and no `processed` record can
+    reopen a settled revision, so a normal revision stays final and nothing is delivered twice.
+    A record without any `processed` keys (older state, or a revision settled by hand) is treated
+    as complete, because there is no way to tell what it still owes.
+    """
+    if not isinstance(saved, dict):
+        return []
+    processed = {str(key) for key in (saved.get("processed") or [])}
+    if not processed:
+        return []
+    late: list[dict] = []
+    for entry in entries or []:
+        if not isinstance(entry, dict):
+            continue
+        role = _entry_role(ns, str(entry.get("url") or ""))
+        if role not in ("character", "weapon", "relic"):
+            continue
+        if _entry_key(ns, role, _entry_id(entry)) not in processed:
+            late.append(entry)
+    return late
+
+
 def _candidate_entries(ns: str, kinds: dict, entries: list[dict], snapshots: dict,
                        new_char_ids: set[str], new_weapon_ids: set[str],
                        new_relic_ids: set[str]) -> tuple[list[dict], list[dict]]:
@@ -4454,7 +4513,11 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
     live_cycle = _live_cycle(ctx, game, m_game)
     version = _next_data_version(record, m_game, live_cycle=live_cycle)
     if not version:
-        return None
+        # Nothing newer to publish — but a settled revision can still owe entries that appeared
+        # after its page finished rendering, so re-read that one before going quiet.
+        version = _settled_revision_version(record, ctx.now)
+        if not version:
+            return None
 
     if _changelog_url(game) and not _take_shared_request(budget):
         ctx.warnings.append(f"{game.short} beta: run-wide request budget reached before changelog; deferred")
@@ -4465,10 +4528,21 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
     rev_id = stable_hash([game.key, version])
     rev_records = record.get("revisions") if isinstance(record.get("revisions"), dict) else {}
     saved = rev_records.get(rev_id) if isinstance(rev_records, dict) else None
+    source_entries = list(source_revision.get("entries") or []) if source_revision else []
+    # A settled revision is normally final — with one exception, a changelog that grew after our
+    # first read. GachaBase renders a fresh revision over a few minutes, so an early poll can read
+    # a partial list and the guard below would then settle the revision forever. ZZZ v3.4.1 Rev.
+    # 19997538 (2026-10-30) listed 7 updated agents on the finished page; a card built minutes
+    # after publication covered 4 and never looked again. The changelog is already fetched above,
+    # so re-reading costs no extra request: only entries this revision never processed keep it
+    # open, and `_candidate_entries` drops the ones that were delivered.
+    late = _late_changelog_entries(ns, source_entries, saved)
     if str(record.get("latest_rev") or "") == rev_id and (
-            str(record.get("source_version") or "") == version or not record.get("source_version")):
+            str(record.get("source_version") or "") == version or not record.get("source_version")
+    ) and not late:
         return None
-    if isinstance(saved, dict) and saved.get("status") in ("posted", "silent") and not saved.get("more"):
+    if (isinstance(saved, dict) and saved.get("status") in ("posted", "silent")
+            and not saved.get("more") and not late):
         return None
 
     snapshots = record.get("snapshots") if isinstance(record.get("snapshots"), dict) else {}
@@ -4487,7 +4561,6 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
     new_char_ids = manifest_new_ids(manifest, ns, kinds["new_keys"]["character"])
     new_weapon_ids = manifest_new_ids(manifest, ns, kinds["new_keys"]["weapon"])
     new_relic_ids = manifest_new_ids(manifest, ns, kinds["new_keys"]["relic"])
-    source_entries = list(source_revision.get("entries") or []) if source_revision else []
     requests = (2 + extra_ch_reqs) if _changelog_url(game) else 1
     previous_ver = str(record.get("source_version") or "").strip()
     # When GachaBase changelog failed (`extra_ch_reqs >= 1`) during an intra-cycle beta hotfix,
@@ -4512,6 +4585,11 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
                 if str(cid).isdigit() and prev_c_idx.get(cid) != cval:
                     source_entries.append(_fallback_entry(ns, "character", str(cid)))
 
+    patch.listed = sum(
+        1 for entry in source_entries
+        if isinstance(entry, dict)
+        and _entry_role(ns, str(entry.get("url") or "")) in ("character", "weapon", "relic")
+    )
     char_entries, equip_entries = _candidate_entries(
         ns, kinds, source_entries, snapshots, new_char_ids, new_weapon_ids, new_relic_ids)
 
@@ -5280,6 +5358,7 @@ async def _deliver(ctx, game: Game, patch: BetaPatch, record: dict, ephemeral: b
         f"🧪 {game.short} {patch.beta_version} beta ({patch.rev_label}): "
         f"{len(payloads)} page(s) — {names}"
         + (f", {len(patch.equipment)} equipment entr(ies)" if patch.equipment else "")
+        + (f" · changelog listed {patch.listed} item(s)" if patch.listed > len(patch.item_keys) else "")
         + ("; next bounded batch pending" if patch.more else "")
         + (" [DRY RUN]" if ephemeral and not ctx.settings.test_mode else "")
     )
