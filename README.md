@@ -526,8 +526,11 @@ editing YAML. The ones worth knowing:
 Webhook routing, most specific first:
 `DISCORD_WEBHOOK_<FEATURE>_<GAME>` → `DISCORD_WEBHOOK_<FEATURE>` → `DISCORD_WEBHOOK_URL`.
 This fallback chain is for schedule/codes only; news and maintenance require their own dedicated
-per-game secrets. `python -m gamexpress validate` prints resolved routing. Repository variables
-and secrets are merged from workflow JSON blobs; no per-variable YAML wiring is needed.
+per-game secrets. Beta cards have one extra step —
+`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA` → that game's `DISCORD_WEBHOOK_NEWS_<GAME>` —
+so beta posts into the news channel until you give it one of its own; moving it later is picked up
+automatically by the next card. `python -m gamexpress validate` prints resolved routing. Repository
+variables and secrets are merged from workflow JSON blobs; no per-variable YAML wiring is needed.
 
 ---
 

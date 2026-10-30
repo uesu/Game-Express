@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Beta: direction follows the kit, and mixed-build revisions say so](CHANGELOG.md#2026-10-30--beta-direction-follows-the-kit-and-mixed-build-revisions-say-so).
+Latest: [Beta: moving the beta channel no longer silences the feature](CHANGELOG.md#2026-10-30--beta-moving-the-beta-channel-no-longer-silences-the-feature).
+
+Previous: [Beta: direction follows the kit, and mixed-build revisions say so](CHANGELOG.md#2026-10-30--beta-direction-follows-the-kit-and-mixed-build-revisions-say-so).
 
 Previous: [Beta: released kits are diffs, and the card explains itself](CHANGELOG.md#2026-10-30--beta-released-kits-are-diffs-and-the-card-explains-itself).
 

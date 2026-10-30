@@ -638,6 +638,14 @@ routing is dedicated (`DISCORD_WEBHOOK_BETA_<GAME>` > `DISCORD_WEBHOOK_BETA` >
 | `BETA_MAX_EQUIPMENT` | Variable | `12` | Weapons / W-Engines / light cones / disc drives / relics / echoes in one bounded batch |
 | `BETA_MAX_REQUESTS` | Variable | `48` | Hard HTTP ceiling for the whole feature in one run; uninspected items remain pending |
 
+Changing the destination is safe and needs no state edit. Adding `DISCORD_WEBHOOK_BETA_<GAME>` after
+beta had been posting through that game's news channel moves the next card to the new channel and
+records the move in the run summary (`destination changed — new cards post to
+DISCORD_WEBHOOK_BETA_<GAME>`). The one case that still stops is a **half-posted card**: if a page
+of an earlier batch is already in the old channel, the move is held with
+`destination changed while N delivery is unfinished; reconcile it before posting to the new channel`,
+because a retry would split one card across two channels.
+
 Where the data comes from (`gamexpress/beta.py`, see [SOURCES.md](SOURCES.md#beta-kit--revision-diff-sources-2026-10-24)):
 
 - **`https://static.nanoka.cc/manifest.json`** — one small JSON naming each game's `latest`,
