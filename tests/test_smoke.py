@@ -18271,9 +18271,16 @@ def test_feature5_encore_shaped_data_never_uses_the_live_build_as_its_baseline()
         assert patch and patch.characters, patch
         assert patch.equipment and "encore.moe/weapon/21030076" in patch.equipment[0].page_url
         assert all(snap.get("provider") == "encore" for snap in patch.snapshots.values())
-        # The released build was never read: one provider cannot baseline the other.
-        assert not any("/3.7/" in url for url in fetcher.calls)
-        assert not any(url.startswith("https://static.nanoka.cc/ww/3.7/") for url in fetcher.calls)
+        # No released KIT was read: one provider cannot baseline the other. A listing is not a
+        # kit — it is an id/name/rarity index, and it answers the separate question "does the
+        # live build already ship this id?" so a released item is never reposted as `[NEW]`.
+        live_kit_urls = [
+            url for url in fetcher.calls
+            if url.startswith("https://static.nanoka.cc/ww/3.7/")
+            and not url.endswith(("character.json", "weapon.json", "equipment.json"))
+        ]
+        assert live_kit_urls == [], live_kit_urls
+        assert not any("/3.7/" in url and "encore" in url for url in fetcher.calls)
         # …and the provider is part of what is stored, so the NEXT revision can diff against it
         # instead of seeing a provider change and re-posting the whole effect.
         stored = next(iter(patch.snapshots.values()))
@@ -18872,6 +18879,77 @@ def test_feature5_a_bangboo_value_prints_the_unit_the_site_prints():
     assert beta_mod._bangboo_prop_value({"main": True, "format": "%"}, 1) == ""
 
 
+def test_feature5_the_real_ariel_record_matches_its_served_page_exactly():
+    """`54023.json` as `static.nanoka.cc` actually serves it, against the page it renders.
+
+    Captured 2026-10-31 from
+    `https://static.nanoka.cc/zzz/3.4.1+19997538/en/bangboo/54023.json`. This is the sample that
+    confirms the field names as well as the values: same `stats` / `level` / `skill` / `skill_prop`
+    shape the parser was written against, and a `param` that mixes literals with pointers.
+    """
+    from gamexpress import beta as beta_mod
+
+    data = _beta_json("zzz_bangboo_54023.json")
+    assert data["code_name"] == "Ariel" and data["id"] == 54023 and data["rarity"] == 4
+    fields = beta_mod._equip_from_detail("zzz", "bangboo", data, {})
+
+    # The gachabase page: S Rank, and this exact stat line.
+    assert fields["rarity"] == 5
+    assert fields["stats_line"] == (
+        "Impact 103 · CRIT Rate 50% · CRIT DMG 100% · PEN Ratio 0% · Anomaly Mastery 110")
+
+    lines = fields["lines"]
+    assert lines[0].startswith("Active Skill — Searing Flash: Flies high into the air, "), lines[0]
+    # The file writes each description prefixed with its own skill type; the label is not
+    # repeated inside the sentence.
+    assert not lines[0].startswith("Active Skill — Searing Flash: Active Skill"), lines[0]
+
+    # Lv. 6: three literal buff rows + two growth pointers + the literal cooldown, in the order
+    # the page prints them.
+    assert lines[1] == (
+        "Active Skill attributes (Lv. 6): Buff 1: HP Recovery 9.6% HP · "
+        "Buff 2: Restore Energy 4 Energy · Buff 3: DMG Increase 20% · "
+        "DMG Multiplier 1158% · Daze Multiplier 492% · Cooldown 28s"), lines[1]
+    assert lines[2].startswith("Additional Ability — Angel's Protection: When Remielle"), lines[2]
+    assert lines[3] == "Additional Ability attributes (Lv. 1): DMG Increase 15%", lines[3]
+    assert lines[4].startswith("Bangboo Chain Attack — Radiance: Glides through the air"), lines[4]
+    assert lines[5] == "Bangboo Chain Attack attributes (Lv. 6): " \
+        "DMG Multiplier 1242% · Daze Multiplier 177%", lines[5]
+
+    # The overflow `property` name (the file lists 7 for 6 slots) never becomes a row of its own.
+    assert len([line for line in lines if "attributes" in line]) == 3, lines
+    # No key, no placeholder, no duplicated label survives.
+    joined = "\n".join(lines)
+    for bad in ("Bangboo_", "{Skill:", "{0}", "5402301", "_54023"):
+        assert bad not in joined, (bad, joined)
+
+
+def test_feature5_a_literal_param_slot_is_read_at_its_own_level():
+    """A literal is per-level, not Lv. 1 grown: Ariel's HP row walks 6.6% → 9.6% → 12%."""
+    from gamexpress import beta as beta_mod
+
+    data = _beta_json("zzz_bangboo_54023.json")
+    # The parser reads Lv. 6 by policy; pin the file's own progression so a reader can see that
+    # the literal at that level is the number printed, not a computed one.
+    params = [data["skill"]["a"]["level"][str(level)]["param"].split("|")[0]
+              for level in range(1, 11)]
+    assert params == ["6.6% HP", "7.2% HP", "7.8% HP", "8.4% HP", "9% HP", "9.6% HP",
+                      "10.2% HP", "10.8% HP", "11.4% HP", "12% HP"], params
+
+    # Read at Lv. 6, the card prints exactly the level-6 literal.
+    lines = beta_mod._equip_from_detail("zzz", "bangboo", data, {})["lines"]
+    assert "Buff 1: HP Recovery 9.6% HP" in lines[1], lines[1]
+
+    # A build that stops at level 3 reads that level's literal instead of inventing level 6.
+    short = json.loads(json.dumps(data))
+    short["skill"]["a"]["level"] = {
+        key: value for key, value in list(short["skill"]["a"]["level"].items())[:3]
+    }
+    short_lines = beta_mod._equip_from_detail("zzz", "bangboo", short, {})["lines"]
+    assert "Active Skill attributes (Lv. 3): Buff 1: HP Recovery 7.8% HP" in short_lines[1], \
+        short_lines[1]
+
+
 def test_feature5_an_s_rank_bangboo_with_buff_rows_matches_both_sites():
     """Ariel's five-row Active Skill, including the units that are not percentages."""
     from gamexpress import beta as beta_mod
@@ -19007,6 +19085,49 @@ def _bangboo_rebalance_run(*, live_listing: bool, live_detail: bool):
         patch = asyncio.run(
             beta_mod.build_patch(ctx, GAMES["zzz"], manifest, beta_mod._budget(ctx)))
     return patch, ctx
+
+
+def test_feature5_a_released_agent_the_manifest_calls_new_is_a_change_not_a_reveal():
+    """The same rule covers characters, and it is one shared probe for every game.
+
+    Sunbringer (1601) is listed in `new.character`, but the live 3.3 build already ships her, so
+    the card has to compare instead of reprinting her kit as a reveal.
+    """
+    from gamexpress import beta as beta_mod
+
+    changelog = "\n\n".join([
+        "# CHANGELOG - v3.4.X",
+        "## v3.4.1 Rev. 19997538 \\| 29th October 2026",
+        "### Agents",
+        "[![](https://i.gachabase.net/x/q:50/f:webp/plain/zzz/assets/1601.png)\\\\",
+        "\\\\Sunbringer](https://zzz.gachabase.net/agents/1601/sunbringer/beta?lang=en)",
+    ])
+    manifest = {"zzz": {"live": "3.3", "latest": "3.4.1+19997538",
+                        "available": ["3.3", "3.4.1+19997538"],
+                        "new": {"character": ["1601"], "weapon": [], "equipment": [],
+                                "bangboo": []}}}
+    common = {
+        "/character/1601": _beta_json("zzz_character_1601.json"),
+        "changelog/beta": changelog,
+    }
+    built = []
+    for live_listing in (None, {"1601": {"rank": 4, "en": "Sunbringer"}}):
+        files = dict(common)
+        if live_listing is not None:
+            files["/3.3/character.json"] = live_listing
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = _beta_ctx(Path(tmp) / "state.json", _RecordingFetcher(files),
+                            BETA_ENABLED="1", DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+            patch = asyncio.run(
+                beta_mod.build_patch(ctx, GAMES["zzz"], manifest, beta_mod._budget(ctx)))
+        built.append((patch, ctx))
+
+    (absent, _), (released, _) = built
+    # Absent from the live build: a genuine reveal.
+    assert absent.characters and absent.characters[0].is_new is True, absent.characters
+    # Present in it: not a reveal any more, whatever the manifest claimed.
+    assert released.characters, released.characters
+    assert released.characters[0].is_new is False, released.characters[0].is_new
 
 
 def test_feature5_an_item_the_manifest_calls_new_but_the_live_build_already_ships_is_a_diff():

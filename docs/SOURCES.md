@@ -673,20 +673,18 @@ materials, three skills labelled a / b / c (Active Skill, Additional Ability, Ba
 each with its own attribute table and a shared `Skill Table`, and its own `Version Diff` picker. The
 listing is read from `zzz/<revision>/bangboo.json`.
 
-**What is verified, and what is not.** Every number, label, rank, level cap and skill name in the
-list below is checked against those five served pages, whose gachabase and nanoka copies agree. The
-*field names* of the per-item record are not: the only sample of it reached this repository through
-the agent rather than a fresh capture, so `skill` / `skill_prop` / `stats` / `level` are a shape
-that has been followed, not a shape that has been re-read. DevTools captures of
-`zzz.nanoka.cc/bangboo/<id>` on 2026-10-31 show the page fetching its document, JS, CSS and
-`_app/version.json` and **no per-item JSON at all** — the page is server-rendered — so those
-screenshots confirm the route (`/bangboo/<id>`), the ids and the ranks, and they do not confirm the
-static path. A record that arrives in another shape therefore fails loudly instead of guessing: the
-run reports `has no readable text in this build (<full url>)` naming the exact file it could not
-read, so a moved endpoint or a changed shape is one log line away from being fixed.
+**The per-item file is confirmed.** `https://static.nanoka.cc/zzz/3.4.1+19997538/en/bangboo/54023.json`
+was opened directly on 2026-10-31 and returns the record — so the path is
+`zzz/<revision>/{en,zh}/bangboo/<id>.json`, the same layout as every other kind, and the field names
+below are the served ones rather than a followed pattern. (A DevTools trace of
+`zzz.nanoka.cc/bangboo/<id>` shows the page loading its document, JS, CSS and `_app/version.json`
+with no per-item JSON: nanoka server-renders the Bangboo page, which is why a capture of the page
+could not show the file.) `tests/fixtures/beta/zzz_bangboo_54023.json` is that record verbatim, and
+the test built on it asserts the values against the gachabase page. A record that arrives in an
+unexpected shape still fails loudly instead of guessing: the run reports
+`has no readable text in this build (<full url>)` naming the file it could not read.
 
-The per-item file is `zzz/<revision>/{en,zh}/bangboo/<id>.json`, the same layout as the other
-kinds:
+The file is `zzz/<revision>/{en,zh}/bangboo/<id>.json`, laid out as:
 
 | Field | Holds |
 |---|---|
@@ -694,9 +692,22 @@ kinds:
 | `stats` | base HP / ATK / DEF plus `break_stun` (Impact) and the Lv. 1 growth rates |
 | `level` | promotion ranks `"1"`..`"6"`, each with `level_min`/`level_max`, `materials`, and `extra` (CRIT Rate / CRIT DMG) |
 | `skill` | `a`/`b`/`c` = Active Skill / Additional Ability / Bangboo Chain Attack; each has `{"1".."N": {name, desc, property, param}}` |
-| `skill_prop` | the numeric table the `param` placeholders point at: `{main, growth, format}` per `Prop` id |
+| `skill_prop` | the numeric table some `param` slots point at: `{main, growth, format}` per `Prop` id |
 
-`skill_prop` is where a skill's numbers come from: `value(level) = (main + growth x (level - 1)) /
+**`param` is a mixed list, not a list of pointers.** It is pipe-separated and parallel to
+`property`, and a slot is one of two things: a `{Skill:<id>, Prop:<id>}` pointer into `skill_prop`,
+or a literal the build already wrote out *for that level*. Ariel's Active Skill at Lv. 6 is
+`9.6% HP|4 Energy|20%|{Skill:5402301, Prop:1001}|{Skill:5402301, Prop:1002}|28s` — three buffs and
+a cooldown as literals, two multipliers as pointers. A literal is read as-is, never grown: the same
+row is `6.6% HP` at Lv. 1 and `12% HP` at Lv. 10 because the file says so. `property` can also be
+longer than `param` (Ariel lists 7 names for 6 slots); the overflow is ignored, and a name or value
+that is still a localization key drops only its own pair, keeping every other row aligned.
+
+The description opens with the skill type it belongs to (`"Active Skill Flies high into the air…"`),
+so that prefix is stripped before printing — the card already labels the line — and a multi-paragraph
+description is collapsed onto one line so a bullet cannot break out of its own block.
+
+`skill_prop` is where a *pointer* gets its number: `value(level) = (main + growth x (level - 1)) /
 100`, and `format` is the literal unit printed after it — `%`, `% HP`, `Energy`. Every row in these
 files is fixed-point hundredths (`80000` -> 800%, `660` -> 6.6%, `275` -> 2.75), and the unit is
 spaced only when it is a word (`9.6% HP`, `4 Energy`, `24s`). A build that ships a .NET placeholder
@@ -738,10 +749,9 @@ that is keys on every side prints `-# Additional Ability: only localization keys
 omitted until translated.` plus the single note `-# Some skill text is still untranslated in this
 build; only the skill table is shown.` `{0}`-style placeholders in the prose are filled from the
 values already resolved for that row, so a filled number never shows as `{0}` or as the
-`[value unavailable]` fallback. The Active Skill's third row (cooldown) is a bare key in the file
-(`Bangboo_ActiveSkill_Property_CD_54024`) with no `skill_prop` entry behind it, so the card omits it
-— gachabase itself prints that key for Charley and only resolves "24s" for Booltergeist out of a
-locale table the JSON does not expose. A `<zh>` cross-check cannot fill a keyed slot:
+`[value unavailable]` fallback. A cooldown is whatever the build says it is: a literal (`28s` on
+Ariel, printed with the rest) or a bare key (`Bangboo_ActiveSkill_Property_CD_54024` on Charley,
+dropped without disturbing the rows after it). A `<zh>` cross-check cannot fill a keyed slot:
 `_reconcile_en_with_zh_equipment` resolves `[value unavailable]` / `[TBD]` / `???`, which a key is
 not.
 
