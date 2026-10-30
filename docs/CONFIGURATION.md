@@ -648,7 +648,7 @@ routing is dedicated (`DISCORD_WEBHOOK_BETA_<GAME>` > `DISCORD_WEBHOOK_BETA` >
 | `DISCORD_WEBHOOK_BETA` | Secret | *(unset)* | Shared beta channel for any opted-in game without its own secret |
 | `DISCORD_WEBHOOK_NEWS_<GAME>` | Secret | *(unset)* | Last resort: that game's existing news channel (e.g. `zzz-news`). Never the schedule/codes catch-all |
 | `PING_BETA_<GAME>` / `PING_BETA` | Variable | *(unset = silent)* | Role ping on the **first page only**. `PING_ROLE_ID` is deliberately **not** inherited |
-| `BETA_MIN_POLL_MINUTES` | Variable | `30` | Minimum interval between changelog re-checks (`0` = every run). A quiet beta costs one manifest GET |
+| `BETA_MIN_POLL_MINUTES` | Variable | `30` | Minimum interval between changelog re-checks (`0` = every run). A quiet beta costs one manifest GET; a run inside the floor logs `beta: source check skipped — polled <n>m ago, floor is <n>m` so a monitor run with no beta card says why |
 | `BETA_MAX_CHARACTERS` | Variable | `4` | New-character cards in one bounded batch; remaining items resume next run |
 | `BETA_MAX_CHANGES` | Variable | `8` | Existing-character revision cards in one bounded batch (`0` intentionally suppresses them) |
 | `BETA_MAX_EQUIPMENT` | Variable | `12` | Weapons / W-Engines / light cones / disc drives / relics / echoes in one bounded batch |
