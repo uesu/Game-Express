@@ -491,6 +491,20 @@ weapons alike, and `test_feature5_diff_link_renders_on_every_games_card` renders
 and asserts the `[Revision diff](…)` link reaches the payload while every page still validates.
 The WuWa end-to-end diff test also asserts the built card's link.
 
+### Revisions that only move metadata
+
+Fuzzing two revisions whose only movement was a classification field found the card emitting
+**zero characters** while `item_keys` and `diff_range` advanced — the item was recorded as
+delivered and the change was lost. `test_feature5_a_revision_that_only_reclassifies_an_agent_still_
+reaches_the_card` and
+`test_feature5_a_revision_that_only_moves_weapon_metadata_is_posted_not_dropped` drive a real
+`3.8.1 → 3.8.3` pair through `build_patch` and assert the `[ADJUSTMENT]` line, the omitted
+unchanged block, the header range and a validating payload;
+`test_feature5_a_signature_only_change_posts_a_labelled_note_not_silence` covers the signature-moved
+/ nothing-readable case, and `test_feature5_released_agent_with_no_visible_change_posts_nothing`
+guards the other direction — a released baseline must not invent `Faction set to …` out of a field
+the released reader never published.
+
 ### Encore beta fallback regression coverage
 
 Captured `encore_{hsin,suoming,lily,weapon}_live.json` fixtures retain relevant API fields and

@@ -612,6 +612,15 @@ direction. Retained text limits and state pruning stay bounded. A full snapshot 
 baseline never borrows the diff voice: its paragraph says the card is the whole kit and that
 `Nothing is marked as up or down`.
 
+An item can move without a readable value moving: an agent reclassified (`Sword → Rectifier`), a
+rarity raised, a faction corrected, an entry renamed. Those fields are compared as well, so a
+metadata-only revision still produces a card — a `Profile Changes` block of
+`[ADJUSTMENT]` / `[CHANGED]` lines — and never records the item as delivered while posting nothing.
+Against the **released** live build only two-sided fields are compared, because the released
+reader does not publish every field the beta one does and a one-sided absence would read as a
+change. If the stored signature moved but no text, classification field or visual asset did, the
+card carries an explicit `[CHANGED]` note instead of disappearing.
+
 WuWa also has a bounded Encore API beta detail fallback for missing/unreadable current-build
 characters and weapons. It uses explicit `?v=Beta`, an exact `ResVer` match and unchanged
 `GameVer`/`ResVer`/`Changelist` before/after the detail read. The primary Encore endpoint is
