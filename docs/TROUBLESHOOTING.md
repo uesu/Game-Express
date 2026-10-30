@@ -42,6 +42,7 @@ in place — air time, link and key art all come back together.
 |---|---|
 | `400 … components` in the log | a card broke a Discord limit. `python -m gamexpress validate` pinpoints it (CI also catches this) |
 | No ping | `PING_ROLE_ID` unset or `none`; the role must be mentionable, or the webhook needs *Mention @everyone, @here and All Roles* |
+| Ping works, but the card shows no role colour / orange highlight | the message itself does not mention the role: it was posted before the ping was configured, or updated by an older build (an edit used to re-send `{"parse": []}`, demoting the mention to plain text). The next edit of that card restores it; `REPOST=<game>:<version>` publishes a fresh one straight away |
 | Emojis show as `:name:` | the webhook's channel needs *Use External Emojis* for `@everyone`, or change `EMOJI_*` |
 | Card not edited after an override | the card must have been posted by a webhook with the same URL (the fingerprint is stored) |
 | Title link or key art changed to a different post after posting | a posted Special Program card is locked to the post that opened it ([ACCURACY.md](ACCURACY.md#once-posted-the-card-keeps-its-announcement)). It can only switch if its record has neither `announcement_locked` nor `program_seen`, so check that in `state/state.json`. Pin the right post with `title_url` and `image` in `config/overrides.json`; the next run edits the card back, and the log names the change (`schedule card updated — key art, link`) |

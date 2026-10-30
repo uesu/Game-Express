@@ -60,8 +60,11 @@ a field arriving by any other route is cleaned too. Test:
 `test_invisible_and_bidi_characters_are_stripped_from_scraped_text`.
 
 **Text.** Mentions can never be injected: `Ping.allowed_mentions` sends `{"parse": []}` unless a
-role/@everyone was explicitly configured, and edits always send `{"parse": []}`. Scraped titles
-are bracket-escaped by `_md_link_text()`. Code strings must match `^[A-Z0-9]{5,20}$`.
+role/@everyone was explicitly configured, and an edit re-sends exactly that same object —
+`parse` filtered to `roles`/`users`/`everyone` and only the ids the card already declared, so a
+scraped `@everyone`, `@here` or `@username` in a title can never become a live mention through
+an edit. Scraped titles are bracket-escaped by `_md_link_text()`. Code strings must match
+`^[A-Z0-9]{5,20}$`.
 
 **Volume.** `http.MAX_BYTES` (8 MiB) caps one response body. Without it a hostile or broken host
 could stream forever and `resp.text()` would buffer until the runner died; now it is one
