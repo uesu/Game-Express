@@ -261,7 +261,7 @@ that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA
 
 ```
 ┌─────────────────────────────────────────────────────────────
-│ ## [Zenless Zone Zero - 3.4 Beta] Patch Notes: v3.4.1 Rev. 19834130
+│ ## [ZZZ - 3.4.1 Beta] Patch Notes: Rev. 19834130 → 19851435
 │ Resource: [gachabase](https://zzz.gachabase.net/changelog/beta?lang=en) / [nanoka](https://zzz.nanoka.cc/diff)
 │ ─────────────
 │ [ splash art ]
@@ -308,9 +308,11 @@ that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA
   structurally rewritten or renamed slot skills surface as `[REWORK]` with `~~previous~~` context.
   `[BUFF]` / `[NERF]` are emitted only for unambiguous mechanics (for example, higher damage or
   lower cooldown); ambiguous, wording-only, and category moves stay `[CHANGED]` / `[TEXT FIX]` /
-  `[ADJUSTMENT]`. A cold start never fabricates a baseline. Full-content digests keep unchanged
-  long kits quiet; clipped or legacy baselines use a labelled full snapshot when exact comparison
-  is unavailable.
+  `[ADJUSTMENT]`. A block that did not move is omitted outright — never listed as `No changes.`
+  — and the header names the comparison itself (`Patch Notes: Rev. 3.8.1 → 3.8.3`, or
+  `Rev. 19834130 → 19851435` when only the build moved). A cold start never fabricates a
+  baseline. Full-content digests keep unchanged long kits quiet; when exact comparison is
+  genuinely unavailable the card says so once and prints a labelled full snapshot instead.
 - **Hotfix-safe and quiet-safe.** Static `available` builds are walked in order, so a run does
   not jump over a v2/v3 hotfix. If a changelog revision is blank, only already-snapshotted and
   manifest-new IDs are rechecked; an explicit “No tracked changes detected” revision advances
