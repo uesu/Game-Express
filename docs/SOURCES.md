@@ -683,10 +683,11 @@ each with its own attribute table and a shared `Skill Table`, and its own `Versi
 
 `skill_prop` is where a skill's numbers come from: `value(level) = (main + growth x (level - 1)) /
 100`, and `format` is the literal unit printed after it — `%`, `% HP`, `Energy`. Every row in these
-files is fixed-point hundredths (`80000` -> 800%, `660` -> 6.6%, `275` -> 2.75), and a unit that
-starts with a letter is spaced (`4 Energy`), one that starts with a symbol is not (`9.6%`, `24s`).
-A build that ships a .NET placeholder instead (`"{0:0.#%} HP"`) is read the same way: the unit is
-whatever follows the closing brace.
+files is fixed-point hundredths (`80000` -> 800%, `660` -> 6.6%, `275` -> 2.75), and the unit is
+spaced only when it is a word (`9.6% HP`, `4 Energy`, `24s`). A build that ships a .NET placeholder
+instead (`"{0:0.#%} HP"`) is read the same way: the sign comes from inside the braces, the rest
+after them. A value that ever arrives already fractional is used as-is rather than divided a
+second time.
 
 Three Bangboo confirm the arithmetic from both sides. Charley: `80000` + `8000 x 5` = **1200%** at
 Lv. 6, 439.5% / 1,618.5% / 231% for the other rows. Booltergeist: nanoka opens at Lv. 1 (480% /
