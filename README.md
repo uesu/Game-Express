@@ -508,6 +508,9 @@ editing YAML. The ones worth knowing:
 | `NEWS_GROUP_LONG_STRIPS` | `0` | optional measured grouping; off retains article order |
 | `NEWS_TIMESTAMPS` | `0` | optional `<t:EPOCH:…>` conversion in rendered news text |
 | `NEWS_EXPAND_FULL` | `0` | optional multi-page full articles (up to 12 pages / 120,000 chars / 120 media) |
+| `PING_SCHEDULE` / `PING_CODES` | inherit `PING_ROLE_ID` | per-feature ping override; `none` = explicitly no ping |
+| `PING_MAINTENANCE` / `PING_BETA` | *(unset = silent)* | optional role ping on maintenance and beta cards; `PING_ROLE_ID` is deliberately **not** inherited |
+| `NEWS_REVEAL_PING` + `PING_NEWS_REVEAL` | `0` / *(unset)* | opt-in character-reveal ping; one role list for every game, no per-game variant |
 | `MAINTENANCE_ENABLED` | `0` | explicit opt-in for `Pre-Load Started` / `Maintenance Started` |
 | `MAINTENANCE_GAMES` | *(empty)* | explicit per-game list (`all` or game keys) required to activate maintenance alerts |
 | `BETA_ENABLED` | `0` | explicit opt-in for beta kit / revision-diff cards (feature 5) |
