@@ -473,6 +473,14 @@ the old revision path and proves the card stays a labelled full snapshot rather 
 "no changes" post. `test_feature5_header_range_uses_versions_then_build_ids_and_never_fakes_a_pair`
 covers the version pair, the same-version build-id pair and the fallback.
 
+### Number-shape regressions
+
+`test_feature5_every_number_shape_survives_the_word_diff_whole` pins the shapes that used to be
+shredded — signs, multipliers, rate units, versions and full arithmetic expressions — plus the
+prose-versus-rename split (`Casting` → `After casting` is `[TEXT FIX]`, `[Embers]` →
+`[Blazing Flame]` is `[CHANGED]`), the inserted-list separator, and that a long rewrite is never
+turned into strikethrough.
+
 ### Revision-diff links
 
 `test_feature5_encore_diff_link_matches_the_sites_own_grammar` pins the exact Encore URL its UI

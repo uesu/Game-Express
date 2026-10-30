@@ -619,6 +619,16 @@ Non-negotiable rules when touching `gamexpress/beta.py`, `beta_payloads*` in
   are genuinely ambiguous, so they return `[CHANGED]` instead of a guess;
   `beta._direction_reason` adds a one-clause "why" only where the tag contradicts the number. A
   name / reaction / keyword / type swap is `[CHANGED]`; prose alone is `[TEXT FIX]`.
+- **A number keeps its own shape in the diff.** `beta._TOKEN_RE` treats a sign, a unit, a
+  trailing multiplier/rate and any arithmetic joining numbers as one token, so the pairs stay
+  readable and the verdict stays honest: `~~-5%~~ → **-7%**`, `~~2x~~ → **3x**`,
+  `~~0.5%/s~~ → **0.8%/s**`, `~~25.17%+25.17%*3~~ → **29.15%+29.15%*3**`, `~~v3.8.1~~ → **v3.8.3**`.
+  Splitting a decimal at the point was not cosmetic: the fragments became two independent changes,
+  one of them rising, which flipped a nerf to `[BUFF]` on the real 3.8.1 → 3.8.3 kit. A short value
+  replaced outright (`Casting` → `After casting`) is marked as a pair rather than printed bare, a
+  long rewrite never becomes a wall of strikethrough, and the capital-letter rename guess needs a
+  capitalised term on *both* sides — a sentence-initial verb change is prose, so it stays
+  `[TEXT FIX]`.
 - **A mixed build is never presented as settled.** `beta._data_warning` reads a changelog that
   flags itself (`Partial data`, `Mixed data`, `Datamined`, …; never a generic “values may change”) and `beta._mixed_build_note` also
   treats a same-version hotfix with far more renames/additions than a hotfix normally carries as a
