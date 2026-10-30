@@ -12,7 +12,9 @@
   range or a chance can move either way in play (a higher Anomaly Mastery threshold is harder to
   reach; a higher HP threshold triggers a shield sooner), so those are reported as a plain
   `[CHANGED]` with no direction and no invented explanation. A name, reaction, keyword or type swap
-  is also `[CHANGED]`; only prose that changed with nothing functional behind it stays `[TEXT FIX]`.
+  is also `[CHANGED]`; prose that changed with nothing functional behind it stays `[TEXT FIX]`, and
+  a rewrite that moves several fragments at once (`Grants a shield to the whole squad` → `Gives a
+  shield to the entire squad`) is read as prose rather than as a renamed skill.
 - **A revision that mixes two builds carries a caveat instead of reading as settled.** On
   2026-10-30 Hoyo pushed 3.4.2 material into the ZZZ 3.4.1 hotfix 19997538, and both the changelog
   and the tracker's own news comment said so. Two game-agnostic signals now put one line under the

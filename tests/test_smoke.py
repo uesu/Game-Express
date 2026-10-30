@@ -19231,6 +19231,14 @@ def test_feature5_a_name_or_type_swap_is_changed_not_a_text_fix():
         "Deals damage to a random enemy", "Deals damage to one random enemy")
     assert tag == "[TEXT FIX]"
 
+    # A rewrite touching several fragments is prose even when its first words are capitalised:
+    # only a lone swapped term is allowed to be read as a rename.
+    line, tag = beta_mod._change_line(
+        "Grants a shield to the whole squad", "Gives a shield to the entire squad")
+    assert tag == "[TEXT FIX]", line
+    line, tag = beta_mod._change_line("Grants", "Gives")
+    assert tag == "[CHANGED]", line      # a lone capitalised swap with no context: not prose
+
 
 def test_feature5_a_retired_block_is_one_statement_in_every_diff_path():
     """Both diff paths state a retirement once, instead of one bullet per dropped line."""

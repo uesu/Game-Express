@@ -647,6 +647,13 @@ _GOOD_SUBJECT_RE = re.compile(
 # says [CHANGED] — the same rule as "unsure? remove the directional tag".
 _AMBIGUOUS_SUBJECT_RE = re.compile(
     r"\b(?:threshold|minimum|duration|stacks?|count|number of|range|tier|level|chance)\b", re.I)
+# The three subject classes in one pass. `_direction` runs for every changed fragment on every card,
+# so it scans once per scope instead of six times, and the class of the match is its group name.
+_SUBJECT_RE = re.compile(
+    rf"(?P<bad>{_BAD_SUBJECT_RE.pattern})|(?P<good>{_GOOD_SUBJECT_RE.pattern})"
+    rf"|(?P<ambiguous>{_AMBIGUOUS_SUBJECT_RE.pattern})",
+    re.I,
+)
 # "reduced by 40%" measures the size of a cut, not the size of the thing being cut.
 _REDUCTION_RE = re.compile(
     r"\b(?:reduc\w+|decreas\w+|lower\w+|less|down|drop\w*|mitigat\w+|sheds?)\s*"
@@ -670,25 +677,20 @@ def _direction(label: str, old: float, new: float) -> str:
     # Which word actually governs this number. The closest subject BEFORE the number wins, so
     # `Stack requirement` reads as a cost (nearest = requirement) while `Anomaly Mastery threshold`
     # reads as a threshold (nearest = threshold, ambiguous). "DMG taken" is one bad thing, not the
-    # good word `DMG` plus the bad word `taken`, hence the stripped second pass.
+    # good word `DMG` plus the bad word `taken`, hence the longer-phrase-wins tie-break.
     # A label like `1st-Hit DMG Multiplier` has no words before its number, so the whole label is
     # the fallback scope instead of concluding that nothing matched.
-    nearest: tuple[int, int, str] = (-1, 0, "")
+    kind = ""
     for scope in (before, text):
-        scoped = _BAD_SUBJECT_RE.sub(" ", scope)
-        for kind, pattern, haystack in (
-            ("bad", _BAD_SUBJECT_RE, scope),
-            ("good", _GOOD_SUBJECT_RE, scoped),
-            ("ambiguous", _AMBIGUOUS_SUBJECT_RE, scoped),
-        ):
-            for match in pattern.finditer(haystack):
-                candidate = (match.end(), len(match.group(0)), kind)
-                if candidate[:2] > nearest[:2]:
-                    nearest = candidate
-        if nearest[2]:
+        end, length = -1, 0
+        for match in _SUBJECT_RE.finditer(scope):
+            # Same end position: the longer phrase wins, so `damage taken` stays one bad thing
+            # instead of reading as the good word `damage` plus the bad word `taken`.
+            if (match.end(), len(match.group(0))) > (end, length):
+                end, length, kind = match.end(), len(match.group(0)), match.lastgroup or ""
+        if kind:
             break
-    bad, good, ambiguous = (nearest[2] == "bad", nearest[2] == "good",
-                            nearest[2] == "ambiguous")
+    bad, good, ambiguous = kind == "bad", kind == "good", kind == "ambiguous"
     up = new > old
     if ambiguous:
         return "[CHANGED]"
@@ -740,16 +742,23 @@ _TERMINOLOGY_RE = re.compile(
     r"known as|called)\b", re.I)
 
 
-def _is_terminology(context: str, old_part: str, new_part: str) -> bool:
+def _is_terminology(context: str, old_part: str, new_part: str, *, single: bool = True) -> bool:
     """A name / type / keyword swap is [CHANGED], not a wording fix.
 
     The guide is explicit: `RES PEN type narrowed from All-Type → Quantum (value remains 15%)` is
     [CHANGED], and so is a renamed reaction or a renamed skill. Prose-only edits stay [TEXT FIX].
+
+    `single` says this is the only fragment that moved in the line. A rewrite touching several
+    fragments is prose by construction (`Grants a shield to the whole squad` -> `Gives a shield to
+    the entire squad`), so the capital-letter guess below is only consulted for a lone swap —
+    otherwise every sentence-initial verb change would read as a renamed skill.
     """
     if "[" in str(old_part) or "[" in str(new_part):
         return True
     if _TERMINOLOGY_RE.search(str(context or "")):
         return True
+    if not single:
+        return False
     for part in (str(old_part or "").strip(), str(new_part or "").strip()):
         if part[:1].isupper() and any(ch.isalpha() for ch in part):
             words = re.sub(r"[-+]?\d+(?:\.\d+)?%?s?", "", part).strip()
@@ -819,7 +828,8 @@ def _change_line(old_frag: str, new_frag: str, label: str = "") -> tuple[str, st
             part_tag, reason = "[CHANGED]", ""
         else:
             # Numbers unchanged: a name / type / keyword swap is a [CHANGED], prose is [TEXT FIX].
-            part_tag = "[CHANGED]" if _is_terminology(context, old_part, new_part) else "[TEXT FIX]"
+            part_tag = ("[CHANGED]" if _is_terminology(context, old_part, new_part,
+                                                      single=len(parts) == 1) else "[TEXT FIX]")
             reason = ""
         tags.append(part_tag)
         if reason and part_tag not in reasons:
@@ -1019,7 +1029,9 @@ def _diff_section(prev: Any, cur: Any) -> tuple[list[str], list[str]]:
             elif opcode == "insert":
                 lines.extend((f"**[NEW]** {new_ln}", "[NEW]") for new_ln in cur_lines[j1:j2])
             elif opcode == "delete":
-                lines.append((_removed_statement(prev_lines[i1:i2]), "[CHANGED]"))
+                removed = _removed_statement(prev_lines[i1:i2])
+                if removed:
+                    lines.append((removed, "[CHANGED]"))
 
     if not lines:
         return [], []
