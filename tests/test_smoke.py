@@ -21658,6 +21658,26 @@ def test_feature5_encore_diff_link_pins_the_patch_encore_has_indexed():
         "6000215", "relic", "3.8.0", "3.8.3")
     # A route the site does not offer is refused rather than guessed.
     assert beta_mod._encore_diff_url("6000215", "term", "3.8.0", "3.8.3") == ""
+
+    # With the beta the previous card compared (our snapshots record it), the link is a real
+    # before/after across two betas Encore published — the delta the card describes.
+    assert beta_mod._encore_diff_url("6000038", "echo", "3.8.0", "3.8.3", ("3.8.0", "3.8.1")) == (
+        "https://encore.moe/diff?firstGameVer=3.8.0&secondGameVer=3.8.0"
+        "&firstVer=Beta_3.8.1&secondVer=Beta_3.8.3&route=echo&id=6000038&lang=en"
+    )
+    # Across a version boundary too — verified live 2026-10-31 (Beta_3.7.3 vs Beta_3.8.3).
+    assert beta_mod._encore_diff_url("6000038", "echo", "3.8.0", "3.8.3", ("3.7.0", "3.7.3")) == (
+        "https://encore.moe/diff?firstGameVer=3.7.0&secondGameVer=3.8.0"
+        "&firstVer=Beta_3.7.3&secondVer=Beta_3.8.3&route=echo&id=6000038&lang=en"
+    )
+    # The same beta twice collapses to the single-patch form rather than a no-op range.
+    assert beta_mod._encore_diff_url("6000038", "echo", "3.8.0", "3.8.3",
+                                     ("3.8.0", "3.8.3")).count("Beta_3.8.3") == 2
+    # A snapshot from the nanoka reader has no Encore revision, so there is nothing to pair with.
+    assert beta_mod._encore_snapshot_beta({"provider": "nanoka", "revision": "3.8.1"}) == ("", "")
+    assert beta_mod._encore_snapshot_beta(
+        {"provider": "encore", "provider_revision": ["3.8.0", "3.8.1", "9162983"]}
+    ) == ("3.8.0", "3.8.1")
     # No Encore beta build, no link: an unusable patch label is exactly what 404s.
     for game, res in (("", "3.8.3"), ("3.8.0", ""), ("3.7", "3.8.3"), ("live", "3.8.3"),
                       ("3.8.0", "3.8")):

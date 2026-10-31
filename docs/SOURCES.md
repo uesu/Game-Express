@@ -842,6 +842,23 @@ character, weapon and echo alike (all three opened), and — because it needs no
 it also covers an item that is `[NEW]` in the revision being posted, which previously had no
 link at all.
 
+**A real delta when both betas are known.** The snapshot of the last posted card already records
+the `GameVer`/`ResVer` Encore served it (`provider_revision`), so when it exists the link compares
+*that* beta with the current one — what the card itself describes — instead of a patch with
+itself. Both labels are Encore's own, which is why the delta is safe. Cross-version pairs render
+too: `Beta_3.7.3 vs Beta_3.8.3` returned Hooscamp's skill and both echo sets on 2026-10-31, so a
+card spanning `3.8 → 4.0` keeps a working link. An invalid label is the *only* thing that fails
+here: `Beta_3.7.2` returned `No comparison data available` while `Beta_3.7.3` — the one that
+version's picker actually offers — rendered.
+
+**Future versions need no code change.** `GameVer`/`ResVer` are read live on every run and the
+previous pair comes from the snapshot the same reader wrote, so `4.0.0` / `Beta_4.0.2` builds the
+same URL as `3.8.0` / `Beta_3.8.3`. Nothing in this path, or in the nanoka listing/detail paths or
+the gachabase changelog path, is pinned to a version: revisions come from the manifest and the
+streamed changelog, and item paths carry no version at all. Echo **sets** are not a separate card
+kind for WuWa — they are rendered inside each echo's own comparison, which is where they appear on
+the page (verified above).
+
 The read behind it is **one small GET per run**, taken lazily at the first item that needs a
 link, cached for the rest of the run, and skipped entirely when the request budget is spent — a
 link must never cost the card it decorates. If it cannot be read, the link falls back to the two

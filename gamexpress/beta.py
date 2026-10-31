@@ -4978,17 +4978,21 @@ _ENCORE_ROUTES = {"character": "character", "weapon": "weapon", "relic": "echo",
 _ENCORE_VERSION_RE = re.compile(r"\d+(?:\.\d+){2}")
 
 
-def _encore_diff_url(item_id: str, route: str, game_version: str, res_version: str) -> str:
-    """Encore's comparison page pinned to the beta patch Encore itself has indexed.
+def _encore_diff_url(item_id: str, route: str, game_version: str, res_version: str,
+                     previous: tuple[str, str] = ("", "")) -> str:
+    """Encore's comparison page, pinned to patch labels Encore itself has indexed.
 
-    The page only resolves patch labels from its own picker for that game version: a label it
-    does not index renders `Comparison failed: API error: 404`, and a version it never crawled
-    (`Beta_3.8.0`) renders `No comparison data available` — both observed on 2026-10-31, and both
-    indistinguishable to a reader from a broken link. Nanoka's revision numbers are not that list,
-    so they are no longer guessed with: the pair is Encore's current beta, the `GameVer`/`ResVer`
-    its own `/new?v=Beta` reports, whose patch is by definition in the picker. Comparing a patch
-    with itself still renders the item's full current text, which is what a source link is for —
-    and it covers items that are new in this beta and therefore exist in no earlier patch.
+    The page only resolves labels from the picker it fills for that game version: one it does
+    not index renders `Comparison failed: API error: 404`, one it never crawled (`Beta_3.8.0`)
+    renders `No comparison data available` — observed 2026-10-31, and both read like a broken
+    link. Nanoka's revision numbers are not that list, so they are never guessed with.
+
+    `previous` is the beta the last posted card compared (its snapshot's own `GameVer`/`ResVer`,
+    which our snapshots already record). When it is known the link is a real before/after across
+    the two betas — the delta the card itself describes. Otherwise the current beta is compared
+    with itself, which still renders the item's full text and covers an item that is new in this
+    beta, so there is always something to open. Both sides are always Encore's own labels, which
+    is what keeps the link valid into 4.0 and beyond with no code change.
     """
     route = _ENCORE_ROUTES.get(str(route or ""), "")
     if not item_id or not route:
@@ -4997,11 +5001,29 @@ def _encore_diff_url(item_id: str, route: str, game_version: str, res_version: s
     res = str(res_version or "").strip()
     if not (_ENCORE_VERSION_RE.fullmatch(game) and _ENCORE_VERSION_RE.fullmatch(res)):
         return ""
+    prev_game, prev_res = (str(previous[0]).strip(), str(previous[1]).strip())
+    if (_ENCORE_VERSION_RE.fullmatch(prev_game) and _ENCORE_VERSION_RE.fullmatch(prev_res)
+            and (prev_game, prev_res) != (game, res)):
+        # Two betas the site has both published; across versions too, which the page renders.
+        return (
+            f"{_ENCORE_DIFF}?firstGameVer={prev_game}&secondGameVer={game}"
+            f"&firstVer=Beta_{prev_res}&secondVer=Beta_{res}&route={route}&id={item_id}&lang=en"
+        )
     patch = f"Beta_{res}"
     return (
         f"{_ENCORE_DIFF}?firstGameVer={game}&secondGameVer={game}"
         f"&firstVer={patch}&secondVer={patch}&route={route}&id={item_id}&lang=en"
     )
+
+
+def _encore_snapshot_beta(snapshot: Any) -> tuple[str, str]:
+    """The `(GameVer, ResVer)` a snapshot recorded, when Encore served it. Else ("", "")."""
+    if not isinstance(snapshot, dict) or snapshot.get("provider") != "encore":
+        return ("", "")
+    revision = snapshot.get("provider_revision")
+    if not isinstance(revision, (list, tuple)) or len(revision) < 2:
+        return ("", "")
+    return (str(revision[0] or "").strip(), str(revision[1] or "").strip())
 
 
 def _beta_patch_parts(version: str) -> list[str]:
@@ -5040,7 +5062,8 @@ def _encore_pair_url(item_id: str, route: str, first_version: str, second_versio
 
 def _diff_url(ns: str, role: str, item_id: str, name: str,
               previous_version: str, current_version: str, set_kind: str = "", *,
-              encore_beta: tuple[str, str] = ("", "")) -> str:
+              encore_beta: tuple[str, str] = ("", ""),
+              encore_prev: tuple[str, str] = ("", "")) -> str:
     """The revision-diff link for one item, in whichever database serves that game.
 
     WuWa is the one game whose link is not built from the two versions being compared: Encore
@@ -5049,7 +5072,7 @@ def _diff_url(ns: str, role: str, item_id: str, name: str,
     """
     if ns == "ww":
         game_version, res_version = encore_beta
-        return (_encore_diff_url(item_id, role, game_version, res_version)
+        return (_encore_diff_url(item_id, role, game_version, res_version, encore_prev)
                 or _encore_pair_url(item_id, role, previous_version, current_version))
     return _generated_diff_url(ns, role, item_id, name, previous_version, current_version,
                                set_kind)
@@ -6375,7 +6398,8 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
             _item_page_url(ns, "character", item_id, name)
         diff_url = (str(entry.get("diff") or "") or
                     _diff_url(ns, "character", item_id, name, previous_revision, version,
-                              encore_beta=await encore_beta_pair()))
+                              encore_beta=await encore_beta_pair(),
+                              encore_prev=_encore_snapshot_beta(previous_snapshot)))
         if "_encore" in data:
             page_url = f"https://encore.moe/character/{item_id}?lang=en&v=Beta"
 
@@ -6791,7 +6815,8 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
         diff_url = (str(entry.get("diff") or "") or
                     _diff_url(ns, role, item_id, name, previous_revision, version,
                               set_kind=str(fields.get("set_kind") or ""),
-                              encore_beta=await encore_beta_pair()))
+                              encore_beta=await encore_beta_pair(),
+                              encore_prev=_encore_snapshot_beta(previous_snapshot)))
         if "_encore" in data:
             page_url = f"https://encore.moe/weapon/{item_id}?lang=en&v=Beta"
             rarity = data.get("rarity")
