@@ -17344,7 +17344,10 @@ def test_feature5_enabled_run_delivers_one_fixture_character_for_every_released_
         # One shared manifest, three configured changelog probes, four character details and
         # the three static-art conventions known for GI/HSR/ZZZ: bounded successful work across
         # every released beta game. WW has no guessed art URL, so it cleanly omits the gallery.
-        assert sum(kind == "json" for kind, _url in fetcher.calls) == 5
+        # WuWa additionally asks Encore for its current beta build, once, so its comparison
+        # link can name a patch Encore has indexed. Primary and backup are both tried here
+        # because this fetcher serves neither.
+        assert sum(kind == "json" for kind, _url in fetcher.calls) == 7
         assert sum(kind == "text" for kind, _url in fetcher.calls) == 3
         assert sum(kind == "media" for kind, _url in fetcher.calls) == 3
         assert any("/ww/3.8.1/en/character/1512.json" in url for _kind, url in fetcher.calls)
@@ -17995,12 +17998,20 @@ def test_feature5_encore_beta_fallback_reads_matching_build_and_keeps_budget():
         budget["_shared_requests_left"] = 20
         patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, budget))
         assert len(patch.characters) == len(patch.equipment) == 1
-        assert len(fetcher.calls) == 9  # two details, one listing, two bracketed Encore reads
-        assert budget["_shared_requests_left"] == 11
+        # two details, one listing, two bracketed Encore reads, and one Encore beta-build read
+        assert len(fetcher.calls) == 10
+        assert budget["_shared_requests_left"] == 10
         character = patch.characters[0]
         assert character.name == "Lily" and character.rarity == 5
         assert "encore.moe/character/1512" in character.page_url and "v=Beta" in character.page_url
-        assert character.diff_url == "" and character.image_url == ""
+        # A new character now carries a comparison link too: Encore's own current beta patch,
+        # compared with itself, renders the full current text (observed 2026-10-31). It is not
+        # a guess at which earlier patch the item existed in — that is what 404s.
+        assert character.diff_url == (
+            "https://encore.moe/diff?firstGameVer=3.8.0&secondGameVer=3.8.0"
+            "&firstVer=Beta_3.8.1&secondVer=Beta_3.8.1&route=character&id=1512&lang=en"
+        ), character.diff_url
+        assert character.image_url == ""
         body = "\n".join(line for section in character.sections for line in section.lines)
         assert "74.28%" in body and "(Lv. 10)" in body
         assert "Sequence Node 6" in "\n".join(section.title for section in character.sections)
@@ -18010,7 +18021,10 @@ def test_feature5_encore_beta_fallback_reads_matching_build_and_keeps_budget():
         assert "77.04%" in weapon.stats_line and "Lv. 90" in weapon.stats_line
         assert "refinements 1–5" in weapon.lines[0]
         assert "{7}" not in "\n".join(weapon.lines) and "[value unavailable]" in "\n".join(weapon.lines)
-        assert "encore.moe/weapon/21030076" in weapon.page_url and weapon.diff_url == ""
+        # Same for a new weapon: the link names Encore's own beta patch, not a guessed pair.
+        assert "encore.moe/weapon/21030076" in weapon.page_url
+        assert weapon.diff_url.endswith("&route=weapon&id=21030076&lang=en"), weapon.diff_url
+        assert "firstVer=Beta_3.8.1&secondVer=Beta_3.8.1" in weapon.diff_url
         assert all(snap["provider"] == "encore" for snap in patch.snapshots.values())
         assert all(snap["provider_revision"] == ["3.8.0", "3.8.1", "9162983"]
                    for snap in patch.snapshots.values())
@@ -18021,7 +18035,10 @@ def test_feature5_encore_beta_fallback_reads_matching_build_and_keeps_budget():
         ctx.fetcher = fetcher
         healthy = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, beta_mod._budget(ctx)))
         assert healthy.characters and healthy.equipment
-        assert not any("encore" in url for url in fetcher.calls)
+        # The primary source still supplies every value. The one Encore read is deliberate: the
+        # comparison link has to name a patch label Encore indexes, and only Encore can say which.
+        encore_calls = [url for url in fetcher.calls if "encore" in url]
+        assert encore_calls == ["https://api-v2.encore.moe/api/en/new?v=Beta"], encore_calls
         # Provider switches never manufacture inline buffs/nerfs from schema differences.
         old = next(iter(patch.snapshots.values()))
         assert beta_mod._snapshot_comparison(old, {**old, "provider": "nanoka"}) == "snapshot"
@@ -18166,19 +18183,38 @@ def test_feature5_encore_secondary_api_recovers_with_identical_cards_and_durable
         assert not any(url.startswith(secondary) for url in ctx.fetcher.calls)
         expected = cards.beta_payloads(GAMES["wuwa"], primary)
         assert expected
-        for primary_mode, expected_calls in (("unavailable", 11), ("detail_unavailable", 15),
-                                             ("mismatch", 11), ("malformed", 11),
-                                             ("changing", 15), ("wrong_id", 15), ("unreadable", 15)):
+        # Re-baselined for the one extra Encore read that names the comparison patch. It also
+        # shifts the parity these modes key on, so `changing` now notices the build change one
+        # call earlier (15 -> 14) instead of one later.
+        for primary_mode, expected_calls in (("unavailable", 13), ("detail_unavailable", 16),
+                                             ("mismatch", 12), ("malformed", 13),
+                                             ("changing", 14), ("wrong_id", 16), ("unreadable", 16)):
             ctx.fetcher = _beta_encore_endpoint_fetcher(primary=primary_mode)
             budget = {**beta_mod._budget(ctx), "_shared_requests_left": 20}
             patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, budget))
             assert patch and not patch.more and len(patch.characters) == len(patch.equipment) == 1
             assert len(ctx.fetcher.calls) == expected_calls
-            assert budget["_shared_requests_left"] == 5  # details/listing + two three-call reservations per item
+            # details/listing + two three-call reservations per item, plus the beta-build read(s)
+            assert budget["_shared_requests_left"] in (3, 4)
             fallback_calls = [url for url in ctx.fetcher.calls if url.startswith(secondary)]
-            assert len(fallback_calls) == 6
+            # six bracketed Encore reads, plus the beta-build read when the primary cannot
+            # answer it and it lands on the backup
+            assert len(fallback_calls) in (6, 7)
             assert all("v=Beta" in url and "/api/" not in url for url in fallback_calls)
-            assert cards.beta_payloads(GAMES["wuwa"], patch) == expected
+            # Identical cards. The comparison link is the one volatile part by design: it names
+            # the beta build Encore reports, and these modes are simulating Encore answering
+            # differently — so it is compared by shape, and the rest byte for byte.
+            def _body(payloads):
+                import re as _re
+
+                return _re.sub(r"https://encore\.moe/diff\?[^)\s\"]+",
+                              "https://encore.moe/diff?<build>",
+                              json.dumps(payloads, ensure_ascii=False))
+
+            produced = cards.beta_payloads(GAMES["wuwa"], patch)
+            assert _body(produced) == _body(expected)
+            assert "https://encore.moe/diff?firstGameVer=" in json.dumps(
+                produced, ensure_ascii=False)
             assert all(not cards.validate_payload(p) for p in expected)
             assert patch.snapshots == primary.snapshots
             assert ctx.warnings == []
@@ -21598,56 +21634,58 @@ def test_feature5_rebuild_that_matches_the_current_kit_is_not_a_baseline():
     assert "No changes." not in text
 
 
-def test_feature5_encore_diff_link_matches_the_sites_own_grammar():
-    """The per-item comparison URL is the one Encore's own UI produces (captured 2026-10-30)."""
+def test_feature5_encore_diff_link_pins_the_patch_encore_has_indexed():
+    """The comparison URL uses Encore's own beta build, never nanoka's revision numbers.
+
+    Observed live 2026-10-31: `Beta_3.4.0` / `Beta_3.4.1` (not in that game version's picker)
+    render `Comparison failed: API error: 404`, `Beta_3.8.0` (never crawled) renders `No
+    comparison data available`, and `Beta_3.8.4` (not yet crawled) is a 404 — while the pair
+    `Beta_3.8.3 vs Beta_3.8.3` renders the item's full current text for character, weapon and
+    echo alike. Only the last form is linked.
+    """
     from gamexpress import beta as beta_mod
 
-    assert beta_mod._encore_diff_url("1512", "character", "3.8.2", "3.8.3") == (
+    assert beta_mod._encore_diff_url("6000215", "echo", "3.8.0", "3.8.3") == (
         "https://encore.moe/diff?firstGameVer=3.8.0&secondGameVer=3.8.0"
-        "&firstVer=Beta_3.8.2&secondVer=Beta_3.8.3&route=character&id=1512&lang=en"
+        "&firstVer=Beta_3.8.3&secondVer=Beta_3.8.3&route=echo&id=6000215&lang=en"
     )
-    assert beta_mod._encore_diff_url("21030076", "weapon", "3.8.1", "3.8.3") == (
-        "https://encore.moe/diff?firstGameVer=3.8.0&secondGameVer=3.8.0"
-        "&firstVer=Beta_3.8.1&secondVer=Beta_3.8.3&route=weapon&id=21030076&lang=en"
-    )
-    # Across cycles each side keeps its own game version.
-    assert beta_mod._encore_diff_url("1512", "character", "3.7.2", "3.8.3").startswith(
-        "https://encore.moe/diff?firstGameVer=3.7.0&secondGameVer=3.8.0&firstVer=Beta_3.7.2"
-    )
-    # A snapshot revision may carry a build id; the beta patch is still what the page compares.
-    assert "firstVer=Beta_3.8.1&" in beta_mod._encore_diff_url(
-        "1512", "character", "3.8.1+9162983", "3.8.3")
-    # Never invent a comparison the card cannot name.
-    assert beta_mod._encore_diff_url("1512", "character", "3.8.3", "3.8.3") == ""
-    assert beta_mod._encore_diff_url("1512", "character", "", "3.8.3") == ""
-    assert beta_mod._encore_diff_url("1512", "character", "live", "3.8.3") == ""
-    # A two-part value is the game version, not a `Beta_` patch.
-    assert beta_mod._encore_diff_url("1512", "character", "3.7", "3.8.3") == ""
-    assert beta_mod._encore_diff_url("", "character", "3.8.1", "3.8.3") == ""
-    # The compare page's own type list is character | weapon | echo | term, so an echo has a
-    # comparison too — our relic role is that `echo` type.
-    assert beta_mod._encore_diff_url("6000041", "relic", "3.8.2", "3.8.3") == (
-        "https://encore.moe/diff?firstGameVer=3.8.0&secondGameVer=3.8.0"
-        "&firstVer=Beta_3.8.2&secondVer=Beta_3.8.3&route=echo&id=6000041&lang=en"
-    )
-    assert beta_mod._encore_diff_url("6000041", "echo", "3.8.2", "3.8.3").endswith(
-        "&route=echo&id=6000041&lang=en")
+    assert "&route=character&id=1512&lang=en" in beta_mod._encore_diff_url(
+        "1512", "character", "3.8.0", "3.8.3")
+    assert "&route=weapon&id=21030076&lang=en" in beta_mod._encore_diff_url(
+        "21030076", "weapon", "3.8.0", "3.8.3")
+    # Our relic role is the page's `echo` type.
+    assert "&route=echo&id=6000215&" in beta_mod._encore_diff_url(
+        "6000215", "relic", "3.8.0", "3.8.3")
     # A route the site does not offer is refused rather than guessed.
-    assert beta_mod._encore_diff_url("6000041", "term", "3.8.2", "3.8.3") == ""
+    assert beta_mod._encore_diff_url("6000215", "term", "3.8.0", "3.8.3") == ""
+    # No Encore beta build, no link: an unusable patch label is exactly what 404s.
+    for game, res in (("", "3.8.3"), ("3.8.0", ""), ("3.7", "3.8.3"), ("live", "3.8.3"),
+                      ("3.8.0", "3.8")):
+        assert beta_mod._encore_diff_url("6000215", "echo", game, res) == "", (game, res)
+    assert beta_mod._encore_diff_url("", "echo", "3.8.0", "3.8.3") == ""
 
 
 def test_feature5_a_wuwa_echo_card_links_its_own_comparison():
     """Echoes were the one WuWa kind with no diff link; Encore serves them as `route=echo`."""
     from gamexpress import beta as beta_mod
 
-    url = beta_mod._diff_url("ww", "relic", "6000041", "Diamondclaw", "3.8.2", "3.8.3")
+    url = beta_mod._diff_url("ww", "relic", "6000041", "Diamondclaw", "3.8.2", "3.8.3",
+                             encore_beta=("3.8.0", "3.8.3"))
     assert url.startswith("https://encore.moe/diff?") and "&route=echo&id=6000041&" in url, url
     assert "gachabase" not in url
-    # Encore renders `Comparison failed: API error: 404` when the id is not in BOTH patches
-    # (observed 2026-10-31). Only a pair the item actually existed in may be linked: a brand-new
-    # echo has no previous revision, and a released two-part build is not a `Beta_` patch.
-    assert beta_mod._diff_url("ww", "relic", "6000041", "Diamondclaw", "", "3.8.3") == ""
-    assert beta_mod._diff_url("ww", "relic", "6000041", "Diamondclaw", "3.7", "3.8.3") == ""
+    # The pair actually compared is not what is linked: those revision numbers are nanoka's, and
+    # Encore only resolves the labels it indexed. Without them there is no link at all.
+    assert "firstVer=Beta_3.8.3&secondVer=Beta_3.8.3" in url, url
+    # If Encore's own build cannot be read, the compared pair is the last resort — the link
+    # that shipped before — rather than no link at all.
+    assert beta_mod._diff_url("ww", "relic", "6000041", "Diamondclaw", "3.8.2", "3.8.3") == (
+        "https://encore.moe/diff?firstGameVer=3.8.0&secondGameVer=3.8.0"
+        "&firstVer=Beta_3.8.2&secondVer=Beta_3.8.3&route=echo&id=6000041&lang=en"
+    )
+    # A new echo has no previous revision and still links — the case that used to have none.
+    assert beta_mod._diff_url("ww", "relic", "6000215", "Fog Lionarch", "", "3.8.3",
+                              encore_beta=("3.8.0", "3.8.3")).endswith(
+        "&route=echo&id=6000215&lang=en")
 
     equip = BetaEquipment(
         id="ww:6000041", name="Diamondclaw", category_label="Echoes", rarity=5,
@@ -21667,12 +21705,14 @@ def test_feature5_every_game_uses_the_diff_database_that_serves_it():
     from gamexpress import beta as beta_mod
 
     # `_diff_url` takes the nanoka namespace ("ww"), which is what every call site passes.
-    assert beta_mod._diff_url("ww", "character", "1512", "Lily", "3.8.1", "3.8.3").startswith(
-        "https://encore.moe/diff?")
-    assert beta_mod._diff_url("ww", "weapon", "21030076", "Lullaby", "3.8.1", "3.8.3").startswith(
-        "https://encore.moe/diff?")
+    beta_pair = ("3.8.0", "3.8.3")
+    assert beta_mod._diff_url("ww", "character", "1512", "Lily", "3.8.1", "3.8.3",
+                              encore_beta=beta_pair).startswith("https://encore.moe/diff?")
+    assert beta_mod._diff_url("ww", "weapon", "21030076", "Lullaby", "3.8.1", "3.8.3",
+                              encore_beta=beta_pair).startswith("https://encore.moe/diff?")
     # Never a gachabase diff for WuWa (that page does not exist) and never an Encore one elsewhere.
-    assert "gachabase" not in beta_mod._diff_url("ww", "character", "1512", "Lily", "3.8.1", "3.8.3")
+    assert "gachabase" not in beta_mod._diff_url(
+        "ww", "character", "1512", "Lily", "3.8.1", "3.8.3", encore_beta=beta_pair)
     for ns, path, item_id in (
         ("zzz", "agents", "1601"),
         ("gi", "characters", "10000136"),
