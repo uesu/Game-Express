@@ -5001,18 +5001,13 @@ def _encore_diff_url(item_id: str, route: str, game_version: str, res_version: s
     res = str(res_version or "").strip()
     if not (_ENCORE_VERSION_RE.fullmatch(game) and _ENCORE_VERSION_RE.fullmatch(res)):
         return ""
-    # `Beta_<x.y.0>` is a version's own base, not a published beta patch: the page renders
-    # `No comparison data available` for it (`Beta_3.8.0` vs `Beta_3.8.3`, observed 2026-10-31).
-    # A version that has only just started at 4.0.0 reports exactly that, so refuse the label and
-    # let the caller fall back rather than link a page that says nothing.
-    if res == game:
-        return ""
     # Defensive: a pairwise helper must never raise into `build_patch` and cost a whole card.
     if not isinstance(previous, (list, tuple)) or len(previous) < 2:
         previous = ("", "")
     prev_game, prev_res = (str(previous[0] or "").strip(), str(previous[1] or "").strip())
-    # A previous beta that is itself a version base (`3.8.0`) is not a label the site publishes
-    # either — `Beta_3.8.0 vs Beta_3.8.3` answered `No comparison data available` on 2026-10-31.
+    # Observed 2026-10-31: `Beta_3.8.0` (the 3.8 base, never offered by its picker) answers
+    # `No comparison data available`, so a previous pair whose ResVer equals its GameVer is not
+    # named. This is only the one observed base; a new cycle's first label is not yet verified.
     if (_ENCORE_VERSION_RE.fullmatch(prev_game) and _ENCORE_VERSION_RE.fullmatch(prev_res)
             and prev_res != prev_game
             and (prev_game, prev_res) != (game, res)):

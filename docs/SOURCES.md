@@ -850,12 +850,12 @@ too: `Beta_3.7.3 vs Beta_3.8.3` returned Hooscamp's skill and both echo sets on 
 card spanning `3.8 → 4.0` keeps a working link. The only thing that fails is a label the site
 never published, and there are two shapes of that: a patch it has not crawled (`Beta_3.7.2`
 returned `No comparison data available` while `Beta_3.7.3` — the one that version's picker
-actually offers — rendered), and a version's own base, `Beta_<x.y.0>`, which is not a patch at
-all. Both are refused rather than linked, on either side of the comparison: a version that has
-only just started reports `ResVer` equal to `GameVer`, and that case degrades to the same-patch
-form instead of opening a page that says nothing.
+actually offers — rendered), and the version base `Beta_3.8.0`, which the 3.8 picker never offers and which answers
+`No comparison data available`. A previous pair on that base is not named (it falls back to
+the same-patch form). Whether a new cycle's first beta is labelled `Beta_<x.y.0>` is **not yet
+verified**: it cannot be measured until that cycle exists, so the current beta is always pinned.
 
-**Future versions need no code change.** `GameVer`/`ResVer` are read live on every run and the
+**Future versions: no code path names a version.** Verified only by simulation so far — same-cycle bumps and cycle changes both build the expected link through the card path (`test_feature5_a_new_game_version_links_across_the_cycle_change`). The live pages for a cycle that does not exist yet cannot be checked. `GameVer`/`ResVer` are read live on every run and the
 previous pair comes from the snapshot the same reader wrote, so `4.0.0` / `Beta_4.0.2` builds the
 same URL as `3.8.0` / `Beta_3.8.3`. Nothing in this path, or in the nanoka listing/detail paths or
 the gachabase changelog path, is pinned to a version: revisions come from the manifest and the
