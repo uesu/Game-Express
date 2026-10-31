@@ -21927,6 +21927,36 @@ def test_feature5_a_wuwa_echo_card_links_its_own_comparison():
     assert all(not cards.validate_payload(p) for p in payloads)
 
 
+def test_feature5_all_three_wuwa_routes_match_the_live_verified_steps():
+    """Character, weapon and echo, each 3.8.1 -> 3.8.2 -> 3.8.3, built exactly as the card builds them.
+
+    Every URL below was opened on encore.moe on 2026-10-31 and rendered `Beta_3.8.x vs Beta_3.8.y`
+    with no error: Lily 1512 (Basic Attack Stage 1 changed 3.8.2 -> 3.8.3), weapon 21030076
+    (Lullaby, no change in either step), echo 6000038 (Hooscamp, Lingering Tunes/Sierra Gale).
+    """
+    from gamexpress import beta as beta_mod
+
+    steps = [("3.8.1", "3.8.2"), ("3.8.2", "3.8.3")]
+    cases = [
+        ("character", "1512", "character"),
+        ("weapon", "21030076", "weapon"),
+        ("relic", "6000038", "echo"),
+    ]
+    for role, item_id, route in cases:
+        for previous, current in steps:
+            url = beta_mod._diff_url(
+                "ww", role, item_id, "Name", previous, current,
+                encore_beta=("3.8.0", current),          # Encore's current beta for this step
+                encore_prev=("3.8.0", previous),         # the beta the last card posted
+            )
+            expected = (
+                "https://encore.moe/diff?firstGameVer=3.8.0&secondGameVer=3.8.0"
+                f"&firstVer=Beta_{previous}&secondVer=Beta_{current}"
+                f"&route={route}&id={item_id}&lang=en"
+            )
+            assert url == expected, (role, previous, current, url)
+
+
 def test_feature5_every_game_uses_the_diff_database_that_serves_it():
     """WuWa diffs live on Encore, the other three on gachabase — for characters and equipment."""
     from gamexpress import beta as beta_mod
