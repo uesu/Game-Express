@@ -740,6 +740,21 @@ back to the plain snapshot note ("no direction is inferred") rather than a revea
 live build does not have — Charley 54024, the one genuine 3.4.1 addition — prints its kit once as
 `[NEW]`. Cost: one listing GET per role per run, and only when the manifest claims something new.
 
+**Two fields, two meanings.** `sub_type` holds the item's *substat* on every reader except WuWa's
+Encore one, where it holds the weapon type and is deliberately copied into `weapon_class` — that
+copy is what stops `**Substat:**` from repeating the class already in the badge
+(`S-Rank W-Engine — Defense` … `**Substat:** HP%`). The metadata report labels `sub_type` "Substat"
+to match the card's own row, and skips it when it is that copy, so a WuWa reclassification prints
+one `Weapon class changed from ~~Sword~~ → **Rectifier**` instead of two lines saying the same
+thing.
+
+**A group nobody carded is named, not dropped.** The `__data.json` reader only reads the keys in
+`_DATA_SECTIONS`; any other list on a revision (a group gachabase starts streaming later, such as
+Genshin's materials) used to vanish at parse time with nothing downstream able to notice. It is now
+carried through as `unknown_groups` and reported once per run —
+`changelog lists group(s) with no card kind (materials) — not read` — the same way an unkinded
+entry on the page path already was.
+
 The prose is translated in some builds and not others — Booltergeist ships real English ("Cursed
 Spotlight", "Specialty Scare Actor", "Mischief Maker on the Loose"), while Charley ships
 localization keys (`Bangboo_Desc_54024`, `Bangboo_ActiveSkill_Title_54024`). A key is dropped,
@@ -808,21 +823,62 @@ https://encore.moe/diff?firstGameVer=3.8.0&secondGameVer=3.8.0
 without a comparison selected. Echoes also have their own pages,
 `https://encore.moe/echo/<id>?lang=en` (436 linked from the served echo index).
 
-Feature 5 builds this URL for a WuWa item only from values the card actually knows — the two
-beta patch versions it compared (`beta._encore_diff_url`). A cold start, an unreadable version,
-or the same patch twice yields no link rather than one that would open an empty comparison; a
-card compared with the released build keeps the beta-to-beta link, because that is the pair the
-database can name, and its subtext already says which baseline it used. The card renders it as
-the standard `[Revision diff](…)` link, so every game carries a source comparison: Encore for
-WuWa, gachabase for the other three (`beta._diff_url`).
+**Only the labels Encore has indexed resolve.** The page answers four distinct ways, all
+observed 2026-10-31 against real ids:
 
-**Limitations.** This is a client-side page, not a documented JSON endpoint: the bot links to it
-and never scrapes it, so it adds no request, no schedule and no failure mode. It is not used to
-discover changed ids — WuWa revision scope still comes from the nanoka manifest. The query
-grammar is observation evidence from the site's own URLs, not a published contract; if Encore
-changes it, the link degrades to its landing page and the card content is unaffected. All four
-types are offered by the page itself, so a WuWa echo links its `echo` comparison; `term` (the
-glossary) is not a card kind and is refused rather than guessed.
+| query | result |
+|---|---|
+| `3.8.0` / `Beta_3.8.2` vs `Beta_3.8.3`, echo `6000038` | renders the item and its changes |
+| `3.8.0` / `Beta_3.8.3` vs `Beta_3.8.3` | renders the item's full current text (both sides equal) |
+| `3.8.0` / `Beta_3.8.4` vs `Beta_3.8.4` | `Comparison failed: API error: 404` — a patch it has not crawled |
+| `3.8.0` / `Beta_3.8.0` vs `Beta_3.8.3` | `No comparison data available` — a label it never offers |
+
+Under `3.4.0` its picker offers `Release_3.4.13` only, so `Beta_3.4.0`/`Beta_3.4.1` — labels
+nobody can choose — also answer 404. **Nanoka's revision numbers are not that list**, so the card
+does not guess with them: `beta._encore_diff_url` builds the query from Encore's *own* current
+beta, the `GameVer`/`ResVer` pair `/new?v=Beta` reports (`3.8.0` / `3.8.3` as of this capture).
+With no earlier beta to name (first post of an item) it compares that patch with itself; that
+form is in the picker by construction, renders for character, weapon and echo alike (all three
+opened), and — because it needs no earlier patch — it also covers an item that is `[NEW]` in the
+revision being posted, which previously had no link at all.
+
+**A real delta when both betas are known.** The snapshot of the last posted card already records
+the `GameVer`/`ResVer` Encore served it (`provider_revision`), so when it exists the link compares
+*that* beta with the current one — what the card itself describes — instead of a patch with
+itself. Both labels are Encore's own, which is why the delta is safe. Cross-version pairs render
+too: `Beta_3.7.3 vs Beta_3.8.3` returned Hooscamp's skill and both echo sets on 2026-10-31, so a
+card spanning `3.8 → 4.0` keeps a working link. The only thing that fails is a label the site
+never published, and there are two shapes of that: a patch it has not crawled (`Beta_3.7.2`
+returned `No comparison data available` while `Beta_3.7.3` — the one that version's picker
+actually offers — rendered), and a version's own base, `Beta_<x.y.0>`, which is not a patch at
+all. Both are refused rather than linked, on either side of the comparison: a version that has
+only just started reports `ResVer` equal to `GameVer`, and that case degrades to the same-patch
+form instead of opening a page that says nothing.
+
+**Future versions need no code change.** `GameVer`/`ResVer` are read live on every run and the
+previous pair comes from the snapshot the same reader wrote, so `4.0.0` / `Beta_4.0.2` builds the
+same URL as `3.8.0` / `Beta_3.8.3`. Nothing in this path, or in the nanoka listing/detail paths or
+the gachabase changelog path, is pinned to a version: revisions come from the manifest and the
+streamed changelog, and item paths carry no version at all. Echo **sets** are not a separate card
+kind for WuWa — they are rendered inside each echo's own comparison, which is where they appear on
+the page (verified above).
+
+The read behind it is **one small GET per run**, taken lazily at the first item that needs a
+link, cached for the rest of the run, and skipped entirely when the request budget is spent — a
+link must never cost the card it decorates. If it cannot be read, the link falls back to the two
+revisions the card compared (`beta._encore_pair_url`), i.e. exactly what shipped before, so a
+failed metadata read degrades the link instead of removing it. The card renders it as the
+standard `[Revision diff](…)` link: Encore for WuWa, gachabase for the other three
+(`beta._diff_url`).
+
+**Limitations.** The destination is a client-side page, not a documented JSON endpoint: the bot
+links to it and never scrapes it, so it adds no schedule and no content dependency — one
+metadata read, described above, is the only cost. It is not used to discover changed ids — WuWa
+revision scope still comes from the nanoka manifest. The query grammar is observation evidence
+from the site's own URLs, not a published contract; if Encore changes it, the link degrades to
+its landing page and the card content is unaffected. All four types are offered by the page
+itself, so a WuWa echo links its `echo` comparison; `term` (the glossary) is not a card kind and
+is refused rather than guessed.
 
 ### Encore beta API fallback for WuWa
 
