@@ -831,6 +831,17 @@ database can name, and its subtext already says which baseline it used. The card
 the standard `[Revision diff](…)` link, so every game carries a source comparison: Encore for
 WuWa, gachabase for the other three (`beta._diff_url`).
 
+**What the page answers 404 to (observed 2026-10-31).** Encore renders a failed comparison as
+`Comparison failed: API error: 404`, and it does so when the id is not present in *both* patches
+asked for — its patch pickers only list the patches it has indexed for that game version (under
+`3.8.0`: `Beta_3.8.1`, `Beta_3.8.2`, `Beta_3.8.3`; under `3.4.0`: `Release_3.4.13` only). A link is
+therefore only meaningful for a pair in which the item already existed, which is exactly what this
+module links: the URL is built from the *previous snapshot's* revision, so an item that is `[NEW]`
+in this revision has no previous revision and gets no link at all. A hand-written example using a
+placeholder id or a patch label the picker does not offer returns 404 for that reason, not because
+the query shape is wrong — the shape below was opened successfully against a real echo
+(`6000038`, Hooscamp, `Beta_3.8.2 vs Beta_3.8.3`).
+
 **Limitations.** This is a client-side page, not a documented JSON endpoint: the bot links to it
 and never scrapes it, so it adds no request, no schedule and no failure mode. It is not used to
 discover changed ids — WuWa revision scope still comes from the nanoka manifest. The query

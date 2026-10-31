@@ -21643,6 +21643,11 @@ def test_feature5_a_wuwa_echo_card_links_its_own_comparison():
     url = beta_mod._diff_url("ww", "relic", "6000041", "Diamondclaw", "3.8.2", "3.8.3")
     assert url.startswith("https://encore.moe/diff?") and "&route=echo&id=6000041&" in url, url
     assert "gachabase" not in url
+    # Encore renders `Comparison failed: API error: 404` when the id is not in BOTH patches
+    # (observed 2026-10-31). Only a pair the item actually existed in may be linked: a brand-new
+    # echo has no previous revision, and a released two-part build is not a `Beta_` patch.
+    assert beta_mod._diff_url("ww", "relic", "6000041", "Diamondclaw", "", "3.8.3") == ""
+    assert beta_mod._diff_url("ww", "relic", "6000041", "Diamondclaw", "3.7", "3.8.3") == ""
 
     equip = BetaEquipment(
         id="ww:6000041", name="Diamondclaw", category_label="Echoes", rarity=5,
