@@ -842,20 +842,26 @@ form is in the picker by construction, renders for character, weapon and echo al
 opened), and — because it needs no earlier patch — it also covers an item that is `[NEW]` in the
 revision being posted, which previously had no link at all.
 
-**A real delta when both betas are known.** The snapshot of the last posted card already records
-the `GameVer`/`ResVer` Encore served it (`provider_revision`), so when it exists the link compares
-*that* beta with the current one — what the card itself describes — instead of a patch with
-itself. Both labels are Encore's own, which is why the delta is safe. Cross-version pairs render
-too: `Beta_3.7.3 vs Beta_3.8.3` returned Hooscamp's skill and both echo sets on 2026-10-31, so a
-card spanning `3.8 → 4.0` keeps a working link. The only thing that fails is a label the site
-never published, and there are two shapes of that: a patch it has not crawled (`Beta_3.7.2`
-returned `No comparison data available` while `Beta_3.7.3` — the one that version's picker
-actually offers — rendered), and a version's own base, `Beta_<x.y.0>`, which is not a patch at
-all. Both are refused rather than linked, on either side of the comparison: a version that has
-only just started reports `ResVer` equal to `GameVer`, and that case degrades to the same-patch
-form instead of opening a page that says nothing.
+**Within one cycle, each beta is compared with the one before it.** A cycle is one game version
+(`GameVer`, e.g. `3.8.0`), and its betas are the patches Encore lists under that version:
+`Beta_3.8.1`, `Beta_3.8.2`, `Beta_3.8.3`. The card compares the beta it is posting with the beta
+last posted, both under the same `GameVer`: `3.8.1 → 3.8.2`, then `3.8.2 → 3.8.3`. Both were
+checked live on 2026-10-31 — Lily's Basic Attack Stage 1 changed between them, and the
+`3.8.2 → 3.8.3` page shows that change. `Beta_3.8.0`, the base the beta started from, is not in
+the picker, so the first beta of a cycle has nothing earlier to compare with and links to its
+own text.
 
-**Future versions need no code change.** `GameVer`/`ResVer` are read live on every run and the
+**Never across a game version.** A released build (3.7) or the previous cycle's beta is a
+different build, not an earlier patch of this one. `Beta_3.7.3 vs Beta_3.8.3` is that mistake,
+and the code does not produce it: a different `GameVer` on the previous side means the link
+and the card's content both start a fresh baseline. Encore's comparison is only meaningful
+inside one cycle.
+
+**Released characters use the same link.** The link works for any item id, not only new ones.
+A released character that later gets a buff or fix is still reported through the normal
+revision diff, and the link opens Encore's comparison for that item across the two betas.
+
+**Future versions: no code path names a version.** Verified only by simulation so far — same-cycle bumps and cycle changes both build the expected link through the card path (`test_feature5_a_new_game_version_links_across_the_cycle_change`). The live pages for a cycle that does not exist yet cannot be checked. `GameVer`/`ResVer` are read live on every run and the
 previous pair comes from the snapshot the same reader wrote, so `4.0.0` / `Beta_4.0.2` builds the
 same URL as `3.8.0` / `Beta_3.8.3`. Nothing in this path, or in the nanoka listing/detail paths or
 the gachabase changelog path, is pinned to a version: revisions come from the manifest and the
