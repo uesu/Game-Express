@@ -4384,6 +4384,13 @@ def _snapshot_comparison(previous: dict, current: dict) -> str:
     # a before/after comparison; a clipped suffix could contain the only real change.
     if not previous.get("content_signature") or previous.get("truncated") or current["truncated"]:
         return "snapshot"
+    # Encore snapshots record the (GameVer, ResVer) they were read at. Across a game-version
+    # boundary the earlier build is a different cycle, so it is a new baseline, not a before/after.
+    prev_rev = previous.get("provider_revision") or []
+    cur_rev = current.get("provider_revision") or []
+    if (previous.get("provider") == "encore" and current.get("provider") == "encore"
+            and len(prev_rev) >= 1 and len(cur_rev) >= 1 and str(prev_rev[0]) != str(cur_rev[0])):
+        return "snapshot"
     return "diff"
 
 
@@ -5005,11 +5012,12 @@ def _encore_diff_url(item_id: str, route: str, game_version: str, res_version: s
     if not isinstance(previous, (list, tuple)) or len(previous) < 2:
         previous = ("", "")
     prev_game, prev_res = (str(previous[0] or "").strip(), str(previous[1] or "").strip())
-    # Observed 2026-10-31: `Beta_3.8.0` (the 3.8 base, never offered by its picker) answers
-    # `No comparison data available`, so a previous pair whose ResVer equals its GameVer is not
-    # named. This is only the one observed base; a new cycle's first label is not yet verified.
+    # A change is only ever between betas of ONE cycle: the same GameVer on both sides is the
+    # base the beta started from. A previous beta from another game version (3.7 released vs a
+    # 3.8 beta) is a different build, not an earlier patch of this one — so it is never named.
+    # `Beta_<GameVer>` (the base) is not a patch the picker offers (observed 2026-10-31).
     if (_ENCORE_VERSION_RE.fullmatch(prev_game) and _ENCORE_VERSION_RE.fullmatch(prev_res)
-            and prev_res != prev_game
+            and prev_game == game and prev_res != prev_game
             and (prev_game, prev_res) != (game, res)):
         # Two betas the site has both published; across versions too, which the page renders.
         return (
