@@ -21678,11 +21678,89 @@ def test_feature5_encore_diff_link_pins_the_patch_encore_has_indexed():
     assert beta_mod._encore_snapshot_beta(
         {"provider": "encore", "provider_revision": ["3.8.0", "3.8.1", "9162983"]}
     ) == ("3.8.0", "3.8.1")
+    # A version's own base is not a published beta patch: `No comparison data available`.
+    assert beta_mod._encore_diff_url("6000038", "echo", "3.8.0", "3.8.0") == ""
+    assert beta_mod._encore_diff_url("6000038", "echo", "4.0.0", "4.0.0") == ""
+    # …on either side of the comparison.
+    assert "firstVer=Beta_3.8.3&secondVer=Beta_3.8.3" in beta_mod._encore_diff_url(
+        "6000038", "echo", "3.8.0", "3.8.3", ("3.8.0", "3.8.0"))
+    # A malformed previous pair must degrade, never raise into build_patch and cost a card.
+    for broken in (None, (), ("3.8.0",), "3.8.0", 5, {"GameVer": "3.8.0"}):
+        assert beta_mod._encore_diff_url(
+            "6000038", "echo", "3.8.0", "3.8.3", broken).endswith(
+            "&route=echo&id=6000038&lang=en"), broken
     # No Encore beta build, no link: an unusable patch label is exactly what 404s.
     for game, res in (("", "3.8.3"), ("3.8.0", ""), ("3.7", "3.8.3"), ("live", "3.8.3"),
                       ("3.8.0", "3.8")):
         assert beta_mod._encore_diff_url("6000215", "echo", game, res) == "", (game, res)
     assert beta_mod._encore_diff_url("", "echo", "3.8.0", "3.8.3") == ""
+
+
+def test_feature5_a_second_beta_links_the_two_betas_the_card_just_compared():
+    """The link on a re-posted item is a real before/after, built from data we already keep.
+
+    The snapshot of the last posted card records the beta Encore served it, so the next card can
+    name both betas in the comparison instead of a patch against itself. First card: same-patch
+    (there is no earlier beta to name). Second card, one beta later: the delta. Both forms were
+    opened against the live site on 2026-10-31.
+    """
+    import copy
+
+    from gamexpress import beta as beta_mod
+    from gamexpress.state import State
+
+    class AdvancingFetcher:
+        resver = "3.8.1"
+        changed = False
+
+        async def get_json(self, url, **_kw):
+            if "/new?" in url:
+                # The shape `/new?v=Beta` really returns, which is what the link is built from.
+                return [{"GameVer": "3.8.0", "ResVer": self.resver, "Changelist": "9280959"}]
+            if "/character/" in url:
+                raw = copy.deepcopy(_beta_json("encore_lily_live.json"))
+                if self.changed and raw.get("Skills"):
+                    raw["Skills"][0]["SkillDescribe"] = "Deals **999%** Spectro DMG."
+                return raw
+            return None
+
+        async def verify_media(self, _url):
+            return False
+
+    manifest = {"ww": {"latest": "3.8.1", "available": ["3.8.1"],
+                       "new": {"character": [1512], "weapon": [], "echo": []}}}
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _beta_ctx(Path(tmp) / "state.json", AdvancingFetcher(),
+                        BETA_ENABLED="1", games=["wuwa"])
+        first = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest,
+                                                beta_mod._budget(ctx)))
+        assert len(first.characters) == 1
+        # Nothing posted yet, so only the current beta can be named — twice.
+        assert first.characters[0].diff_url == (
+            "https://encore.moe/diff?firstGameVer=3.8.0&secondGameVer=3.8.0"
+            "&firstVer=Beta_3.8.1&secondVer=Beta_3.8.1&route=character&id=1512&lang=en"
+        ), first.characters[0].diff_url
+        # The snapshot really carries what the next card reads.
+        snap = first.snapshots[first.characters[0].id]
+        assert snap["provider"] == "encore"
+        assert snap["provider_revision"][:2] == ["3.8.0", "3.8.1"]
+
+        beta_mod._settle_beta_patch(ctx, ctx.state.beta_record("wuwa"), first, status="posted")
+        ctx.state.save()
+
+        AdvancingFetcher.resver = "3.8.3"
+        AdvancingFetcher.changed = True
+        manifest["ww"]["latest"] = "3.8.3"
+        manifest["ww"]["available"].append("3.8.3")
+        ctx.state = State.load(ctx.settings.state_path)
+        second = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest,
+                                                 beta_mod._budget(ctx)))
+
+    assert len(second.characters) == 1
+    assert second.characters[0].diff_url == (
+        "https://encore.moe/diff?firstGameVer=3.8.0&secondGameVer=3.8.0"
+        "&firstVer=Beta_3.8.1&secondVer=Beta_3.8.3&route=character&id=1512&lang=en"
+    ), second.characters[0].diff_url
 
 
 def test_feature5_a_wuwa_echo_card_links_its_own_comparison():

@@ -836,20 +836,24 @@ observed 2026-10-31 against real ids:
 Under `3.4.0` its picker offers `Release_3.4.13` only, so `Beta_3.4.0`/`Beta_3.4.1` — labels
 nobody can choose — also answer 404. **Nanoka's revision numbers are not that list**, so the card
 does not guess with them: `beta._encore_diff_url` builds the query from Encore's *own* current
-beta, the `GameVer`/`ResVer` pair `/new?v=Beta` reports (`3.8.0` / `3.8.3` as of this capture),
-and compares that patch with itself. That form is in the picker by construction, renders for
-character, weapon and echo alike (all three opened), and — because it needs no earlier patch —
-it also covers an item that is `[NEW]` in the revision being posted, which previously had no
-link at all.
+beta, the `GameVer`/`ResVer` pair `/new?v=Beta` reports (`3.8.0` / `3.8.3` as of this capture).
+With no earlier beta to name (first post of an item) it compares that patch with itself; that
+form is in the picker by construction, renders for character, weapon and echo alike (all three
+opened), and — because it needs no earlier patch — it also covers an item that is `[NEW]` in the
+revision being posted, which previously had no link at all.
 
 **A real delta when both betas are known.** The snapshot of the last posted card already records
 the `GameVer`/`ResVer` Encore served it (`provider_revision`), so when it exists the link compares
 *that* beta with the current one — what the card itself describes — instead of a patch with
 itself. Both labels are Encore's own, which is why the delta is safe. Cross-version pairs render
 too: `Beta_3.7.3 vs Beta_3.8.3` returned Hooscamp's skill and both echo sets on 2026-10-31, so a
-card spanning `3.8 → 4.0` keeps a working link. An invalid label is the *only* thing that fails
-here: `Beta_3.7.2` returned `No comparison data available` while `Beta_3.7.3` — the one that
-version's picker actually offers — rendered.
+card spanning `3.8 → 4.0` keeps a working link. The only thing that fails is a label the site
+never published, and there are two shapes of that: a patch it has not crawled (`Beta_3.7.2`
+returned `No comparison data available` while `Beta_3.7.3` — the one that version's picker
+actually offers — rendered), and a version's own base, `Beta_<x.y.0>`, which is not a patch at
+all. Both are refused rather than linked, on either side of the comparison: a version that has
+only just started reports `ResVer` equal to `GameVer`, and that case degrades to the same-patch
+form instead of opening a page that says nothing.
 
 **Future versions need no code change.** `GameVer`/`ResVer` are read live on every run and the
 previous pair comes from the snapshot the same reader wrote, so `4.0.0` / `Beta_4.0.2` builds the
