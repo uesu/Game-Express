@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Beta: moving the beta channel no longer silences the feature](CHANGELOG.md#2026-10-30--beta-moving-the-beta-channel-no-longer-silences-the-feature).
+Latest: [Beta: ZZZ 3.4.2 card polish (subtext, placeholder names)](CHANGELOG.md#2026-11-01--beta-zzz-342-card-polish-subtext-placeholder-names).
+
+Previous: [Beta: moving the beta channel no longer silences the feature](CHANGELOG.md#2026-10-30--beta-moving-the-beta-channel-no-longer-silences-the-feature).
 
 Previous: [Beta: direction follows the kit, and mixed-build revisions say so](CHANGELOG.md#2026-10-30--beta-direction-follows-the-kit-and-mixed-build-revisions-say-so).
 
