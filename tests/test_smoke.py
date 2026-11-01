@@ -19649,21 +19649,25 @@ def test_feature5_late_changelog_entries_are_delivered_for_a_settled_revision():
         assert len(quiet.calls) <= 1
 
 
-_HOTFIX_CHANGELOG_MD = """# CHANGELOG - v3.4.X
+_HOTFIX_CHANGELOG_MD = r"""# CHANGELOG - v3.4.X
 
-## v3.4.2 Rev. 20053876 \\| 1st November 2026
+## v3.4.2 Rev. 20053876 \| 1st November 2026
 
 ### Agents
 
 UPDATED
 
-[![](https://i.gachabase.net/aaa/q:50/f:webp/plain/zzz/assets/a.png)\\\\\\n\\\\\\nJu Fufu](https://zzz.gachabase.net/agents/1391/ju-fufu/beta?lang=en) [See Changes](https://zzz.gachabase.net/diff/agents/1391/ju-fufu?prev=beta_3.4.2_20052336&cur=beta_3.4.2_20053876&lang=en)
+[![](https://i.gachabase.net/aaa/q:50/f:webp/plain/zzz/assets/a.png)\
+\
+Ju Fufu](https://zzz.gachabase.net/agents/1391/ju-fufu/beta?lang=en) [See Changes](https://zzz.gachabase.net/diff/agents/1391/ju-fufu?prev=beta_3.4.2_20052336&cur=beta_3.4.2_20053876&lang=en)
 
 UPDATED
 
-[![](https://i.gachabase.net/bbb/q:50/f:webp/plain/zzz/assets/b.png)\\\\\\n\\\\\\nVivian](https://zzz.gachabase.net/agents/1331/vivian/beta?lang=en) [See Changes](https://zzz.gachabase.net/diff/agents/1331/vivian?prev=beta_3.4.2_20052336&cur=beta_3.4.2_20053876&lang=en)
+[![](https://i.gachabase.net/bbb/q:50/f:webp/plain/zzz/assets/b.png)\
+\
+Vivian](https://zzz.gachabase.net/agents/1331/vivian/beta?lang=en) [See Changes](https://zzz.gachabase.net/diff/agents/1331/vivian?prev=beta_3.4.2_20052336&cur=beta_3.4.2_20053876&lang=en)
 
-## v3.4.2 Rev. 20052336 \\| 1st November 2026
+## v3.4.2 Rev. 20052336 \| 1st November 2026
 
 No tracked changes detected for this revision.
 """
@@ -19742,7 +19746,55 @@ def test_feature5_hotfix_build_patch_runs_end_to_end_when_nanoka_has_no_detail_y
         # posted and the characters are deferred (retried on later polls), never a crash or a guess.
         assert any("changelog/beta" in u for u in fetcher.calls)
         assert patch is not None and patch.source_version == "3.4.2+20053876"
-        assert patch.characters == []
+        # Gachabase-only and no kit files: the card is built from the changelog row (Chinese -, English
+        # Changes + Full, the disclaimer), not deferred. Nothing is guessed from the missing kit.
+        assert [c.name for c in patch.characters] == ["Ju Fufu", "Vivian"]
+        ju = patch.characters[0]
+        assert ju.rarity == 0  # rarity not read: the card omits the rarity line
+        assert ju.page_url == "https://zzz.gachabase.net/agents/1391/ju-fufu/beta?lang=en"
+        lines = ju.overview.split("\n")
+        assert lines[0] == "|- Chinese: -"
+        assert lines[1].startswith("|- English: [Changes](https://zzz.gachabase.net/diff/agents/1391/ju-fufu?")
+        assert lines[1].endswith("([Full](https://zzz.gachabase.net/agents/1391/ju-fufu/beta?lang=en))")
+        assert "Disclaimer" in ju.subtext
+        assert ctx.warnings and all("deferred" not in w for w in ctx.warnings)
+
+
+def test_feature5_changelog_card_only_for_gachabase_only_revisions():
+    """If nanoka's manifest already lists the revision, a missing kit is a nanoka gap: it defers and
+    never posts a changelog card (that card would be posted again when the full kit arrives)."""
+    import tempfile
+
+    from gamexpress import beta as beta_mod
+
+    class ListedFetcher:
+        async def get_text(self, url, **_kw):
+            return _HOTFIX_CHANGELOG_MD if "changelog/beta" in url else None
+
+        async def get_json(self, url, **_kw):
+            if url == beta_mod.MANIFEST_URL:
+                return {"zzz": {"latest": "3.4.2+20053876",
+                                "available": ["3.3", "3.4.2+20049556", "3.4.2+20052336", "3.4.2+20053876"],
+                                "live": "3.3", "new": {}}}
+            return None
+
+        async def get_bytes(self, *_a, **_kw):
+            return None
+
+        async def verify_media(self, _url):
+            return True
+
+    manifest = {"zzz": {"latest": "3.4.2+20053876",
+                        "available": ["3.3", "3.4.2+20049556", "3.4.2+20052336", "3.4.2+20053876"],
+                        "live": "3.3", "new": {}}}
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _beta_ctx(Path(tmp) / "state.json", ListedFetcher(), BETA_ENABLED="1",
+                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
+        record = ctx.state.beta_record("zzz")
+        record["source_version"] = "3.4.2+20052336"
+        ctx.state.save()
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest, beta_mod._budget(ctx)))
+        assert patch is not None and patch.characters == []
         assert any("no kit data for id 1391; deferred" in w for w in ctx.warnings)
 
 
