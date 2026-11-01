@@ -1,5 +1,23 @@
 # Changelog — current entries
 
+## 2026-11-01 — Beta: ZZZ 3.4.2 card polish (subtext, placeholder names)
+
+- **A CN/CHS source note stays subtext.** The `-# 🌐 Values synced …` line on an equipment diff was
+  wrapped as a `[NEW]` bullet, so Discord printed the `-#` marker inside the bullet. `_tagged()`
+  keeps `-#` lines as subtext.
+- **A test name is never published as a rename.** The live Beta page for W-Engine 14166 carries the
+  literal effect title `Robin Test Engine`. The card printed `Effect renamed from ~~~~ → **Robin Test
+  Engine**`. `_real_effect_title()` treats a `Test` placeholder as no title; a real new name reads
+  `Effect name is now **…**.`
+- **Mixed-build note reads cleanly.** "this hotfix … more churn than a hotfix" became "this patch …
+  more churn than a typical hotfix".
+- Not changed: the `/w-engines/14160/14160/beta` link. It is gachabase's own canonical form for an
+  unnamed item (its 3.4.2 changelog links the same URL).
+- **Known gap, not fixed here:** when the gachabase changelog returns 403, the card uses the listing
+  fallback and can miss real 3.4.2 entries (Pyrois, Seth, Caesar, Bangboo 54024, Drive Discs 34300
+  and 34400).
+- Covered by `test_feature5_diff_lines_never_render_empty_bold_or_a_literal_subtext_marker`.
+
 ## 2026-10-30 — Beta: moving the beta channel no longer silences the feature
 
 - **Adding `DISCORD_WEBHOOK_BETA_<GAME>` after beta had been posting into that game's news channel
