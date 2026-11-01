@@ -218,8 +218,8 @@ cp -r --parents \
   /tmp/prod/
 
 find /tmp/prod -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
-find /tmp/prod -type f | wc -l     # expect 44 (42 runtime + 2 policy files)
-                                  # 46 if you also copied the two python-bump files
+find /tmp/prod -type f | wc -l     # expect 45 (43 runtime + 2 policy files)
+                                  # 47 if you also copied the two python-bump files
 ```
 
 **Don't trust that number on its own — verify the package instead.** The count goes stale the
