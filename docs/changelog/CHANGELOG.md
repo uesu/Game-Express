@@ -1,5 +1,22 @@
 # Changelog — current entries
 
+## 2026-11-01 — Beta: per-item probe when the changelog is blocked
+
+- **The 403 gap is closed in code, pending one live run.** With the gachabase changelog blocked, the
+  card used to see only listing-changed items, so real 3.4.2 entries (Pyrois, Seth, Caesar, Bangboo
+  54024, Drive Discs 34300 and 34400) were missed. `_probe_listing_changes()` now compares every
+  listed item's detail between the previous build and this one, with icon and image keys ignored.
+- **Own cap.** `BETA_PROBE_MAX_REQUESTS = 400` per blocked revision, separate from the run-wide
+  `BETA_MAX_REQUESTS`. The result is saved on the revision record (`probe`), so a deferred revision
+  does not re-probe. Items already delivered are skipped.
+- **Stated, not silent.** The run summary says `per-item probe compared N items (U unreadable)`, or
+  `checked X of Y items` when the cap is hit.
+- **Not verified live.** The sandbox cannot reach nanoka from the bot's runtime, so the probe is
+  covered by offline tests only. Check the next blocked-changelog run for the probe count and for
+  any unexpected cards from churn in the detail files.
+- Covered by `test_probe_view_ignores_art_keys_but_not_game_text` and
+  `test_probe_finds_changed_items_by_detail_and_counts_unreadable_sides`.
+
 ## 2026-11-01 — Beta: ZZZ 3.4.2 card polish (subtext, placeholder names)
 
 - **A CN/CHS source note stays subtext.** The `-# 🌐 Values synced …` line on an equipment diff was
@@ -13,7 +30,7 @@
   more churn than a typical hotfix".
 - Not changed: the `/w-engines/14160/14160/beta` link. It is gachabase's own canonical form for an
   unnamed item (its 3.4.2 changelog links the same URL).
-- **Known gap, not fixed here:** when the gachabase changelog returns 403, the card uses the listing
+- **Known gap (closed by the next entry):** when the gachabase changelog returns 403, the card uses the listing
   fallback and can miss real 3.4.2 entries (Pyrois, Seth, Caesar, Bangboo 54024, Drive Discs 34300
   and 34400).
 - Covered by `test_feature5_diff_lines_never_render_empty_bold_or_a_literal_subtext_marker`.
