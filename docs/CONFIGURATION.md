@@ -675,7 +675,14 @@ Where the data comes from (`gamexpress/beta.py`, see [SOURCES.md](SOURCES.md#bet
   HTTP 403 / access-denied blocks degrade cleanly to nanoka's manifest without warning spam.
   The rendered page is only one of two views of the same data: when it cannot be read, the
   SvelteKit `/changelog/beta/__data.json` stream is parsed instead, and the per-build character /
-  weapon / relic listings are diffed so new, renamed or re-specced items are still found. A
+  weapon / relic listings are diffed so new, renamed or re-specced items are still found.
+  **When the changelog is blocked on every route**, the listings cannot say which skill text
+  changed, so a per-item probe compares each listed item's detail for the previous and the current
+  build (icon and image keys ignored). It has its own cap, `BETA_PROBE_MAX_REQUESTS` (400 per
+  revision, not `BETA_MAX_REQUESTS`); the result is saved on the revision, so a deferred revision
+  does not re-probe, and the run summary states how many items were checked. This is the one case
+  that fans out across every item; the no-fan-out rule below still holds whenever the changelog
+  is readable. A
   revision whose sections are not streamed at all is skipped rather than reported as "no
   changes", and the run summary records that coverage was narrower (`beta-changelog 0/3`,
   `beta-data 15/0` in the source counts) instead of quietly printing a shorter card.
