@@ -19746,56 +19746,20 @@ def test_feature5_hotfix_build_patch_runs_end_to_end_when_nanoka_has_no_detail_y
         # posted and the characters are deferred (retried on later polls), never a crash or a guess.
         assert any("changelog/beta" in u for u in fetcher.calls)
         assert patch is not None and patch.source_version == "3.4.2+20053876"
-        # Gachabase-only and no kit files: the card is built from the changelog row (Chinese -, English
-        # Changes + Full, the disclaimer), not deferred. Nothing is guessed from the missing kit.
-        assert [c.name for c in patch.characters] == ["Ju Fufu", "Vivian"]
-        ju = patch.characters[0]
-        assert ju.rarity == 0  # rarity not read: the card omits the rarity line
-        assert ju.page_url == "https://zzz.gachabase.net/agents/1391/ju-fufu/beta?lang=en"
-        lines = ju.overview.split("\n")
-        assert lines[0] == "|- Chinese: -"
-        assert lines[1].startswith("|- English: [Changes](https://zzz.gachabase.net/diff/agents/1391/ju-fufu?")
-        assert lines[1].endswith("([Full](https://zzz.gachabase.net/agents/1391/ju-fufu/beta?lang=en))")
-        assert "Disclaimer" in ju.subtext
-        assert ctx.warnings and all("deferred" not in w for w in ctx.warnings)
+        # Kit files are not on nanoka yet: nothing is guessed or posted from the changelog row alone.
+        # The character is deferred and retried on later polls until the kit is readable.
+        assert patch.characters == []
+        assert any("no kit data for id 1391; deferred" in w for w in ctx.warnings)
 
 
-def test_feature5_changelog_card_only_for_gachabase_only_revisions():
-    """If nanoka's manifest already lists the revision, a missing kit is a nanoka gap: it defers and
-    never posts a changelog card (that card would be posted again when the full kit arrives)."""
-    import tempfile
-
+def test_feature5_placeholder_tokens_never_reach_kit_text():
+    """nanoka's CN data carries `(Test1)` markers in descriptions (the Vivian card showed them)."""
     from gamexpress import beta as beta_mod
 
-    class ListedFetcher:
-        async def get_text(self, url, **_kw):
-            return _HOTFIX_CHANGELOG_MD if "changelog/beta" in url else None
-
-        async def get_json(self, url, **_kw):
-            if url == beta_mod.MANIFEST_URL:
-                return {"zzz": {"latest": "3.4.2+20053876",
-                                "available": ["3.3", "3.4.2+20049556", "3.4.2+20052336", "3.4.2+20053876"],
-                                "live": "3.3", "new": {}}}
-            return None
-
-        async def get_bytes(self, *_a, **_kw):
-            return None
-
-        async def verify_media(self, _url):
-            return True
-
-    manifest = {"zzz": {"latest": "3.4.2+20053876",
-                        "available": ["3.3", "3.4.2+20049556", "3.4.2+20052336", "3.4.2+20053876"],
-                        "live": "3.3", "new": {}}}
-    with tempfile.TemporaryDirectory() as tmp:
-        ctx = _beta_ctx(Path(tmp) / "state.json", ListedFetcher(), BETA_ENABLED="1",
-                        DISCORD_WEBHOOK_BETA=HOOK, games=["zzz"])
-        record = ctx.state.beta_record("zzz")
-        record["source_version"] = "3.4.2+20052336"
-        ctx.state.save()
-        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["zzz"], manifest, beta_mod._budget(ctx)))
-        assert patch is not None and patch.characters == []
-        assert any("no kit data for id 1391; deferred" in w for w in ctx.warnings)
+    assert beta_mod._drop_placeholder_tokens("(Test1)[普通攻击：落羽生花]造成的异常积蓄效率提升50%") == \
+        "[普通攻击：落羽生花]造成的异常积蓄效率提升50%"
+    assert beta_mod._drop_placeholder_tokens("TestKey_PlaceHolder Dash deals 50% DMG") == "Dash deals 50% DMG"
+    assert beta_mod._drop_placeholder_tokens("Normal Attack deals 50% DMG") == "Normal Attack deals 50% DMG"
 
 
 def test_feature5_released_agent_diffs_against_the_live_build_not_the_whole_kit():
