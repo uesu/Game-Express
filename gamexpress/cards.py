@@ -1138,7 +1138,8 @@ _HSR_STANDARD_PATHS = {
     "Nihility", "Preservation", "Abundance", "Remembrance", "Elation",
 }
 _BOLD_COMBAT_NUM_RE = re.compile(
-    r"(?<![\w\-\*~\[(#@/\.])("
+    # ASCII-only lookbehind: a CJK character before a value (`提升50%`) is a word boundary here.
+    r"(?<![A-Za-z0-9_\-\*~\[(#@/\.])("
     r"[+-]?\d+(?:\.\d+)?%(?:/[+-]?\d+(?:\.\d+)?%)+"
     r"|[+-]?\d+(?:\.\d+)?s?(?:/[+-]?\d+(?:\.\d+)?s?){2,}"
     r"|[+-]?\d+(?:\.\d+)?(?:%|s\b)"

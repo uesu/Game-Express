@@ -4653,9 +4653,12 @@ def _clone_sections_localized(sections: list[BetaSectionEntry], tag: str,
 
 
 def _clone_sections(sections: list[BetaSectionEntry], tag: str) -> list[BetaSectionEntry]:
+    # Every section copy goes through here (EN, CN-sourced, localized), so placeholders such as
+    # `(Test1)` are removed on the one path the card reads, not only in `_section_lines`.
     return [BetaSectionEntry(
-        title=section.title, category=section.category, tag=tag, meta=section.meta,
-        lines=list(section.lines), params=[dict(row) for row in section.params],
+        title=_drop_placeholder_tokens(section.title), category=section.category, tag=tag, meta=section.meta,
+        lines=[_drop_placeholder_tokens(str(x)) for x in section.lines],
+        params=[dict(row) for row in section.params],
         defs=list(section.defs), values_label=section.values_label,
     ) for section in sections]
 

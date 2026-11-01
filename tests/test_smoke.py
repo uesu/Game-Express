@@ -19752,6 +19752,43 @@ def test_feature5_hotfix_build_patch_runs_end_to_end_when_nanoka_has_no_detail_y
         assert any("no kit data for id 1391; deferred" in w for w in ctx.warnings)
 
 
+def test_feature5_cn_sourced_values_are_bold_like_en_and_placeholders_stay_off_the_card():
+    """CN-sourced kit text follows the same card format as EN: numbers bold (also when a CJK word
+    sits in front of them), arrows kept, bullets nested, and no `(Test1)` marker on the card."""
+    from gamexpress import beta as beta_mod
+    from gamexpress import cards
+    from gamexpress.config import load_games, load_settings
+    from gamexpress.models import BetaCharacter, BetaPatch, BetaSectionEntry
+
+    # A CJK character before a value is a word boundary, so the value is bolded (was skipped).
+    assert cards._bold_beta_numbers("提升50%；异常掌控提升30点") == "提升**50%**；异常掌控提升30点"
+    # EN formatting is unchanged.
+    assert cards._bold_beta_numbers("Deals 50% DMG; ~~30~~ → **40** Anomaly, 1.5s") == \
+        "Deals **50%** DMG; ~~30~~ → **40** Anomaly, **1.5s**"
+    # Strikethrough, links and inline code stay exactly as written.
+    assert cards._bold_beta_numbers("[Link 20%](https://a.b/20%)") == "[Link 20%](https://a.b/20%)"
+
+    cn_sec = BetaSectionEntry(title="Potential", category="Potential Awakening", tag="[NEW]",
+                              lines=["(Test1)[普通攻击：落羽生花]造成的异常积蓄效率提升50%；"])
+    copied = beta_mod._clone_sections([cn_sec], "[NEW]")
+    assert copied[0].lines == ["[普通攻击：落羽生花]造成的异常积蓄效率提升50%；"]
+
+    game = load_games()["zzz"]
+    en_sec = BetaSectionEntry(title="Potential", category="Potential Awakening", tag="[CHANGED]",
+                              lines=["Deals 50% DMG; ~~30~~ → **40** Anomaly"])
+    char = BetaCharacter(name="Vivian", rarity=5, element="Ether", role="Anomaly",
+                         sections=[en_sec] + copied, diff_url="", page_url="", is_new=False)
+    patch = BetaPatch(game_key="zzz", beta_version="3.4.2", rev_label="v3.4.2 Rev. 20052336",
+                      rev_id="20052336", source_version="3.4.2+20052336", characters=[char])
+    body = "\n".join(
+        c.get("content", "") for pl in cards.beta_payloads(game, patch, load_settings())
+        for comp in pl["components"][0]["components"] for c in [comp] if c.get("type") == 10)
+    assert "(Test1)" not in body
+    assert "* **[Potential]:**" in body
+    assert "    * **[CHANGED]** Deals **50%** DMG; ~~30~~ → **40** Anomaly" in body
+    assert "    * **[NEW]** [普通攻击：落羽生花]造成的异常积蓄效率提升**50%**；" in body
+
+
 def test_feature5_placeholder_tokens_never_reach_kit_text():
     """nanoka's CN data carries `(Test1)` markers in descriptions (the Vivian card showed them)."""
     from gamexpress import beta as beta_mod
