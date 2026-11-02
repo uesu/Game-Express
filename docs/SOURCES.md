@@ -766,9 +766,8 @@ build; only the skill table is shown.` `{0}`-style placeholders in the prose are
 values already resolved for that row, so a filled number never shows as `{0}` or as the
 `[value unavailable]` fallback. A cooldown is whatever the build says it is: a literal (`28s` on
 Ariel, printed with the rest) or a bare key (`Bangboo_ActiveSkill_Property_CD_54024` on Charley,
-dropped without disturbing the rows after it). A `<zh>` cross-check cannot fill a keyed slot:
-`_reconcile_en_with_zh_equipment` resolves `[value unavailable]` / `[TBD]` / `???`, which a key is
-not.
+dropped without disturbing the rows after it). CN text is never merged into EN text: a keyed slot stays as it is, and a CN-only change is posted
+as CN text with a note.
 
 Stats are the page's max-promotion line, and only what the file states exactly: `break_stun` 103 →
 Impact, `crit` 500 + the max-rank `extra` 4500 → `5,000 / 100` = **50%** CRIT Rate, `crit_dmg` →

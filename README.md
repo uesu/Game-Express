@@ -296,8 +296,9 @@ that game's own channel (`DISCORD_WEBHOOK_BETA_<GAME>` → `DISCORD_WEBHOOK_BETA
   HTML both identify changed existing items; HTTP 403 / access-denied responses fall back cleanly
   to nanoka's active-beta manifest without warning spam. When an EN beta build lags behind CN
   (`???`, `[TBD]`, `/-` incomplete ratios, unchanged EN parameters on a new revision, or an
-  upstream changelog note advising to double-check Chinese), the monitor cross-checks `/zh/`
-  within the bounded request ceiling and reconciles authoritative CN values cleanly.
+  upstream changelog note advising to double-check Chinese), the monitor reads `/zh/` within the
+  bounded request ceiling to decide whether anything changed. When only CN changed, the card shows
+  the CN text as it is, with a note. CN text is never merged into EN text.
 - **A source comparison on every card.** Each changed item links its own revision diff — Encore's
   version comparison for WuWa (`/diff?firstVer=Beta_3.8.1&secondVer=Beta_3.8.3&route=character&id=1512`),
   gachabase's for Genshin, Star Rail and ZZZ — built only from the two patches the card compared.

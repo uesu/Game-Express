@@ -1,5 +1,19 @@
 # Changelog — current entries
 
+## 2026-11-02 — Beta: translation removed; CN shown as CN; source order
+
+- **Glossary build removed.** The `build-glossary` command, its workflow, module, and glossary data
+  files are gone.
+- **No CN→EN translation.** The glossary lookup and the EN←CN value and placeholder merge are gone.
+  When only CN changed, the card shows the CN text with a note.
+- **Source order.** nanoka is primary. When nanoka is silent: Encore (WuWa) second, Gachabase third.
+  An incomplete Gachabase kit still does not post.
+- **Diagnostics.** When every image candidate is rejected, the log records each URL and reason.
+- **Test-named items.** A source item named with "Test" posts with a placeholder warning.
+- **Coverage gap.** Six tests whose only subject was the EN←CN merge were removed. Hotfix,
+  SvelteKit, WuWa baseline and legacy-state paths lost their test coverage with them.
+- **Not verified live.** No dry run was done for this change.
+
 ## 2026-11-01 — Beta: per-item probe when the changelog is blocked
 
 - **The 403 gap is closed in code, pending one live run.** With the gachabase changelog blocked, the
