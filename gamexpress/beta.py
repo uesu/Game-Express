@@ -6431,6 +6431,22 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
         watch_text = await _changelog_watch_text(ctx, game)
     watch_revisions = _parse_changelog_text(watch_text, _changelog_url(game))
     changelog_extra = _changelog_beta_versions(watch_revisions)
+    # Encore is a second update database for WuWa, read on every poll while the beta cycle is open
+    # (a finished same-cycle beta is never re-read, same rule as the gachabase watch above). Its
+    # beta build is an extra candidate, and the same read answers the kit lookup later
+    # (`encore_beta_pair`), so one poll costs one request. It does not come out of the card budget.
+    encore_beta: tuple[str, str] = ("", "")
+    encore_beta_read = False
+    if ns == "ww" and _beta_cycle_open(m_game, live_cycle):
+        for api in (ENCORE_API, ENCORE_BACKUP_API):
+            row = _encore_metadata(await ctx.fetcher.get_json(
+                f"{api}/new?v=Beta", source="beta-encore", retries=0))
+            if row:
+                encore_beta = (row[0], row[1])
+                break
+        encore_beta_read = True
+        if encore_beta[1] and _is_beta_version_string(encore_beta[1]):
+            changelog_extra = changelog_extra + [encore_beta[1]]
     version = _next_data_version(record, m_game, live_cycle=live_cycle,
                                  extra_versions=changelog_extra)
     late_version = ""
@@ -6669,9 +6685,6 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
         if deferred_reason:
             ctx.warnings.append(f"{game.short} beta: Encore build changed {deferred_reason}; deferred")
         return None
-
-    encore_beta: tuple[str, str] = ("", "")
-    encore_beta_read = False
 
     async def encore_beta_pair() -> tuple[str, str]:
         """Encore's own current beta (GameVer, ResVer), read at most once per run.
