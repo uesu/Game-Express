@@ -1499,6 +1499,38 @@
         "character/1341",
         "character/1421"
       ]
+    },
+    {
+      "zh": "虎啸",
+      "en": "Tiger's Roar",
+      "support": 1,
+      "items_with_term": 0,
+      "example_items": [],
+      "source": "Ju Fufu Core Passive state; Fandom/Prydwen/Baidu EN"
+    },
+    {
+      "zh": "恶虎七式",
+      "en": "Tiger Seven Forms",
+      "support": 1,
+      "items_with_term": 0,
+      "example_items": [],
+      "source": "Fandom: 冲刺攻击：恶虎七式・山君鼎戏 = Dash Attack: Tiger Seven Forms - Mountain King's Game"
+    },
+    {
+      "zh": "山君鼎戏",
+      "en": "Mountain King's Game",
+      "support": 1,
+      "items_with_term": 0,
+      "example_items": [],
+      "source": "Fandom Dash Attack name"
+    },
+    {
+      "zh": "虎威",
+      "en": "Hu Wei",
+      "support": 1,
+      "items_with_term": 0,
+      "example_items": [],
+      "source": "Ju Fufu companion (name from 虎威, Grokipedia); EN usage Fandom/Icy Veins"
     }
   ],
   "review": {
