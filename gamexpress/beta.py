@@ -4109,6 +4109,13 @@ def _changelog_beta_versions(revisions: list[dict]) -> list[str]:
     return out
 
 
+def _walk_key(version: str) -> tuple:
+    """Sort key for beta builds: dotted numbers first, then the build number when present."""
+    nums = tuple(int(n) for n in re.findall(r"\d+", _display_version(version)))
+    build = _revision_build(version) or 0
+    return (nums, build)
+
+
 def _next_data_version(
     record: dict,
     m_game: dict,
@@ -4145,6 +4152,12 @@ def _next_data_version(
     if last in versions and not extras:
         pos = versions.index(last)
         return versions[pos + 1] if pos + 1 < len(versions) else ""
+    if last in versions:
+        # Extra candidates (Encore/gachabase builds the manifest does not list yet) can be newer
+        # than the last delivered build, so the walk follows version order, not list order.
+        ordered = sorted(versions, key=_walk_key)
+        pos = ordered.index(last)
+        return ordered[pos + 1] if pos + 1 < len(ordered) else ""
     previous_build = _revision_build(last)
     if previous_build is not None:
         newer = [(idx, _revision_build(version), version) for idx, version in enumerate(versions)
@@ -6656,7 +6669,12 @@ async def build_patch(ctx, game: Game, manifest: dict, budget: dict) -> BetaPatc
 
     async def encore_fallback(kind: str, item_id: str) -> dict | None:
         nonlocal requests, encore_revision
-        if ns != "ww" or kind not in ("character", "weapon") or version != m_game.get("latest"):
+        # Encore is its own source: its beta build is readable whether or not nanoka lists it yet.
+        # `version` must be nanoka's latest or Encore's own beta build (the metadata check below
+        # still requires the build to match exactly, so no other version can use Encore data).
+        if ns != "ww" or kind not in ("character", "weapon"):
+            return None
+        if version != m_game.get("latest") and version != encore_beta[1]:
             return None
         deferred_reason = ""
         for api in (ENCORE_API, ENCORE_BACKUP_API):

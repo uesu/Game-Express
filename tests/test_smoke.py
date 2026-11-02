@@ -18236,6 +18236,54 @@ def test_feature5_encore_secondary_api_recovers_with_identical_cards_and_durable
         assert all(url.endswith("/new?v=Beta") for url in ctx.fetcher.calls)
 
 
+def test_feature5_encore_only_build_posts_then_settles_quietly():
+    """Encore's own beta build (3.8.4) posts from Encore data even before nanoka lists it.
+
+    The walk follows version order past the manifest's latest, the card reads Encore for that
+    build, and once settled the same build is never re-read or re-posted.
+    """
+    from gamexpress import beta as beta_mod
+
+    manifest = {"ww": {"latest": "3.8.3", "live": "3.7", "available": ["3.7", "3.8.1", "3.8.3"],
+                       "new": {"character": [1512], "weapon": [21030076], "echo": []}}}
+
+    class EncoreOnly:
+        def __init__(self):
+            self.calls = []
+
+        async def get_json(self, url, **_kw):
+            self.calls.append(url)
+            if url.endswith("/manifest.json"):
+                return manifest
+            if url.startswith("https://api-v2.encore.moe/api/en/new?"):
+                return [{"GameVer": "3.8.0", "ResVer": "3.8.4", "Changelist": "1"}]
+            if url.startswith("https://api-v2.encore.moe/api/en/character/"):
+                return _beta_json("encore_lily_live.json")
+            if url.startswith("https://api-v2.encore.moe/api/en/weapon/"):
+                return _beta_json("encore_weapon_live.json")
+            return None
+
+        async def verify_media(self, _url):
+            return False
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _beta_ctx(Path(tmp) / "state.json", EncoreOnly(), BETA_ENABLED="1", games=["wuwa"])
+        ctx.state.beta_record("wuwa")["source_version"] = "3.8.3"
+        patch = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, beta_mod._budget(ctx)))
+        assert patch is not None and patch.source_version == "3.8.4"
+        assert [c.name for c in patch.characters] == ["Lily"]
+        # The kit comes from Encore's own build; nanoka has no 3.8.4 data to supply it.
+        assert any("api-v2.encore.moe/api/en/character/1512" in u for u in ctx.fetcher.calls)
+        beta_mod._settle_beta_patch(ctx, ctx.state.beta_record("wuwa"), patch, status="posted")
+        ctx.state.save()
+        ctx.state = State.load(Path(tmp) / "state.json")
+        ctx.fetcher.calls.clear()
+        again = asyncio.run(beta_mod.build_patch(ctx, GAMES["wuwa"], manifest, beta_mod._budget(ctx)))
+        assert again is None
+        # Settled: only the every-poll Encore beta-build read happens, never kit or image data.
+        assert all(url.endswith("/new?v=Beta") for url in ctx.fetcher.calls)
+
+
 def test_feature5_encore_secondary_api_keeps_version_identity_and_request_limits():
     from gamexpress import beta as beta_mod
 
