@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Beta: per-item probe when the changelog is blocked](CHANGELOG.md#2026-11-01--beta-per-item-probe-when-the-changelog-is-blocked).
+Latest: [Beta: translation removed; CN shown as CN; source order](CHANGELOG.md#2026-11-02--beta-translation-removed-cn-shown-as-cn-source-order).
+
+Previous: [Beta: per-item probe when the changelog is blocked](CHANGELOG.md#2026-11-01--beta-per-item-probe-when-the-changelog-is-blocked).
 
 Previous: [Beta: ZZZ 3.4.2 card polish (subtext, placeholder names)](CHANGELOG.md#2026-11-01--beta-zzz-342-card-polish-subtext-placeholder-names).
 
