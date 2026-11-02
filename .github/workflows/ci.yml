@@ -81,6 +81,7 @@ jobs:
           python tests/test_gachabase_kit.py
           python tests/test_gachawiki_placeholder.py
           python tests/test_reddit_intake.py
+          python tests/test_reddit_usecases.py
 
       - name: Card preview renders (previews/index.html)
         run: python -m gamexpress preview --out /tmp/previews > /dev/null
