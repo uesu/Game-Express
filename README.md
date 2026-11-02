@@ -417,6 +417,7 @@ webhooks. They are independent features, even if you choose the same destination
 | `DISCORD_WEBHOOK_CODES_ANANTA` | ANANTA codes |
 | `NITTER_RSS_TOKEN` | *optional* — the same token as News-Express; unlocks **both** `nitter.miningtcup.me` (X) and `redlib.miningtcup.me` (Reddit/Redlib) |
 | `REDDIT_FEED_TOKEN` | *optional* — from `old.reddit.com/prefs/feeds/`: paste `<40-char-key>&user=<your_username>` or any full `.rss?feed=…` / `.json?feed=…` link on `old.reddit.com`, `www.reddit.com`, or `reddit.com` (same as News-Express; drives `[0] www.reddit.com` → `[1] old.reddit.com` fast path + `.json` fallback) |
+| `DISCORD_BOT_TOKEN` | *optional, Reddit intake reader (2026-11-02)* — token of a Discord bot that is in your server with **View Channels** + **Read Message History** on the intake channel and the **Message Content Intent** enabled; read-only (REST `GET /channels/<id>/messages`), nothing is ever written through it. Same secret name as News-Express, so one bot serves both repos. With Variable `INTAKE_CHANNEL_ID` it makes the Devvit relay the primary Reddit listing; unset = the redlib/reddit.com chain exactly as before |
 | `BUMP_PAT` | *required only where the Python bump workflow is installed* — a repository-scoped PAT with **Contents, Pull requests and Workflows: read and write**, subject to token type and repository policy. See [docs/PYTHON_VERSION.md](docs/PYTHON_VERSION.md#publication-credentials) |
 
 Create only destinations you intend to use; ANANTA is not a verified official-news adapter.

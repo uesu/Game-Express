@@ -169,8 +169,8 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
    the `test` job is a required check.
 12. **No new runtime dependencies** without a very good reason. The whole app runs on `aiohttp`,
    `feedparser`, `python-dotenv`.
-13. **Never commit secrets.** Webhooks, `NITTER_RSS_TOKEN` and `REDDIT_FEED_TOKEN` are repository
-   secrets; the state file stores only a 12-char non-reversible webhook fingerprint.
+13. **Never commit secrets.** Webhooks, `NITTER_RSS_TOKEN`, `REDDIT_FEED_TOKEN` and the intake
+   reader's `DISCORD_BOT_TOKEN` are repository secrets (channel ids are Variables, never files); the state file stores only a 12-char non-reversible webhook fingerprint.
 14. **No LICENSE file is wanted** — this is a personal-use repository (owner's decision,
     2026-10-03). Do not add one "for completeness".
 15. **A posted Special Program card keeps its announcement.** The first post that gives an air time
