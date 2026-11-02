@@ -84,6 +84,7 @@ jobs:
       - name: Pre-sync gate — schedule regressions + gacha-wiki placeholder guard
         run: |
           python tests/test_schedule_epithet_and_settled.py
+          python tests/test_gachabase_kit.py
           python tests/test_gachawiki_placeholder.py
 
       - name: Pre-sync gate — card preview renders
