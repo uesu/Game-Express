@@ -417,6 +417,42 @@ page fetcher, and so were the ennead calendars. The production reachability of t
 | genshin.dev | character/game data API, not schedules or codes |
 | gachabase.net · nanoka.cc · sr.yatta.moe · lunaris.moe · ambr.top | databases, listed in [CREDITS.md](CREDITS.md#community-databases-and-research). No public schedule/banner API was verified, so **banner names come from official notices, `Kitsudock-data` (`hub.json`), the `api.ennead.cc` calendars, the Fandom wikis, or `config/overrides.json`** |
 
+## Reddit intake reader — the Devvit relay is the listing (2026-11-02)
+
+`sources/reddit_intake.py` sits in front of the fleet below. The *Gaming Express* Devvit app
+(News-Express `devvit/gaming-express`, installed on Reddit's Developer Platform under the owner's
+account) polls `/new` of the six official subreddits plus the verified publisher accounts with
+Reddit's own API every 5 minutes and writes one fenced-JSON record per new post (`id, sub, title,
+permalink, url, created, author, flair, distinguished, spoiler, nsfw, score, comments, removed,
+xpost, media[], body, bodyTruncated`) into a private Discord channel shared with News-Express.
+
+- **One read per run** (`GET /channels/<INTAKE_CHANNEL_ID>/messages`, bot token in the
+  `Authorization` header only, newest-first `before=` paging, ≤ 8 × 100 messages, 6 h window);
+  messages that are not relay records (other bots) are skipped. `RedditClient._gather_listing()`
+  asks the reader first: a healthy relay (`ok` = at least one record, newest record younger than
+  `INTAKE_STALE_SECONDS`) with records for the target **is** the listing — 0 fleet requests. Any
+  other state, or a target with no record in the window, runs the fleet exactly as before.
+- **Same dict shape** as `parse_reddit_json()` / `parse_redlib_html()` (`images`, `videos` as
+  `v.redd.it/<id>/CMAF_720.mp4` for the muxed proxy chain, `links`, `flair`, `distinguished`), so
+  the official rule, `items()`, `program_post()` and `community_codes()` are untouched; relay
+  entries additionally carry `relay: True`, `body_truncated` (bodies above the relay's message
+  budget arrive cut; `resolve_post()` fills them in as for any empty-text entry) and
+  `relay_complete` (relay 0.0.8: nothing cut, parent named — such an entry IS the post, and
+  `items()` / `program_post()` never call `resolve_post()` for it).
+- **Settings** (shared names with News-Express, passed through `GE_SECRETS_JSON`/`GE_VARS_JSON`):
+  secret `DISCORD_BOT_TOKEN`, Variables `INTAKE_CHANNEL_ID`, `INTAKE_READER=primary|shadow|off`,
+  `INTAKE_STALE_SECONDS=1800`, `INTAKE_LOOKBACK_SECONDS=21600`. The step summary carries one
+  `📡 reddit intake: …` line whenever Reddit was consulted.
+- **Complete source (relay 0.0.7 / 0.0.8):** each record message also carries `record.json` (full
+  body, every media URL, crosspost parent) — fetched from `cdn.discordapp.com` only for cut
+  records and crossposts, ≤ 10 per run, no token — and the relay re-checks delivered posts
+  (~5 min / 30 min / 2 h / 6 h / 24 h) in batched `v: 2` update messages: removed or deleted →
+  not listed, approved → the complete record is re-sent and listed, edited → re-sent record
+  (`revision` ≥ 2, `resent` = why) supersedes. Nothing in the fleet below is needed for a
+  relay-served target.
+- **Why first:** Reddit retires RSS on 2026-11-13, removes unregistered access on 2027-01-12 and
+  is moving to a logged-in-only site; the fleet below stays as the automatic fallback.
+
 ## Reddit & Redlib fleet (2026-10-22)
 
 `sources/reddit.py` integrates Reddit and Redlib across all six configured games (`r/Genshin_Impact` / verified `u/genshinimpact`, `r/HonkaiStarRail` / verified `u/HonkaiStarRail`, `r/ZZZ_Official` / verified `u/ZZZ_Official`, `r/WutheringWaves` with `official: []` because live `u/WutheringWaves` is an unrelated 2022 squatter account, `r/HonkaiNexusAnima` / verified `u/HonkaiNexusAnima`, and `r/AnantaOfficial` / verified `u/AnantaOfficial`) under strict role separation and zero-waste request discipline:

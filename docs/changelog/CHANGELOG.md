@@ -1,5 +1,55 @@
 # Changelog — current entries
 
+## 2026-11-02 — Reddit: the Devvit relay is the primary listing (intake reader)
+
+- **What changed.** `RedditClient` now consults `gamexpress/sources/reddit_intake.py` before the
+  redlib / reddit.com fleet. The *Gaming Express* Devvit app (News-Express `devvit/gaming-express`,
+  live on Reddit under the owner's account) writes one JSON record per new post of the six official
+  subreddits and the verified publisher accounts into a private Discord channel every 5 minutes;
+  the reader fetches that channel once per run (bot token, REST only, newest-first, ≤ 800 messages,
+  6 h window) and serves `r/<sub>` / `u/<account>` listings from it in the exact dict shape the
+  JSON / redlib parsers produce — `items()`, `program_post()` and `community_codes()` are untouched.
+- **Zero-waste rule kept.** Reddit is still consulted only when X or a primary API missed; when it
+  is, a served target costs 0 fleet requests. A target without a record in the window (dormant
+  `u/ZZZ_Official`, `u/AnantaOfficial`) falls back to the old chain exactly as before.
+- **Fail-safe.** Only status `ok` serves a listing. Unset, HTTP 401/403/404/429, stale (newest
+  record older than `INTAKE_STALE_SECONDS=1800`), empty, or messages whose `content` comes back
+  empty (Message Content Intent missing) all mean "old chain", with the reason on one step-summary
+  line (`📡 reddit intake: …`). Freshness is measured on relay records only, so other bots sharing
+  the channel never vouch for a silent relay. `INTAKE_READER=shadow` reads and reports without
+  deciding; `off` never reads.
+- **Activation = the same two settings as News-Express**, passed through `GE_SECRETS_JSON` /
+  `GE_VARS_JSON` (no workflow edit): secret `DISCORD_BOT_TOKEN`, Variable `INTAKE_CHANNEL_ID`.
+  Nothing changes until both exist.
+- **Why.** Reddit retires RSS on 2026-11-13, removes unregistered access on 2027-01-12 and is
+  moving to a logged-in-only site (Q3 2026 shareholder letter); the Developer Platform path is the
+  one that survives. Records carry `flair` and `distinguished`, so the official rule
+  (`_is_official_subreddit_post`) is unchanged.
+- **Relay 0.0.7 (same day): the relay is the complete source.** Every record message also carries
+  `record.json` — the untrimmed record (full body, every media URL, the crosspost parent) — which
+  the reader fetches from Discord's CDN only for cut records and crossposts (≤ 10 per run, no
+  token). The relay looks at each delivered post again (~10 min, 30 min, 2 h, 6 h) and writes
+  batched `v: 2` update messages: a post the re-check shows removed or deleted leaves the
+  listing, one first shown filtered and later approved enters it; an edited body arrives as a
+  re-sent record (`revision` ≥ 2) that supersedes the first. Re-check messages count as relay
+  liveness (a quiet relay is `empty — relay alive`, not stale). With that, the redlib /
+  reddit.com / Arctic fleet is a fallback only; the vxreddit/embedez/embeddit video proxies stay.
+- **Relay 0.0.8 (same day): 1:1 with the old chain.** Re-checks now run at ~5 min, 30 min, 2 h,
+  6 h and 24 h; a post first seen filtered/removed and later approved is re-sent complete (the
+  reader's 6 h window may have lost the first record). Entries whose record is complete
+  (`relay_complete`) are never passed to `resolve_post()` — `items()` and `program_post()` serve
+  them from the record alone, so a relay-served game costs zero redlib / reddit.com requests even
+  for title-only posts; cut records keep the old-chain fill-in. (A publisher-comment follow-up
+  was prototyped and dropped the same day at the owner's request — relay entries keep
+  `comments=[]`.)
+- Covered by `tests/test_reddit_intake.py` (real records from the first live day: gallery, video +
+  poster, inline images, YouTube link, gif, truncated body, `\_` escapes, shared-channel noise,
+  paging, every status, `items()` for a publisher-account game and for Wuthering Waves; 0.0.7
+  updates, `record.json` completion and bounds, edits, approvals; 0.0.8 complete records,
+  no-resolve `items()` / `program_post()`; News-Express round-107 cross-check: a post approved
+  from the mod queue hours after creation is a plain new item here — Game-Express keeps no
+  Reddit hold memory, so the News-Express restore rule is not needed and must not be ported).
+
 ## 2026-11-02 — Beta: translation removed; CN shown as CN; source order
 
 - **Glossary build removed.** The `build-glossary` command, its workflow, module, and glossary data

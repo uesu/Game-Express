@@ -1,6 +1,6 @@
 # Terms of Service
 
-**Effective date:** October 24, 2026
+**Effective date:** November 2, 2026
 **Applies to:** *Game-Express*, the open-source game version-schedule announcer, redemption-code
 poster, and optional official-news and pre-load/maintenance-started announcer ("the Service"),
 running as a GitHub Actions workflow that posts through Discord webhooks.
@@ -18,6 +18,11 @@ resolution, code witnesses and estimated dates (official banner notices found by
 banner feed, game wikis, public nitter/Redlib mirrors, rich-embed proxies, public archives, and
 countdown sites), and **public redemption-code lists**, then post formatted cards to Discord
 channels that **you** control. There is no hosted service operated by the author on your behalf.
+Optionally (2026-11-02) the Reddit listing can come from the *Gaming Express* relay app you install
+on Reddit's Developer Platform under your own Reddit account (shipped in the News-Express repository);
+it writes public post records into a private Discord channel of yours, which the Service reads back
+with a read-only bot token you create. Reddit's developer terms govern that app; the public mirrors
+remain the automatic fallback.
 Each operator runs their own instance.
 
 Operational logs and completion summaries are best-effort diagnostics, not

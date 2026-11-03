@@ -33,6 +33,12 @@ Sensitive — *Settings → Secrets and variables → Actions → **Secrets***.
 | `NITTER_RSS_TOKEN` | optional — the e-mailed token for the token-gated nitter and redlib mirrors (`https://nitter.miningtcup.me/`, `https://redlib.miningtcup.me` — the same secret News-Express uses). Empty only skips those mirrors |
 | `REDDIT_FEED_TOKEN` | optional — private RSS / JSON feed link or token from `old.reddit.com/prefs/feeds/`: accepts `https://old.reddit.com/.rss?feed=<40-char-key>&user=<your_username>`, `https://www.reddit.com/.rss?feed=<40-char-key>&user=<your_username>`, `https://old.reddit.com/.json?feed=<40-char-key>&user=<your_username>`, `https://www.reddit.com/.json?feed=<40-char-key>&user=<your_username>`, `https://reddit.com/.rss?feed=…`, `https://old.reddit.com/?feed=…`, or `<40-char-key>&user=<your_username>` interchangeably (same format as News-Express; drives `[0] www.reddit.com` → `[1] old.reddit.com` authenticated RSS failover + circuit-broken `.json` fallback) |
 
+| `DISCORD_BOT_TOKEN` | optional — the Reddit **intake reader** bot token (secret). Read-only bot in your server with *View Channel* + *Read Message History* on the intake channel and the *Message Content Intent*. Pair with the Variables below |
+| `INTAKE_CHANNEL_ID` | optional (Variable) — id of the private Discord channel the *Gaming Express* Devvit relay writes its post records to (the same channel News-Express reads). With `DISCORD_BOT_TOKEN` set, a healthy relay is the Reddit listing and the redlib/reddit.com fleet is not contacted for served targets |
+| `INTAKE_READER` | optional (Variable) — `primary` (default) \| `shadow` (read and report, old chain decides) \| `off` (never read). Rollback switch |
+| `INTAKE_STALE_SECONDS` | optional — default `1800`; a newest relay record older than this means *stale* → old chain |
+| `INTAKE_LOOKBACK_SECONDS` | optional — default `21600`; how far back the channel is read each run (newest-first, ≤ 800 messages) |
+
 **Webhook routing**, most specific first:
 
 ```

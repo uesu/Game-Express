@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Effective date:** October 24, 2026
+**Effective date:** November 2, 2026
 **Applies to:** *Game-Express*, the open-source game version-schedule announcer, redemption-code
 poster, and optional official-news and pre-load/maintenance-started announcer ("the Service"):
 - **Automation mode**: GitHub Actions + Discord webhooks.
@@ -30,7 +30,7 @@ is GitHub Actions.
 |---|---|---|---|
 | Public announcement data (titles, text, times, image/video links of official posts) | processed **in memory** during a run | building the cards | Discord receives rendered content; source services receive the public requests. Operational logs/summaries can retain source references. |
 | Dedup state: version numbers, code strings, public news/milestone IDs, Discord **message IDs** of the Service's own posts, the public post ID a card is locked to, confirmed banner names, timestamps, a short non-reversible webhook fingerprint | `state/state.json` **inside the operator's repository** | deduplication and editing its own cards | GitHub and anyone with repository access; a public repository makes committed state public. An explicitly configured peer instance can read its accessible state file. |
-| Webhook URLs, optional nitter token (`NITTER_RSS_TOKEN`), optional Reddit private feed link/token (`REDDIT_FEED_TOKEN`), optional Python-bump token (`BUMP_PAT`) | operator's **encrypted GitHub secrets** | authentication | GitHub stores secrets; each credential is sent strictly to its intended service (`NITTER_RSS_TOKEN` only to the allowlisted token-gated mirrors, `REDDIT_FEED_TOKEN` only to official `reddit.com` hosts). Output redaction/masking is a safeguard, not a guarantee; review logs before sharing them. |
+| Webhook URLs, optional nitter token (`NITTER_RSS_TOKEN`), optional Reddit private feed link/token (`REDDIT_FEED_TOKEN`), optional read-only Discord bot token for the Reddit intake reader (`DISCORD_BOT_TOKEN`), optional Python-bump token (`BUMP_PAT`) | operator's **encrypted GitHub secrets** | authentication | GitHub stores secrets; each credential is sent strictly to its intended service (`NITTER_RSS_TOKEN` only to the allowlisted token-gated mirrors, `REDDIT_FEED_TOKEN` only to official `reddit.com` hosts). Output redaction/masking is a safeguard, not a guarantee; review logs before sharing them. |
 
 No analytics, telemetry, cookies, tracking pixels, advertising, or profiling. The monitor reads only
 public source pages and sends cards to the operator's configured webhooks.
@@ -46,6 +46,12 @@ URL; configured credentials are sent to the intended service when required:
 - nitter instances (`nitter.cf` and `xitter.cf` first, for single posts and timelines; a token-gated
   instance is used only when the operator sets `NITTER_RSS_TOKEN`), `teapawt.org` / `teapaw.org` / `teapawt.net` / `xitter.gq` / `nitter.gq`,
   FxTwitter, fixupx and vxTwitter (public X posts);
+- Discord's bot REST API (optional, 2026-11-02): with `DISCORD_BOT_TOKEN` + `INTAKE_CHANNEL_ID` set, the monitor reads
+  **one operator-designated private channel** (`GET /channels/<id>/messages`, newest-first, at most 800 messages per
+  run) to collect the public Reddit post records written there by the operator's own *Gaming Express* Devvit relay
+  (Reddit Developer Platform; it stores only post ids and poll counters). Messages that are not relay records are
+  skipped and never stored; nothing is written through the bot. The relay's `record.json` attachments (the same
+  public post record, untrimmed) are read from `cdn.discordapp.com` without the token, at most 10 per run;
 - Reddit and Redlib instances (`www.reddit.com` and `old.reddit.com` public feeds — carrying `REDDIT_FEED_TOKEN`
   query parameters only when configured — public Redlib mirrors, rich-embed proxies `vxreddit.com`, `embedez.com`,
   and `embeddit.deltandy.me`, and the public `arctic-shift.photon-reddit.com` archive as a fallback);
