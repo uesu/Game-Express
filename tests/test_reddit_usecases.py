@@ -32,7 +32,6 @@ from test_reddit_intake import (  # noqa: E402
 
 from gamexpress.config import load_games, load_settings  # noqa: E402
 from gamexpress.http import SourceHealth  # noqa: E402
-from gamexpress.sources import reddit_intake as ri  # noqa: E402
 from gamexpress.sources.reddit import RedditClient  # noqa: E402
 
 GAMES = load_games()
@@ -236,9 +235,8 @@ def test_uc7_per_target_fallback_serves_what_the_relay_has_and_only_that():
 def test_uc8_records_older_than_the_lookback_window_are_ignored():
     """Lookback is 6 h: a 7 h old record is outside the window, so the target falls back."""
     old = [_rec(id="1xucold7", sub="Genshin_Impact", created=int(NOW) - 7 * 3600)]
-    msgs = [{"id": str(ri.snowflake_from_epoch(NOW - 300)), "content": "wick: hello"}]
-    msgs += [{"id": str(ri.snowflake_from_epoch(NOW - 7 * 3600)), "content": "```json\n" + __import__("json").dumps(old[0]) + "\n```"}]
-    rc = _client(_Fetcher(msgs))
+    # one fresh non-relay message keeps the channel "alive"; the only relay record is 7 h old
+    rc = _client(_Fetcher(_msgs(old, [7 * 3600], noise=1)))
     assert _run(rc.subreddit("Genshin_Impact")) is None
 
 
