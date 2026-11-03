@@ -49,6 +49,16 @@
   no-resolve `items()` / `program_post()`; News-Express round-107 cross-check: a post approved
   from the mod queue hours after creation is a plain new item here — Game-Express keeps no
   Reddit hold memory, so the News-Express restore rule is not needed and must not be ported).
+- **2026-11-03 fix: one channel read per run, also under concurrency.** The first two production
+  runs on this code (#3925, #3926) showed `intake: 7 ok / 5 fail` with five `HTTP 429` at the same
+  instant while the summary said `relay ok`: the codes pass gathers the six `reddit:<sub>` sources
+  concurrently, every caller found `_result` empty and started its own paging loop, Discord
+  rate-limited the extras, and those callers fell back to the old chain (`reddit: 6 ok`) — the
+  relay-first rule silently lost for codes on every run. `IntakeReader.fetch()` now serialises the
+  read behind an `asyncio.Lock` (double-checked, so late callers reuse the cached result), and a
+  page request retries once after 1.5 s on 429 / 5xx (401 / 403 / 404 still stop at once).
+  `tests/test_reddit_usecases.py` uc9 reproduces the race with a fetcher that yields to the loop
+  and asserts one channel read, zero fleet requests, six served targets.
 
 ## 2026-11-02 — Beta: translation removed; CN shown as CN; source order
 
