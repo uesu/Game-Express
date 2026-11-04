@@ -568,10 +568,31 @@ plus a dedicated per-game webhook secret for each opted-in game:
 
 Behavior and safety invariants (`gamexpress/maintenance.py`):
 
-- **Independent milestones & separate state:** posts `Pre-Load Started` and
-  `Maintenance Started` independently per `(game, version)` on the existing 5-minute
-  poll cycle. `state["maintenance"][game]` tracks `preload` and `maintenance`
+- **Independent milestones & separate state:** posts `Pre-Load Started`,
+  `Maintenance Started` and `Servers Live` independently per `(game, version)` on the existing
+  5-minute poll cycle. `state["maintenance"][game]` tracks `preload`, `maintenance` and `live`
   separately from `schedule`, `codes` and `news`, and merges across fail-over peers.
+- **Servers Live — signals and guards (`live`):** two signals, no clock. (1) The publisher's
+  completion notice or tweet (`schedule.MAINT_COMPLETE_RE`: *update maintenance has been
+  completed / concluded*, *Update Completion Notice*, *servers are now online*, *can now log in*;
+  a stated clock such as `completed at 10:42 (UTC+8)` is used when present, otherwise the post
+  time) → provenance `official`. Future-tense quotes inside the maintenance preview (*compensation
+  … after the update maintenance is finished*) are rejected by the clause check. (2) HoYoPlay
+  games only: the client maintenance gate `getGlobalApplicationMaintenance`
+  (`gamexpress/sources/launcher.py::MAINT_STATUS`, headers `x-rpc-app_version` /
+  `x-rpc-client_type: 1` / `x-rpc-cg_game_biz`) read once per run while a version is inside
+  `[maint_start_ts + LIVE_MIN_DOWNTIME_S (20 min), maint_start_ts + LIVE_WINDOW_S (24 h)]` and
+  its `Maintenance Started` card is `posted`; the first `null` after the flag was seen set for
+  that version (`state["maintenance"][game]["maint_api"]`) is the reopening → provenance
+  `observed`, with a one-line note on the card. Non-zero `retcode`, a missing key or a wrong
+  shape is *unknown* and changes nothing; a `null` that was never preceded by a set flag never
+  posts. Idle days cost `0` gate requests. Both signals are accepted only inside the same window,
+  only for a `Maintenance Started` card this install posted (versions joined midway are seeded
+  `live` together with `maintenance`), and once per version. An official notice arriving after a
+  gate-detected card upgrades it silently through the timing-correction budget (no repost, no
+  re-ping). The same moment rewrites the `Maintenance Started` card's `End Time` to the actual
+  reopening (`end_actual`, silent `PATCH`, `timing_edit_*` budget) and the scheduled end is never
+  restored afterwards. `REPOST=<game>:<version>:live` re-sends a single card on demand.
 - **Silent baseline on first enable:** on first activation (or re-enable after pause),
   already-passed milestones and live/settled versions are marked `seeded` silently
   without posting historical announcements.
@@ -588,7 +609,7 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
   HNA and ANANTA never invent an unverified cadence, and unknown `maint_end_ts` omits `End Time`
   rather than guessing.
 - **Components V2 card & 4-tier media priority:** single container (`flags: 32768`)
-  with `[SHORT - VERSION] Pre-Load Started` / `Maintenance Started`, optional role
+  with `[SHORT - VERSION] Pre-Load Started` / `Maintenance Started` / `Servers Live`, optional role
   mention, `Date Time` (`<t:…:f>`) + `Hour Time` (`<t:…:R>`) or `End Time` (`<t:…:t>`),
   optional version-verified gallery ((1) matching-version launch video `.webm`/`.mp4`,
   (2) matching-version launcher artwork/WebP, (3) matching-version Special Program art,

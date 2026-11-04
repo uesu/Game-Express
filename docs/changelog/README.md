@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Reddit: the Devvit relay is the primary listing (intake reader)](CHANGELOG.md#2026-11-02--reddit-the-devvit-relay-is-the-primary-listing-intake-reader).
+Latest: [Feature 4: third card "Servers Live" + actual End Time on the maintenance card](CHANGELOG.md#2026-11-04--feature-4-third-card-servers-live--actual-end-time-on-the-maintenance-card).
+
+Previous: [Reddit: the Devvit relay is the primary listing (intake reader)](CHANGELOG.md#2026-11-02--reddit-the-devvit-relay-is-the-primary-listing-intake-reader).
 
 Previous: [Beta: translation removed; CN shown as CN; source order](CHANGELOG.md#2026-11-02--beta-translation-removed-cn-shown-as-cn-source-order).
 
