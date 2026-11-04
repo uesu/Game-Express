@@ -1,5 +1,40 @@
 # Changelog — current entries
 
+## 2026-11-04 — Feature 4: third card "Servers Live" + actual End Time on the maintenance card
+
+- **What changed.** `gamexpress/maintenance.py` tracks a third milestone, `live`, next to
+  `preload` and `maintenance`: one `[SHORT - VERSION] Servers Live` card per version on the same
+  per-game webhook and ping, reusing the version's locked launch media (tier 1 video when the
+  Maintenance Started card has it). Posting it also rewrites the Maintenance Started card's
+  `End Time` to the actual reopening moment (silent `PATCH`, `timing_edit_*` budget, `end_actual`
+  so later runs never restore the scheduled 11:00).
+- **Signals — never the clock.** (1) The publisher's completion notice / tweet
+  (`schedule.MAINT_COMPLETE_RE` + clause check: "Version 7.2 update maintenance has been
+  completed", "Update Completion Notice", "servers are now online", "can now log in"; a stated
+  clock wins over the post time) → `official`. (2) HoYoPlay games: the client maintenance gate
+  `getGlobalApplicationMaintenance` (`sources/launcher.py::MAINT_STATUS`, the endpoint
+  hoyo-update-notifier and yeci226/ZZZ run in production) flipping `object -> null` after it was
+  seen set for that version → `observed`, with a one-line note until an official notice upgrades
+  the card silently. Both only inside `[maintenance start + 20 min, + 24 h]`, only for a
+  Maintenance Started card this install posted, once per version; unknown gate answers change
+  nothing; versions joined midway are seeded `live` with `maintenance`; `0` gate requests on
+  idle days. The launcher's `main.tag` is *not* a signal (it flips at maintenance start — the
+  reason the GI 7.2 card got its video at 07:00 while servers were still down).
+- **Cards / CLI.** `cards.maintenance_payload(kind="live")` (`Date Time` + `Hour Time`
+  `<t:…:R>`); `preview --kind maintenance` renders `maintenance_<game>_live`;
+  `REPOST=<game>:<version>:live`. `parse_branches` now also returns `live_tag` (`7.2.0`) for the
+  gate's `x-rpc-app_version` header.
+- **Tests.** New `tests/test_maintenance_live.py` (13 cases, offline): phrase positives and the
+  future-tense negatives quoted by real preview / Update Details notices, strict gate parsing,
+  the full GI 7.2 timeline (settling period, remembered flag, unknown answer, flip → one card +
+  End Time correction, no duplicates, 24 h close), flag never seen set, failed Maintenance Started
+  send, first enable mid-maintenance, Kuro completion notice for Wuthering Waves, notice before
+  start / after 24 h, observed → official upgrade, card shape and samples. Wired into `ci.yml`
+  and the Python bump gate.
+- **Docs.** README §4, CONFIGURATION (signals and guards), SOURCES (gate row), CREDITS
+  (hoyo-update-notifier / hun.seria.moe, yeci226/ZZZ); README badge and PYTHON_VERSION /
+  PROD-REPO-SETUP prose refreshed from the stale `3.14.8` to the pinned `3.14.10`.
+
 ## 2026-11-02 — Reddit: the Devvit relay is the primary listing (intake reader)
 
 - **What changed.** `RedditClient` now consults `gamexpress/sources/reddit_intake.py` before the

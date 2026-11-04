@@ -25,7 +25,7 @@ local verification and benchmark results are in [TESTING.md](TESTING.md#2026-10-
 ## Official news & milestone alerts — off by default
 
 The [root README's third feature](../README.md#3--official-news-optional-off-by-default)
-and [fourth feature](../README.md#4--pre-load--maintenance-started-optional-off-by-default)
+and [fourth feature](../README.md#4--pre-load-maintenance-started--servers-live-optional-off-by-default)
 are the short overviews. The operational instructions live here:
 
 | Reference | Covers |

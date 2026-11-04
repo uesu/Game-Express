@@ -7,7 +7,7 @@ official news and pre-load/maintenance alerts — posted to Discord as Component
 with no server or bot token.**
 
 [![CI](https://github.com/uesu/Game-Express/actions/workflows/ci.yml/badge.svg)](https://github.com/uesu/Game-Express/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.14.8-3776AB?logo=python&logoColor=white&labelColor=2b2d31)](docs/PYTHON_VERSION.md)
+[![Python](https://img.shields.io/badge/python-3.14.10-3776AB?logo=python&logoColor=white&labelColor=2b2d31)](docs/PYTHON_VERSION.md)
 [![Tests](https://img.shields.io/badge/tests-offline%20%C2%B7%20no%20secrets-3FB950?labelColor=2b2d31)](docs/TESTING.md)
 [![Discord](https://img.shields.io/badge/posts%20to-Discord-5865F2?logo=discord&logoColor=white&labelColor=2b2d31)](https://discord.com/developers/docs/components/reference)
 
@@ -24,7 +24,7 @@ Special Program is announced or a new redemption code appears, it posts one card
 keeps that card correct by editing it silently as official information arrives. Independent,
 off-by-default features can also post full official news articles for five supported games
 (with optional Discord `<t:…>` timestamps and expanded multi-page rendering) and live
-**Pre-Load Started** / **Maintenance Started** alerts per game.
+**Pre-Load Started** / **Maintenance Started** / **Servers Live** alerts per game.
 
 It runs entirely on **GitHub Actions** (free and unlimited on public repos), triggered every
 5 minutes by **[cron-job.org](https://cron-job.org)**. There is nothing to deploy: merging to
@@ -211,11 +211,11 @@ and **[offline/live-check distinction](docs/TESTING.md#official-news-offline-cov
 
 ---
 
-### 4 · Pre-load & maintenance started (optional; off by default)
+### 4 · Pre-load, maintenance started & servers live (optional; off by default)
 
-Two independent milestone alerts per version — **`Pre-Load Started`** and
-**`Maintenance Started`** — for explicitly enabled games, using the existing
-5-minute scheduler and dedicated per-game webhooks (`DISCORD_WEBHOOK_MAINTENANCE_<GAME>`).
+Three independent milestone alerts per version — **`Pre-Load Started`**,
+**`Maintenance Started`** and **`Servers Live`** — for explicitly enabled games, using the
+existing 5-minute scheduler and dedicated per-game webhooks (`DISCORD_WEBHOOK_MAINTENANCE_<GAME>`).
 Works standalone or alongside schedule, codes and news without modifying existing cards.
 
 ```
@@ -236,6 +236,17 @@ Works standalone or alongside schedule, codes and news without modifying existin
   `Pre-Load Started` never suppresses `Maintenance Started` (which renders
   `※ **Date Time:** <t:START:f> ※ **End Time:** <t:END:t>` when `end_ts` is known,
   or omits `End Time` cleanly when unknown).
+- **Servers Live (third card):** never clock-derived. It posts when the publisher says the
+  servers are back — the completion notice / tweet (`Version X.Y update maintenance has been
+  completed`, `Update Completion Notice`, `… can now log in`) — or, for HoYoPlay games, when the
+  client's own maintenance gate (`getGlobalApplicationMaintenance`, the endpoint
+  [hoyo-update-notifier](https://github.com/seriaati/hoyo-update-notifier) runs in production)
+  flips from *in maintenance* to *open* after it was seen set for that version. Both are accepted
+  only between `maintenance start + 20 min` and `+ 24 h`, only for a `Maintenance Started` card
+  this install posted itself, and once per version. The card reuses the version's locked launch
+  media and `Hour Time` (`<t:…:R>`); a gate-detected card carries a one-line note until the
+  official notice upgrades it silently. The same moment rewrites the `Maintenance Started`
+  card's `End Time` to the actual reopening (silent `PATCH`, timing-correction budget).
 - **Source precedence:** official notices/tweets → explicit `config/overrides.json` →
   persisted first-observed launcher pre-download signal (explicitly marked observed,
   never moving `now`) → documented cadence predictions (clearly marked estimated; no
@@ -519,7 +530,7 @@ editing YAML. The ones worth knowing:
 | `PING_SCHEDULE` / `PING_CODES` | inherit `PING_ROLE_ID` | per-feature ping override; `none` = explicitly no ping |
 | `PING_MAINTENANCE` / `PING_BETA` | *(unset = silent)* | optional role ping on maintenance and beta cards; `PING_ROLE_ID` is deliberately **not** inherited |
 | `NEWS_REVEAL_PING` + `PING_NEWS_REVEAL` | `0` / *(unset)* | opt-in character-reveal ping; one role list for every game, no per-game variant |
-| `MAINTENANCE_ENABLED` | `0` | explicit opt-in for `Pre-Load Started` / `Maintenance Started` |
+| `MAINTENANCE_ENABLED` | `0` | explicit opt-in for `Pre-Load Started` / `Maintenance Started` / `Servers Live` |
 | `MAINTENANCE_GAMES` | *(empty)* | explicit per-game list (`all` or game keys) required to activate maintenance alerts |
 | `BETA_ENABLED` | `0` | explicit opt-in for beta kit / revision-diff cards (feature 5) |
 | `BETA_GAMES` | `genshin,starrail,zzz,wuwa` | beta subset; `all` resolves to the same four (HNA and ANANTA excluded until launch) |
@@ -698,7 +709,7 @@ is not proof of healthy sources or no eligible items. The summary precedes the
 workflow's repository commit/push; check that later step for persistence. Summary
 output failure does not add a report file or change posting/state behavior.
 
-Runtime updates use exact CPython **3.14.8** pins. Python update proposals are
+Runtime updates use exact CPython **3.14.10** pins. Python update proposals are
 validated automatically but always merged while an operator is available.
 Package-only Dependabot auto-merge remains opt-in; workflow-file updates wait
 for review. See [Python policy](docs/PYTHON_VERSION.md). A live-workflow update

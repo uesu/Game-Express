@@ -140,7 +140,7 @@ requirements.txt
 .github/scripts/python_version_bump.py
 ```
 
-**Why you may want this in prod.** Prod's `monitor.yml` pins an exact Python patch (currently `python-version: '3.14.8'`). Nothing
+**Why you may want this in prod.** Prod's `monitor.yml` pins an exact Python patch (currently `python-version: '3.14.10'`). Nothing
 else updates it. If you sync from dev regularly the pin rides along with `monitor.yml` and you
 can skip this — but if dev goes quiet for a few months, prod keeps running an ageing
 interpreter with no one telling it.
