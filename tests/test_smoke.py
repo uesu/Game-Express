@@ -6520,6 +6520,21 @@ def test_news_overflow_one_message_one_container_lead_only_and_emoji_buttons():
     assert all(b.get("emoji", {}).get("id") for b in kids[-1]["components"])
 
 
+def test_news_title_with_a_newline_renders_as_one_line_link():
+    # HoYoLAB 47327567 (HNA, 2026-11-05): the subject carried a newline between its two
+    # sentences, so the header's `## [title](url)` spanned two lines and Discord showed the raw
+    # markdown instead of a link. The label is one line now; the source title is untouched.
+    item = news_item(title="A special teaser featuring Nexergy's Ambassadors for all Animasters.\n"
+                           "Join them anytime, anywhere, and get some Nexergy!")
+    header = cards.news_payloads(GAMES["hna"], item)[0]["components"][0]["components"][0]["content"]
+    assert header.startswith("## [A special teaser featuring Nexergy's Ambassadors for all Animasters. "
+                             "Join them anytime, anywhere, and get some Nexergy!](https://www.hoyolab.com/article/100)\n")
+    assert "\n" not in header.split("](")[0]
+    assert item.title.count("\n") == 1
+    assert cards._md_link_text(" Line [one]\r\n\tline\u3000two ") == "Line (one) line two"
+    assert cards._md_link_text("plain title") == "plain title"
+
+
 def test_news_media_count_and_order_not_aspect_ranked_or_truncated():
     item = news_item()
     urls = [f"https://example.com/{i}.gif" for i in range(22)]
@@ -12131,7 +12146,8 @@ def test_zzz_47154012_bracketed_link_label_repro_and_fix():
         assert cards.validate_payload(payload) == []
         kids = payload["components"][0]["components"]
         assert kids[0]["content"] == (
-            "## [(ZZZ × Discord) New Account Linking and Rich Presence Functions Now Available ]"
+            # 2026-11-05: the subject's trailing space is stripped with the one-line label rule
+            "## [(ZZZ × Discord) New Account Linking and Rich Presence Functions Now Available]"
             "(https://www.hoyolab.com/article/47154012)\n"
             "-# HoYoLAB · Zenless Zone Zero · <t:1792576806:f>"
         )

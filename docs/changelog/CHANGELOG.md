@@ -1,5 +1,16 @@
 # Changelog — current entries
 
+## 2026-11-05 — News: multi-line article titles render as one link
+
+- **What changed.** `cards._md_link_text` collapses every whitespace run (newlines included) to one
+  space and strips, and `news_payloads` builds the header label through it. HoYoLAB 47327567
+  (Honkai: Nexus Anima, run #4297) carried a newline inside its subject, so the `## [title](url)`
+  header spanned two lines and Discord showed the raw `[…](…)` instead of a link. The source title,
+  body, HTML and media are untouched; `program_title` and the beta name links share the helper and
+  are unchanged for single-line text.
+- **Tests.** `test_news_title_with_a_newline_renders_as_one_line_link`; the ZZZ 47154012 pin now
+  expects the subject's stray trailing space stripped from the label.
+
 ## 2026-11-04 — Feature 4: third card "Servers Live" + actual End Time on the maintenance card
 
 - **What changed.** `gamexpress/maintenance.py` tracks a third milestone, `live`, next to
