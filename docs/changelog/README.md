@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [News: multi-line article titles render as one link](CHANGELOG.md#2026-11-05--news-multi-line-article-titles-render-as-one-link).
+Latest: [X: link / app card artwork is not tweet media](CHANGELOG.md#2026-11-05--x-link--app-card-artwork-is-not-tweet-media).
+
+Previous: [News: multi-line article titles render as one link](CHANGELOG.md#2026-11-05--news-multi-line-article-titles-render-as-one-link).
 
 Previous: [Feature 4: third card "Servers Live" + actual End Time on the maintenance card](CHANGELOG.md#2026-11-04--feature-4-third-card-servers-live--actual-end-time-on-the-maintenance-card).
 

@@ -1,5 +1,16 @@
 # Changelog — current entries
 
+## 2026-11-05 — X: link / app card artwork is not tweet media
+
+- **What changed.** `sources/twitter.py::_fx_media` drops `pbs.twimg.com/card_img/…` entries
+  (X link / app card artwork that FxTwitter folds into `photos`) whenever the tweet has photos
+  or videos of its own; a card-only tweet keeps the artwork as before. HonkaiNA
+  2118221775108771936 / 2118191579307381245 (2026-11-05) listed the App Store card's 512 × 512
+  icon next to the real 1920 × 1080 photo / 1280 × 720 video, so the icon could have reached a
+  schedule or notice card (`item.images[:4]`, `[:1]`). Text, links, timestamps and the Nitter
+  fallback are untouched.
+- **Tests.** `test_fx_media_ignores_card_artwork_when_the_tweet_has_its_own_media`.
+
 ## 2026-11-05 — News: multi-line article titles render as one link
 
 - **What changed.** `cards._md_link_text` collapses every whitespace run (newlines included) to one

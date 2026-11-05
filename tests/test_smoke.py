@@ -6535,6 +6535,26 @@ def test_news_title_with_a_newline_renders_as_one_line_link():
     assert cards._md_link_text("plain title") == "plain title"
 
 
+def test_fx_media_ignores_card_artwork_when_the_tweet_has_its_own_media():
+    # HonkaiNA 2118221775108771936 / 2118191579307381245 (2026-11-05): FxTwitter lists the App
+    # Store card's icon (pbs.twimg.com/card_img/..., 512x512) under `photos` next to the real
+    # photo / video, so it could reach a schedule or notice card. Native media wins; a card-only
+    # tweet (link card banner) keeps its artwork exactly as before.
+    from gamexpress.sources import twitter as tw
+    card = "https://pbs.twimg.com/card_img/2117885179226374144/8O4A5wKA?format=png&name=orig"
+    photo = "https://pbs.twimg.com/media/HWS61I-aMAcRkez.jpg?name=orig"
+    video = "https://video.twimg.com/amplify_video/2118020756831612930/vid/avc1/1280x720/x.mp4?tag=14"
+    assert tw._fx_media({"media": {"photos": [{"url": photo, "width": 1920, "height": 1080},
+                                              {"url": card, "width": 512, "height": 512}]}}) == [photo]
+    assert tw._fx_media({"media": {"photos": [{"url": card, "width": 512, "height": 512}],
+                                   "videos": [{"url": video, "width": 1280, "height": 720}]}}) == [video]
+    assert tw._fx_media({"media": {"photos": [{"url": card, "width": 800, "height": 418}]}}) == [card]
+    assert tw._fx_media({"media": {"photos": [{"url": photo}, {"url": card}, {"url": photo + "2"}]}}) == [photo, photo + "2"]
+    assert tw._fx_media({"media": {}}) == [] and tw._fx_media({}) == []
+    assert tw._is_card_art(card) and not tw._is_card_art(photo) and not tw._is_card_art(video)
+    assert not tw._is_card_art("https://evil.example/pbs.twimg.com/card_img/x") and not tw._is_card_art(None)
+
+
 def test_news_media_count_and_order_not_aspect_ranked_or_truncated():
     item = news_item()
     urls = [f"https://example.com/{i}.gif" for i in range(22)]
