@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Effective date:** November 2, 2026
+**Effective date:** November 6, 2026
 **Applies to:** *Game-Express*, the open-source game version-schedule announcer, redemption-code
 poster, and optional official-news and pre-load/maintenance-started announcer ("the Service"):
 - **Automation mode**: GitHub Actions + Discord webhooks.
@@ -44,7 +44,9 @@ URL; configured credentials are sent to the intended service when required:
   JSON Feed mirror of HoYoLAB news, used only when the HoYoLAB API cannot be reached;
 - Kuro Games (official website JSON, global `G153` launcher & background indexes on `kurogame.com` / `kurogames.com` / `aki-game.net` / `aki-game.com`, structured launch media) and NetEase / ANANTA media CDNs (`easebar.com`, `anantagame.com`, `netease.com`, `163.com`);
 - nitter instances (`nitter.cf` and `xitter.cf` first, for single posts and timelines; a token-gated
-  instance is used only when the operator sets `NITTER_RSS_TOKEN`), `teapawt.org` / `teapaw.org` / `teapawt.net` / `xitter.gq` / `nitter.gq`,
+  instance is used only when the operator sets `NITTER_RSS_TOKEN`), `nitter.gq` / `xitter.gq` / `teapawt.org` / `teapaw.org` / `teapawt.net`,
+  `nitter.mizuki.st` (trial, 2026-11-06; its feeds are served by the `nitter.meowing.monster` backend) and the
+  community-operated reserve mirrors listed in `docs/SOURCES.md`,
   FxTwitter, fixupx and vxTwitter (public X posts);
 - Discord's bot REST API (optional, 2026-11-02): with `DISCORD_BOT_TOKEN` + `INTAKE_CHANNEL_ID` set, the monitor reads
   **one operator-designated private channel** (`GET /channels/<id>/messages`, newest-first, at most 800 messages per

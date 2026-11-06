@@ -1,6 +1,6 @@
 # Terms of Service
 
-**Effective date:** November 2, 2026
+**Effective date:** November 6, 2026
 **Applies to:** *Game-Express*, the open-source game version-schedule announcer, redemption-code
 poster, and optional official-news and pre-load/maintenance-started announcer ("the Service"),
 running as a GitHub Actions workflow that posts through Discord webhooks.
