@@ -1,6 +1,10 @@
 # Changelog
 
-Latest: [X: link / app card artwork is not tweet media](CHANGELOG.md#2026-11-05--x-link--app-card-artwork-is-not-tweet-media).
+Latest: [Housekeeping: privacy policy names the new nitter host, docs index tidy](CHANGELOG.md#2026-11-06--housekeeping-privacy-policy-names-the-new-nitter-host-docs-index-tidy).
+
+Previous: [X: nitter rotation #8 — the teapawt family leads, mizuki.st joins, meowing/miningtcup demoted](CHANGELOG.md#2026-11-06--x-nitter-rotation-8--the-teapawt-family-leads-mizukist-joins-meowingminingtcup-demoted).
+
+Previous: [X: link / app card artwork is not tweet media](CHANGELOG.md#2026-11-05--x-link--app-card-artwork-is-not-tweet-media).
 
 Previous: [News: multi-line article titles render as one link](CHANGELOG.md#2026-11-05--news-multi-line-article-titles-render-as-one-link).
 
