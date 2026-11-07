@@ -1,5 +1,53 @@
 # Changelog — current entries
 
+## 2026-11-07 — WuWa wiki reader: the phase is the banner page's date
+
+- **What changed.** `gamexpress/sources/gachawiki.py::parse_version_page`, the WuWa branch only.
+  WuWa's Version page carries no phase markers; the reader used "dated page = phase 1, undated
+  = phase 2". The wiki dates a banner page the day its phase goes live, so that rule held only
+  until phase 2 started. Now the phase **is the date**: the earliest date on the list is
+  phase 1, the next date phase 2, and a page not yet dated belongs to the phase after the last
+  dated one. Order on the page is irrelevant; a third date, or an undated page once two dates
+  exist, falls outside both phases exactly as before.
+- **Why.** Runner probe 2026-11-07 (News-Express `wiki_probe.yml`, live `Version/3.7`): since
+  2026-10-22 the three phase-2 pages are dated, so the reader filed **all six** banners under
+  phase 1 (`Hsin, Chisa, Iuno, Suoming, Lucilla, Lynae`), produced no phase 2, and the 4★
+  union was six names — dropped by `four_star_count`, which is why the live 3.7 card's
+  `phase1_4` stayed TBA (the official reader's "2 name(s) found, 3 expected" slot was open for
+  the wiki to fill, and the wiki could never pass). The live card's phases were safe only
+  because the official notice had locked them. With the fix the same page reads
+  `phase1 = Hsin, Chisa, Iuno` / `phase1_4 = Buling, Taoqi, Youhu` / `phase2 = Suoming,
+  Lucilla, Lynae` / `phase2_4 = Lumi, Danjin, Chixia` / `reruns = Chisa, Iuno, Lucilla, Lynae`.
+- **Live 3.8 unchanged.** The probe's `Version/3.8` (one date group `2026-11-12` + undated
+  `Starpath Reverbs II` naming Camellya, Roccia, Phoebe, Brant) reads exactly as before; the
+  three undated pages without a bracket contribute nothing and are not fetched. When 3.8's
+  phase 2 is dated (~2026-12-03) the split now survives.
+- **Also seen on the probe, no change needed.** GI 7.2 phase-2 4★ are `Unknown Character ×3`
+  on the wiki (placeholder → dropped, card says TBA); HSR 4.7 pool pages list `Asta; Lynx;
+  Yukong` for both phases; ZZZ 3.3 phase-2 `agent_A_F` is still empty.
+- Tests: `test_gachawiki_wuwa_phase_is_the_banner_date_once_phase_two_is_dated` (live 3.7 and
+  3.8 wikitext inline, pool pages, shuffled order, third date, undated-after-two-dates, the
+  captured fixture byte-identical); `docs/BANNER_DATABASE.md` dialect table.
+
+## 2026-11-07 — Schedule: the WuWa 4★ summary line is silent while it has nothing to add
+
+- **What changed.** `gamexpress/cards.py::banners_block`, render only. The `※ 4 Star Characters:`
+  summary (WW, `four_star_summary`) now appears only while its roster names at least one 4★ that
+  no per-phase line shows yet. Three cases that used to print it go quiet: no roster at all
+  (`TBA` above two per-phase `TBA`s), an explicitly empty roster, and a roster the per-phase
+  lines already spell out in full. The display map is honoured in the comparison. The pre-notice
+  signal (the wiki names phase 2's 4★s early) and the existing "both phases in → hide" rule are
+  unchanged; the golden WW 3.7 card is byte-identical.
+- **Why.** Live WW 3.8 (run #4527, 2026-11-06): the wiki knew both phase line-ups
+  (`Lily, Sigrika, Qiuyuan` / `Camellya, Roccia, Phoebe, Brant`) but no 4★, so the card read
+  `※ 4 Star Characters: TBA` directly above `- 4 Star Characters: TBA` twice.
+- **Effect on the live card.** The payload hash changes, so the next run edits the WW 3.8 card
+  (and its mirror) in place: `✏️ WW 3.8: schedule card updated`. No state field moves.
+- **Not changed.** HSR 4.6/4.7 showing the same three 4★ in both phases is correct — the
+  official notice, the calendar and the wiki agree (`phase2_4` witnesses `calendar, official, wiki`).
+- Tests: `test_wuwa_four_star_summary_is_silent_while_it_has_nothing_to_add` (6 cases);
+  `docs/CONFIGURATION.md` documents the rule.
+
 ## 2026-11-06 — Housekeeping: privacy policy names the new nitter host, docs index tidy
 
 - **What changed.** Docs + one smoke pin; no engine, card, state or workflow change.

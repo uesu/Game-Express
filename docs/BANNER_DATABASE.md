@@ -133,7 +133,7 @@ No new dependencies: standard-library `re` and the existing `Fetcher.get_json`.
 | genshin | `;Event Wishes` | `* Phase I` / `* Phase II` |
 | starrail | `* Character Event Warps:` | `… - Phase 1` at the end of each line |
 | zzz | `====Exclusive Channels====` | `* Phase 1:` / `* Phase 2:` |
-| wuwa | `===Character Event Convenes===` | none — **dated page = phase 1, undated = phase 2** |
+| wuwa | `===Character Event Convenes===` | none — **the phase is the banner page's date**: the earliest date on the list is phase 1, the next date phase 2, a page not yet dated belongs to the phase after the last dated one (the wiki dates a page the day its phase goes live) |
 
 ## The early tier
 

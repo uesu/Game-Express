@@ -248,6 +248,7 @@ def parse_version_page(game_key: str, wikitext: str) -> VersionPage:
     d = WIKIS[game_key]
     page = VersionPage(debuts=parse_debuts(game_key, wikitext))
     phase = 0
+    undated: list[BannerRef] = []           # WuWa only: phase decided after the whole list is read
     for raw in _section_lines(wikitext, d.banner_section, d.section_stop):
         line = raw.strip()
         if not line:
@@ -270,12 +271,27 @@ def parse_version_page(game_key: str, wikitext: str) -> VersionPage:
         if trailing:                                   # HSR marks the phase per line
             ref.phase = int(trailing.group(1))
         elif game_key == "wuwa":
-            # WuWa marks no phases at all: a dated page is phase 1, an undated one phase 2.
-            ref.phase = 1 if ref.page and _DATED.search(ref.page) else 2
+            # WuWa marks no phases at all. The wiki dates a banner page the day its phase goes
+            # live, so the phase is the DATE: the earliest date on the list is phase 1, the next
+            # date phase 2, and a page that has no date yet belongs to the phase after the last
+            # dated one. The old rule "dated = phase 1, undated = phase 2" held only until phase
+            # 2 started: on 2026-10-22 the 3.7 page dated its three phase-2 banners and the
+            # reader filed all six under phase 1 (runner probe 2026-11-07), which also made the
+            # 4★ union six names — so phase1_4 could never be filled from the wiki.
+            undated.append(ref)
+            continue
         else:
             ref.phase = phase
         if ref.phase in (1, 2):
             page.banners.append(ref)
+    if undated:
+        dates = sorted({_DATED.search(r.page).group(0) for r in undated
+                        if r.page and _DATED.search(r.page)})
+        for ref in undated:
+            m = _DATED.search(ref.page) if ref.page else None
+            ref.phase = dates.index(m.group(0)) + 1 if m else len(dates) + 1
+            if ref.phase in (1, 2):
+                page.banners.append(ref)
     return page
 
 

@@ -3407,10 +3407,94 @@ def test_gachawiki_reads_every_dialect():
     ww = gachawiki.build_lineup("wuwa", _wiki("version_wuwa_3_7.wiki"),
                                 {"As Full as Tonight, Forever/2026-09-30": _wiki("banner_wuwa_tonight.wiki")},
                                 four_star_count=3, four_star_summary=True)
-    # WuWa marks no phases at all: a dated banner page is phase 1, an undated one phase 2
+    # WuWa marks no phases at all: the phase is the banner DATE (earliest = 1, next = 2, undated = after the last)
     assert ww["phase1"] == ["Hsin", "Chisa", "Iuno"]
     assert ww["phase2"] == ["Suoming", "Lucilla", "Lynae"]
     assert ww["four_star"] == ["Danjin", "Mortefi", "Yuanwu"]      # summary line is WuWa-only
+
+
+_WW_37_LIVE = """===Resonators===
+* {{Intro/Resonator/Full|Hsin}}
+* {{Intro/Resonator/Full|Suoming}}
+
+===Character Event Convenes===
+* [[As Full as Tonight, Forever/2026-09-30]] (Hsin)
+* [[Horizon of Dawnbreak/2026-09-30]] ([[Chisa]])
+* [[Across Time's Waxes and Wanes/2026-09-30]] ([[Iuno]])
+* [[Nine Deaths, One Unbent Heart/2026-10-22]] (Suoming)
+* [[Tomorrow in the Frame/2026-10-22]] ([[Lucilla]])
+* [[Undefined Spectrum/2026-10-22]] ([[Lynae]])
+
+===Weapon Event Convenes===
+* [[Absolute Pulsation: Blooming Jadehaven/2026-09-30]]
+"""
+
+_WW_38_LIVE = """===Resonators===
+* {{Intro/Resonator/Full|Lily}}
+
+===Character Event Convenes===
+* [[Bloom of Yesterday's Dreamsoil/2026-11-12]] (Lily)
+* [[When the Runes Glitter/2026-11-12]] ([[Sigrika]])
+* [[Wanderer Knows No Far and Near/2026-11-12]] ([[Qiuyuan]])
+* [[Starpath Reverbs II]] ([[Camellya]], [[Roccia]], [[Phoebe]], [[Brant]])
+* [[Voices on Azure Feathers]]
+* [[Blessings From Dewy Winds]]
+* [[Thousand Futures Mirrored in Snow]]
+"""
+
+
+def _ww_pool(five: str, four: str) -> str:
+    return "{{Convene/Pool\n|resonator_5_F = " + five + "\n|resonator_4_F = " + four + "\n}}"
+
+
+def test_gachawiki_wuwa_phase_is_the_banner_date_once_phase_two_is_dated():
+    """Runner probe 2026-11-07, live `Version/3.7`: on 2026-10-22 the wiki dated the three
+    phase-2 pages, and 'dated = phase 1' filed all six banners under phase 1 — no phase 2, and a
+    six-name 4★ union that could never pass `four_star_count`. The phase is the DATE: the earliest
+    date is phase 1, the next date phase 2, an undated page belongs to the phase after the last
+    dated one. The live 3.8 page (phase 2 still undated) reads exactly as before."""
+    p1, p2 = "Buling;Taoqi;Youhu", "Lumi;Danjin;Chixia"
+    pages = {"As Full as Tonight, Forever/2026-09-30": _ww_pool("Hsin", p1),
+             "Horizon of Dawnbreak/2026-09-30": _ww_pool("Chisa", p1),
+             "Across Time's Waxes and Wanes/2026-09-30": _ww_pool("Iuno", p1),
+             "Nine Deaths, One Unbent Heart/2026-10-22": _ww_pool("Suoming", p2),
+             "Tomorrow in the Frame/2026-10-22": _ww_pool("Lucilla", p2),
+             "Undefined Spectrum/2026-10-22": _ww_pool("Lynae", p2)}
+    vp = gachawiki.parse_version_page("wuwa", _WW_37_LIVE)
+    assert [(b.phase, b.names[0]) for b in vp.banners] == [
+        (1, "Hsin"), (1, "Chisa"), (1, "Iuno"), (2, "Suoming"), (2, "Lucilla"), (2, "Lynae")]
+    ww = gachawiki.build_lineup("wuwa", _WW_37_LIVE, pages, four_star_count=3, four_star_summary=True)
+    assert ww["phase1"] == ["Hsin", "Chisa", "Iuno"] and ww["phase2"] == ["Suoming", "Lucilla", "Lynae"]
+    assert ww["phase1_4"] == ["Buling", "Taoqi", "Youhu"]          # the slot the live 3.7 card never got
+    assert ww["phase2_4"] == ["Lumi", "Danjin", "Chixia"]
+    assert ww["reruns"] == ["Chisa", "Iuno", "Lucilla", "Lynae"]
+    assert "four_star" not in ww                                    # the two lists differ: no summary
+    # pre-phase-2 page (live 3.8): one date group -> phase 1, the undated pages -> phase 2;
+    # undated pages without a bracket contribute no name and no fetch
+    vp38 = gachawiki.parse_version_page("wuwa", _WW_38_LIVE)
+    assert [(b.phase, b.names) for b in vp38.banners] == [
+        (1, ["Lily"]), (1, ["Sigrika"]), (1, ["Qiuyuan"]), (2, ["Camellya", "Roccia", "Phoebe", "Brant"]),
+        (2, []), (2, []), (2, [])]
+    ww38 = gachawiki.build_lineup("wuwa", _WW_38_LIVE, {}, four_star_count=3, four_star_summary=True)
+    assert ww38 == {"phase1": ["Lily", "Sigrika", "Qiuyuan"],
+                    "phase2": ["Camellya", "Roccia", "Phoebe", "Brant"],
+                    "reruns": ["Sigrika", "Qiuyuan", "Camellya", "Roccia", "Phoebe", "Brant"],
+                    "candidates": ["Lily", "Sigrika", "Qiuyuan", "Camellya", "Roccia", "Phoebe", "Brant"]}
+    # order on the page does not matter, the dates do; a third date and a page left undated once
+    # two dates exist fall outside the two phases, exactly as before
+    shuffled = _WW_37_LIVE.replace("* [[As Full as Tonight, Forever/2026-09-30]] (Hsin)\n", "").replace(
+        "\n===Weapon Event Convenes===",
+        "* [[As Full as Tonight, Forever/2026-09-30]] (Hsin)\n* [[Late Special/2026-11-05]] (Zani)\n"
+        "* [[Someday]] (Nobody)\n\n===Weapon Event Convenes===")
+    vp3 = gachawiki.parse_version_page("wuwa", shuffled)
+    assert sorted(b.names[0] for b in vp3.banners if b.phase == 1) == ["Chisa", "Hsin", "Iuno"]
+    assert sorted(b.names[0] for b in vp3.banners if b.phase == 2) == ["Lucilla", "Lynae", "Suoming"]
+    assert all(b.names[0] not in ("Zani", "Nobody") for b in vp3.banners)
+    # the fixture (phase 2 still undated when captured) is byte-for-byte the same reading
+    fx = gachawiki.build_lineup("wuwa", _wiki("version_wuwa_3_7.wiki"),
+                                {"As Full as Tonight, Forever/2026-09-30": _wiki("banner_wuwa_tonight.wiki")},
+                                four_star_count=3, four_star_summary=True)
+    assert fx["phase1"] == ["Hsin", "Chisa", "Iuno"] and fx["phase2"] == ["Suoming", "Lucilla", "Lynae"]
 
 
 def test_gachawiki_reruns_are_a_set_difference_against_the_debut_roster():
@@ -3528,6 +3612,42 @@ def test_wuwa_four_star_summary_hides_once_both_phases_carry_lists():
     assert "※ 4 Star Characters:" not in full                     # the union is above, per phase
     assert "- 4 Star Characters: Buling, Taoqi, Youhu" in full
     assert "- 4 Star Characters: Lumi, Danjin, Yangyang" in full
+
+
+def test_wuwa_four_star_summary_is_silent_while_it_has_nothing_to_add():
+    """WW 3.8 (run #4527, 2026-11-06): the wiki knew both phase line-ups but no 4★ at all, and
+    the card read `※ 4 Star Characters: TBA` one line above two per-phase `TBA`s. The summary
+    is a signal, not a slot: it appears only while it names a 4★ no phase line shows yet."""
+    game = load_games(ROOT / "config" / "games.json")["wuwa"]
+    base = {"phase1": ["Lily", "Sigrika", "Qiuyuan"],
+            "phase2": ["Camellya", "Roccia", "Phoebe", "Brant"]}
+    # no roster anywhere → no summary line, the per-phase lines carry the TBA
+    empty = cards.banners_block(game, {"version": "3.8", "banners": dict(base)})
+    assert "※ 4 Star Characters" not in empty
+    assert empty.count("- 4 Star Characters: TBA") == 2
+    assert empty.startswith("**Version 3.8 Banners (STC)**\n\n✦ First Half/Phase: Lily, Sigrika, Qiuyuan")
+    # an explicitly empty roster is the same as none
+    assert "※ 4 Star Characters" not in cards.banners_block(
+        game, {"version": "3.8", "banners": dict(base, four_star=[])})
+    # roster == phase-1 list, phase 2 still open → the line would only repeat phase 1: hidden
+    same = cards.banners_block(game, {"version": "3.8", "banners": dict(
+        base, phase1_4=["Lumi", "Danjin", "Chixia"], four_star=["Lumi", "Danjin", "Chixia"])})
+    assert "※ 4 Star Characters" not in same
+    assert "- 4 Star Characters: Lumi, Danjin, Chixia" in same
+    # the roster names a phase-2 4★ early → the pre-notice signal shows, in full (unchanged rule)
+    leak = cards.banners_block(game, {"version": "3.8", "banners": dict(
+        base, phase1_4=["Lumi", "Danjin", "Chixia"],
+        four_star=["Lumi", "Danjin", "Chixia", "Youhu"])})
+    assert "※ 4 Star Characters: Lumi, Danjin, Chixia, Youhu" in leak
+    # the display map applies to the comparison too: 'Phoenix' and 'Phoenix Reffaella' are one name
+    disp = {"Lumi": "Lumi Reffaella"}
+    mapped = cards.banners_block(game, {"version": "3.8", "banners_display": disp, "banners": dict(
+        base, phase1_4=["Lumi Reffaella"], four_star=["Lumi"])})
+    assert "※ 4 Star Characters" not in mapped
+    # the other games never carry the summary, whatever the roster says
+    gi = load_games(ROOT / "config" / "games.json")["genshin"]
+    assert "※ 4 Star Characters" not in cards.banners_block(
+        gi, {"version": "7.2", "banners": dict(base, four_star=["Mika"])})
 
 
 def test_edit_summary_names_banner_keys_and_lock_witnesses():

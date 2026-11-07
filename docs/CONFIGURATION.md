@@ -187,7 +187,10 @@ and card style (`title`, `maintenance_heading`, `maintenance_style` =
 `four_star_count` is the number of rate-up 4★ characters one banner phase has (GI/HSR/WW 3,
 ZZZ 2). Any list of another length is shown as TBA instead of published — that applies to an
 official notice the reader is unsure about *and* to a wiki line-up
-([BANNER_DATABASE.md](BANNER_DATABASE.md)). `four_star_label` renames the per-phase 4★ line;
+([BANNER_DATABASE.md](BANNER_DATABASE.md)). `four_star_summary` (WW) adds the `※ 4 Star
+Characters:` roster line above the phases — a signal, not a slot: it appears only while it names
+a 4★ that no per-phase line shows yet, and hides once both phase lists are in or when the wiki
+knows no 4★ at all (the per-phase lines already read `TBA`). `four_star_label` renames the per-phase 4★ line;
 ZZZ sets it to `4 Star Characters (Default)` because its A-Rank rate-ups are
 player-customisable.
 
