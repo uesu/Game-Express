@@ -3707,10 +3707,21 @@ def test_special_banner_line_on_the_card_and_in_the_merge():
     post = Item("x", "genshin", "75", "u", "",
                 "Chronicled Wish \"Ode to Natlan\" is now available! 5-Star characters Varesa, Chasca, Xilonen, "
                 "Mualani, and Kinich can be chosen as your designated 5-star character.", 1794400000)
-    for it in (own, post):
+    # ...and a post ABOUT the Chronicled Wish that states the phase after naming it is still
+    # special (the special banner is the first kind the sentence names); a post that opens with
+    # the phase and mentions the Chronicled Wish after it is a phase notice
+    in_phase = Item("x", "genshin", "77", "u", "",
+                    "Chronicled Wish \"Ode to Natlan\" is now available in Phase II! 5-Star characters Varesa, Chasca, "
+                    "Xilonen, Mualani, and Kinich can be chosen as your designated 5-star character.", 1794400000)
+    for it in (own, post, in_phase):
         fx = schedule.extract_banner(it)
         assert fx["banner_special"] == "Chronicled Wish" and fx["banner_phase"] is None, it.id
         assert fx["banner_five"] == ["Varesa", "Chasca", "Xilonen", "Mualani", "Kinich"], fx
+    phase_first = Item("x", "genshin", "78", "u", "",
+                       "Version 7.2 Phase II is here with the Chronicled Wish \"Ode to Natlan\"!\n5-Star character Zibai "
+                       "(Hydro) receives a huge drop-rate boost!", 1794400000)
+    fx = schedule.extract_banner(phase_first)
+    assert "banner_special" not in fx and fx["banner_phase"] == 2 and fx["banner_five"] == ["Zibai"]
     # a Reverb notice whose TITLE names it stays special even when its body mentions a phase
     rv2 = Item("kuro", "wuwa", "76", "u", "[Starpath Reverbs II] Reverb Resonator Convene",
                "During the event, selectable 5-Star Resonators: Camellya, Roccia, Phoebe, and Brant receive boosted "
@@ -3742,7 +3753,13 @@ def test_special_banner_line_on_the_card_and_in_the_merge():
                  "Starpath Reverbs II is a Reverb Resonator Convene!\nSelectable 5-Star Resonators: Camellya, "
                  "Roccia, Phoebe, and Brant", 1794400000)
     ft = schedule.extract_banner(tweet)
-    assert ft["banner_special"] == "Reverb Convene"
+    assert ft["banner_special"] == "Starpath Reverbs II"      # the prose names it: "<Name> is a Reverb …"
+    bare = Item("x", "wuwa", "2", "u", "", "A Reverb Resonator Convene is coming!\nSelectable 5-Star Resonators: "
+                "Camellya, Roccia, Phoebe, and Brant", 1794400000)
+    assert schedule.extract_banner(bare)["banner_special"] == "Reverb Convene"   # no name anywhere: the generic label
+    roman = Item("x", "wuwa", "3", "u", "", "The Starpath Reverbs Ⅱ is a new Reverb Resonator Convene. Selectable "
+                 "5-Star Resonators: Camellya, Roccia, Phoebe, and Brant", 1794400000)
+    assert schedule.extract_banner(roman)["banner_special"] == "Starpath Reverbs II"   # NFKC: one label with the wiki
     rec = {"data": data, "prov": prov}
     d = schedule.merge(g, "3.8", [schedule.Extract(item=tweet, kind="banner", version="3.8", fields=ft)],
                        rec, {}, {}, 1794400100, [])

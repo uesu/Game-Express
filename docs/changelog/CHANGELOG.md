@@ -32,15 +32,20 @@
   `resonator=`; dialect `series_template`/`series_field`) → 3.8 phase 2 = Xuanling, Suisui,
   Hiyuki, no 4★ until the dated page exists. `publishable_name` rejects kind words.
 - **Official notices (`schedule.py`).** `SPECIAL_NOTICE` (`Reverb (Resonator) Convene`,
-  `Chronicled Wish`) on the **title**, or on the first sentence of an untitled post that
-  states no Phase I/II and no `ORDINARY_NOTICE` kind (Event Wish, Featured Resonator/Weapon
-  Convene, Character Event) in that same opening — a passing mention never decides: an "Event
-  Wishes Notice - Phase II" whose lead adds "The Chronicled Wish will also be available", an X
-  post announcing both, or a Special Program recap line "Second Half/Phase: Zibai, Linnea,
-  Chronicled Wish" all keep their phase (review finding on GE #148: the first cut read the
-  title + first 400 chars and would have moved such a notice's 5★ from the phase line to the
-  `※` line). `TIER_STOP` also ends a name run at the Chronicled wording "can be chosen as your
-  designated 5-star character" (the last name before it was lost). → `extract_banner` adds
+  `Chronicled Wish`) on the **title**, or on the first sentence of an untitled post when the
+  special banner is the **first kind that sentence names** — before any Phase I/II marker or
+  `ORDINARY_NOTICE` kind (Event Wish, Featured Resonator/Weapon Convene, Character Event). A
+  passing mention never decides: an "Event Wishes Notice - Phase II" whose lead adds "The
+  Chronicled Wish will also be available", an X post announcing both, a Special Program recap
+  line "Second Half/Phase: Zibai, Linnea, Chronicled Wish" or "Version 7.2 Phase II is here
+  with the Chronicled Wish" all keep their phase, while "Chronicled Wish "X" is now available
+  in Phase II!" is about the Chronicled Wish (review findings on GE #148: the first cut read
+  the title + first 400 chars and would have moved such a notice's 5★ from the phase line to
+  the `※` line). An untitled WuWa post that says "<Name> is a Reverb Resonator Convene" is
+  labelled with that name (`_PROSE_REVERB`, NFKC so `Ⅱ` meets the wiki's `II`); `Reverb
+  Convene` only when no name is written anywhere. `TIER_STOP` also ends a name run at the
+  Chronicled wording "can be chosen as your designated 5-star character" (the last name before
+  it was lost). → `extract_banner` adds
   `banner_special = <label>` (the `[bracketed]` banner name; "Chronicled Wish" for Genshin;
   `Reverb Convene` when no name is bracketed) and clears the phase. The merge writes
   `banners["special"][label]` at the source's priority and **never a phase**; a notice whose

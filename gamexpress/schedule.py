@@ -17,6 +17,7 @@ import asyncio
 import logging
 import math
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from statistics import median
@@ -706,23 +707,38 @@ def _notice_lead(item: Item) -> str:
     return f"{item.title or ''}\n{first}"
 
 
+# An untitled post names the Reverb Convene in prose: "Starpath Reverbs II is a Reverb Resonator
+# Convene!" — the Title Case run before "is a Reverb" is the banner's name (the card's label).
+_PROSE_REVERB = re.compile(
+    r"(?:^|[\n.!?,:;—–-]\s*)(?:[Tt]he\s+)?((?:[A-Z\d\u2160-\u217f][\w'’:-]*|of|the|and|in)"
+    r"(?:\s+(?:[A-Z\d\u2160-\u217f][\w'’:-]*|of|the|and|in)){0,5}?)"
+    r"\s+(?i:is\s+(?:an?\s+)?(?:new\s+)?reverb)")
+
+
 def _special_banner_label(item: Item, phase: int | None = None) -> str:
     """'' for an ordinary phase notice; the card label for a special one. `phase` is the
-    notice's own Phase I/II reading — a notice that states a phase is never special unless
-    its TITLE names the special banner."""
+    notice's own Phase I/II reading (kept for the caller's record). The title decides when it
+    names the special banner; otherwise the opening sentence does, and only when the special
+    banner is the FIRST kind it names — before any Phase I/II or Event Wish / Featured
+    Resonator Convene. "Chronicled Wish "X" is now available in Phase II!" is about the
+    Chronicled Wish; "Phase II: Zibai, Linnea, Chronicled Wish" is about the phase."""
     m = SPECIAL_NOTICE.search(item.title or "")
     if not m:
         lead = _notice_lead(item)
         m = SPECIAL_NOTICE.search(lead)
-        if not m or phase is not None or ORDINARY_NOTICE.search(lead):
+        if not m:
+            return ""
+        others = [x.start() for rx in (ORDINARY_NOTICE, PHASE1, PHASE2) for x in [rx.search(lead)] if x]
+        if others and min(others) < m.start():
             return ""
     if m.group().lower().startswith("chronicled"):
         return "Chronicled Wish"
     head = f"{item.title or ''}\n{(item.text or '')[:400]}"
     b = (_BRACKET_TITLE.search(item.title or "") or _BRACKET_TITLE.search(head)
-         or re.search(r"[\[【]([^\]】\n]{2,60})[\]】]\s+is\s+an?\s+reverb", item.text or "", re.I))
-    name = _clean_name(b.group(1)) if b else ""
-    return name if name and not SPECIAL_NOTICE.search(name) else "Reverb Convene"
+         or re.search(r"[\[【]([^\]】\n]{2,60})[\]】]\s+is\s+an?\s+reverb", item.text or "", re.I)
+         or _PROSE_REVERB.search(head))
+    name = _clean_name(unicodedata.normalize("NFKC", b.group(1))) if b else ""
+    return name if name and not SPECIAL_NOTICE.search(name) and plausible_name(name) else "Reverb Convene"
 
 
 def extract_banner(item: Item) -> dict:
