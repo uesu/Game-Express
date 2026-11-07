@@ -1,6 +1,12 @@
 # Changelog
 
-Latest: [Housekeeping: privacy policy names the new nitter host, docs index tidy](CHANGELOG.md#2026-11-06--housekeeping-privacy-policy-names-the-new-nitter-host-docs-index-tidy).
+Latest: [Banners outside the phases: the `※ <banner>: names` line (Reverb Convene, Chronicled Wish, Collaboration)](CHANGELOG.md#2026-11-07--banners-outside-the-phases-the--banner-names-line-reverb-convene-chronicled-wish-collaboration).
+
+Previous: [WuWa wiki reader: the phase is the banner page's date](CHANGELOG.md#2026-11-07--wuwa-wiki-reader-the-phase-is-the-banner-pages-date).
+
+Previous: [Schedule: the WuWa 4★ summary line is silent while it has nothing to add](CHANGELOG.md#2026-11-07--schedule-the-wuwa-4-summary-line-is-silent-while-it-has-nothing-to-add).
+
+Previous: [Housekeeping: privacy policy names the new nitter host, docs index tidy](CHANGELOG.md#2026-11-06--housekeeping-privacy-policy-names-the-new-nitter-host-docs-index-tidy).
 
 Previous: [X: nitter rotation #8 — the teapawt family leads, mizuki.st joins, meowing/miningtcup demoted](CHANGELOG.md#2026-11-06--x-nitter-rotation-8--the-teapawt-family-leads-mizukist-joins-meowingminingtcup-demoted).
 
