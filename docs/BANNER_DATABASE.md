@@ -118,8 +118,9 @@ ANANTA and Honkai: Nexus Anima have no gacha data and are deliberately absent fr
 2. Request 1 — `action=parse&page=Version/<X.Y>&prop=wikitext`: the debut roster and the banner
    section, split into phases.
 3. Request 2 — one batched `action=query&prop=revisions` over the *dated* banner pages found in
-   step 2 (up to 50 titles per call, `|` encoded as `%7C`). Their pool templates give the exact
-   5★ and 4★ names.
+   step 2, plus the page of any banner the Version page gave no name for (WuWa series pages)
+   (up to 50 titles per call, `|` encoded as `%7C`). Their pool templates give the exact
+   5★ and 4★ names; their infobox `type` the banner kind (see *Banners outside the phases*).
 4. `reruns = featured − debuts`.
 5. A 4★ list whose length is not exactly the game's `four_star_count` is dropped, not published.
 
@@ -134,6 +135,34 @@ No new dependencies: standard-library `re` and the existing `Fetcher.get_json`.
 | starrail | `* Character Event Warps:` | `… - Phase 1` at the end of each line |
 | zzz | `====Exclusive Channels====` | `* Phase 1:` / `* Phase 2:` |
 | wuwa | `===Character Event Convenes===` | none — **the phase is the banner page's date**: the earliest date on the list is phase 1, the next date phase 2, a page not yet dated belongs to the phase after the last dated one (the wiki dates a page the day its phase goes live) |
+
+## Banners outside the phases (`special`)
+
+Some banners belong to no phase: WuWa's **Reverb Resonator Convene** (`Starpath Reverbs`,
+`Starpath Reverbs II` — selectable 5★ reruns beside the phases), Genshin's **Chronicled Wish**,
+HSR's **Collaboration** warps, WuWa's **Collab Resonator** convenes. The wiki says so in one of
+three places and the reader (`gachawiki.SPECIAL_KIND`) reads all three:
+
+| where | example | label on the card |
+|---|---|---|
+| the bracket | `[[Names Forged …/2026-11-24\|…]] (Chronicled Wish)` + `*** Characters: [[Varesa]], …` | the kind: `Chronicled Wish` |
+| the trailing tag (HSR) | `… ([[Rin Tohsaka]]) - Collaboration` | the kind: `Collaboration` |
+| the banner page infobox `type` | `Collab Resonator`, `Chronicled`, `Character Collaboration` | WuWa: the banner's name |
+| WuWa, two or more names on one convene | `[[Starpath Reverbs II]] ([[Camellya]], [[Roccia]], …)` | the banner's name: `Starpath Reverbs II` |
+
+They reach the card as `banners["special"] = {label: [names]}` and render one line each above
+the phase lines — `※ Starpath Reverbs II: Camellya, Roccia, Phoebe, Brant` — never in
+`phase1`/`phase2`/`reruns`. The official notice feeds the same line: `schedule.SPECIAL_NOTICE`
+(`Reverb (Resonator) Convene`, `Chronicled Wish` in the title or opening lines) makes
+`extract_banner` return `banner_special` and the merge writes the line at the notice's
+priority instead of a phase (Kuro 5065 `[Starpath Reverbs] Reverb Resonator Convene` used to
+be a six-name phase 1). `config/overrides.json` → `"banners": {"special": {label: [names]}}`
+pins it; `{}` removes every such line.
+
+WuWa only: a banner whose phase is not live yet has no dated page, and the Version page links
+its **series** page (`Voices on Azure Feathers`). That page is fetched too (`Convene Series
+Infobox`, `resonator=`) and gives the 5★ — 3.8's phase 2 (Xuanling, Suisui, Hiyuki) — with no
+4★ until the dated page exists.
 
 ## The early tier
 

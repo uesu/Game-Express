@@ -334,6 +334,13 @@ def banners_block(game: Game, d: dict) -> str:
         roster = [names([n], disp) for n in (b.get("four_star") or [])]
         if any(n != TBA and n not in shown for n in roster):
             notes.append(f"※ 4 Star Characters: {names(b.get('four_star'), disp)}")
+    # The banners outside the phases — WuWa's Reverb Convene ('Starpath Reverbs II': Camellya,
+    # Roccia, Phoebe, Brant), Genshin's Chronicled Wish, HSR's Collaboration warps — one line
+    # each under the label the sources agreed on (gachawiki.SPECIAL_KIND / schedule.SPECIAL_NOTICE).
+    # Read as a phase, 3.8's Reverb Convene was the card's whole "Second Half" (2026-11-07).
+    for label, who in (b.get("special") or {}).items():
+        if who:
+            notes.append(f"※ {label}: {names(who, disp)}")
     if notes:
         lines += ["", *notes]
     four = game.card.four_star_label

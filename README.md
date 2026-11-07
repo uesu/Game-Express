@@ -96,7 +96,9 @@ existed stay out of the channel.
 ```
 
 - **Each game keeps its own format.** Wuthering Waves uses `"Special Broadcast"` in the title,
-  shows maintenance before banners and adds the `※ 4 Star Characters:` summary line; Genshin's
+  shows maintenance before banners and adds the `※ 4 Star Characters:` summary line; a banner
+  outside the phases (WuWa's Reverb Convene, Genshin's Chronicled Wish) gets its own
+  `※ Starpath Reverbs II: Camellya, Roccia, Phoebe, Brant` line above them; Genshin's
   banner heading links to lunaris.moe; HSR's heading reads `Maintenance Details (STC)`. All four
   reference cards were converted 1:1 and are pinned by golden tests.
 - **The card stays accurate after posting.** When the maintenance notice arrives, pre-install

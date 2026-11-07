@@ -1,5 +1,66 @@
 # Changelog — current entries
 
+## 2026-11-07 — Banners outside the phases: the `※ <banner>: names` line (Reverb Convene, Chronicled Wish, Collaboration)
+
+- **What the card shows.** A banner that belongs to no phase gets its own line above the two
+  phase lines, under the name the sources agree on — WuWa 3.8:
+  `※ Starpath Reverbs II: Camellya, Roccia, Phoebe, Brant` / `✦ First Half/Phase: Lily,
+  Sigrika, Qiuyuan` / `✦ Second Half/Phase: Yangyang: Xuanling, Suisui, Hiyuki`. Genshin 7.2
+  gets `※ Chronicled Wish: Varesa, Chasca, Xilonen, Mualani, Kinich`; HSR 4.4 would have read
+  `※ Collaboration: Rin Tohsaka, Gilgamesh`. The line hides when no such banner exists.
+- **Why.** Live 3.8 card (owner screenshots + runner probes 2026-11-07): the wiki's
+  `Starpath Reverbs II` line (a *Reverb Resonator Convene*, selectable reruns, official preview
+  lists it beside Phase I/II) was read as **phase 2**, while the real phase 2 sat on three
+  nameless lines (`Voices on Azure Feathers`, `Blessings From Dewy Winds`, `Thousand Futures
+  Mirrored in Snow` — undated *series* pages the reader never fetched). Past versions showed the
+  same family everywhere: WuWa 3.5 `Starpath Reverbs` (six names, read as phase 2 then), 3.4's
+  two *Collab Resonator* convenes (dated first → phase 1, pushing Lucilla/Cartethyia down),
+  Genshin 7.2's `(Chronicled Wish)` bracket (the literal name **"Chronicled Wish"** became the
+  third phase-2 character), HSR 4.4's `- Collaboration` lines (dropped). And the official
+  side: Kuro 5065 `[Starpath Reverbs] Reverb Resonator Convene` is classified `banner`,
+  `extract_banner` reads its six selectable 5★, no phase → the merge's date rule made it
+  **phase 1** the day before 3.5 went live. `[Starpath Reverbs II] …` is due ~2026-11-11.
+- **Wiki reader (`gachawiki.py`).** `SPECIAL_KIND` (`reverb|chronicled|collab(oration)`) read
+  from the three places the wiki states a kind: the bracket (`(Chronicled Wish)` — its
+  `*** Characters:` sub-line gives the names, `*** Weapons:` is skipped), the HSR trailing tag
+  (`- Collaboration`), and the banner page's infobox `type` (`Collab Resonator`, `Chronicled`,
+  `Character Collaboration`; new dialect field `info_template`). WuWa: a convene credited to
+  two or more resonators is a Reverb Convene (one 5★ per featured convene). Specials leave the
+  phases (WuWa dates are ranked again without them) and reach `build_lineup` as
+  `special = {label: names}` — the kind for GI/HSR, the banner's own name for WuWa. Undated
+  WuWa lines without a bracket now fetch their **series page** (`Convene Series Infobox`,
+  `resonator=`; dialect `series_template`/`series_field`) → 3.8 phase 2 = Xuanling, Suisui,
+  Hiyuki, no 4★ until the dated page exists. `publishable_name` rejects kind words.
+- **Official notices (`schedule.py`).** `SPECIAL_NOTICE` on title + first 400 chars
+  (`Reverb (Resonator) Convene`, `Chronicled Wish`) → `extract_banner` adds
+  `banner_special = <label>` (the `[bracketed]` banner name; "Chronicled Wish" for Genshin;
+  `Reverb Convene` when no name is bracketed) and clears the phase. The merge writes
+  `banners["special"][label]` at the source's priority and **never a phase**; a notice whose
+  names equal a wiki-written line keeps the wiki's label (one line, not two).
+  `apply_gacha_wiki` owns/withdraws `special` at priority 6, below official and overrides;
+  `config/overrides.json` accepts `"special": {label: [names]}` (`{}` clears).
+  `banner_change_detail` reports `special ← wiki|official`.
+- **Kuro Roman numerals (`banner_search.canon`).** Kuro titles phases with the characters
+  Ⅰ/Ⅱ (U+2160/61) as often as with letters: 3.3 and 3.6 Phase Ⅱ and both 3.7 notices
+  (5546, 5668) never matched `Version {v} … Phase {p}` — the probe said "no notice found" for
+  3.7 while the menu listed both. NFKC folding fixes the match.
+- **ZZZ marker.** `* Starting in the second half:` (ZZZ 2.5, paired with `* Lasting the whole
+  version:`) is phase 2; the reader filed the rescreening under it as phase 1.
+- **Checked and left alone.** Genshin's HoYoLAB "Chronicled Wish" posts are image teasers
+  (no text, `classify` None); HSR's "Fate[UBW] Collaboration Warp Details" is not classified
+  a banner notice. Neither reaches the merge, so the wiki alone feeds their lines.
+- **Probe evidence (News-Express `wiki_probe.yml`, PR #122 comments).** All four wikis: WuWa
+  3.0–3.8, GI 7.0–7.2, HSR 4.3–4.7, ZZZ 3.0–3.3 section lines and page infoboxes; Kuro menu
+  titles (`reverb|convene`, 60 newest), articles 5689 (3.8 preview — image only, no text),
+  5065, 5668, 5039, 5047, 4852; HoYoLAB `banner_search.find` for GI 7.1/7.2, HSR 4.4/4.6/4.7,
+  ZZZ 3.2/3.3 (all extract as before).
+- Tests: `test_gachawiki_special_banners_sit_outside_the_phases` (live 3.8 + series pages,
+  3.5, 3.4 with page types, GI 7.2, HSR 4.4, early tier),
+  `test_special_banner_line_on_the_card_and_in_the_merge` (Kuro 5065 extract + merge, wiki
+  write/withdraw/outranked, X post without a bracket, card lines for WuWa and GI, edit detail,
+  override, Ⅰ/Ⅱ titles); `test_gachawiki_wuwa_phase_is_the_banner_date_once_phase_two_is_dated`
+  updated (the Reverb line is `special`). Golden cards unchanged.
+
 ## 2026-11-07 — WuWa wiki reader: the phase is the banner page's date
 
 - **What changed.** `gamexpress/sources/gachawiki.py::parse_version_page`, the WuWa branch only.
@@ -7,8 +68,9 @@
   = phase 2". The wiki dates a banner page the day its phase goes live, so that rule held only
   until phase 2 started. Now the phase **is the date**: the earliest date on the list is
   phase 1, the next date phase 2, and a page not yet dated belongs to the phase after the last
-  dated one. Order on the page is irrelevant; a third date, or an undated page once two dates
-  exist, falls outside both phases exactly as before.
+  dated one — never phase 1: with no date on the list at all it is still the "not live yet"
+  phase 2 of the old rule. Order on the page is irrelevant; a third date, or an undated page
+  once two dates exist, falls outside both phases exactly as before.
 - **Why.** Runner probe 2026-11-07 (News-Express `wiki_probe.yml`, live `Version/3.7`): since
   2026-10-22 the three phase-2 pages are dated, so the reader filed **all six** banners under
   phase 1 (`Hsin, Chisa, Iuno, Suoming, Lucilla, Lynae`), produced no phase 2, and the 4★

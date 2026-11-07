@@ -3469,16 +3469,18 @@ def test_gachawiki_wuwa_phase_is_the_banner_date_once_phase_two_is_dated():
     assert ww["phase2_4"] == ["Lumi", "Danjin", "Chixia"]
     assert ww["reruns"] == ["Chisa", "Iuno", "Lucilla", "Lynae"]
     assert "four_star" not in ww                                    # the two lists differ: no summary
-    # pre-phase-2 page (live 3.8): one date group -> phase 1, the undated pages -> phase 2;
-    # undated pages without a bracket contribute no name and no fetch
+    # pre-phase-2 page (live 3.8): one date group -> phase 1, the undated series pages -> phase 2
+    # (nameless until their page is read, see test_gachawiki_special_banners_sit_outside_the_phases);
+    # the Reverb Convene line is no phase at all
     vp38 = gachawiki.parse_version_page("wuwa", _WW_38_LIVE)
     assert [(b.phase, b.names) for b in vp38.banners] == [
-        (1, ["Lily"]), (1, ["Sigrika"]), (1, ["Qiuyuan"]), (2, ["Camellya", "Roccia", "Phoebe", "Brant"]),
-        (2, []), (2, []), (2, [])]
+        (1, ["Lily"]), (1, ["Sigrika"]), (1, ["Qiuyuan"]), (2, []), (2, []), (2, [])]
+    assert [(b.title, b.names) for b in vp38.specials] == [
+        ("Starpath Reverbs II", ["Camellya", "Roccia", "Phoebe", "Brant"])]
     ww38 = gachawiki.build_lineup("wuwa", _WW_38_LIVE, {}, four_star_count=3, four_star_summary=True)
     assert ww38 == {"phase1": ["Lily", "Sigrika", "Qiuyuan"],
-                    "phase2": ["Camellya", "Roccia", "Phoebe", "Brant"],
-                    "reruns": ["Sigrika", "Qiuyuan", "Camellya", "Roccia", "Phoebe", "Brant"],
+                    "reruns": ["Sigrika", "Qiuyuan"],
+                    "special": {"Starpath Reverbs II": ["Camellya", "Roccia", "Phoebe", "Brant"]},
                     "candidates": ["Lily", "Sigrika", "Qiuyuan", "Camellya", "Roccia", "Phoebe", "Brant"]}
     # order on the page does not matter, the dates do; a third date and a page left undated once
     # two dates exist fall outside the two phases, exactly as before
@@ -3490,12 +3492,247 @@ def test_gachawiki_wuwa_phase_is_the_banner_date_once_phase_two_is_dated():
     assert sorted(b.names[0] for b in vp3.banners if b.phase == 1) == ["Chisa", "Hsin", "Iuno"]
     assert sorted(b.names[0] for b in vp3.banners if b.phase == 2) == ["Lucilla", "Lynae", "Suoming"]
     assert all(b.names[0] not in ("Zani", "Nobody") for b in vp3.banners)
+    # no date on the list at all: an undated page is still the "not live yet" phase 2 (old rule),
+    # never phase 1 -- a rerun block listed before the debut banners are dated stays phase 2
+    nodates = _WW_38_LIVE.replace("/2026-11-12", "")
+    assert {b.phase for b in gachawiki.parse_version_page("wuwa", nodates).banners} == {2}
+    assert gachawiki.build_lineup("wuwa", nodates, {}, four_star_count=3, four_star_summary=True)["phase2"] == [
+        "Lily", "Sigrika", "Qiuyuan"]
     # the fixture (phase 2 still undated when captured) is byte-for-byte the same reading
     fx = gachawiki.build_lineup("wuwa", _wiki("version_wuwa_3_7.wiki"),
                                 {"As Full as Tonight, Forever/2026-09-30": _wiki("banner_wuwa_tonight.wiki")},
                                 four_star_count=3, four_star_summary=True)
     assert fx["phase1"] == ["Hsin", "Chisa", "Iuno"] and fx["phase2"] == ["Suoming", "Lucilla", "Lynae"]
 
+
+def _ww_series(who: str) -> str:
+    return ("{{Convene Series Infobox\n|resonator = " + who + "\n|image = " + who +
+            " Splash Art.png\n|type = Featured Resonator Convene\n}}\nBanner series of " + who + ".")
+
+
+def _ww_page(five: str, four: str, kind: str = "Featured Resonator") -> str:
+    return ("{{Convene\n|name = x\n|type = " + kind + "\n|duration = event\n|time_start = 2026-06-08\n}}\n"
+            + _ww_pool(five, four))
+
+
+_WW_35_LIVE = """===Resonators===
+* {{Intro/Resonator/Full|Yangyang: Xuanling}}
+* {{Intro/Resonator/Full|Suisui}}
+
+===Character Event Convenes===
+* [[Voices on Azure Feathers/2026-07-10]] (Yangyang: Xuanling)
+* [[Undefined Spectrum/2026-07-10]] ([[Lynae]])
+* [[When Winter Thaws/2026-07-10]] ([[Luuk Herssen]])
+* [[Blessings From Dewy Winds/2026-07-30]] (Suisui)
+* [[Take Flight in Spring/2026-07-30]] ([[Aemeath]])
+* [[Starpath Reverbs]] ([[Jiyan]], [[Yinlin]], [[Jinhsi]], [[Changli]], [[Zhezhi]], [[Xiangli Yao]])
+
+===Weapon Event Convenes===
+"""
+
+_WW_34_LIVE = """===Resonators===
+* {{Intro/Resonator/Full|Lucy}}
+* {{Intro/Resonator/Full|Rebecca}}
+* {{Intro/Resonator/Full|Lucilla}}
+
+===Character Event Convenes===
+* [[Dreaming Upon the Moon/2026-06-08]] (Lucy)
+* [[Rekindled Embers of Rage/2026-06-08]] (Rebecca)
+* [[Tomorrow in the Frame/2026-06-13]] (Lucilla)
+* [[Dance in the Storm's Wake/2026-06-18]] ([[Cartethyia]])
+
+===Weapon Event Convenes===
+"""
+
+_GI_72_LIVE = """;New Characters
+* [[File:Character Mitya Thumb.png|30px|link=Mitya]] [[Mitya]]
+* [[File:Character Valeriy Thumb.png|30px|link=Valeriy]] [[Valeriy]]
+;Event Wishes
+<gallery>
+Version 7.2 Wishes Phase I 1.png
+</gallery>
+* Phase I
+** [[Myriad Patterns Unfold/2026-11-04|Myriad Patterns Unfold]] (Mitya & Valeriy)
+** [[Chanson of Many Waters/2026-11-04|Chanson of Many Waters]] ([[Furina]] & Valeriy)
+* Phase II
+** [[Harmonious Abundance/2026-11-24|Harmonious Abundance]] ([[Zibai]])
+** [[Ya-hoho! Compendium/2026-11-24|Ya-hoho! Compendium]] ([[Linnea]])
+** [[Names Forged Beneath Blazing Skies/2026-11-24|Names Forged Beneath Blazing Skies]] (Chronicled Wish)
+*** Characters: [[Varesa]], [[Chasca]], [[Xilonen]], [[Mualani]], [[Kinich]]
+*** Weapons: [[Vivid Notions]], [[Astral Vulture's Crimson Plumage]], [[Peak Patrol Song]]
+;Weapon Event Wishes
+"""
+
+_HSR_44_LIVE = """===Characters===
+* {{Character Intro|Himeko • Nova}}
+* {{Character Intro|Rin Tohsaka}}
+* {{Character Intro|Gilgamesh}}
+
+==Warps==
+* Character Event Warps:
+** [[Ad Astra Nova/2026-07-15|Ad Astra Nova]] ([[Himeko • Nova]]) - Phase 1
+** [[Indelible Coterie/2026-07-15|Indelible Coterie]] ([[Sparxie]], [[Dan Heng • Permansor Terrae]], [[Evernight]]) - Phase 1
+** [[The Gem Coursing in Red/2026-07-24|The Gem Coursing in Red]] ([[Rin Tohsaka]]) - Collaboration
+** [[Of the Beginning, Enuma Elish/2026-07-24|Of the Beginning, Enuma Elish]] ([[Gilgamesh]]) - Collaboration
+** [[Indelible Coterie/2026-08-05|Indelible Coterie]] ([[Cerydra]], [[Anaxa]], [[Aventurine]]) - Phase 2
+* Light Cone Event Warps:
+** [[Brilliant Fixation/2026-07-15|Brilliant Fixation]]
+"""
+
+
+def test_gachawiki_special_banners_sit_outside_the_phases():
+    """Runner probe 2026-11-07, live Version pages. A banner that belongs to no phase — WuWa's
+    Reverb Convene, Genshin's Chronicled Wish, HSR's Collaboration warps, WuWa's Collab
+    convenes — is `special` ({label: names}), never a phase name and never a rerun. The card
+    shows it as its own `※ <label>: names` line. And a WuWa banner whose phase is not live yet
+    has no dated page: the Version page links the SERIES page, whose infobox names the
+    resonator — 3.8's real phase 2 (Xuanling, Suisui, Hiyuki) was three nameless lines."""
+    # WuWa 3.8: the Reverb Convene is the undated multi-name line; phase 2 is the series pages
+    series = {"Voices on Azure Feathers": _ww_series("Yangyang: Xuanling"),
+              "Blessings From Dewy Winds": _ww_series("Suisui"),
+              "Thousand Futures Mirrored in Snow": _ww_series("Hiyuki")}
+    assert gachawiki.parse_banner_page("wuwa", series["Voices on Azure Feathers"]) == {
+        "five": ["Yangyang: Xuanling"], "four": [], "kind": ""}
+    ww38 = gachawiki.build_lineup("wuwa", _WW_38_LIVE, series, four_star_count=3, four_star_summary=True)
+    assert ww38["phase1"] == ["Lily", "Sigrika", "Qiuyuan"]
+    assert ww38["phase2"] == ["Yangyang: Xuanling", "Suisui", "Hiyuki"]
+    assert "phase2_4" not in ww38                                   # a series page has no pool
+    assert ww38["special"] == {"Starpath Reverbs II": ["Camellya", "Roccia", "Phoebe", "Brant"]}
+    assert ww38["reruns"] == ["Sigrika", "Qiuyuan", "Yangyang: Xuanling", "Suisui", "Hiyuki"]
+    assert not any(n in ww38["reruns"] for n in ("Camellya", "Roccia", "Phoebe", "Brant"))
+    assert ww38["candidates"][-4:] == ["Camellya", "Roccia", "Phoebe", "Brant"]   # display names still map
+    # WuWa 3.5: the first Reverb Convene (six names), phases by date as before
+    ww35 = gachawiki.build_lineup("wuwa", _WW_35_LIVE, {}, four_star_count=3, four_star_summary=True)
+    assert ww35["phase1"] == ["Yangyang: Xuanling", "Lynae", "Luuk Herssen"]
+    assert ww35["phase2"] == ["Suisui", "Aemeath"]
+    assert ww35["special"] == {"Starpath Reverbs": ["Jiyan", "Yinlin", "Jinhsi", "Changli", "Zhezhi", "Xiangli Yao"]}
+    # WuWa 3.4: only the banner PAGE says 'Collab Resonator'; once read, the two collab
+    # convenes leave the phases and the dates are ranked again (Lucilla 1, Cartethyia 2)
+    p34 = {"Dreaming Upon the Moon/2026-06-08": _ww_page("Lucy", "Lumi;Youhu;Taoqi", "Collab Resonator"),
+           "Rekindled Embers of Rage/2026-06-08": _ww_page("Rebecca", "Lumi;Youhu;Taoqi", "Collab Resonator"),
+           "Tomorrow in the Frame/2026-06-13": _ww_page("Lucilla", "Lumi;Youhu;Taoqi"),
+           "Dance in the Storm's Wake/2026-06-18": _ww_page("Cartethyia", "Yangyang;Yuanwu;Mortefi")}
+    assert gachawiki.parse_banner_page("wuwa", p34["Dreaming Upon the Moon/2026-06-08"])["kind"] == "Collab Resonator"
+    ww34 = gachawiki.build_lineup("wuwa", _WW_34_LIVE, p34, four_star_count=3, four_star_summary=True)
+    assert ww34["phase1"] == ["Lucilla"] and ww34["phase2"] == ["Cartethyia"]
+    assert ww34["phase1_4"] == ["Lumi", "Youhu", "Taoqi"] and ww34["phase2_4"] == ["Yangyang", "Yuanwu", "Mortefi"]
+    assert ww34["special"] == {"Dreaming Upon the Moon": ["Lucy"], "Rekindled Embers of Rage": ["Rebecca"]}
+    # Genshin 7.2: '(Chronicled Wish)' is a KIND, its characters are on the '***' sub-line;
+    # before this the literal name "Chronicled Wish" was 7.2's third phase-2 character
+    vp = gachawiki.parse_version_page("genshin", _GI_72_LIVE)
+    assert [(b.phase, b.names) for b in vp.banners] == [
+        (1, ["Mitya & Valeriy"]), (1, ["Furina & Valeriy"]), (2, ["Zibai"]), (2, ["Linnea"])]
+    assert [(b.kind, b.names) for b in vp.specials] == [
+        ("Chronicled Wish", ["Varesa", "Chasca", "Xilonen", "Mualani", "Kinich"])]
+    gi = gachawiki.build_lineup("genshin", _GI_72_LIVE, {}, four_star_count=3)
+    assert gi["phase2"] == ["Zibai", "Linnea"]
+    assert gi["special"] == {"Chronicled Wish": ["Varesa", "Chasca", "Xilonen", "Mualani", "Kinich"]}
+    assert not gachawiki.publishable_name("Chronicled Wish") and not gachawiki.publishable_name("Collaboration")
+    assert gachawiki.publishable_name("Yangyang: Xuanling") and gachawiki.publishable_name("Rin Tohsaka")
+    # ZZZ 2.5: '* Starting in the second half:' is the phase-2 marker next to 'Lasting the whole version:'
+    zzz25 = ("===Playable Agents===\n* {{Intro/Agent/Full|Ye Shunguang}}\n* {{Intro/Agent/Full|Zhao}}\n\n"
+             "====Exclusive Channels====\n* Lasting the whole version:\n"
+             "** [[Light Upon Fingertips/2025-12-30|Light Upon Fingertips]] ([[Ye Shunguang]])\n"
+             "** [[Priceless Heart/2025-12-30|Priceless Heart]] ([[Zhao]])\n* Starting in the second half:\n"
+             "** [[Exclusive Rescreening/2026-01-21|Exclusive Rescreening]] ([[Alice Thymefield]], [[Soldier 0 - Anby]], [[Astra Yao]])\n"
+             "====W-Engine Channels====\n")
+    z = gachawiki.build_lineup("zzz", zzz25, {}, four_star_count=2)
+    assert z["phase1"] == ["Ye Shunguang", "Zhao"] and z["phase2"] == ["Alice Thymefield", "Soldier 0 - Anby", "Astra Yao"]
+    assert "special" not in z                                       # a rescreening IS a phase banner
+    # HSR 4.4: '- Collaboration' instead of '- Phase N'; two lines, one label
+    hsr = gachawiki.build_lineup("starrail", _HSR_44_LIVE, {}, four_star_count=3)
+    assert hsr["phase1"] == ["Himeko • Nova", "Sparxie", "Dan Heng • Permansor Terrae", "Evernight"]
+    assert hsr["phase2"] == ["Cerydra", "Anaxa", "Aventurine"]
+    assert hsr["special"] == {"Collaboration": ["Rin Tohsaka", "Gilgamesh"]}
+    assert "Rin Tohsaka" not in hsr["reruns"]
+    # the early tier keeps the line too (a Reverb block announced before the phases are dated)
+    early = gachawiki.build_lineup("wuwa", _WW_38_LIVE.replace("/2026-11-12", "").replace(
+        "* [[Voices on Azure Feathers]]\n* [[Blessings From Dewy Winds]]\n* [[Thousand Futures Mirrored in Snow]]\n", "")
+        .replace(" (Lily)", " (Resonator)").replace(" ([[Sigrika]])", "").replace(" ([[Qiuyuan]])", ""),
+        {}, four_star_count=3, four_star_summary=True)
+    assert early == {"confirmed": ["Lily"], "special": {"Starpath Reverbs II": ["Camellya", "Roccia", "Phoebe", "Brant"]}}
+
+
+def test_special_banner_line_on_the_card_and_in_the_merge():
+    """The `※ <label>: names` line: written by the wiki, confirmed or corrected by the official
+    notice, never a phase. Kuro 5065 "[Starpath Reverbs] Reverb Resonator Convene" (2026-07-09,
+    the day before 3.5 went live) read as six phase-1 names before this; Kuro titles the phase
+    notices with the Roman-numeral CHARACTERS Ⅰ/Ⅱ as often as with letters, and those never
+    matched the title template (3.7's 5546/5668 — "no notice found", probe 2026-11-07)."""
+    g = GAMES["wuwa"]
+    reverb = Item("kuro", "wuwa", "5065", "https://wutheringwaves.kurogames.com/en/main/news/detail/5065",
+                  "[Starpath Reverbs] Reverb Resonator Convene",
+                  "During the event, selectable 5-Star Resonators: Jiyan, Yinlin, Jinhsi, Changli, Zhezhi, and "
+                  "Xiangli Yao, and 4-Star Resonators: Buling, Sanhua, and Yangyang receive boosted drop rates!\n\n"
+                  "✦Duration✦\nVersion 3.5 update - 2026-08-19 11:59 (server time)\n\n✦Convene Rules✦\n"
+                  "- [Starpath Reverbs] is a Reverb Resonator Convene event banner.", 1783900000)
+    f = schedule.extract_banner(reverb)
+    assert f["banner_special"] == "Starpath Reverbs" and f["banner_phase"] is None
+    assert f["banner_five"] == ["Jiyan", "Yinlin", "Jinhsi", "Changli", "Zhezhi", "Xiangli Yao"]
+    assert schedule.classify(g, reverb) == "banner"
+    phase = Item("kuro", "wuwa", "5039", "u", "[Version 3.5 Featured Resonator/Weapon Convene: Phase I]",
+                 "[When Winter Thaws] Featured Resonator Convene\nDuring the event, 5-Star Resonator Luuk Herssen "
+                 "and 4-Star Resonators Danjin, Chixia, and Aalto receive boosted drop rates!", 1783800000)
+    assert "banner_special" not in schedule.extract_banner(phase)          # a phase notice stays one
+    assert schedule.extract_banner(phase)["banner_phase"] == 1
+    # the merge: the notice fills the `※` line and leaves the phases alone, even on a card
+    # whose maintenance start would have made it "phase 1" by date
+    rec = {"data": {"version": "3.5", "maint_start_ts": 1783994400, "banners": {"phase1": ["Yangyang: Xuanling"]}},
+           "prov": {}}
+    ex = schedule.Extract(item=reverb, kind="banner", version="3.5", fields=f)
+    d = schedule.merge(g, "3.5", [ex], rec, {}, {}, 1783900100, [])
+    assert d["banners"]["phase1"] == ["Yangyang: Xuanling"] and "phase1_4" not in d["banners"]
+    assert d["banners"]["special"] == {"Starpath Reverbs": ["Jiyan", "Yinlin", "Jinhsi", "Changli", "Zhezhi", "Xiangli Yao"]}
+    assert rec["prov"]["b_special"][0] == schedule.PRIORITY["kuro"] and rec["prov"]["b_special_by"] == ["official"]
+    # the wiki wrote the line first (it lists the banner before the notice exists): the wiki
+    # owns it until the notice arrives, then leaves it alone; it withdraws its own line when the
+    # wiki no longer lists such a banner
+    data, prov = {"version": "3.8", "banners": {"phase1": ["Lily"]}}, {}
+    wiki = {"phase1": ["Lily", "Sigrika", "Qiuyuan"], "special": {"Starpath Reverbs II": ["Camellya", "Roccia", "Phoebe", "Brant"]}}
+    schedule.apply_gacha_wiki(g, data, prov, wiki, 1)
+    assert data["banners"]["special"] == {"Starpath Reverbs II": ["Camellya", "Roccia", "Phoebe", "Brant"]}
+    assert prov["b_special"] == [schedule.PRIORITY["gachawiki"], 1] and prov["b_special_by"] == ["wiki"]
+    schedule.apply_gacha_wiki(g, data, prov, {"phase1": ["Lily", "Sigrika", "Qiuyuan"]}, 2)
+    assert "special" not in data["banners"] and "b_special" not in prov
+    # an X post without the bracketed name lands on the wiki's line, not on a second one
+    schedule.apply_gacha_wiki(g, data, prov, wiki, 3)
+    tweet = Item("x", "wuwa", "1", "https://x.com/Wuthering_Waves/status/1", "",
+                 "Starpath Reverbs II is a Reverb Resonator Convene!\nSelectable 5-Star Resonators: Camellya, "
+                 "Roccia, Phoebe, and Brant", 1794400000)
+    ft = schedule.extract_banner(tweet)
+    assert ft["banner_special"] == "Reverb Convene"
+    rec = {"data": data, "prov": prov}
+    d = schedule.merge(g, "3.8", [schedule.Extract(item=tweet, kind="banner", version="3.8", fields=ft)],
+                       rec, {}, {}, 1794400100, [])
+    assert d["banners"]["special"] == {"Starpath Reverbs II": ["Camellya", "Roccia", "Phoebe", "Brant"]}
+    assert rec["prov"]["b_special"][0] == schedule.PRIORITY["x"]
+    schedule.apply_gacha_wiki(g, d, rec["prov"], {"phase1": ["Lily"]}, 1794400200)   # the wiki can no longer withdraw it
+    assert d["banners"]["special"] == {"Starpath Reverbs II": ["Camellya", "Roccia", "Phoebe", "Brant"]}
+    # the card: one `※` line per special banner, above the phases, for every game
+    card = cards.banners_block(g, {"version": "3.8", "banners": {
+        "phase1": ["Lily", "Sigrika", "Qiuyuan"], "phase2": ["Yangyang: Xuanling", "Suisui", "Hiyuki"],
+        "special": {"Starpath Reverbs II": ["Camellya", "Roccia", "Phoebe", "Brant"]}}})
+    assert "※ Starpath Reverbs II: Camellya, Roccia, Phoebe, Brant\n\n✦ First Half/Phase: Lily, Sigrika, Qiuyuan" in card
+    assert "✦ Second Half/Phase: Yangyang: Xuanling, Suisui, Hiyuki" in card
+    assert "※ 4 Star Characters" not in card
+    gi = cards.banners_block(GAMES["genshin"], {"version": "7.2", "banners": {
+        "phase1": ["Mitya", "Furina"], "phase2": ["Zibai", "Linnea"],
+        "special": {"Chronicled Wish": ["Varesa", "Chasca", "Xilonen", "Mualani", "Kinich"]}}})
+    assert "※ Chronicled Wish: Varesa, Chasca, Xilonen, Mualani, Kinich" in gi
+    assert "Second Half/Phase: Zibai, Linnea\n" in gi
+    assert "※" not in cards.banners_block(GAMES["genshin"], {"version": "7.2", "banners": {"special": {}}})
+    # the edit summary names the key
+    assert schedule.banner_change_detail({}, {"special": {"X": ["A"]}}, {"b_special_by": ["wiki"]}) == "special ← wiki"
+    # an override may pin or clear the lines ({} removes them)
+    rec = {"data": {"version": "3.8", "banners": {"special": {"Starpath Reverbs II": ["Camellya"]}}}, "prov": {}}
+    d = schedule.merge(g, "3.8", [], rec, {"banners": {"special": {}}}, {}, 5, [])
+    assert d["banners"]["special"] == {} and rec["prov"]["b_special"][0] == schedule.PRIORITY["override"]
+    # Kuro's Roman-numeral characters
+    t = g.banner_titles[0]
+    assert banner_search.phase_of("[Version 3.7 Featured Resonator/Weapon Convene: Phase Ⅱ]", t, "3.7") == 2
+    assert banner_search.phase_of("[Version 3.7 Featured Resonator/Weapon Convene: Phase Ⅰ]", t, "3.7") == 1
+    assert banner_search.phase_of("[Version 3.6 Featured Resonator/Weapon Convene: Phase Ⅱ]", t, "3.7") is None
+    assert banner_search.phase_of("[Version 3.6 Featured Resonator/Weapon Convene: Phase I]", t, "3.6") == 1
 
 def test_gachawiki_reruns_are_a_set_difference_against_the_debut_roster():
     """Never 'the title was used before': HSR reused 'Indelible Coterie' 14 times."""

@@ -678,6 +678,31 @@ def plausible_name(name: str) -> bool:
     return not any(w.lower().strip(".'’-") in NOT_A_NAME for w in words)
 
 
+# A banner notice that announces NO phase banner: WuWa's Reverb Convene ("[Starpath Reverbs]
+# Reverb Resonator Convene", Kuro 5065; "Starpath Reverbs II" in 3.8) and Genshin's Chronicled
+# Wish. The card lists such a banner on its own `※ <label>: names` line (cards.banners_block),
+# under the same label the wiki reader uses (gachawiki.SPECIAL_KIND) so both sources meet on
+# one line: the banner's own bracketed name for WuWa, the kind "Chronicled Wish" for Genshin.
+# Only the title and the opening lines decide: a phase notice that mentions the Reverb Convene
+# in passing further down stays a phase notice.
+SPECIAL_NOTICE = re.compile(r"\breverbs?\s+(?:resonator\s+)?convene\b|\bchronicled\s+wish\b", re.I)
+_BRACKET_TITLE = re.compile(r"[\[【]([^\]】\n]{2,60})[\]】]")
+
+
+def _special_banner_label(item: Item) -> str:
+    """'' for an ordinary phase notice; the card label for a special one."""
+    head = f"{item.title or ''}\n{(item.text or '')[:400]}"
+    m = SPECIAL_NOTICE.search(head)
+    if not m:
+        return ""
+    if m.group().lower().startswith("chronicled"):
+        return "Chronicled Wish"
+    b = (_BRACKET_TITLE.search(item.title or "") or _BRACKET_TITLE.search(head)
+         or re.search(r"[\[【]([^\]】\n]{2,60})[\]】]\s+is\s+an?\s+reverb", item.text or "", re.I))
+    name = _clean_name(b.group(1)) if b else ""
+    return name if name and not SPECIAL_NOTICE.search(name) else "Reverb Convene"
+
+
 def extract_banner(item: Item) -> dict:
     """Conservative: only quoted names that directly follow '5-star character' /
     'S-Rank Agent' / '5-star Resonator' (and 4★ equivalents). Weapons never match.
@@ -742,6 +767,14 @@ def extract_banner(item: Item) -> dict:
         return {}
     phase = 1 if PHASE1.search(item.full[:600]) else 2 if PHASE2.search(item.full[:600]) else None
     out = {"banner_five": five, "banner_four": four, "banner_four_unsure": four_unsure, "banner_phase": phase}
+    special = _special_banner_label(item)
+    if special:
+        # A banner outside the phases (see SPECIAL_NOTICE). Its names are the card's
+        # `※ <label>:` line and never a phase list — read as a phase, Kuro 5065 ("[Starpath
+        # Reverbs] Reverb Resonator Convene", six selectable 5★, posted the day before 3.5
+        # went live) was a phase-1 notice naming six characters.
+        out["banner_special"] = special
+        out["banner_phase"] = None
     # Official Convene / Wish posts on X often omit "Version X.Y" and state only a duration window
     # (e.g. WuWa tweet 2112740670930604168: "2026-10-22 10:00 - 2026-11-11 11:59 (server time)").
     # Never rendered as a clock timestamp; used solely to match the active version/phase window.
@@ -1518,16 +1551,17 @@ def _display_map(banners: dict, candidates: list[str]) -> dict[str, str]:
     A wiki that states only single names (GI, HSR, WuWa) yields an empty map, so the whole
     feature is gated on the data showing longer forms and is a no-op everywhere else."""
     out: dict[str, str] = {}
-    for key in BANNER_KEYS + ("four_star", "confirmed"):
-        for n in banners.get(key) or []:
-            if not n:
-                continue
-            best = n
-            for c in candidates:
-                if len(c) > len(best) and c.startswith(n + " "):
-                    best = c
-            if best != n:
-                out[n] = best
+    listed = [n for key in BANNER_KEYS + ("four_star", "confirmed") for n in (banners.get(key) or [])]
+    listed += [n for v in (banners.get("special") or {}).values() for n in (v or [])]
+    for n in listed:
+        if not n:
+            continue
+        best = n
+        for c in candidates:
+            if len(c) > len(best) and c.startswith(n + " "):
+                best = c
+        if best != n:
+            out[n] = best
     return out
 
 
@@ -1594,6 +1628,23 @@ def apply_gacha_wiki(game: Game, data: dict, prov: dict, wiki: dict | None, now:
         prov[f"b_{key}"] = [PRIORITY["gachawiki"], now]
         prov[f"b_{key}_by"] = ["wiki"]
         _confirm(data, prov, key, "wiki", value, value, banners)           # the read itself is a witness
+        changed = True
+    # The banners outside the phases ({label: names}, see gachawiki.SPECIAL_KIND): one card line
+    # each. The wiki owns the whole dict — it is replaced by what the wiki says now and withdrawn
+    # when the wiki no longer lists such a banner — unless an official notice (schedule.merge,
+    # SPECIAL_NOTICE) or an override wrote it, which outrank the wiki as everywhere else.
+    special = {str(k): [n for n in (v or []) if gachawiki.publishable_name(n)]
+               for k, v in (wiki.get("special") or {}).items() if isinstance(v, list)}
+    special = {k: v for k, v in special.items() if k and v}
+    if prov.get("b_special", [0])[0] <= PRIORITY["gachawiki"] and special != (banners.get("special") or {}):
+        if special:
+            banners["special"] = special
+            prov["b_special"] = [PRIORITY["gachawiki"], now]
+            prov["b_special_by"] = ["wiki"]
+        else:
+            banners.pop("special", None)
+            prov.pop("b_special", None)
+            prov.pop("b_special_by", None)
         changed = True
     # The early-tier line is a stand-in for phase data. Once the phases are known it is noise,
     # so it goes on the same silent edit that brings the real line-up in.
@@ -1987,6 +2038,25 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
                 put(k, f.get(k), src, ts)
         elif e.kind == "banner":
             banners = dict(data.get("banners") or {})
+            label = f.get("banner_special")
+            if label:
+                # The Reverb Convene / Chronicled Wish notice: its own `※` line, never a phase.
+                # The wiki may have written the line first (it lists the banner before the
+                # notice exists); the notice outranks it and later wiki reads leave it alone.
+                five = [n for n in (f.get("banner_five") or []) if gachawiki.publishable_name(n)]
+                cur_pri = prov.get("b_special", [0])[0]
+                if five and cur_pri <= PRIORITY.get(src, 10):
+                    special = dict(banners.get("special") or {})
+                    # The same banner under the wiki's label (an X post without the bracketed
+                    # name) keeps that label: one line, not two.
+                    label = next((k for k, v in special.items() if _same_names(v, five)), label)
+                    if special.get(label) != five:
+                        special[label] = five
+                        banners["special"] = special
+                        prov["b_special_by"] = ["official"]
+                    prov["b_special"] = [PRIORITY.get(src, 10), ts]
+                    data["banners"] = banners
+                continue
             phase = f.get("banner_phase")
             if phase is None and data.get("maint_start_ts"):
                 ref_ts = int(f.get("banner_start_ts") or ts)
@@ -2225,7 +2295,13 @@ def merge(game: Game, version: str, extracts: list[Extract], record: dict, overr
     if isinstance(override.get("banners"), dict):
         banners = dict(data.get("banners") or {})
         for k, v in override["banners"].items():
-            if isinstance(v, list):
+            if k == "special" and isinstance(v, dict):
+                # {label: names} — the `※` lines; an empty dict removes them.
+                if banners.get(k) != v or prov.get(f"b_{k}", [0])[0] != PRIORITY["override"]:
+                    prov[f"b_{k}"] = [PRIORITY["override"], now]
+                    prov[f"b_{k}_by"] = ["override"]
+                banners[k] = v
+            elif isinstance(v, list):
                 if banners.get(k) != v or prov.get(f"b_{k}", [0])[0] != PRIORITY["override"]:
                     prov[f"b_{k}"] = [PRIORITY["override"], now]
                 banners[k] = v
@@ -2558,7 +2634,7 @@ def banner_change_detail(before_banners: dict, after_banners: dict, prov: dict) 
     would have read `✏️ ZZZ 3.3: schedule card updated — banners (reruns ← wiki)`. A key with
     no writer group was withdrawn (the wiki retracted it), and renders as the bare key."""
     parts = []
-    for k in BANNER_KEYS + ("four_star", "confirmed"):
+    for k in BANNER_KEYS + ("four_star", "confirmed", "special"):
         if (before_banners or {}).get(k) == (after_banners or {}).get(k):
             continue
         writers = " + ".join((prov or {}).get(f"b_{k}_by") or [])
