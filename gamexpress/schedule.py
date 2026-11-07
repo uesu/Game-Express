@@ -207,8 +207,10 @@ PHASE2 = re.compile(r"phase\s*(?:II|[Ⅱⅱ]|2)\b|second\s+(?:half|phase)|2nd\s+
 TIER_STOP = re.compile(
     r"\b(?:light\s+cones?|weapons?|w-engines?|as\s+well\s+as|will\s+(?:be|return|receive)|"
     r"and\s+the\s+limited|drop[-\s]rates?|receives?|significantly|"
+    r"(?:can|may)\s+be\s+(?:chosen|selected|designated)|as\s+(?:your|the)\s+designated|"
     r"(?:is|are|have|has)\s+(?:significantly\s+|now\s+)?(?:boosted|available))\b",
-    re.I)                       # "Sanhua receive boosted" (WuWa), "Phoenix (...)is significantly boosted" / "Nicole have significantly boosted" (ZZZ)
+    re.I)                       # "Sanhua receive boosted" (WuWa), "Phoenix (...)is significantly boosted" / "Nicole have significantly boosted" (ZZZ),
+                                # "Mualani, and Kinich can be chosen as your designated 5-star character" (Chronicled Wish)
 NAME_SPLIT = re.compile(r",\s*(?:and\s+)?|\s+and\s+|\s*;\s*")
 # A star-tier phrase is often followed by an article before the name ("5-star character \"Pearl\"",
 # "…and the 4-star characters …"), and truncating at the NEXT tier leaves a dangling "the". Those
@@ -683,20 +685,40 @@ def plausible_name(name: str) -> bool:
 # Wish. The card lists such a banner on its own `※ <label>: names` line (cards.banners_block),
 # under the same label the wiki reader uses (gachawiki.SPECIAL_KIND) so both sources meet on
 # one line: the banner's own bracketed name for WuWa, the kind "Chronicled Wish" for Genshin.
-# Only the title and the opening lines decide: a phase notice that mentions the Reverb Convene
-# in passing further down stays a phase notice.
+# What the notice is ABOUT decides, never a passing mention: the title names the banner, or
+# — for an untitled X post — its first sentence does, and the notice is then no phase notice
+# (no Phase I/II marker, no Event Wish / Featured Resonator Convene in that same opening). A
+# phase notice that lists the Chronicled Wish next to its Event Wishes ("Event Wishes Notice -
+# Phase II ... The Chronicled Wish will also be available"), a post announcing both, or a
+# Special Program recap ("Second Half/Phase: Zibai, Linnea, Chronicled Wish") all keep their
+# phase — read as special, their 5★ would have left the phase line for the `※` line.
 SPECIAL_NOTICE = re.compile(r"\breverbs?\s+(?:resonator\s+)?convene\b|\bchronicled\s+wish\b", re.I)
+# The ordinary banner kinds in the same opening: then the special banner is a side note.
+ORDINARY_NOTICE = re.compile(r"\bevent\s+wish(?:es)?\b|\bfeatured\s+(?:resonator|weapon)\s+convene\b|"
+                             r"\bcharacter\s+event\b", re.I)
 _BRACKET_TITLE = re.compile(r"[\[【]([^\]】\n]{2,60})[\]】]")
 
 
-def _special_banner_label(item: Item) -> str:
-    """'' for an ordinary phase notice; the card label for a special one."""
-    head = f"{item.title or ''}\n{(item.text or '')[:400]}"
-    m = SPECIAL_NOTICE.search(head)
+def _notice_lead(item: Item) -> str:
+    """The title and the first sentence (or line) of the body: what the notice is about."""
+    text = (item.text or "").lstrip()
+    first = re.split(r"(?<=[.!?。！])\s|\n", text, maxsplit=1)[0][:240]
+    return f"{item.title or ''}\n{first}"
+
+
+def _special_banner_label(item: Item, phase: int | None = None) -> str:
+    """'' for an ordinary phase notice; the card label for a special one. `phase` is the
+    notice's own Phase I/II reading — a notice that states a phase is never special unless
+    its TITLE names the special banner."""
+    m = SPECIAL_NOTICE.search(item.title or "")
     if not m:
-        return ""
+        lead = _notice_lead(item)
+        m = SPECIAL_NOTICE.search(lead)
+        if not m or phase is not None or ORDINARY_NOTICE.search(lead):
+            return ""
     if m.group().lower().startswith("chronicled"):
         return "Chronicled Wish"
+    head = f"{item.title or ''}\n{(item.text or '')[:400]}"
     b = (_BRACKET_TITLE.search(item.title or "") or _BRACKET_TITLE.search(head)
          or re.search(r"[\[【]([^\]】\n]{2,60})[\]】]\s+is\s+an?\s+reverb", item.text or "", re.I))
     name = _clean_name(b.group(1)) if b else ""
@@ -767,7 +789,7 @@ def extract_banner(item: Item) -> dict:
         return {}
     phase = 1 if PHASE1.search(item.full[:600]) else 2 if PHASE2.search(item.full[:600]) else None
     out = {"banner_five": five, "banner_four": four, "banner_four_unsure": four_unsure, "banner_phase": phase}
-    special = _special_banner_label(item)
+    special = _special_banner_label(item, phase)
     if special:
         # A banner outside the phases (see SPECIAL_NOTICE). Its names are the card's
         # `※ <label>:` line and never a phase list — read as a phase, Kuro 5065 ("[Starpath

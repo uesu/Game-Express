@@ -153,7 +153,9 @@ three places and the reader (`gachawiki.SPECIAL_KIND`) reads all three:
 They reach the card as `banners["special"] = {label: [names]}` and render one line each above
 the phase lines — `※ Starpath Reverbs II: Camellya, Roccia, Phoebe, Brant` — never in
 `phase1`/`phase2`/`reruns`. The official notice feeds the same line: `schedule.SPECIAL_NOTICE`
-(`Reverb (Resonator) Convene`, `Chronicled Wish` in the title or opening lines) makes
+(`Reverb (Resonator) Convene`, `Chronicled Wish` in the **title**, or in the first sentence of a
+post that states no phase and no Event Wish / Featured Resonator Convene there — a phase notice
+that lists the Chronicled Wish next to its Event Wishes stays a phase notice) makes
 `extract_banner` return `banner_special` and the merge writes the line at the notice's
 priority instead of a phase (Kuro 5065 `[Starpath Reverbs] Reverb Resonator Convene` used to
 be a six-name phase 1). `config/overrides.json` → `"banners": {"special": {label: [names]}}`

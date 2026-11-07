@@ -3675,6 +3675,48 @@ def test_special_banner_line_on_the_card_and_in_the_merge():
                  "and 4-Star Resonators Danjin, Chixia, and Aalto receive boosted drop rates!", 1783800000)
     assert "banner_special" not in schedule.extract_banner(phase)          # a phase notice stays one
     assert schedule.extract_banner(phase)["banner_phase"] == 1
+    # A passing mention never decides (review finding on GE #148): the special banner must be
+    # what the notice is ABOUT — named in the title, or in the first sentence of a post that
+    # states no phase and no ordinary banner kind there. Each of these kept its 5★ on the phase
+    # line; the first cut (title + first 400 chars) would have moved Zibai to the `※` line.
+    gi = GAMES["genshin"]
+    p2 = Item("hoyolab", "genshin", "71", "u", "Event Wishes Notice - Phase II",
+              "Dear Travelers, Below are the details of the Event Wishes in Version 7.2 Phase II. The Chronicled "
+              "Wish \"Ode to Natlan\" will also be available during this period.\nEvent Wish \"Hidden Reef\": "
+              "5-Star character Zibai (Hydro) and 4-Star characters Candace, Thoma, and Dori receive a huge "
+              "drop-rate boost!", 1794400000)
+    both = Item("x", "genshin", "72", "u", "",
+                "Event Wishes \"Hidden Reef\" and \"Far Light\" and the Chronicled Wish \"Ode to Natlan\" are now "
+                "available!\n5-Star character Zibai (Hydro) receives a huge drop-rate boost!", 1794400000)
+    recap = Item("x", "genshin", "73", "u", "Version 7.2 Special Program",
+                 "Second Half/Phase: Zibai, Linnea, Chronicled Wish\n5-Star character Zibai (Hydro) receives a "
+                 "huge drop-rate boost!", 1794400000)
+    for it, want_phase in ((p2, 2), (both, None), (recap, 2)):
+        fx = schedule.extract_banner(it)
+        assert "banner_special" not in fx and fx["banner_phase"] == want_phase and fx["banner_five"] == ["Zibai"], it.id
+    rec = {"data": {"version": "7.2", "maint_start_ts": 1793772000, "banners": {"phase1": ["Mitya", "Furina"]}}, "prov": {}}
+    d = schedule.merge(gi, "7.2", [schedule.Extract(item=p2, kind="banner", version="7.2", fields=schedule.extract_banner(p2))],
+                       rec, {}, {}, 1794400100, [])
+    assert d["banners"]["phase2"] == ["Zibai"] and "special" not in d["banners"]
+    # ...while the Chronicled Wish's own notice (title) and an untitled post whose first
+    # sentence is about it are special; the "can be chosen as your designated 5-star character"
+    # wording ends the name run, so the last name is read too
+    own = Item("hoyolab", "genshin", "74", "u", "\"Ode to Natlan\" Chronicled Wish Event Notice",
+               "During the event, 5-Star characters Varesa, Chasca, Xilonen, Mualani, and Kinich can be chosen "
+               "as the designated 5-Star character!", 1794400000)
+    post = Item("x", "genshin", "75", "u", "",
+                "Chronicled Wish \"Ode to Natlan\" is now available! 5-Star characters Varesa, Chasca, Xilonen, "
+                "Mualani, and Kinich can be chosen as your designated 5-star character.", 1794400000)
+    for it in (own, post):
+        fx = schedule.extract_banner(it)
+        assert fx["banner_special"] == "Chronicled Wish" and fx["banner_phase"] is None, it.id
+        assert fx["banner_five"] == ["Varesa", "Chasca", "Xilonen", "Mualani", "Kinich"], fx
+    # a Reverb notice whose TITLE names it stays special even when its body mentions a phase
+    rv2 = Item("kuro", "wuwa", "76", "u", "[Starpath Reverbs II] Reverb Resonator Convene",
+               "During the event, selectable 5-Star Resonators: Camellya, Roccia, Phoebe, and Brant receive boosted "
+               "drop rates!\nAvailable from the Version 3.8 update until the end of Phase II.", 1794400000)
+    assert schedule.extract_banner(rv2)["banner_special"] == "Starpath Reverbs II"
+    assert schedule.extract_banner(rv2)["banner_phase"] is None
     # the merge: the notice fills the `※` line and leaves the phases alone, even on a card
     # whose maintenance start would have made it "phase 1" by date
     rec = {"data": {"version": "3.5", "maint_start_ts": 1783994400, "banners": {"phase1": ["Yangyang: Xuanling"]}},
