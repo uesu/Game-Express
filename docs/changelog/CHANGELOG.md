@@ -1,5 +1,60 @@
 # Changelog — current entries
 
+## 2026-11-08 — Feature 4: the Kuro launcher background belongs to the version it appeared for
+
+- **What changes on the card.** Wuthering Waves launch media (the Pre-Load / Maintenance / Servers
+  Live gallery) is now taken from the Kuro launcher background **only when that background is the
+  card's version**. 3.7's `fbp4pj51dfnw2uyyzt.mp4`, still the launcher background on 2026-11-07, is
+  3.7's for the 3.8 cards (they keep the Special Broadcast key art), and the 3.8 video Kuro uploads
+  around launch is 3.8's — the moment it appears, on whichever card is still inside its 6 h edit
+  window (for 3.7 the upload came at 12:37 UTC+8, after the maintenance card's window; the Servers
+  Live card's was open).
+- **Why.** Runner probe 2026-11-07 (NE #124, GE `502840d`) against the live Kuro endpoints: the
+  global background slot `G153/background/<hash>/en.json` names no version and no date, its hash
+  rotated (`dOlPEc…` → `lv1emI…`) while its URLs did not, `index.json` carries no media keys, and the
+  website's `bg-video.mp4?auth_key=…` is not in the HTML or the bundles. `resolve_launch_media` read
+  that slot as *the live version's*: during the 3.8 pre-download and maintenance (live still 3.7) the
+  current background was filed under 3.7 `seen_media` — correct today, but a 3.8 video swapped in
+  before `live` flips would have been filed under 3.7 as well, and `_url_used_by_prior_version` would
+  then have barred it from 3.8 for good (the sequential simulation in the probe shows the card stuck
+  at tier 3 after live). Two independent guards fix it:
+  1. **Attribution by observation** (`_attribute_kuro_background`, memo `kuro_background` in the
+     game's maintenance record): a background first seen with no pre-download open is the live
+     version's; one that *changes* belongs to the launcher `pre` version, else the version whose
+     launch window (−11 d pre-load … +7 d maintenance) contains now, else live (Phase II swap). First
+     seen while a pre-download is already open → unknown: offered to no card, adopted by the new live
+     version once the launcher flips without changing it. Identity is the URL, never the hash.
+  2. **Date by `Last-Modified`.** Kuro's CDN answers with the upload time (`Wed, 30 Sep 2026
+     04:37:56 GMT` for 3.7's `.mp4`/`.webp`/slogan — 3.7's launch day). `Fetcher.verify_media` keeps
+     it (`media_dates`), and `_is_launch_window_compatible` applies the same window to an undated Kuro
+     path as it does to HoYoPlay's dated `/YYYY/MM/DD/` paths. The preflight is the one the selection
+     performs anyway (shared `verified_cache`), so no extra request.
+- **Requests.** The background is polled once per run only inside a launch window (launcher
+  `pre` set, or −11 d … +7 d around a planned maintenance): one small config JSON plus `en.json`.
+  Mid-patch idle polls still make zero background requests (guarded by the existing six-game
+  zero-churn test).
+- **HNA (readiness, config note only).** HoYoPlay already lists Honkai: Nexus Anima (`getGames`:
+  `yneO4yGc4x`, `abc_global`, one background from 2026-09-07, no branch yet). The id is recorded in
+  the `config/games.json` note for launch day rather than wired now: with no branch, a wired id would
+  only add a `getGameBranches` re-fetch to every maintenance run. Still missing at launch: the
+  `MAINT_STATUS` gateway (Servers Live would come from the completion notice) and a cadence anchor.
+- **Feature 3.** The two live 7.3 reveals classify as intended — `47339559` → Anastasya, `47351623`
+  → Danica (`diamond_dossier`, both ping on an empty record); a 72 h survey over GI/HSR/ZZZ/HNA/WW
+  produced no false positive and caught Kuro `5710` → Lily. Both articles are now positives in the
+  template test, and the new `Stellar Linchpin` power key joins the dossier regexes beside Vision /
+  Gnosis / Moon Wheel. **HNA:** `Nexus Meet | <name>` (47339557 *Nexus Meet | Juelle* — a bio
+  paragraph, no quote, no dossier key, so Layer 2 could not see it) is HNA's character introduction
+  and now classifies as `hna_nexus_meet` (owner decision 2026-11-08); `Anidex | <name>` cards are
+  anima, not characters, and are excluded by title. Pings for HNA follow the usual switches
+  (`NEWS_REVEAL_PING=1` + the single `PING_NEWS_REVEAL` role list); should HoYoverse rename the series at release,
+  the dynamic `<Series> | <Character>` detector still needs a quote or a dossier line — a renamed
+  bio-only series is a one-line addition next to `_HNA_NEXUS_MEET_RE`.
+- **Tests.** `test_kuro_launcher_background_is_attributed_to_the_version_it_belongs_to` (window
+  predicate, memo rules, tag handling in `resolve_launch_media`, `Last-Modified` capture and date
+  rejection, the end-to-end 3.7 → 3.8 sequence with 0 → 2 → 1 background requests and no 3.7 leak)
+  plus the Anastasya / Danica / Juelle templates and the three Anidex negatives. ruff clean;
+  `tests/test_smoke.py` and `pytest -q` green.
+
 ## 2026-11-07 — Banners outside the phases: the `※ <banner>: names` line (Reverb Convene, Chronicled Wish, Collaboration)
 
 - **What the card shows.** A banner that belongs to no phase gets its own line above the two

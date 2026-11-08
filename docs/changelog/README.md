@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Banners outside the phases: the `※ <banner>: names` line (Reverb Convene, Chronicled Wish, Collaboration)](CHANGELOG.md#2026-11-07--banners-outside-the-phases-the--banner-names-line-reverb-convene-chronicled-wish-collaboration).
+Latest: [Feature 4: the Kuro launcher background belongs to the version it appeared for](CHANGELOG.md#2026-11-08--feature-4-the-kuro-launcher-background-belongs-to-the-version-it-appeared-for).
+
+Previous: [Banners outside the phases: the `※ <banner>: names` line (Reverb Convene, Chronicled Wish, Collaboration)](CHANGELOG.md#2026-11-07--banners-outside-the-phases-the--banner-names-line-reverb-convene-chronicled-wish-collaboration).
 
 Previous: [WuWa wiki reader: the phase is the banner page's date](CHANGELOG.md#2026-11-07--wuwa-wiki-reader-the-phase-is-the-banner-pages-date).
 
