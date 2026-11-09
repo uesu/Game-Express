@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Feature 4: the Kuro launcher background belongs to the version it appeared for](CHANGELOG.md#2026-11-08--feature-4-the-kuro-launcher-background-belongs-to-the-version-it-appeared-for).
+Latest: [Feature 4: a dated launcher asset belongs to the launch it is dated for (HSR 4.7 Pre-Load at tier 3)](CHANGELOG.md#2026-11-09--feature-4-a-dated-launcher-asset-belongs-to-the-launch-it-is-dated-for-hsr-47-pre-load-at-tier-3).
+
+Previous: [Feature 4: the Kuro launcher background belongs to the version it appeared for](CHANGELOG.md#2026-11-08--feature-4-the-kuro-launcher-background-belongs-to-the-version-it-appeared-for).
 
 Previous: [Banners outside the phases: the `※ <banner>: names` line (Reverb Convene, Chronicled Wish, Collaboration)](CHANGELOG.md#2026-11-07--banners-outside-the-phases-the--banner-names-line-reverb-convene-chronicled-wish-collaboration).
 
