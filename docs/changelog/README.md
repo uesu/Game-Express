@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Feature 4: a dated launcher asset belongs to the launch it is dated for (HSR 4.7 Pre-Load at tier 3)](CHANGELOG.md#2026-11-09--feature-4-a-dated-launcher-asset-belongs-to-the-launch-it-is-dated-for-hsr-47-pre-load-at-tier-3).
+Latest: [Feature 3: media heal for a tile Discord left unresolved (WW 3.8 "Update Content", Monitor #4909)](CHANGELOG.md#2026-11-09--feature-3-media-heal-for-a-tile-discord-left-unresolved-ww-38-update-content-monitor-4909).
+
+Previous: [Feature 4: a dated launcher asset belongs to the launch it is dated for (HSR 4.7 Pre-Load at tier 3)](CHANGELOG.md#2026-11-09--feature-4-a-dated-launcher-asset-belongs-to-the-launch-it-is-dated-for-hsr-47-pre-load-at-tier-3).
 
 Previous: [Feature 4: the Kuro launcher background belongs to the version it appeared for](CHANGELOG.md#2026-11-08--feature-4-the-kuro-launcher-background-belongs-to-the-version-it-appeared-for).
 

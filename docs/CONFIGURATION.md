@@ -281,6 +281,8 @@ A schedule/code-only selector does not count as toggling news off.
 | `NEWS_REVEAL_PING` | `0` | Opt-in heuristic character-reveal mentions for official news; excludes identified video, deduplicates characters and same source publication minute |
 | `PING_NEWS_REVEAL` | — | The only reveal role setting: one role list (comma/space separated) used for **all** games. No `PING_ROLE_ID`/`PING_NEWS` inheritance and no per-game variant |
 | `NEWS_TIMESTAMPS` | `0` | Opt-in render-time `<t:EPOCH:…>` conversion for exact TZ-qualified news dates/times |
+| `NEWS_MEDIA_HEAL` | `1` | Media heal: when Discord's create/edit response returns a gallery tile or thumbnail with a `proxy_url` but no dimensions/content type (the client shows "Image not found"), the message is re-read after `NEWS_MEDIA_HEAL_DELAY` and, only if that tile is still cold, re-sent identically once. Nothing is persisted; dry-run never edits |
+| `NEWS_MEDIA_HEAL_DELAY` | `6` | Grace period in seconds (0–60) before the re-read; one wait per game and run, not per card |
 | `NEWS_EXPAND_FULL` | `0` | Opt-in multi-page full articles beyond 2 pages (bounded at `NEWS_EXPAND_MAX_PAGES = 12`, `NEWS_EXPAND_MAX_CHARS = 120000`, `NEWS_EXPAND_MAX_MEDIA = 120`) |
 | `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | Canonical game keys; removing a game pauses its existing news state |
 
