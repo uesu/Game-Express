@@ -1,5 +1,33 @@
 # Changelog — current entries
 
+## 2026-11-09 — Feature 4: a dated launcher asset belongs to the launch it is dated for (HSR 4.7 Pre-Load at tier 3)
+
+- **What happened.** HSR 4.7 Pre-Load posted on time (2026-11-09 14:00 UTC+8, official timing) but
+  with the Special Program key art (tier 3) although HoYoPlay was already showing the 4.7 launcher
+  video. Prod state after the run: the 4.7 assets — `fastcdn…/2026/11/06/9a062ecd…webm` and two
+  `2026/11/06` wallpapers — were sitting in **4.6's `seen_media`**, and 4.7's `launch_media` was empty.
+- **Why.** `resolve_launch_media` reads every HoYoPlay background without a version link as *the
+  live version's* whenever the branch has no `pre_download`. At 14:00:37 the branch had not flipped
+  `pre` yet, so assets uploaded three days earlier for 4.7 were filed under 4.6, and
+  `_url_used_by_prior_version` would have barred them from every 4.7 card (Pre-Load, Maintenance,
+  Servers Live) for good. Same defect class as the Kuro background fix of 11-08 — on the HoYoPlay path
+  the asset even carries its date in the URL.
+- **Fix.** Dated evidence beats an observation. `_dated_inside_launch_window` answers "provably this
+  launch's" (date inside −11 d pre-load … +7 d maintenance; an undated path is never provably ours).
+  (1) An un-linked HoYoPlay asset dated inside the launch being resolved is no longer filed under an
+  earlier live version. (2) `_url_used_by_prior_version` ignores an earlier version's bare
+  `seen_media` hit for such an asset — a `launch_media` lock (media an earlier card actually carried)
+  still blocks. 4.6's own launch assets (`2026/09/23`) and a 4.6 Phase II swap (−14 d and earlier)
+  stay blocked. The Kuro branch passes the `Last-Modified` date through the same check.
+- **Self-healing.** No state edit needed: on the first run after deployment the posted 4.7 Pre-Load
+  card is silently `PATCH`ed to the 4.7 webm if still inside its 6 h edit window (until 20:00 UTC+8
+  on 11-09); either way the Maintenance card (11-11 06:00) and Servers Live post at tier 1.
+- **Tests.** `test_hoyoplay_dated_launch_assets_belong_to_the_launch_they_are_dated_for_hsr_47`:
+  the rule (dated 4.7 asset overrules a 4.6 observation; 4.6 launch / Phase II assets and locks still
+  block), the 14:00-sharp run with `pre` unset (4.7 assets not filed under 4.6, tier 3 → tier 1 once
+  `pre` flips), and the real poisoned prod record end to end (silent edit to tier 1, maintenance card
+  tier 1). ruff clean; `tests/test_smoke.py` and `pytest -q` green.
+
 ## 2026-11-08 — Feature 4: the Kuro launcher background belongs to the version it appeared for
 
 - **What changes on the card.** Wuthering Waves launch media (the Pre-Load / Maintenance / Servers
