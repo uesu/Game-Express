@@ -1,5 +1,30 @@
 # Changelog — current entries
 
+## 2026-11-09 — Feature 3: media heal for a tile Discord left unresolved (WW 3.8 "Update Content", Monitor #4909)
+
+- **What happened.** The WW 3.8 "Update Content" card delivered on time with four Kuro strips.
+  Discord's create response typed three of them (`1080 × 4001 / 13871 / 7721`, `image/png`) and
+  returned the third with only `url` + `proxy_url` — the client rendered "Image not found" until
+  the operator re-sent the identical message from Discohook, after which all four loaded. Same
+  transient the News-Express Reddit/Twitter engines already repair ("MEDIA-HEAL").
+- **Fix.** `SendResult.message` keeps the JSON Discord returned (`?wait=true` POST / PATCH).
+  `discord.unresolved_media_urls()` is the pure inspector: a gallery tile or section thumbnail with
+  a `proxy_url` but no positive dimensions + `image/`/`video/` content type, or an explicit `0 × 0`,
+  is *unresolved*; sparse metadata without a proxy attempt is unknown and `attachment://` tiles are
+  never inspected. `run_news` queues each delivered or edited page whose response carried one of the
+  card's OWN cold tiles, waits once per game (`NEWS_MEDIA_HEAL_DELAY`, default 6 s), re-reads the
+  message (`WebhookClient.fetch`) and, only if that tile is still cold, issues one identical
+  same-message PATCH (`WebhookClient.heal_media`) — the manual cure, automated. Outcomes land in
+  the report (`🩹 WW news: media heal 5736 — 1 cold tile(s), re-sent identically …` / `loaded on
+  its own; no edit` / `could not re-read the message; no blind edit`). Nothing is persisted; a heal
+  never turns a delivered card into a failure; dry-run and `NEWS_MEDIA_HEAL=0` never edit; older
+  webhook test doubles without `heal_media` keep today's behaviour.
+- **Tests.** `test_news_media_heal_re_sends_a_card_whose_tile_discord_left_cold_ww_38_monitor_4909`:
+  the inspector on the #4909 response shape, the real client (GET → identical PATCH, resolved → no
+  edit, re-read failure → no blind edit, token never in the edit body), and `run_news` end to end
+  (queued, one grace period, report line, foreign tile ignored, switch, crash isolation, legacy
+  double, dry run). ruff clean; `tests/test_smoke.py` and `pytest -q` green.
+
 ## 2026-11-09 — Feature 4: a dated launcher asset belongs to the launch it is dated for (HSR 4.7 Pre-Load at tier 3)
 
 - **What happened.** HSR 4.7 Pre-Load posted on time (2026-11-09 14:00 UTC+8, official timing) but

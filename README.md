@@ -529,6 +529,7 @@ editing YAML. The ones worth knowing:
 | `NEWS_GROUP_LONG_STRIPS` | `0` | optional measured grouping; off retains article order |
 | `NEWS_TIMESTAMPS` | `0` | optional `<t:EPOCH:…>` conversion in rendered news text |
 | `NEWS_EXPAND_FULL` | `0` | optional multi-page full articles (up to 12 pages / 120,000 chars / 120 media) |
+| `NEWS_MEDIA_HEAL` / `NEWS_MEDIA_HEAL_DELAY` | `1` / `6` | after delivery, re-read a card whose create response left a tile unresolved and re-send it identically once if it is still cold (Discord's "Image not found"); `0` disables |
 | `PING_SCHEDULE` / `PING_CODES` | inherit `PING_ROLE_ID` | per-feature ping override; `none` = explicitly no ping |
 | `PING_MAINTENANCE` / `PING_BETA` | *(unset = silent)* | optional role ping on maintenance and beta cards; `PING_ROLE_ID` is deliberately **not** inherited |
 | `NEWS_REVEAL_PING` + `PING_NEWS_REVEAL` | `0` / *(unset)* | opt-in character-reveal ping; one role list for every game, no per-game variant |
