@@ -604,7 +604,7 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
 - **Strict precedence:** official notices/tweets/Reddit (`rank 38–50`, including inferred
   epithet versions such as `"Luna II"` and unnumbered `"1.0"` launch notices for pre-release
   games) → explicit `config/overrides.json` entries (supporting both Unix epochs and ISO-8601
-  strings with timezone offsets, plus `image` pins at the top of Tier 3) → persisted
+  strings with timezone offsets, plus `image` pins at the top of Tier 4) → persisted
   first-observed launcher pre-download availability (`observed_preinstall_ts`, retained
   across polls/restarts and rendered with explicit observation wording rather than claiming
   a published start time) → refined non-cadence `schedule` estimates (`countdown` sources
@@ -613,12 +613,15 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
   official notices always override cadence predictions, observations and stale overrides;
   HNA and ANANTA never invent an unverified cadence, and unknown `maint_end_ts` omits `End Time`
   rather than guessing.
-- **Components V2 card & 4-tier media priority:** single container (`flags: 32768`)
+- **Components V2 card & 5-tier media priority:** single container (`flags: 32768`)
   with `[SHORT - VERSION] Pre-Load Started` / `Maintenance Started` / `Servers Live`, optional role
   mention, `Date Time` (`<t:…:f>`) + `Hour Time` (`<t:…:R>`) or `End Time` (`<t:…:t>`),
   optional version-verified gallery ((1) matching-version launch video `.webm`/`.mp4`,
-  (2) matching-version launcher artwork/WebP, (3) matching-version Special Program art,
-  (4) omitted cleanly), and the Citlali News section footer. Launch version identity is
+  (2) matching-version launcher artwork/WebP, (3) WuWa launcher carousel art with a matching version note,
+  (4) matching-version Special Program art, (5) omitted cleanly), and the Citlali News section footer.
+  WuWa reads the global English new-protocol index/background first (dated assets must fall inside
+  the version's launch window), then the legacy slot; the carousel is fetched only inside that
+  existing window gate. CN is deliberately unused. Launch version identity is
   separated from selected tier so prompt initial artwork posts can silently `PATCH` to
   matching-version launch video inside `LATE_MEDIA_EDIT_WINDOW_S` (`6 h` / `21,600 s`) while
   rejecting Phase II swaps. Signed Kuro `?auth_key=…` URLs keep query parameters intact and expire.

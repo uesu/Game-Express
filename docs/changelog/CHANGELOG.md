@@ -1,5 +1,11 @@
 # Changelog — current entries
 
+## 2026-11-10 — Feature 4: Kuro new-protocol launcher sources (dated background, pre-load index, carousel tier)
+
+- **Change.** Read the global English new-protocol game index first for live/pre-download versions and the background function code; fall back to the existing legacy index and background when v2 is unavailable. Prefer v2's dated background assets, assign them only to the planned launch window containing their asset date, and reject dated images from outside the window rather than guessing from the legacy first-seen memo. The English carousel's image slide is a lower-ranked art fallback only when its version note matches the launch; date-only YouTube PV/showcase slides are rejected so they cannot displace Special Program key art. It is fetched only inside the existing launch-window gate and never used as video. If a background's video and artwork carry different publish dates, the shared slot is conservatively rejected rather than assigned to either version. CN endpoints are deliberately not used.
+- **Priority.** Explicit launch-media overrides remain unchanged; matching launcher video and artwork outrank the carousel, which outranks existing official Special Program artwork. The carousel can therefore bridge until Kuro publishes the launch-window background, and the existing bounded media self-heal can replace it. Existing maintenance records retain their old `media_tier` numbers; bounded candidate checks still allow higher-ranked media to upgrade them.
+- **Verification.** Offline smoke guards cover v2 parsing/fallback, URL dates and protocol metadata, source request order, carousel filtering/version notes, dated attribution/rejection, and background-over-carousel ranking. Live endpoint observations are from the 2026-11-10 runner probe recorded on News-Express #131; this checkout does not directly reach Kuro's CDN.
+
 ## 2026-11-10 — Feature 1: a star or a level tag inside a name is still a name (HSR 4.7 phase 1, Monitor #5008)
 
 - **What happened.** Monitor #5008 (2026-11-10 03:00 UTC) read the HSR 4.7 Phase I warp notice
