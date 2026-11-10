@@ -1063,24 +1063,12 @@ async def resolve_launch_media(
                 continue
             slide_url = str(slide.get("url") or "").strip()
             slide_version = str(slide.get("version") or "").strip()
-            jump = str(slide.get("jump") or "").strip()
-            if slide_version:
-                if slide_version != version:
-                    continue
-                explicit = True
-            else:
-                jump_host = (urlsplit(jump).hostname or "").lower()
-                trusted_jump = (
-                    jump_host == "youtu.be"
-                    or jump_host == "youtube.com"
-                    or jump_host.endswith(".youtube.com")
-                    or jump_host == "wutheringwaves.kurogames.com"
-                )
-                if not _dated_inside_launch_window(
-                    slide_url, preinstall_ts=pre_ts, maint_start_ts=start_ts
-                ) or not trusted_jump:
-                    continue
-                explicit = False
+            # Only a slide that names this version (for example, "3.8版本pv" / "3.8 PV")
+            # is version art. Character PV/showcase slides also carry launch-window dates and
+            # YouTube jumps, so date + destination alone must never promote one over key art.
+            if not slide_version or slide_version != version:
+                continue
+            explicit = True
             meta = _build_asset_meta(
                 slide_url, version, explicit_version_link=explicit,
                 extra={"asset_id": f"kuro-slide:{version}", "slot": "carousel"},

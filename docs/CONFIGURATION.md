@@ -617,7 +617,7 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
   with `[SHORT - VERSION] Pre-Load Started` / `Maintenance Started` / `Servers Live`, optional role
   mention, `Date Time` (`<t:…:f>`) + `Hour Time` (`<t:…:R>`) or `End Time` (`<t:…:t>`),
   optional version-verified gallery ((1) matching-version launch video `.webm`/`.mp4`,
-  (2) matching-version launcher artwork/WebP, (3) dated/version-matched WuWa launcher carousel art,
+  (2) matching-version launcher artwork/WebP, (3) WuWa launcher carousel art with a matching version note,
   (4) matching-version Special Program art, (5) omitted cleanly), and the Citlali News section footer.
   WuWa reads the global English new-protocol index/background first (dated assets must fall inside
   the version's launch window), then the legacy slot; the carousel is fetched only inside that

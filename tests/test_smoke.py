@@ -26857,9 +26857,9 @@ def test_kuro_new_protocol_index_background_and_carousel_tiers():
     ctx = types.SimpleNamespace(now=1794276000, versions={"wuwa": {"live": "3.7", "pre": "3.8"}},
                                 fetcher=types.SimpleNamespace(verify_media=AsyncMock(return_value=True)))
     slide = {"url": "https://cdn.example/news/20261110/version-pv.png", "jump": "https://youtu.be/trailer",
-             "asset_date": "2026-11-10", "version": ""}
+             "asset_date": "2026-11-10", "version": "3.8"}
     untrusted_slide = {**slide, "url": "https://cdn.example/news/20261110/untrusted.png",
-                       "jump": "https://youtube.com.evil.example/trailer"}
+                       "jump": "https://youtube.com.evil.example/trailer", "version": ""}
     wrong_version_slide = {**slide, "url": "https://cdn.example/news/20261110/old-version.png",
                            "version": "3.7"}
 
@@ -26870,6 +26870,15 @@ def test_kuro_new_protocol_index_background_and_carousel_tiers():
         ctx, GAMES["wuwa"], "3.8", plan_38, {}, basic_info={}, program_pins={},
         kuro_media={}, get_kuro_slides=get_slides,
     )) == (3, slide["url"])
+
+    async def get_unlabeled_slides():
+        return [untrusted_slide]
+
+    # A date and YouTube link alone cannot promote a character PV/showcase thumbnail over key art.
+    assert asyncio.run(maintenance.resolve_launch_media(
+        ctx, GAMES["wuwa"], "3.8", plan_38, {}, basic_info={}, program_pins={},
+        kuro_media={}, get_kuro_slides=get_unlabeled_slides,
+    )) == (5, None)
     # Background artwork/video remains stronger than the carousel (and carousel is never video).
     bg_candidate = {"video": dated_38["video"], "artwork": dated_38["artwork"], "version": "3.8",
                     "video_meta": dated_38["video_meta"], "artwork_meta": dated_38["artwork_meta"]}
