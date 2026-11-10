@@ -1,5 +1,28 @@
 # Changelog — current entries
 
+## 2026-11-10 — Feature 1: a star or a level tag inside a name is still a name (HSR 4.7 phase 1, Monitor #5008)
+
+- **What happened.** Monitor #5008 (2026-11-10 03:00 UTC) read the HSR 4.7 Phase I warp notice
+  (HoYoLAB 47385253, X 2119988418708955289) and rewrote phase 1 to `Sparxie, Yao Guang` — official,
+  locked. The calendar and the wiki had `Aeon ★ Aha` (4.7's debut, whole-version warp) and
+  `Silver Wolf LV.999` on that phase too; the card showed two of four 5★.
+- **Why.** `plausible_name()` refused both names: `★` was outside `_NAME_CHARS`, and the 3+ digit
+  rule that keeps years and post ids out of a name also hit `999`. `bare_names()` dropped them, the
+  short official reading outranked the calendar's full one, and an official name is final.
+- **Fix.** `NAME_WORDS` (the separators of a name) and `_NAME_CHARS` accept `★`/`☆` between words;
+  `_long_number()` cuts a level tag (`LV.999`, `Lv 80`) before the digit test, so every other long
+  number still disqualifies a name, and a bare tag on its own is never a name. `EPITHET_NAME`
+  reads `"Epithet" Aeon ★ Aha` whole. No source order, wording or card layout changes:
+  "Indelible Coterie" is HSR's recurring warp title (14 casts so far), not a banner outside the
+  phases, so it stays off the card. The live record needs no override: the same X post that wrote
+  the short list is re-read by the corrected reader inside the 72 h window (the existing same-post
+  heal), and the HoYoLAB notice at 50 then agrees.
+- **Tests.** `test_hsr_4_7_a_star_or_a_level_tag_inside_a_name_is_still_a_name_monitor_5008`:
+  name rules (positive and negative), the HoYoverse long form, the X short form with the `★` tier
+  mark next to a `★` name, the quoted-epithet form, the prod-shaped record healing on two
+  consecutive runs with phase 2 untouched and no note, and the card line. ruff clean;
+  `tests/test_smoke.py` and `pytest -q` green.
+
 ## 2026-11-09 — Feature 3: media heal for a tile Discord left unresolved (WW 3.8 "Update Content", Monitor #4909)
 
 - **What happened.** The WW 3.8 "Update Content" card delivered on time with four Kuro strips.
