@@ -569,7 +569,7 @@ plus a dedicated per-game webhook secret for each opted-in game:
 | `MAINTENANCE_ENABLED` | Variable | `0` | Master switch; disabled unless explicitly truthy (and overridden by `ENABLED_FEATURES=none/off/standby/0`) |
 | `MAINTENANCE_GAMES` | Variable | *(empty)* | Required explicit per-game opt-in list (e.g. `all` or `genshin,starrail,zzz,wuwa,hna,ananta`); empty activates nothing |
 | `DISCORD_WEBHOOK_MAINTENANCE_<GAME>` | Secret | *(unset)* | Dedicated per-game channel webhook (`GENSHIN`, `STARRAIL`, `HNA`, `ZZZ`, `WUWA`, `ANANTA` + aliases); no generic/catch-all/mirror/`FORCE_WEBHOOK` fallback |
-| `PING_MAINTENANCE_<GAME>` / `PING_MAINTENANCE` | Variable | `none` | Optional per-game or feature role ping inside the headline block (`<@&ROLE>`); silent by default |
+| `PING_MAINTENANCE_<GAME>` / `PING_MAINTENANCE` | Variable | `none` | Optional per-game or feature role ping on **Pre-Load Started** and **Maintenance Started** (`<@&ROLE>`); **Servers Live is always silent** |
 
 Behavior and safety invariants (`gamexpress/maintenance.py`):
 
@@ -614,8 +614,9 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
   HNA and ANANTA never invent an unverified cadence, and unknown `maint_end_ts` omits `End Time`
   rather than guessing.
 - **Components V2 card & 5-tier media priority:** single container (`flags: 32768`)
-  with `[SHORT - VERSION] Pre-Load Started` / `Maintenance Started` / `Servers Live`, optional role
-  mention, `Date Time` (`<t:…:f>`) + `Hour Time` (`<t:…:R>`) or `End Time` (`<t:…:t>`),
+  with `[SHORT - VERSION] Pre-Load Started` / `Maintenance Started` / `Servers Live`; the optional
+  configured role mention appears only on the first two milestones (`Servers Live` is always silent).
+  Cards show `Date Time` (`<t:…:f>`) + `Hour Time` (`<t:…:R>`) or `End Time` (`<t:…:t>`),
   optional version-verified gallery ((1) matching-version launch video `.webm`/`.mp4`,
   (2) matching-version launcher artwork/WebP, (3) WuWa launcher carousel art with a matching version note,
   (4) matching-version Special Program art, (5) omitted cleanly), and the Citlali News section footer.

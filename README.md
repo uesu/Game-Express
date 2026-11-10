@@ -238,9 +238,10 @@ Works standalone or alongside schedule, codes and news without modifying existin
   `Pre-Load Started` never suppresses `Maintenance Started` (which renders
   `※ **Date Time:** <t:START:f> ※ **End Time:** <t:END:t>` when `end_ts` is known,
   or omits `End Time` cleanly when unknown).
-- **Servers Live (third card):** never clock-derived. It posts when the publisher says the
-  servers are back — the completion notice / tweet (`Version X.Y update maintenance has been
-  completed`, `Update Completion Notice`, `… can now log in`) — or, for HoYoPlay games, when the
+- **Servers Live (third card):** always silent (no role mention or notification), and never
+  clock-derived. It posts when the publisher says the servers are back — the completion notice / tweet
+  (`Version X.Y update maintenance has been completed`, `Update Completion Notice`,
+  `… can now log in`) — or, for HoYoPlay games, when the
   client's own maintenance gate (`getGlobalApplicationMaintenance`, the endpoint
   [hoyo-update-notifier](https://github.com/seriaati/hoyo-update-notifier) runs in production)
   flips from *in maintenance* to *open* after it was seen set for that version. Both are accepted
@@ -531,7 +532,7 @@ editing YAML. The ones worth knowing:
 | `NEWS_EXPAND_FULL` | `0` | optional multi-page full articles (up to 12 pages / 120,000 chars / 120 media) |
 | `NEWS_MEDIA_HEAL` / `NEWS_MEDIA_HEAL_DELAY` | `1` / `6` | after delivery, re-read a card whose create response left a tile unresolved and re-send it identically once if it is still cold (Discord's "Image not found"); `0` disables |
 | `PING_SCHEDULE` / `PING_CODES` | inherit `PING_ROLE_ID` | per-feature ping override; `none` = explicitly no ping |
-| `PING_MAINTENANCE` / `PING_BETA` | *(unset = silent)* | optional role ping on maintenance and beta cards; `PING_ROLE_ID` is deliberately **not** inherited |
+| `PING_MAINTENANCE` / `PING_BETA` | *(unset = silent)* | optional role ping on Pre-Load Started / Maintenance Started and beta cards; Servers Live is always silent; `PING_ROLE_ID` is deliberately **not** inherited |
 | `NEWS_REVEAL_PING` + `PING_NEWS_REVEAL` | `0` / *(unset)* | opt-in character-reveal ping; one role list for every game, no per-game variant |
 | `MAINTENANCE_ENABLED` | `0` | explicit opt-in for `Pre-Load Started` / `Maintenance Started` / `Servers Live` |
 | `MAINTENANCE_GAMES` | *(empty)* | explicit per-game list (`all` or game keys) required to activate maintenance alerts |
