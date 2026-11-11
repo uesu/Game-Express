@@ -350,9 +350,12 @@ cropping, resizing or image removal remain forbidden.
 Direct images/GIFs/videos included in the payload get a bounded GET/status/magic-byte
 preflight. A failure refreshes the same official full article once; another failure
 holds delivery for retry with an operational warning. No manual filename patches,
-query stripping or screenshot substitutes. Preflight does not prove full downloads,
-Discord fetching, codecs or playback. Grouping adds only the optional variable
-documented below; no upload/proxy service is added.
+query stripping or screenshot substitutes. Kuro CDN article images ending in
+`.octet-stream` or `.jfif` use the same official object's Alibaba OSS
+`x-oss-process=image/format,jpg` rendition so Discord receives an embeddable image;
+ordinary media, videos, other hosts and existing OSS processing queries are unchanged.
+Preflight does not prove full downloads, Discord fetching, codecs or playback.
+Grouping adds only the optional variable documented below; no upload/proxy service is added.
 
 
 A first valid discovery silently baselines at the run's time: no historical
