@@ -348,8 +348,11 @@ at eight body units. Optional measured grouping is implemented below; slicing,
 cropping, resizing or image removal remain forbidden.
 
 Direct images/GIFs/videos included in the payload get a bounded GET/status/magic-byte
-preflight. A failure refreshes the same official full article once; another failure
-holds delivery for retry with an operational warning. No manual filename patches,
+preflight, up to `NEWS_EXPAND_MAX_MEDIA` distinct URLs (120 by default) in either
+layout. `NEWS_EXPAND_FULL` controls text/page expansion, not whether an otherwise
+valid media-heavy article can be delivered. A failure refreshes the same official
+full article once; another failure holds delivery for retry with an operational
+warning. No manual filename patches,
 query stripping or screenshot substitutes. Kuro CDN article images ending in
 `.octet-stream` or `.jfif` use the same official object's Alibaba OSS
 `x-oss-process=image/format,jpg` rendition so Discord receives an embeddable image;
