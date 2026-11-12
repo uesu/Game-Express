@@ -583,7 +583,7 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
   `Maintenance Started` and `Servers Live` independently per `(game, version)` on the existing
   5-minute poll cycle. `state["maintenance"][game]` tracks `preload`, `maintenance` and `live`
   separately from `schedule`, `codes` and `news`, and merges across fail-over peers.
-- **Servers Live — signals and guards (`live`):** two signals, no clock. (1) The publisher's
+- **Servers Live — signals and guards (`live`):** three signals, no clock. (1) The publisher's
   completion notice or tweet (`schedule.MAINT_COMPLETE_RE`: *update maintenance has been
   completed / concluded*, *Update Completion Notice*, *servers are now online*, *can now log in*;
   a stated clock such as `completed at 10:42 (UTC+8)` is used when present, otherwise the post
@@ -597,7 +597,11 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
   that version (`state["maintenance"][game]["maint_api"]`) is the reopening → provenance
   `observed`, with a one-line note on the card. Non-zero `retcode`, a missing key or a wrong
   shape is *unknown* and changes nothing; a `null` that was never preceded by a set flag never
-  posts. Idle days cost `0` gate requests. Both signals are accepted only inside the same window,
+  posts. (3) Wuthering Waves: the official in-game `notice.json` entry whose English title is
+  exactly `Patch Notes for Version <version>…`; its `startTimeMs` is the reopening → provenance
+  `official`. WW 3.8 published this at 09:00 UTC+8, corroborated by player access two hours
+  before the scheduled end. Launcher resource-version flips never count. Idle days cost `0`
+  gate/notice requests. All signals are accepted only inside the same window,
   only for a `Maintenance Started` card this install posted (versions joined midway are seeded
   `live` together with `maintenance`), and once per version. An official notice arriving after a
   gate-detected card upgrades it silently through the timing-correction budget (no repost, no
