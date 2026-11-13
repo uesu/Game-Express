@@ -1,5 +1,25 @@
 # Changelog — current entries
 
+## 2026-11-13 — Features 3–4 are on by default, and the news card gains a supporter note
+
+- **Change (defaults).** Official news (feature 3) and pre-load / maintenance started / servers
+  live (feature 4) now run without being switched on: `NEWS_ENABLED` and `MAINTENANCE_ENABLED`
+  are **opt-outs**, so `NEWS_ENABLED=1` and `MAINTENANCE_ENABLED=1` can be deleted from the
+  repository variables. An absent value means on, `0` means off, and `ENABLED_FEATURES=none` /
+  `off` / `standby` / `0` still pauses everything. Feature 5 (beta kits) keeps its explicit
+  `BETA_ENABLED` opt-in. `MAINTENANCE_GAMES` is unchanged and still decides which games get
+  maintenance cards, so an installation with an empty list makes zero extra requests.
+- **Change (card).** The official-news card ends with one small
+  `-#` line under its three link buttons: *"It takes time, tools, hosting and ongoing maintenance
+  to keep the news working. If it helps you stay updated, consider supporting so it can keep
+  improving"* + the `starwardlove` emoji. It is part of the same container, shares the 4,000
+  character / 40 component budget, appears once per article (final message only), is never split
+  at a word boundary, and travels with the divider and buttons when a reveal mention reflows page
+  one. No other feature card carries it.
+- **Tests.** `test_mature_features_need_no_variable_and_one_switch_turns_them_off`,
+  `test_news_supporter_note_sits_under_the_buttons_on_feature_three_only`, the updated
+  default-on matrix, the reflow/footer split guard, and re-baselined card-budget fixtures.
+  `pytest -q`: 713 passed; ruff and `git diff --check` clean.
 ## 2026-11-10 — Feature 4: Kuro new-protocol launcher sources (dated background, pre-load index, carousel tier)
 
 - **Change.** Read the global English new-protocol game index first for live/pre-download versions and the background function code; fall back to the existing legacy index and background when v2 is unavailable. Prefer v2's dated background assets, assign them only to the planned launch window containing their asset date, and reject dated images from outside the window rather than guessing from the legacy first-seen memo. The English carousel's image slide is a lower-ranked art fallback only when its version note matches the launch; date-only YouTube PV/showcase slides are rejected so they cannot displace Special Program key art. It is fetched only inside the existing launch-window gate and never used as video. If a background's video and artwork carry different publish dates, the shared slot is conservatively rejected rather than assigned to either version. CN endpoints are deliberately not used.
@@ -786,8 +806,8 @@
   with its original attribution and legal links unchanged.
 - Consolidate detailed official-news setup, paging, source-preserving formatting,
   measured-grouping bounds and safe verification in
-  [CONFIGURATION.md](../CONFIGURATION.md#official-news-explicit-opt-in-default-off).
-  Update [the docs index](../README.md#official-news--milestone-alerts--off-by-default).
+  [CONFIGURATION.md](../CONFIGURATION.md#official-news-on-by-default).
+  Update [the docs index](../README.md#official-news--milestone-alerts--on-by-default).
   Remove repeated current-policy appendices from the README and the bottom of
   this changelog; retain dated historical entries unchanged.
 - Record the documentation placement/link-check rule in AGENTS.md. This follow-up

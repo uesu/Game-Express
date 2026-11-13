@@ -62,12 +62,12 @@ official sources, decides whether anything is new, posts **Discord Components V2
 Python).
 
 Five independent features: **`schedule`** (version/Special-Program cards) and **`codes`**
-(redemption-code cards) on by default, plus explicit opt-in **`news`** (`NEWS_ENABLED=1`, full
-official articles for five games), **`maintenance`** (`MAINTENANCE_ENABLED=1` +
-`MAINTENANCE_GAMES`, independent `Pre-Load Started` and `Maintenance Started` cards), and
-**`beta`** (`BETA_ENABLED=1` + `BETA_GAMES`, beta kit & revision-diff cards for the four
-released games — `hna` and `ananta` are excluded until they ship). Six games:
-`genshin`, `starrail`, `zzz`, `wuwa`, `hna`, `ananta`.
+(redemption-code cards), plus **`news`** (`NEWS_ENABLED=0` opts out; full official articles for
+five games) and **`maintenance`** (`MAINTENANCE_ENABLED=0` opts out + `MAINTENANCE_GAMES`,
+independent `Pre-Load Started`, `Maintenance Started` and `Servers Live` cards) — all four on by
+default — and explicit opt-in **`beta`** (`BETA_ENABLED=1` + `BETA_GAMES`, beta kit &
+revision-diff cards for the four released games — `hna` and `ananta` are excluded until they
+ship). Six games: `genshin`, `starrail`, `zzz`, `wuwa`, `hna`, `ananta`.
 
 **There is no Discord bot and there must not be one.** A bot existed long ago; it was removed in
 v1.7.0, the last hosting artefact (`.dockerignore`) went in PR #20, and the legal docs were
@@ -84,7 +84,7 @@ nothing more. Do not add `discord.py`, a token, a gateway, or any always-on proc
 | `gamexpress/runner.py` | builds `Ctx` (settings, games, state, fetcher, webhook, X client, Reddit client), fail-over, `run_news`, `maintenance.run`, `beta.run`, run summary |
 | `gamexpress/schedule.py` (the largest module by far) | the brain: picks the announcement, parses times, locks banners, speculates a cycle, builds/edits the schedule card |
 | `gamexpress/codeposter.py` | the code gate (families, validators, min-sources), posts/edits code cards |
-| `gamexpress/maintenance.py` | fourth feature (off by default): independent `Pre-Load Started` & `Maintenance Started` cards, `official > override > observed > cadence` precedence, 4-tier version-verified launch media, corroborated signed URL renewal/fallback, silent seed & bounded late `PATCH` |
+| `gamexpress/maintenance.py` | fourth feature (on by default, `MAINTENANCE_ENABLED=0` opts out): independent `Pre-Load Started` & `Maintenance Started` cards, `official > override > observed > cadence` precedence, 4-tier version-verified launch media, corroborated signed URL renewal/fallback, silent seed & bounded late `PATCH` |
 | `gamexpress/beta.py` | fifth feature (off by default): beta kit & revision-diff cards from `static.nanoka.cc/manifest.json` + the game's gachabase beta changelog, image locking, revision idempotence, bounded request budget |
 | `gamexpress/news_timestamps.py` | single-pass `O(N)` render-only news timestamp converter (`NEWS_TIMESTAMPS`, off by default) |
 | `gamexpress/cards.py` | Components V2 payload builders (`schedule`, `codes`, `news`, `maintenance`, `beta`) + `validate_payload` |
@@ -344,8 +344,10 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
 
 - Preserve the pending attended-automation/application changes; implement only
   the newest delta in existing files, with the existing smoke/CI gates.
-- `NEWS_ENABLED` defaults off; feature selection alone cannot enable news and
-  global disable wins. Five dedicated destinations, no catch-all/force/mirror fallback.
+- `NEWS_ENABLED` defaults **on** (absence = on, `0` = off); global disable
+  (`ENABLED_FEATURES=none/off/standby/0`) still wins. The news card ends with the
+  built-in supporter note (`cards.NEWS_SUPPORT_NOTE`) — never split, never on
+  another feature's card. Five dedicated destinations, no catch-all/force/mirror fallback.
 - Official news, schedule, schedule mirrors, codes, and preload/maintenance started
   alerts are strictly independent features: Special Program previews, broadcasts,
   pre-installation notices, and version maintenance notices remain eligible for
@@ -499,7 +501,8 @@ repository Variables:
   trailing zone only when the first endpoint omits its timezone and rejects the entire range
   verbatim if either endpoint carries an invalid or ambiguous explicit zone, without mutating
   `Item`, raw HTML, or `timeparse.py`.
-- **`MAINTENANCE_ENABLED=0` + `MAINTENANCE_GAMES=""` (default):** `gamexpress/maintenance.py`
+- **`MAINTENANCE_ENABLED` defaults on; `MAINTENANCE_GAMES=""` (default) activates no game:**
+  `gamexpress/maintenance.py`
   posts independent `Pre-Load Started` and `Maintenance Started` Components V2 cards to
   dedicated `DISCORD_WEBHOOK_MAINTENANCE_<GAME>` webhooks (with optional `PING_MAINTENANCE_<GAME>`
   / `PING_MAINTENANCE`), seeding settled milestones silently on first activation, enforcing

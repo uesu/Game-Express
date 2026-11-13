@@ -663,7 +663,8 @@ nor passing offline tests prove live media decoding/readability or delivery.
 
 ## Structured launch media for Pre-Load & Maintenance Started (2026-10-21)
 
-When `MAINTENANCE_ENABLED=1` and a game is explicitly listed in `MAINTENANCE_GAMES`,
+When a game is explicitly listed in `MAINTENANCE_GAMES` (feature 4 is on by default;
+`MAINTENANCE_ENABLED=0` switches it off),
 `gamexpress/maintenance.py` resolves optional launch media from structured official
 endpoints and existing caches only (never headless browsers or HTML scraping):
 

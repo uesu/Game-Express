@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Feature 4: Kuro new-protocol launcher sources (dated background, pre-load index, carousel tier)](CHANGELOG.md#2026-11-10--feature-4-kuro-new-protocol-launcher-sources-dated-background-pre-load-index-carousel-tier).
+Latest: [Features 3–4 are on by default, and the news card gains a supporter note](CHANGELOG.md#2026-11-13--features-34-are-on-by-default-and-the-news-card-gains-a-supporter-note).
+
+Previous: [Feature 4: Kuro new-protocol launcher sources (dated background, pre-load index, carousel tier)](CHANGELOG.md#2026-11-10--feature-4-kuro-new-protocol-launcher-sources-dated-background-pre-load-index-carousel-tier).
 
 Previous: [Feature 1: a star or a level tag inside a name is still a name (HSR 4.7 phase 1, Monitor #5008)](CHANGELOG.md#2026-11-10--feature-1-a-star-or-a-level-tag-inside-a-name-is-still-a-name-hsr-47-phase-1-monitor-5008).
 
