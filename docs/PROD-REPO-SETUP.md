@@ -284,7 +284,7 @@ Webhooks).
 | `DISCORD_WEBHOOK_SCHEDULE_MIRROR_ANANTA` | **set on dev** | |
 | `NITTER_RSS_TOKEN` | optional | same single token as News-Express — automatically unlocks **both** `nitter.miningtcup.me` (X) and `redlib.miningtcup.me` (Reddit/Redlib). No separate secret name is needed for `miningtcup` |
 | `REDDIT_FEED_TOKEN` | optional | from `old.reddit.com/prefs/feeds/`: paste `<40-char-key>&user=<your_username>` (everything after `?feed=`, exact same format as News-Express; `?feed=…` or any full `.rss?feed=…` / `.json?feed=…` link on `old.reddit.com` / `www.reddit.com` / `reddit.com` also normalizes automatically) |
-| `DISCORD_WEBHOOK_MAINTENANCE_<GAME>` | optional | dedicated webhook per game when `MAINTENANCE_ENABLED=1` (`GENSHIN`, `STARRAIL`, `ZZZ`, `WUWA`, `HNA`, `ANANTA`) |
+| `DISCORD_WEBHOOK_MAINTENANCE_<GAME>` | optional | dedicated webhook per game listed in `MAINTENANCE_GAMES` (`GENSHIN`, `STARRAIL`, `ZZZ`, `WUWA`, `HNA`, `ANANTA`); the feature itself is on by default |
 | `BUMP_PAT` | yes, if you keep `python_version_bump.yml` | a PAT with **Workflows: read and write**. Without it the weekly bump validates fine and then fails on the push — see below |
 | `DISCORD_WEBHOOK_CODES` | optional | catch-all for games without their own channel |
 | `DISCORD_WEBHOOK_URL` | optional | global catch-all |
@@ -325,12 +325,12 @@ You may choose any channel names. For only GI/WuWa, use their two dedicated secr
 | `PING_SCHEDULE` | `<@&…>` | dev currently pings a real role. Copy the same value to keep behaviour identical, or set `none` for a silent prod |
 | `ENABLED_FEATURES` | preserve intended selection, or unset | default `schedule,codes`; never `none` on the live instance |
 | `REDDIT_ENABLED` | default `1` (on) | automatic failover backup on `schedule` (`0` user-feed requests when X + primary APIs succeed) + unverified 2nd-witness family on `codes`; set `0` for `0` Reddit HTTP calls |
-| `NEWS_ENABLED` | preserve intended opt-in; default `0` | `1` explicitly enables news unless globally off |
+| `NEWS_ENABLED` | **delete it**; default `1` (on) | `0` would switch news off for this instance |
 | `NEWS_GAMES` | default `genshin,starrail,zzz,wuwa,hna` | independent news subset |
 | `NEWS_TIMESTAMPS` | default `0` | `1` converts unambiguous official body timestamps into Discord `<t:…>` tokens |
 | `NEWS_EXPAND_FULL` | default `0` | `1` renders full long official articles across multiple Components V2 pages instead of a single excerpt card |
 | `NEWS_GROUP_LONG_STRIPS` | default `0` | preserve your chosen setting; no rollout implied |
-| `MAINTENANCE_ENABLED` | default `0` | `1` enables Pre-Load Started / Maintenance Started alerts for games listed in `MAINTENANCE_GAMES` |
+| `MAINTENANCE_ENABLED` | **delete it**; default `1` (on) | `0` would switch Pre-Load Started / Maintenance Started / Servers Live off; `MAINTENANCE_GAMES` still decides which games run |
 | `MAINTENANCE_GAMES` | default unset (none) | explicit game keys for maintenance alerts, e.g. `all` or `genshin,starrail,zzz,wuwa,hna,ananta` |
 | `AUTO_MERGE_DEPENDABOT` | **do not copy** | dev-only, there is no Dependabot in prod |
 | `AUTO_MERGE_PYTHON_BUMP` | not needed | legacy/ignored in all instances |

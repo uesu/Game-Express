@@ -273,7 +273,7 @@ or `gamexpress/schedule.py`:
    spans/blocks, date-only phrases, `"After the Version X.Y update"`, approximate durations and
    TZ-less times stay completely untouched. When disabled (`NEWS_TIMESTAMPS=0`), the scanner is
    bypassed completely.
-2. **`gamexpress/maintenance.py` (`MAINTENANCE_ENABLED=1` + `MAINTENANCE_GAMES`, default off):**
+2. **`gamexpress/maintenance.py` (`MAINTENANCE_ENABLED=0` opts out; `MAINTENANCE_GAMES` selects games):**
    resolves `Pre-Load Started` and `Maintenance Started` timestamps across all 6 games with
    strict precedence **official notice/tweet/Reddit (`38 <= rank < 100`, including inferred
    epithet versions like `"Luna II"` and `"1.0"` pre-release launch notices) > explicit

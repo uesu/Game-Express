@@ -132,7 +132,7 @@ being dropped. A codes drop split across several messages mentions the role on *
 
 | Name | Default | Meaning |
 |---|---|---|
-| `ENABLED_FEATURES` | `schedule,codes` | `schedule` · `codes` · `news` (also requires `NEWS_ENABLED`) · `none` (paused / cold standby) |
+| `ENABLED_FEATURES` | `schedule,codes` | `schedule` · `codes` · `news` · `none` (paused / cold standby). News and maintenance are on by default, so they no longer need to be listed here; `none` still pauses everything |
 | `GAMES` | all enabled | allow-list, e.g. `genshin,starrail` |
 | `ENABLE_GAMES` | — | switch prepared games on, e.g. `hna` or `hna,ananta` |
 | `X_ENABLED` / `NITTER_INSTANCES` | on / built-in fleet | X monitoring on/off, or a custom nitter list |
@@ -256,27 +256,28 @@ a deliberate new schedule card (for example `starrail:4.6`); leave it unset in r
 scheduled runs. It is not a news replay/backfill switch. Test/force/bootstrap selectors
 are not routine setup requirements; leave their defaults unless deliberately testing.
 
-## Official news (explicit opt-in; default off)
+## Official news (on by default)
 
 **GitHub setup:** use Secrets for webhooks/tokens and Variables for switches. The workflow
 merges `GE_SECRETS_JSON` and `GE_VARS_JSON`; no YAML edit is required per setting. Use
-`mode=live`, `only=all` for ordinary production with news opted in; the UI offers no
-news-only selection. CLI `--only news --dry-run` is a selector, not an opt-in.
+`mode=live`, `only=all` for ordinary production; news is part of it by default. The UI
+offers no news-only selection. CLI `--only news --dry-run` is a selector, not enablement.
 For migration, preserve the current state and intended feature switches; do not reset a
 baseline or add a second scheduler. See [production setup](PROD-REPO-SETUP.md).
 
-Set repository **variable** `NEWS_ENABLED=1` only after reviewing the source and
-preview. `NEWS_ENABLED=0` (the default) makes no news requests and adds no news
-state on installations that have never enabled it. Disabling an already enabled
-installation writes one `paused` control marker; subsequent disabled runs do not
-churn news state. A successful source read after re-enabling establishes a new
-silent baseline. A selector such as `ONLY=news` / `--only news` cannot enable it;
+Feature 3 is **on by default**: a fresh installation needs no news variable at all, and
+the retired `NEWS_ENABLED=1` can simply be deleted. Set repository **variable**
+`NEWS_ENABLED=0` to switch it off; that makes no news requests and adds no news state on
+installations that have never enabled it. Disabling an already enabled installation writes
+one `paused` control marker; subsequent disabled runs do not churn news state. A successful
+source read after re-enabling establishes a new silent baseline. A selector such as
+`ONLY=news` / `--only news` is a selector, not an opt-in — and no longer needs one;
 `ENABLED_FEATURES=none`, `off`, `standby`, or `0` wins over the switch.
 A schedule/code-only selector does not count as toggling news off.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `NEWS_ENABLED` | `0` | Explicit news opt-in; independent of the existing schedule/code defaults |
+| `NEWS_ENABLED` | `1` | On by default; `0` switches news off. Independent of the schedule/code defaults |
 | `NEWS_GROUP_LONG_STRIPS` | `0` | Opt-in measured grouping; failure keeps article order |
 | `NEWS_REVEAL_PING` | `0` | Opt-in heuristic character-reveal mentions for official news; excludes identified video, deduplicates characters and same source publication minute |
 | `PING_NEWS_REVEAL` | — | The only reveal role setting: one role list (comma/space separated) used for **all** games. No `PING_ROLE_ID`/`PING_NEWS` inheritance and no per-game variant |
@@ -285,6 +286,7 @@ A schedule/code-only selector does not count as toggling news off.
 | `NEWS_MEDIA_HEAL_DELAY` | `6` | Grace period in seconds (0–60) before the re-read; one wait per game and run, not per card |
 | `NEWS_EXPAND_FULL` | `0` | Opt-in multi-page full articles beyond 2 pages (bounded at `NEWS_EXPAND_MAX_PAGES = 12`, `NEWS_EXPAND_MAX_CHARS = 120000`, `NEWS_EXPAND_MAX_MEDIA = 120`) |
 | `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | Canonical game keys; removing a game pauses its existing news state |
+| `NEWS_SUPPORT_NOTE` | *(built in)* | Not a variable: one small `-#` line under the news buttons (*"It takes time, tools, hosting and ongoing maintenance…"*). It shares the card's 4,000-character and 40-component budgets, is never split across messages, and moves with the buttons when a reveal mention reflows a page |
 
 Each run attempts all discovered eligible unposted articles in publication order,
 without a fixed article-count cap or ten-attempt game cap. A failed article remains
@@ -391,8 +393,9 @@ per-instance production states remain essential.
 
 ### Selecting two games and choosing channel names
 
-Set `NEWS_ENABLED=1` and `NEWS_GAMES=genshin,wuwa` to select only those two
-news adapters; leave the existing schedule/code game filters unchanged unless
+Set `NEWS_GAMES=genshin,wuwa` to select only those two news adapters (no
+`NEWS_ENABLED` needed — news is on by default); leave the existing schedule/code game
+filters unchanged unless
 intentionally restricting those features too. Unselected games make no news
 source requests or deliveries. Supply the two corresponding news webhook secrets.
 `gi-news`, `hsr-news`, `hna-news`, `zzz-news` and `wuwa-news` are suggested names,
@@ -555,24 +558,26 @@ A manually trimmed capture cannot establish a complete article's length or prove
 current direct official-host ingestion. Historical maintenance examples remain
 schedule-routed; presentation changes do not reroute or backfill them.
 
-Before opting in, use [the existing verification commands](TESTING.md#official-news-offline-coverage-and-read-only-checks)
+Before switching news off (or on) for an installation, use
+[the existing verification commands](TESTING.md#official-news-offline-coverage-and-read-only-checks)
 and review [source limits](SOURCES.md#optional-full-content-news-adapter-2026-10-18).
 Offline previews/tests validate payload construction, not live source availability,
-Discord media access, codecs, delivery or thumbnail readability. Keep news off
-until the operator explicitly approves opt-in. Review partial-delivery holds;
-never reset delivery state merely to test. No new scheduler, tokens or upload
-service are needed. Keep each installation's state and secrets independent.
+Discord media access, codecs, delivery or thumbnail readability. Review
+partial-delivery holds; never reset delivery state merely to test. No new scheduler,
+tokens or upload service are needed. Keep each installation's state and secrets
+independent.
 
-## Pre-load & maintenance started (explicit per-game opt-in; default off)
+## Pre-load & maintenance started (on by default; per-game opt-in)
 
-`MAINTENANCE_ENABLED=0` (default) makes zero extra requests and adds no maintenance
-entries to `state/state.json`. Activating the fourth feature requires **both**
-`MAINTENANCE_ENABLED=1` **and** an explicit non-empty `MAINTENANCE_GAMES` list,
-plus a dedicated per-game webhook secret for each opted-in game:
+Feature 4 is **on by default**, so the retired `MAINTENANCE_ENABLED=1` variable can be
+deleted. It still activates per game: with an empty `MAINTENANCE_GAMES` it makes zero
+extra requests and adds no maintenance entries to `state/state.json`. Switching it on for
+a game requires an explicit non-empty `MAINTENANCE_GAMES` list plus a dedicated per-game
+webhook secret, and `MAINTENANCE_ENABLED=0` turns the whole feature off:
 
 | Setting | Kind | Default | Meaning |
 |---|---|---|---|
-| `MAINTENANCE_ENABLED` | Variable | `0` | Master switch; disabled unless explicitly truthy (and overridden by `ENABLED_FEATURES=none/off/standby/0`) |
+| `MAINTENANCE_ENABLED` | Variable | `1` | Master switch; on unless explicitly `0` (and overridden by `ENABLED_FEATURES=none/off/standby/0`) |
 | `MAINTENANCE_GAMES` | Variable | *(empty)* | Required explicit per-game opt-in list (e.g. `all` or `genshin,starrail,zzz,wuwa,hna,ananta`); empty activates nothing |
 | `DISCORD_WEBHOOK_MAINTENANCE_<GAME>` | Secret | *(unset)* | Dedicated per-game channel webhook (`GENSHIN`, `STARRAIL`, `HNA`, `ZZZ`, `WUWA`, `ANANTA` + aliases); no generic/catch-all/mirror/`FORCE_WEBHOOK` fallback |
 | `PING_MAINTENANCE_<GAME>` / `PING_MAINTENANCE` | Variable | `none` | Optional per-game or feature role ping on **Pre-Load Started** and **Maintenance Started** (`<@&ROLE>`); **Servers Live is always silent** |

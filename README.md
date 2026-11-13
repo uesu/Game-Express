@@ -157,7 +157,7 @@ same run share a card.
 
 ---
 
-### 3 · Official news (optional; off by default)
+### 3 · Official news
 
 Full retrievable official articles for **Genshin Impact, Honkai: Star Rail, Honkai:
 Nexus Anima, Zenless Zone Zero and Wuthering Waves**, sent to explicitly configured
@@ -169,7 +169,7 @@ Wangyue is excluded.
 Optional `NEWS_REVEAL_PING=1` with one `PING_NEWS_REVEAL` role for all games
 adds heuristic static-character reveal mentions to the byline, with retained-character
 and publication-minute deduplication. It is off by default; see
-[configuration and limitations](docs/CONFIGURATION.md#official-news-explicit-opt-in-default-off).
+[configuration and limitations](docs/CONFIGURATION.md#official-news-on-by-default).
 
 - **Source-order content & independent policies:** one full message when it fits;
   by default (`NEWS_EXPAND_FULL=0`), the **7,000-character / maximum-two-page
@@ -183,8 +183,11 @@ and publication-minute deduplication. It is off by default; see
   `GET`s, message count, webhook `POST`s, and pacing proportionally).
 - **Independent feature eligibility:** schedule extraction/mirrors, codes, official
   news, and started alerts are independent — Special Program, broadcast, preload, and
-  maintenance notices remain eligible for official news delivery when `NEWS_ENABLED=1`,
+  maintenance notices remain eligible for official news delivery whenever news is on,
   while legacy `status: "posted"` state entries remain deduplicated without backfill.
+- **On by default, still a switch:** news runs without any configuration. Set
+  `NEWS_ENABLED=0` to turn it off completely (`ENABLED_FEATURES=none` still pauses
+  everything); `NEWS_GAMES` narrows the games as before.
 - **Optional native timestamps (`NEWS_TIMESTAMPS=1`, off by default):** converts
   exact timezone-qualified dates/times in rendered news bodies (plus `server time`
   on `UTC+8`) into Discord `<t:EPOCH:…>` tags without touching source payloads,
@@ -196,8 +199,10 @@ and publication-minute deduplication. It is off by default; see
   heading links (`**[label](url)**`), and escapes literal `*` footnotes/multipliers
   without altering upstream HTML, JSON, API calls, or source adapters.
 - **Controls at the end:** all three custom-emoji buttons occur only in the final
-  container of the final message. Part labels identify containers; Page labels
-  identify separate messages.
+  container of the final message, followed by one small line under them —
+  *"It takes time, tools, hosting and ongoing maintenance to keep the news working…"* —
+  which is part of the card, never split across messages, and never counted as article text.
+  Part labels identify containers; Page labels identify separate messages.
 - **Optional measured long strips:** default article-order galleries remain
   unchanged. Opt-in grouping combines only qualifying consecutive strips; failed
   measurements keep the original layout. No cropping, slicing or media removal.
@@ -205,7 +210,7 @@ and publication-minute deduplication. It is off by default; see
   it does not repost old articles. Missing media can hold delivery after one
   official refresh. This is not a live Discord playback guarantee.
 
-Use the **[official-news setup and full instructions](docs/CONFIGURATION.md#official-news-explicit-opt-in-default-off)**
+Use the **[official-news setup and full instructions](docs/CONFIGURATION.md#official-news-on-by-default)**
 for all variables, per-game secrets, selecting two games, paging/excerpt rules,
 optional timestamp conversion, expanded articles, measured grouping, retries and safe verification. See also the
 **[source limits](docs/SOURCES.md#optional-full-content-news-adapter-2026-10-18)**
@@ -213,7 +218,7 @@ and **[offline/live-check distinction](docs/TESTING.md#official-news-offline-cov
 
 ---
 
-### 4 · Pre-load, maintenance started & servers live (optional; off by default)
+### 4 · Pre-load, maintenance started & servers live
 
 Three independent milestone alerts per version — **`Pre-Load Started`**,
 **`Maintenance Started`** and **`Servers Live`** — for explicitly enabled games, using the
@@ -262,7 +267,7 @@ Works standalone or alongside schedule, codes and news without modifying existin
   query intact), or fallback to matching-version artwork / omitted media inside
   `LATE_MEDIA_EDIT_WINDOW_S`.
 
-Full setup and safeguards: **[docs/CONFIGURATION.md → Pre-load & maintenance started](docs/CONFIGURATION.md#pre-load--maintenance-started-explicit-per-game-opt-in-default-off)**.
+Full setup and safeguards: **[docs/CONFIGURATION.md → Pre-load & maintenance started](docs/CONFIGURATION.md#pre-load--maintenance-started-on-by-default-per-game-opt-in)**.
 
 ---
 
@@ -454,16 +459,16 @@ Leave `ENABLED_FEATURES` unset for the usual `schedule,codes` production default
 Reddit backup (`REDDIT_ENABLED=1` by default) backs up `schedule` automatically when X or
 primary APIs degrade and adds an unverified 2nd-witness family (`reddit:<Subreddit>`) for
 `codes`; set `REDDIT_ENABLED=0` to turn all Reddit fetching off with zero HTTP calls.
-Official news remains off unless `NEWS_ENABLED=1`; `NEWS_GAMES` selects games,
+Official news is on by default (`NEWS_ENABLED=0` turns it off); `NEWS_GAMES` selects games,
 `NEWS_TIMESTAMPS=0` / `NEWS_EXPAND_FULL=0` / `NEWS_GROUP_LONG_STRIPS=0` keep default
 rendering unless switched to `1`. Each run attempts all discovered,
 eligible unposted articles in publication order, with no fixed article-count cap. For only GI and WuWa news, use `NEWS_GAMES=genshin,wuwa`
 and their two dedicated secrets; this does not restrict schedule/codes.
-Pre-load/maintenance started cards remain off unless `MAINTENANCE_ENABLED=1` and
-`MAINTENANCE_GAMES` names the target game keys alongside dedicated
-`DISCORD_WEBHOOK_MAINTENANCE_<GAME>` secrets.
+Pre-load/maintenance started cards are on by default (`MAINTENANCE_ENABLED=0` turns them
+off) and activate per game as soon as `MAINTENANCE_GAMES` names the target keys alongside
+dedicated `DISCORD_WEBHOOK_MAINTENANCE_<GAME>` secrets.
 Canonical news keys: `genshin`, `starrail`, `hna`, `zzz`, `wuwa`.
-See [full setup and switches](docs/CONFIGURATION.md#official-news-explicit-opt-in-default-off).
+See [full setup and switches](docs/CONFIGURATION.md#official-news-on-by-default).
 
 Development safeguard: optional `ENABLED_FEATURES=none` skips live workflow runs; test mode
 still posts to configured webhooks. Omit production webhooks from a strict development-only copy.
@@ -525,7 +530,7 @@ editing YAML. The ones worth knowing:
 |---|---|---|
 | `PING_ROLE_ID` | *(unset)* | role(s) to ping. Unset = no ping |
 | `ENABLED_FEATURES` | `schedule,codes` | schedule/code selection; `none` disables all live features, including news and maintenance |
-| `NEWS_ENABLED` | `0` | explicit opt-in; adds news unless globally disabled |
+| `NEWS_ENABLED` | `1` | on by default; `0` turns news off (unless globally disabled) |
 | `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | news subset, independent of schedule/codes |
 | `NEWS_GROUP_LONG_STRIPS` | `0` | optional measured grouping; off retains article order |
 | `NEWS_TIMESTAMPS` | `0` | optional `<t:EPOCH:…>` conversion in rendered news text |
@@ -534,7 +539,7 @@ editing YAML. The ones worth knowing:
 | `PING_SCHEDULE` / `PING_CODES` | inherit `PING_ROLE_ID` | per-feature ping override; `none` = explicitly no ping |
 | `PING_MAINTENANCE` / `PING_BETA` | *(unset = silent)* | optional role ping on Pre-Load Started / Maintenance Started and beta cards; Servers Live is always silent; `PING_ROLE_ID` is deliberately **not** inherited |
 | `NEWS_REVEAL_PING` + `PING_NEWS_REVEAL` | `0` / *(unset)* | opt-in character-reveal ping; one role list for every game, no per-game variant |
-| `MAINTENANCE_ENABLED` | `0` | explicit opt-in for `Pre-Load Started` / `Maintenance Started` / `Servers Live` |
+| `MAINTENANCE_ENABLED` | `1` | on by default; `0` turns `Pre-Load Started` / `Maintenance Started` / `Servers Live` off |
 | `MAINTENANCE_GAMES` | *(empty)* | explicit per-game list (`all` or game keys) required to activate maintenance alerts |
 | `BETA_ENABLED` | `0` | explicit opt-in for beta kit / revision-diff cards (feature 5) |
 | `BETA_GAMES` | `genshin,starrail,zzz,wuwa` | beta subset; `all` resolves to the same four (HNA and ANANTA excluded until launch) |
