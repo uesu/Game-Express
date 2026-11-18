@@ -373,8 +373,9 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
   page with `-# Page n`.
 - **The opt-in reveal ping is per game.** One `NEWS_REVEAL_PING` switch and one
   `PING_NEWS_REVEAL` role list, minus any game whose `config/games.json` entry sets
-  `"reveal_ping": false` — Wuthering Waves is false (its own site publishes the same reveal the
-  twitter card pings for, so Feature 3 posts it silently). Call
+  `"reveal_ping": false` — Wuthering Waves is false (its official site repeats the reveal the
+  twitter/X pipeline already delivers as a card, and that pipeline has no reveal ping yet, so
+  Feature 3 posts it silently). Call
   `settings.reveal_ping(game.key, allowed=game.reveal_ping)`; never hardcode a game key inside the
   settings method.
 - Preflight only included direct media with a bounded official-host GET/signature

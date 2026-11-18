@@ -5,7 +5,9 @@
 - **What happened.** A Wuthering Waves drip / new-character announcement never reached the
   channel with a reveal mention from Feature 3, while the same reveal appeared on twitter and on
   the WW site. The site article did reach Discord, but the opt-in `NEWS_REVEAL_PING` mention was
-  attached to a game whose reveals the twitter card already covers.
+  attached to the wrong pipeline: the twitter/X cards are what carry WW reveals, and that pipeline
+  has **no reveal ping** of its own (no switch, probe or data yet), so Feature 3 was the only thing
+  pinging a WW reveal — for a game whose announcement arrives somewhere else.
 - **Change.** `config/games.json` now carries a per-game `"reveal_ping"` flag (`Game.reveal_ping`,
   default `true`) and Wuthering Waves is the one entry set to `false`. The switch and the role
   list stay exactly two settings: `NEWS_REVEAL_PING=1` plus `PING_NEWS_REVEAL` for every game that
