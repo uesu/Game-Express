@@ -366,6 +366,17 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
   `●`/`•` to Markdown `- ` bullets, including bold-wrapped markers.
   No continuation flood or gallery-only mode. Emoji buttons only in the final
   container of the final message; omit unknown publication times. Preserve list/heading readability.
+- **A fitting news card is one message and one container.** Never cut a card that already fits
+  Discord's per-message 4,000-character / 40-component budget into `-# Part n/m` containers: the
+  budget is message-wide, so an extra container only adds chrome, and because the split itself
+  adds a label + divider it could only ever cut cards that already fit. Pack to the cap, then
+  page with `-# Page n`.
+- **The opt-in reveal ping is per game.** One `NEWS_REVEAL_PING` switch and one
+  `PING_NEWS_REVEAL` role list, minus any game whose `config/games.json` entry sets
+  `"reveal_ping": false` — Wuthering Waves is false (its own site publishes the same reveal the
+  twitter card pings for, so Feature 3 posts it silently). Call
+  `settings.reveal_ping(game.key, allowed=game.reveal_ping)`; never hardcode a game key inside the
+  settings method.
 - Preflight only included direct media with a bounded official-host GET/signature
   check. Refresh the official full article once on failure; if still unresolved,
   hold/retry without marking delivered. Never guess filenames, strip required URL
@@ -387,8 +398,9 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
 - Missing HoYoLAB publisher nickname falls back to the configured game name;
   supplied nicknames are preserved. This is fallback metadata, not a hardcoded author.
 - Add spaces after unpadded `※`/`✦`; blank lines only between consecutive `※` notes,
-  not before every footnote. Keep consecutive Markdown bullets compact. Never
-  split one continuous media run merely at the eight-unit readability threshold.
+  not before every footnote. Keep consecutive Markdown bullets compact. Never split a card that fits Discord's
+  per-message caps; the eight-unit readability split is retired (2026-11-18), so a
+  continuous media run never forces a second container.
 - Optional measured long-strip grouping is approved and implemented with
   `NEWS_GROUP_LONG_STRIPS` (default off). Cropping/slicing/filtering/removal remain
   forbidden. Existing program key-art aspect checks do not drop news images.
@@ -404,7 +416,7 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
 
 ## Current official-news paging policy (supersedes earlier one-message-only wording)
 
-Keep fitting full articles unchanged in one message (possibly multiple containers).
+Keep fitting full articles unchanged in one message **and one container**.
 By default (`NEWS_EXPAND_FULL=0`), if that fails, permit at most two actual messages
 when normalized source text plus title/byline once is <=7,000 characters and both
 payloads validate independently against 4,000 text characters / 40 components /
@@ -417,7 +429,7 @@ unbalanced bold span. If packing fails, use the existing one-container excerpt
 with at most one lead image; never publish a partial full-article proposal.
 Paged messages: title/byline and lead only once at the start, then Page 1 / Page 2
 labels and dividers; three custom-emoji buttons only at the end of the final
-message. One-message articles also put buttons in the final container. Articles
+message. One-message articles put the buttons in that single container. Articles
 above the ceiling or unpageable within two messages keep the approved half-fitting
 word excerpt. Never truncate fitting full articles or modify official API HTML.
 Retain confirmed per-message progress, no-repost handling, media preflight and
@@ -434,8 +446,10 @@ at most two actual Discord messages; every message must independently validate
 against the unchanged 4,000 text-character and 40-component caps. Failure to fit
 safely in two messages still uses the existing one-container/one-lead excerpt.
 All three custom-emoji buttons appear only at the end of the final container of
-the final message, including one-message/multi-container articles. Keep Part 1/2
-and Part 2/2 for containers in one message, Page 1/Page 2 for separate messages.
+the final message, and a single-message card has exactly one container to hold
+them. One message is one container whenever the whole card fits; only separate
+messages carry Page 1/Page 2 labels, and `-# Part n/m` containers are retired
+(2026-11-18).
 Compact consecutive square (■) entries like numbered lists. HTML list items
 containing nested paragraphs must keep '- ' attached to their first visible text;
 fix parser block boundaries, not source-specific wording. Source HTML/API/mirror

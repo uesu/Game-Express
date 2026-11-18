@@ -309,7 +309,7 @@ separate from offline test success. No production posts were made during impleme
 
 ## Current official-news paging policy (supersedes earlier one-message-only wording)
 
-Keep fitting full articles unchanged in one message (possibly multiple containers).
+Keep fitting full articles unchanged in one message **and one container**.
 By default (`NEWS_EXPAND_FULL=0`), if that fails, permit at most two actual messages
 when normalized source text plus title/byline once is `<= 7,000` characters and both
 payloads validate independently against 4,000 text characters / 40 components /
@@ -371,8 +371,10 @@ at most two actual Discord messages; every message must independently validate
 against the unchanged 4,000 text-character and 40-component caps. Failure to fit
 safely in two messages still uses the existing one-container/one-lead excerpt.
 All three custom-emoji buttons appear only at the end of the final container of
-the final message, including one-message/multi-container articles. Keep Part 1/2
-and Part 2/2 for containers in one message, Page 1/Page 2 for separate messages.
+the final message, and a single-message card has exactly one container to hold
+them. One message is one container whenever the whole card fits; only separate
+messages carry Page 1/Page 2 labels, and `-# Part n/m` containers are retired
+(2026-11-18).
 Compact consecutive square (■) entries like numbered lists. HTML list items
 containing nested paragraphs must keep '- ' attached to their first visible text;
 fix parser block boundaries, not source-specific wording. Source HTML/API/mirror
@@ -682,3 +684,24 @@ Verification for the delta on top of the revision above (same offline suite, Pyt
   test run never reaches the network.
 - Limits: no live-source availability and no Discord playback test were performed in this
   session; unfamiliar publisher formats and incomplete historic rosters remain heuristic.
+
+### 2026-11-18 follow-up — polishing (one container) and the Wuthering Waves ping exclusion
+
+- Polishing: `test_news_reported_polishing_card_is_one_container_matching_the_manual_build`
+  renders the exact reported card (`A Traveler's Guide to Iia`, HoYoLAB 47482558) and pins the
+  hand-built shape — 1 message, 1 container, 13 children, 17 components, 1,095 text chars, no
+  `-# Part` label, source order intact, buttons + supporter note last.
+  `test_news_polishing_never_splits_a_card_that_fits_all_games` (nine units, all five games),
+  `test_news_polishing_packs_to_the_cap_before_any_second_message` (3,650 chars → one
+  3,955-char message; 30 galleries → exactly 40 components; 31 galleries → two valid messages
+  with every image kept) and `test_news_polishing_split_only_when_one_message_genuinely_overflows`
+  (a second message only when the demand exceeds the 4,000-char or 40-component cap on two
+  games × nine article sizes) cover the new rule. Against the pre-fix renderer the first three
+  fail; the two real ZZZ Signal Search baseline digests were re-pinned because they had been
+  split into `Part 1/2` + `Part 2/2` at 3,541 / 3,726 chars.
+- Reveal ping: `test_reveal_ping_excludes_wuthering_waves_only` proves the data (`"reveal_ping":
+  false` on the WW entry only), the settings gate and two real `run_news` deliveries — WW posts
+  the reveal with `allowed_mentions={"parse": []}`, no role text, no `reveal_chars` baseline and
+  no `reveal_ping` record, while the same shape on HSR still pings and records the character. The
+  reveal-ping mechanics tests keep their tuned Kuro/WW fixtures through the documented
+  `reveal_ping_games()` helper rather than silently dropping coverage.

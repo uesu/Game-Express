@@ -1,6 +1,10 @@
 # Changelog
 
-Latest: [Features 3–4 are on by default, and the news card gains a supporter note](CHANGELOG.md#2026-11-13--features-34-are-on-by-default-and-the-news-card-gains-a-supporter-note).
+Latest: [Feature 3: the reveal ping skips Wuthering Waves](CHANGELOG.md#2026-11-18--feature-3-the-reveal-ping-skips-wuthering-waves).
+
+Previous: [Polishing: a news card that fits is one message *and one container*](CHANGELOG.md#2026-11-18--polishing-a-news-card-that-fits-is-one-message-and-one-container).
+
+Previous: [Features 3–4 are on by default, and the news card gains a supporter note](CHANGELOG.md#2026-11-13--features-34-are-on-by-default-and-the-news-card-gains-a-supporter-note).
 
 Previous: [Feature 4: Kuro new-protocol launcher sources (dated background, pre-load index, carousel tier)](CHANGELOG.md#2026-11-10--feature-4-kuro-new-protocol-launcher-sources-dated-background-pre-load-index-carousel-tier).
 
