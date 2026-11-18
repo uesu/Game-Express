@@ -169,8 +169,9 @@ Wangyue is excluded.
 Optional `NEWS_REVEAL_PING=1` with one `PING_NEWS_REVEAL` role adds heuristic
 static-character reveal mentions to the byline, with retained-character and
 publication-minute deduplication. Wuthering Waves is excluded (`reveal_ping: false` in
-`config/games.json`): its own site publishes the same reveal the twitter card already
-pings for, so Feature 3 posts that news silently while the hoyoverse games keep the ping.
+`config/games.json`): its own site repeats the reveal the twitter/X pipeline already
+delivers as a card, and that pipeline has no reveal ping yet, so Feature 3 posts that news
+silently while the hoyoverse games keep the ping.
 It is off by default; see
 [configuration and limitations](docs/CONFIGURATION.md#official-news-on-by-default).
 

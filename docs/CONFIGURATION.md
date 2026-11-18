@@ -937,14 +937,17 @@ from `PING_ROLE_ID` or `PING_NEWS`). It also requires enabled official news. It 
 fetched articles; no additional source requests are made.
 
 **Wuthering Waves is excluded** (`"reveal_ping": false` on its `config/games.json` entry,
-2026-11-18). Its official site publishes the same `Stars Intertwined` / `Profile Reveal` posts the
-twitter card already announces, so Feature 3 delivered the news *and* pinged again for a reveal
-the twitter card had pinged first — while a drip or new-character announcement that only appeared
-on twitter reached the channel with no ping at all. The game still receives its official-news
-cards, silently: no mention is rendered, no `reveal_chars` / `reveal_times` baseline is seeded for
-it, and its state records carry no `reveal_ping` field. Every hoyoverse game (Genshin, HSR, ZZZ,
-HNA, and ANANTA once it reports) keeps the ping unchanged. The exclusion is per-game data, not a
-hardcoded key: any game can be opted out by adding `"reveal_ping": false` to its entry. Announcements in the
+2026-11-18). Its official site repeats the `Stars Intertwined` / `Profile Reveal` posts the
+twitter/X pipeline already delivers as a card, and that pipeline has **no reveal ping of its own**
+(no switch, no probe, no data) — so Feature 3 was the only place pinging a WW reveal, attached to a
+game whose announcement arrives somewhere else, while a drip or new-character announcement that
+only appeared on twitter reached the channel with no ping at all. A reveal ping for those twitter/X
+cards would be that pipeline's own feature; nothing here implements or depends on it. The game
+still receives its official-news cards, silently: no mention is rendered, no `reveal_chars` /
+`reveal_times` baseline is seeded for it, and its state records carry no `reveal_ping` field. Every
+hoyoverse game (Genshin, HSR, ZZZ, HNA, and ANANTA once it reports) keeps the ping unchanged. The
+exclusion is per-game data, not a hardcoded key: any game can be opted out by adding
+`"reveal_ping": false` to its entry. Announcements in the
 same **source publication minute** within a game share one ping; different minutes are not subject
 to a cooldown.
 Recognized follow-up profiles for retained character names are suppressed. A form suffix is the
