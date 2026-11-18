@@ -19,7 +19,6 @@ are ignored except the tracked template. Never copy live state back over product
 
 Character-reveal mention configuration and limitations are in [CONFIGURATION.md](CONFIGURATION.md#official-news-on-by-default);
 local verification and benchmark results are in [TESTING.md](TESTING.md#2026-10-29-update-verification).
-
 ## Official news & milestone alerts — on by default
 
 The [root README's third feature](../README.md#3--official-news)
@@ -30,7 +29,7 @@ are the short overviews. The operational instructions live here:
 |---|---|
 | [Setup, variables and destination secrets](CONFIGURATION.md#official-news-on-by-default) | on by default (`NEWS_ENABLED=0` opts out), all five game keys, all eligible discovered articles per run, retired cap migration, optional switches (`NEWS_TIMESTAMPS`, `NEWS_EXPAND_FULL`, `NEWS_GROUP_LONG_STRIPS`), dedicated webhooks and routing |
 | [Optional news timestamps](CONFIGURATION.md#optional-news-description-timestamps-default-off) | `NEWS_TIMESTAMPS`, explicit TZ vs `server time` (`UTC+8`), rollover handling, protected URLs/code/ranges, zero source mutation |
-| [Full-content paging, expanded articles and overflow](CONFIGURATION.md#full-content-paging-and-overflow) | default 7,000-char / 2-page layout plus smart fitting up to 4 messages, `NEWS_EXPAND_FULL` multi-page expansion (12-page / 120,000-char / 120-media cap), excerpts, Part versus Page, partial-delivery holds and final controls |
+| [Full-content paging, expanded articles and overflow](CONFIGURATION.md#full-content-paging-and-overflow) | default 7,000-char / 2-page layout plus smart fitting up to 4 messages, `NEWS_EXPAND_FULL` multi-page expansion (12-page / 120,000-char / 120-media cap), excerpts, one-container cards versus Page, partial-delivery holds and final controls |
 | [Select two games / choose channel names](CONFIGURATION.md#selecting-two-games-and-choosing-channel-names) | easy subset setup, arbitrary webhook destinations, independence from schedule/codes |
 | [Source-preserving formatting](CONFIGURATION.md#source-preserving-formatting) | compact lists, attached hyphens, marker spacing, unchanged source words/URLs |
 | [Measured long-strip grouping](CONFIGURATION.md#optional-measured-long-strip-grouping--implemented) | switch off/on, ratio and gallery limits, measurement bounds, boundaries and safe fallback |

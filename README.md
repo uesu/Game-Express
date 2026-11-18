@@ -166,9 +166,12 @@ news and maintenance alerts. Existing schedule/code retry behavior remains at th
 pre-PR baseline (`stop_on_ambiguous=False` by default); ANANTA news is inactive and
 Wangyue is excluded.
 
-Optional `NEWS_REVEAL_PING=1` with one `PING_NEWS_REVEAL` role for all games
-adds heuristic static-character reveal mentions to the byline, with retained-character
-and publication-minute deduplication. It is off by default; see
+Optional `NEWS_REVEAL_PING=1` with one `PING_NEWS_REVEAL` role adds heuristic
+static-character reveal mentions to the byline, with retained-character and
+publication-minute deduplication. Wuthering Waves is excluded (`reveal_ping: false` in
+`config/games.json`): its own site publishes the same reveal the twitter card already
+pings for, so Feature 3 posts that news silently while the hoyoverse games keep the ping.
+It is off by default; see
 [configuration and limitations](docs/CONFIGURATION.md#official-news-on-by-default).
 
 - **Source-order content & independent policies:** one full message when it fits;
@@ -538,7 +541,7 @@ editing YAML. The ones worth knowing:
 | `NEWS_MEDIA_HEAL` / `NEWS_MEDIA_HEAL_DELAY` | `1` / `6` | after delivery, re-read a card whose create response left a tile unresolved and re-send it identically once if it is still cold (Discord's "Image not found"); `0` disables |
 | `PING_SCHEDULE` / `PING_CODES` | inherit `PING_ROLE_ID` | per-feature ping override; `none` = explicitly no ping |
 | `PING_MAINTENANCE` / `PING_BETA` | *(unset = silent)* | optional role ping on Pre-Load Started / Maintenance Started and beta cards; Servers Live is always silent; `PING_ROLE_ID` is deliberately **not** inherited |
-| `NEWS_REVEAL_PING` + `PING_NEWS_REVEAL` | `0` / *(unset)* | opt-in character-reveal ping; one role list for every game, no per-game variant |
+| `NEWS_REVEAL_PING` + `PING_NEWS_REVEAL` | `0` / *(unset)* | opt-in character-reveal ping; one role list for every game that takes it, no per-game variable (Wuthering Waves is excluded in `config/games.json`) |
 | `MAINTENANCE_ENABLED` | `1` | on by default; `0` turns `Pre-Load Started` / `Maintenance Started` / `Servers Live` off |
 | `MAINTENANCE_GAMES` | *(empty)* | explicit per-game list (`all` or game keys) required to activate maintenance alerts |
 | `BETA_ENABLED` | `0` | explicit opt-in for beta kit / revision-diff cards (feature 5) |

@@ -1,5 +1,58 @@
 # Changelog — current entries
 
+## 2026-11-18 — Feature 3: the reveal ping skips Wuthering Waves
+
+- **What happened.** A Wuthering Waves drip / new-character announcement never reached the
+  channel with a reveal mention from Feature 3, while the same reveal appeared on twitter and on
+  the WW site. The site article did reach Discord, but the opt-in `NEWS_REVEAL_PING` mention was
+  attached to a game whose reveals the twitter card already covers.
+- **Change.** `config/games.json` now carries a per-game `"reveal_ping"` flag (`Game.reveal_ping`,
+  default `true`) and Wuthering Waves is the one entry set to `false`. The switch and the role
+  list stay exactly two settings: `NEWS_REVEAL_PING=1` plus `PING_NEWS_REVEAL` for every game that
+  takes it, with no per-game variable and no inheritance from `PING_ROLE_ID` / `PING_NEWS`.
+  `Settings.reveal_ping(game_key, allowed=...)` is gated by the game's own flag and
+  `runner.run_news` passes it.
+- **Effect on WW.** Official-news cards still post; they carry no mention, seed no
+  `reveal_chars` / `reveal_times` baseline, and their records carry no `reveal_ping` field. The
+  hoyoverse games (Genshin, HSR, ZZZ, HNA) keep the ping byte-for-byte, and ANANTA will take it
+  once it reports news. Adding `"reveal_ping": false` to another game's entry opts it out the same
+  way.
+- **Tests.** `test_reveal_ping_excludes_wuthering_waves_only` (data + settings + two real
+  `run_news` deliveries: WW silent, HSR still pinged) and the updated
+  `test_reveal_ping_default_off_isolation_and_multi_era_plus_unseen_future_classifier`. The
+  reveal-ping mechanics tests keep their tuned Wuthering Waves fixtures through the
+  `reveal_ping_games()` helper, which documents that production keeps the game off.
+  `pytest -q`: 717 passed; ruff clean.
+
+## 2026-11-18 — Polishing: a news card that fits is one message *and one container*
+
+- **What happened.** `A Traveler's Guide to Iia | Your Dream RV` (HoYoLAB 47482558, 2026-11-17)
+  arrived as two containers in one message — `-# Part 1/2` (11 children, 516 chars) and
+  `-# Part 2/2` (6 children, 601 chars), 22 components / 1,117 chars total — although the same
+  card hand-built as a single container is 13 children / 17 components / 1,095 chars and fits
+  comfortably. Two real ZZZ Signal Search notices (`hoyolab_zzz_46604530_full.json`,
+  `hoyolab_zzz_46863847_full.json`, 3,541 / 3,726 chars) were being split the same way.
+- **Why.** `news_payloads` started a new container once a card reached eight units
+  (`if len(current) >= 8 and not media_run`) and labelled them `-# Part n/m`. That rule was
+  never a capacity limit: Discord's 4,000-character / 40-component budget applies to the whole
+  *message*, so both containers counted against the same budget — and the split itself adds a
+  label plus a divider per container, so the chunked payload was always bigger than the single
+  container it replaced. It could only ever cut cards that already fit, and could never rescue
+  one that did not.
+- **Fix.** `news_payloads` renders the complete article as one container first and returns it
+  when `validate_payload` accepts it; the unreachable multi-container branch is gone. A card
+  therefore packs to the cap (3,650-char article → one 3,955-char message; 30 inline galleries →
+  exactly 40 components) and only real overflow pages (`-# Page N`, one container per message,
+  buttons and the supporter note on the last message). Text, media order, covers, dedup and the
+  four-message / 7,000-char / excerpt policy are unchanged.
+- **Tests.** `test_news_reported_polishing_card_is_one_container_matching_the_manual_build`
+  (the exact reported card: 1 container, 13 children, 17 components, 1,095 chars, no `Part`
+  label), `test_news_polishing_never_splits_a_card_that_fits_all_games`,
+  `test_news_polishing_packs_to_the_cap_before_any_second_message`,
+  `test_news_polishing_split_only_when_one_message_genuinely_overflows`, plus the updated
+  short-article and acceptance-baseline pins (two ZZZ fixture digests re-baselined). Against the
+  pre-fix renderer the new tests fail; with it they pass. `pytest -q`: 716 passed; ruff clean.
+
 ## 2026-11-13 — Features 3–4 are on by default, and the news card gains a supporter note
 
 - **Change (defaults).** Official news (feature 3) and pre-load / maintenance started / servers

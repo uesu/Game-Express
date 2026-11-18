@@ -510,8 +510,8 @@ Publication time uses the official index's UTC+8 `startTime`, falling back to
 `createTime` only when `startTime` is absent or empty.
 
 Full HTML/Quill blocks retain text/media order and heading/list readability.
-First try one full message. Multiple containers share the message-wide 4,000
-text-character / 40-component limits. Long articles are smart fitted across pages (up to
+First try one full message. A fitting card is a single container, so the 4,000 text-character / 40-component
+limits are message-wide and are packed to the cap before any second message is used. Long articles are smart fitted across pages (up to
 `NEWS_DEFAULT_MAX_PAGES = 4`) before any excerpt is considered. Legacy note: on overflow,
 <=7,000 normalized characters
 may use at most two independently validated pages; otherwise send one labelled
@@ -527,8 +527,9 @@ Balance adjacent/nested HTML bold spans, including across media boundaries, so
 Markdown markers do not leak into the message. Pad a closing `✦` when it touches
 the preceding word, without changing already-spaced markers.
 Add a space after unpadded `※`/`✦`, but add blank lines only between consecutive
-`※` note paragraphs. Consecutive `-` bullets stay compact. Uninterrupted media
-runs do not split at the eight-unit readability threshold. By default individual
+`※` note paragraphs. Consecutive `-` bullets stay compact. A card that fits one
+message is never split into `-# Part n/m` containers, and an uninterrupted media run
+is not a reason to split anywhere. By default individual
 galleries remain unchanged. Optional backend measured grouping is described below;
 source order remains unchanged. No cropping/slicing or repeated per-image warnings. Three custom-emoji
 buttons appear only in the final container; unknown publication times are omitted.
@@ -583,7 +584,7 @@ confuse the earlier mirrored-article 5625 parser test with this article.
 
 ## Current official-news paging policy (supersedes earlier one-message-only wording)
 
-Keep fitting full articles unchanged in one message (possibly multiple containers).
+Keep fitting full articles unchanged in one message **and one container**.
 By default (`NEWS_EXPAND_FULL=0`), if that fails, permit at most two actual messages
 when normalized source text plus title/byline once is <=7,000 characters and both
 payloads validate independently against 4,000 text characters / 40 components /
@@ -595,7 +596,7 @@ unbalanced bold span. If packing fails, use the existing one-container excerpt
 with at most one lead image; never publish a partial full-article proposal.
 Paged messages: title/byline and lead only once at the start, then Page 1 / Page 2
 labels and dividers; three custom-emoji buttons only at the end of the final
-message. One-message articles also put buttons in the final container. Articles
+message. One-message articles put the buttons in that single container. Articles
 above the ceiling or unpageable within two messages keep the approved half-fitting
 word excerpt. Never truncate fitting full articles or modify official API HTML.
 Retain confirmed per-message progress, no-repost handling, media preflight and
@@ -612,8 +613,10 @@ at most two actual Discord messages; every message must independently validate
 against the unchanged 4,000 text-character and 40-component caps. Failure to fit
 safely in two messages still uses the existing one-container/one-lead excerpt.
 All three custom-emoji buttons appear only at the end of the final container of
-the final message, including one-message/multi-container articles. Keep Part 1/2
-and Part 2/2 for containers in one message, Page 1/Page 2 for separate messages.
+the final message, and a single-message card has exactly one container to hold
+them. One message is one container whenever the whole card fits; only separate
+messages carry Page 1/Page 2 labels, and `-# Part n/m` containers are retired
+(2026-11-18).
 Compact consecutive square (■) entries like numbered lists. HTML list items
 containing nested paragraphs must keep '- ' attached to their first visible text;
 the policy. Source HTML/API/mirror responses and media URLs remain untouched.

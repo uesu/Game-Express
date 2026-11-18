@@ -280,7 +280,7 @@ A schedule/code-only selector does not count as toggling news off.
 | `NEWS_ENABLED` | `1` | On by default; `0` switches news off. Independent of the schedule/code defaults |
 | `NEWS_GROUP_LONG_STRIPS` | `0` | Opt-in measured grouping; failure keeps article order |
 | `NEWS_REVEAL_PING` | `0` | Opt-in heuristic character-reveal mentions for official news; excludes identified video, deduplicates characters and same source publication minute |
-| `PING_NEWS_REVEAL` | — | The only reveal role setting: one role list (comma/space separated) used for **all** games. No `PING_ROLE_ID`/`PING_NEWS` inheritance and no per-game variant |
+| `PING_NEWS_REVEAL` | — | The only reveal role setting: one role list (comma/space separated) used for every game that takes the ping. No `PING_ROLE_ID`/`PING_NEWS` inheritance and no per-game variable; Wuthering Waves is excluded in `config/games.json` (`"reveal_ping": false`) |
 | `NEWS_TIMESTAMPS` | `0` | Opt-in render-time `<t:EPOCH:…>` conversion for exact TZ-qualified news dates/times |
 | `NEWS_MEDIA_HEAL` | `1` | Media heal: when Discord's create/edit response returns a gallery tile or thumbnail with a `proxy_url` but no dimensions/content type (the client shows "Image not found"), the message is re-read after `NEWS_MEDIA_HEAL_DELAY` and, only if that tile is still cold, re-sent identically once. Nothing is persisted; dry-run never edits |
 | `NEWS_MEDIA_HEAL_DELAY` | `6` | Grace period in seconds (0–60) before the re-read; one wait per game and run, not per card |
@@ -443,7 +443,7 @@ supported news games (`genshin`, `starrail`, `hna`, `zzz`, `wuwa`):
 
 ### Full-content paging and overflow
 
-Keep fitting full articles unchanged in one message (possibly multiple containers).
+Keep fitting full articles unchanged in one message **and one container**.
 By default (`NEWS_EXPAND_FULL=0`), one message is tried first. When normalized source
 text plus title/byline once is `<= 7,000` characters, at most two actual messages are
 permitted, each validating independently against `4,000` text characters / `40`
@@ -453,6 +453,21 @@ validation and the same payload shape, page after page, up to
 one-container labelled excerpt with a single lead image. Nothing in the JSON structure,
 the official HTML or the sources changes: title/byline plus cover on page one,
 `-# Page N` plus divider on every continuation, and the three buttons on the last page.
+
+**One message means one container.** Discord's `4,000`-character / `40`-component budget
+is per message and shared by every container inside it, so a second container buys chrome
+instead of room. The retired fixed "split after eight units" readability rule did exactly
+that: it cut the reported `A Traveler's Guide to Iia` card into `-# Part 1/2` (516 chars)
+and `-# Part 2/2` (601 chars) inside one message that had thousands of characters to
+spare, and the same rule was splitting two real ZZZ Signal Search notices (`3,541` and
+`3,726` characters). Because the split itself adds a label plus a divider per container,
+the chunked payload always carried *more* components and *more* text than the single
+container it replaced, so it could never rescue a card the single container rejected.
+Cards therefore pack to the cap — a `3,650`-character article becomes one `3,955`-character
+message, thirty inline galleries become exactly `40` components in one message — and only
+real overflow pages. The fit is verified by rendering the exact reported card, by packing
+boundaries on all five games, and by asserting that a second message only ever appears
+when the request genuinely exceeds one message's caps.
 
 The fit is markdown-safe and loss-free: paragraphs are kept whole, and a paragraph that
 does not fit the room still open on the page is continued in the next message at a
@@ -490,10 +505,11 @@ ceiling is lifted up to an explicit operational safety bound (`NEWS_EXPAND_MAX_P
 
 ### Source-preserving formatting
 
-Keep Part 1/2 and Part 2/2 for containers in one message, and Page 1/Page 2 for
-separate messages. Never repeat title/byline/lead on continuation pages. All three
+One message is one container: a fitting card is never chunked or labelled. Page 1/Page 2
+labels only appear on separate messages, and `-# Part n/m` containers are retired
+(2026-11-18). Never repeat title/byline/lead on continuation pages. All three
 custom-emoji controls appear only at the end of the final container of the final
-message, including single-message layouts with multiple containers.
+message.
 
 Compact consecutive numeric, circled-number, alphabetic and square (`■`) entries
 without rewriting words/markers or crossing ordinary paragraph/section boundaries.
@@ -916,9 +932,19 @@ before repairing state. Quiet source output cannot settle an unfinished delivery
 ### Character reveal mentions
 
 Two settings, no more: `NEWS_REVEAL_PING=1` turns it on and the single `PING_NEWS_REVEAL`
-role list applies to **all six games** (there is no per-game variant and no inheritance from
-`PING_ROLE_ID` or `PING_NEWS`). It also requires enabled official news. It checks existing
-fetched articles; no additional source requests are made. Announcements in the
+role list applies to every game that takes it (there is no per-game variable and no inheritance
+from `PING_ROLE_ID` or `PING_NEWS`). It also requires enabled official news. It checks existing
+fetched articles; no additional source requests are made.
+
+**Wuthering Waves is excluded** (`"reveal_ping": false` on its `config/games.json` entry,
+2026-11-18). Its official site publishes the same `Stars Intertwined` / `Profile Reveal` posts the
+twitter card already announces, so Feature 3 delivered the news *and* pinged again for a reveal
+the twitter card had pinged first — while a drip or new-character announcement that only appeared
+on twitter reached the channel with no ping at all. The game still receives its official-news
+cards, silently: no mention is rendered, no `reveal_chars` / `reveal_times` baseline is seeded for
+it, and its state records carry no `reveal_ping` field. Every hoyoverse game (Genshin, HSR, ZZZ,
+HNA, and ANANTA once it reports) keeps the ping unchanged. The exclusion is per-game data, not a
+hardcoded key: any game can be opted out by adding `"reveal_ping": false` to its entry. Announcements in the
 same **source publication minute** within a game share one ping; different minutes are not subject
 to a cooldown.
 Recognized follow-up profiles for retained character names are suppressed. A form suffix is the
@@ -939,11 +965,11 @@ role list, and nothing else changes.
 
 1. **Character reveal** (`NEWS_REVEAL_PING`) — needs official news to be running. Add the
    variable `NEWS_REVEAL_PING=1` and the variable `PING_NEWS_REVEAL` holding the role ID(s) for
-   all six games (comma-separated, `everyone` / `here` allowed). Do not point it at
+   every game that takes it (comma-separated, `everyone` / `here` allowed). Do not point it at
    `PING_ROLE_ID` — it is deliberately not inherited, and no `PING_NEWS_REVEAL_<GAME>` exists.
    It fires only on a *character announcement reveal* (Genshin `◆` dossier, HSR
-   `Extraterrestrial Satellite Communication`, ZZZ `Agent Record`, WuWa `Profile Reveal`, HNA /
-   ANANTA dossier series) — not on maintenance notices, events, codes, schedules, outfits,
+   `Extraterrestrial Satellite Communication`, ZZZ `Agent Record`, HNA / ANANTA dossier series;
+   Wuthering Waves is excluded — its `Profile Reveal` cards post without a mention) — not on maintenance notices, events, codes, schedules, outfits,
    reruns, showcases, previews, web events or gag comics. Verify with one reveal: the mention sits
    on the card's legend line, `PING_NEWS_REVEAL` set to `none` silences it again.
 2. **Beta revision card** (`PING_BETA`) — needs `BETA_ENABLED=1` and a non-empty `BETA_GAMES`.
