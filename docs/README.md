@@ -19,9 +19,6 @@ are ignored except the tracked template. Never copy live state back over product
 
 Character-reveal mention configuration and limitations are in [CONFIGURATION.md](CONFIGURATION.md#official-news-on-by-default);
 local verification and benchmark results are in [TESTING.md](TESTING.md#2026-10-29-update-verification).
-The card-shape hand-off for the News-Express Twitter card (the same "a card that fits must stay one
-container" rule) is in [HANDOFF-NEWS-EXPRESS.md](HANDOFF-NEWS-EXPRESS.md).
-
 ## Official news & milestone alerts — on by default
 
 The [root README's third feature](../README.md#3--official-news)
