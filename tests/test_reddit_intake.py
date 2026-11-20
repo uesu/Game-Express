@@ -102,6 +102,12 @@ def test_settings_defaults_and_env_wiring():
     assert (s.intake_reader, s.intake_channel_id, s.intake_stale_seconds, s.intake_lookback_seconds) == \
         ("shadow", "1296308518470549606", 600, 7200)
     assert load_settings({"INTAKE_READER": "bogus"}).intake_reader == "primary"
+    # INTAKE_QUIET_TARGETS: off unless explicitly switched on (`_bool`: 1/true/yes/on/y)
+    assert load_settings({}).intake_quiet_targets is False
+    assert load_settings({"INTAKE_QUIET_TARGETS": "1"}).intake_quiet_targets is True
+    assert load_settings({"INTAKE_QUIET_TARGETS": "On"}).intake_quiet_targets is True
+    assert load_settings({"INTAKE_QUIET_TARGETS": "off"}).intake_quiet_targets is False
+    assert load_settings({"INTAKE_QUIET_TARGETS": "0"}).intake_quiet_targets is False
     # GE_SECRETS_JSON / GE_VARS_JSON carry the two settings without any workflow edit
     s = load_settings({"GE_SECRETS_JSON": json.dumps({"DISCORD_BOT_TOKEN": "t"}),
                        "GE_VARS_JSON": json.dumps({"INTAKE_CHANNEL_ID": "1296308518470549606"})})
@@ -276,6 +282,74 @@ def test_client_serves_relay_first_and_falls_back_per_target():
     assert _run(rc4.subreddit("HonkaiStarRail")) is None
     assert not any("discord.com" in c[0] for c in f4.calls)
     assert "unconfigured" in rc4.intake.summary_line()
+
+
+def test_quiet_targets_skip_the_fleet_only_for_a_kind_the_relay_lists():
+    """`INTAKE_QUIET_TARGETS=1`: a covered relay answers `[]` ("no new post") instead of `None`."""
+    recs = [
+        _rec(id="1xlhsr1", sub="HonkaiStarRail", author="HonkaiStarRail", flair="Official Media",
+             permalink="/r/HonkaiStarRail/comments/1xlhsr1/v/", created=int(NOW) - 120,
+             title="Version 3.9 Special Program Preview"),
+    ]
+    want = {"sub": ["HonkaiStarRail", "AnantaOfficial"], "user": ["HonkaiStarRail", "AnantaOfficial"]}
+
+    # 1. the covered subreddit is served; the same kind without a record is quiet, no fleet request
+    f = _Fetcher(_msgs(recs, [120]))
+    rc = RedditClient(f, _settings(INTAKE_QUIET_TARGETS="1"), targets=want)  # type: ignore[arg-type]
+    rc.intake.now = NOW
+    assert [e["id"] for e in _run(rc.subreddit("HonkaiStarRail")) or []] == ["1xlhsr1"]
+    assert _run(rc.subreddit("AnantaOfficial")) == []
+    assert "r/anantaofficial" in rc.reachable          # quiet is reachable, not unavailable
+    assert all("discord.com" in c[0] for c in f.calls)  # zero redlib / reddit.com requests
+    assert _run(rc.community_codes("AnantaOfficial")) == []   # "no codes", never "unavailable"
+    line = rc.intake.summary_line()
+    assert "served r/HonkaiStarRail" in line and "quiet (no new post) r/AnantaOfficial" in line
+
+    # 2. a user target is trusted only once the relay lists an ACCOUNT -> per-kind coverage
+    f2 = _Fetcher(_msgs(recs, [120]))
+    rc2 = RedditClient(f2, _settings(INTAKE_QUIET_TARGETS="1"),  # type: ignore[arg-type]
+                       targets={"sub": ["HonkaiStarRail"], "user": ["AnantaOfficial"]})
+    rc2.intake.now = NOW
+    assert _run(rc2.subreddit("HonkaiStarRail")) is not None
+    assert _run(rc2.user("AnantaOfficial")) is None            # no account listed -> old chain
+    assert any("discord.com" not in c[0] for c in f2.calls)
+    assert "quiet" not in rc2.intake.summary_line()
+
+    # 3. default off, shadow, off, stale and a reader without targets all keep the per-target
+    #    fallback exactly as before (the stub fleet fails, so the answer is None either way)
+    for kw, targets in [({"INTAKE_QUIET_TARGETS": ""}, want),                        # default: off
+                        ({"INTAKE_QUIET_TARGETS": "1", "INTAKE_READER": "shadow"}, want),
+                        ({"INTAKE_QUIET_TARGETS": "1", "INTAKE_READER": "off"}, want),
+                        ({"INTAKE_QUIET_TARGETS": "1"}, None)]:                      # no targets known
+        settings = _settings(**kw)
+        fx = _Fetcher(_msgs(recs, [120]))
+        rcx = RedditClient(fx, settings, targets=targets)  # type: ignore[arg-type]
+        rcx.intake.now = NOW
+        assert _run(rcx.subreddit("AnantaOfficial")) is None, (kw, targets)
+        assert any("discord.com" not in c[0] for c in fx.calls), (kw, targets)
+    fs = _Fetcher(_msgs(recs, [5000]))            # stale relay: not a listing, quiet or not
+    rcs = RedditClient(fs, _settings(INTAKE_QUIET_TARGETS="1"), targets=want)  # type: ignore[arg-type]
+    rcs.intake.now = NOW
+    assert _run(rcs.subreddit("AnantaOfficial")) is None
+    assert rcs.intake.summary_line().startswith("📡 reddit intake: relay stale")
+
+
+def test_quiet_trusts_a_relay_that_only_removed_a_post():
+    """A removed post is still proof the relay polls that subreddit: quiet, not "fetch it again"."""
+    recs = [_rec(id="1xgone3", sub="AnantaOfficial", removed="moderator")]
+    f = _Fetcher(_msgs(recs, [30]))
+    rc = RedditClient(f, _settings(INTAKE_QUIET_TARGETS="1"),  # type: ignore[arg-type]
+                      targets={"sub": ["AnantaOfficial"], "user": []})
+    rc.intake.now = NOW
+    assert _run(rc.subreddit("AnantaOfficial")) == []
+    assert all("discord.com" in c[0] for c in f.calls)
+    # targets are normalised (case / padding) and absent targets cover nothing
+    reader = ri.IntakeReader(_Fetcher(), _settings(INTAKE_QUIET_TARGETS="1"),  # type: ignore[arg-type]
+                             {"sub": [" AnantaOfficial "], "user": ["", "  "]})
+    assert reader._targets() == {"sub": {"anantaofficial"}, "user": set()}
+    assert reader._coverage([(_rec(sub="anantaofficial", removed="moderator"), {})]) == \
+        {"sub": True, "user": False}
+    assert reader._coverage([]) == {"sub": False, "user": False}
 
 
 def _update_msg(age: int, posts: list[dict]) -> dict:
@@ -465,6 +539,9 @@ def test_wiring_is_in_place():
     src = inspect.getsource(rmod.RedditClient._gather_listing)
     assert src.index("await self.intake.listing(kind, target)") < src.index("feed_q = format_reddit_feed_query")
     assert "reddit.intake.summary_line()" in inspect.getsource(runner.run_once)
+    src_once = inspect.getsource(runner.run_once)
+    assert '"sub": {sub for g in games for sub in g.subreddits}' in src_once
+    assert '"user": {acct for g in games for acct in g.reddit_official}' in src_once
     assert isinstance(Fetcher.get_json, object) and time.time() > 0
 
 

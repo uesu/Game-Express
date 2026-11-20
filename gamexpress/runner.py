@@ -316,8 +316,14 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
     try:
         started = time.monotonic()
         fetcher = Fetcher(session, timeout=settings.http_timeout)
-        reddit = RedditClient(fetcher, settings)
-        ctx = Ctx(settings=settings, games=active_games(games_all, settings), state=state, fetcher=fetcher,
+        games = active_games(games_all, settings)
+        # The relay's quiet mode may only trust a target it has demonstrably listed, so the reader
+        # needs this run's own target names by kind (`INTAKE_QUIET_TARGETS`; unused when off).
+        reddit = RedditClient(fetcher, settings, targets={
+            "sub": {sub for g in games for sub in g.subreddits},
+            "user": {acct for g in games for acct in g.reddit_official},
+        })
+        ctx = Ctx(settings=settings, games=games, state=state, fetcher=fetcher,
                   webhook=WebhookClient(session, dry_run=settings.dry_run), x=XClient(fetcher, settings),
                   code_sources=CodeSources(fetcher, reddit=reddit), overrides=overrides,
                   now=int(time.time()), reddit=reddit)

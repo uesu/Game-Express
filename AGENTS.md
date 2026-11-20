@@ -740,6 +740,21 @@ an older manifest build, use release data, or invent an Encore historical cursor
 metadata and avoid cross-provider inline diffs. Disabled and healthy primary paths add zero
 Encore requests. See docs/SOURCES.md for the observed contract and limitations.
 
+### Reddit intake: quiet is not missing
+
+The Devvit relay is the Reddit listing whenever it is fresh (`INTAKE: relay ok`), and the
+redlib / reddit.com fleet is the fallback, never a second opinion. `INTAKE_QUIET_TARGETS=1`
+(off by default) lets a **covered** relay answer `[]` for a target it has no record of —
+"no new post" — so no fleet request is made for it; this mirrors the News-Express round-105
+wording (`quiet, not missing; no archive attempt`). Three rules keep it honest and must stay:
+quiet needs `INTAKE_READER=primary` **and** an `ok` relay **and** another already-listed target of
+the **same kind** among this run's own targets (`r/…` for subreddits, `u/…` for publisher
+accounts; a removed record still counts), so a relay that does not poll your targets degrades to
+the per-target fallback instead of hiding a post. A quiet target stays *reachable* (`[]`, never
+`None`), so `community_codes()` reports "no codes", not "unreachable". Facts about the relay —
+statuses, stale/empty/error handling, the 5-minute poll interval — belong in
+[docs/SOURCES.md](docs/SOURCES.md), not in the code's guesses.
+
 ### Gachabase response formats
 
 Accept Markdown and server-rendered HTML changelogs. HTML revision headings and item/diff links

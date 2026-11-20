@@ -1,5 +1,39 @@
 # Changelog — current entries
 
+## 2026-11-20 — Reddit intake: quiet targets, and no fleet probe for what the relay already covers
+
+- **What happened.** Production runs were relay-primary —
+  `intake primary (relay ok; 8 record(s), newest 260 s)`, `Combined fetch status: relay`,
+  `Feed fallback: not attempted (relay is the listing)` — yet every run still asked
+  redlib / reddit.com about each target the relay had no record for, which is where
+  `sources: … reddit: 12 ok / 17 fail` came from: `IntakeReader.listing()` answered `None`
+  ("let the old chain fetch it") for a target that was merely quiet. The leaks engine has
+  reported that state as `quiet, not missing; no archive attempt` since its round 105.
+- **Change.** New Variable `INTAKE_QUIET_TARGETS` (default `0`). When it is `1` and the relay is
+  `ok` in `primary` mode, a target with no record in the window is *quiet*: `listing()` returns
+  `[]` ("no new post") instead of `None`, so `_gather_listing()` stops before the fleet and the
+  step summary says `quiet (no new post) r/<sub>`. `run_once` now hands `RedditClient` this run's
+  own targets (`Game.subreddits` / `Game.reddit_official` of the active games) purely for that
+  decision.
+- **Guards — quiet is only trusted where the relay proved itself.** It applies per *kind*
+  (`r/…` vs `u/…`) and only when the relay already lists **another target of that kind** among
+  this deployment's targets; a record the relay later reports removed still counts as proof it
+  polls that subreddit. Anything else — a relay that lists none of these targets, `shadow`, `off`,
+  `stale`, `empty`, an HTTP error, or a client built without targets — keeps the per-target
+  fallback exactly as before. That is the case the default protects: with a relay that never polls
+  one of your targets, trusting silence would turn a real miss into a missing post.
+- **Effect.** With `INTAKE_QUIET_TARGETS=1`, a run whose relay covered `r/HonkaiStarRail` makes
+  **zero** redlib / reddit.com requests for the quiet `r/AnantaOfficial` (and the unrelated
+  instance failures leave the `reddit:` counter). Quiet targets stay *reachable*, so no
+  "every code source was unreachable" warning appears, and `community_codes()` returns `[]`
+  (no codes) rather than `None` (unavailable). Default `0` = byte-identical behaviour for every
+  deployment that does not set it.
+- **Tests.** `test_quiet_targets_skip_the_fleet_only_for_a_kind_the_relay_lists` (served sub +
+  quiet sub with zero fleet calls, per-kind guard for `u/…`, and the five fallback controls) and
+  `test_quiet_trusts_a_relay_that_only_removed_a_post` (coverage from a removed record, target
+  normalisation, empty coverage), plus the `INTAKE_QUIET_TARGETS` settings wiring and the runner
+  wiring assertion. `pytest -q`: 719 passed; ruff clean.
+
 ## 2026-11-18 — Feature 3: the reveal ping skips Wuthering Waves
 
 - **What happened.** A Wuthering Waves drip / new-character announcement never reached the

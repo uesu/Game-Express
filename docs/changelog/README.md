@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Feature 3: the reveal ping skips Wuthering Waves](CHANGELOG.md#2026-11-18--feature-3-the-reveal-ping-skips-wuthering-waves).
+Latest: [Reddit intake: quiet targets, and no fleet probe for what the relay already covers](CHANGELOG.md#2026-11-20--reddit-intake-quiet-targets-and-no-fleet-probe-for-what-the-relay-already-covers).
+
+Previous: [Feature 3: the reveal ping skips Wuthering Waves](CHANGELOG.md#2026-11-18--feature-3-the-reveal-ping-skips-wuthering-waves).
 
 Previous: [Polishing: a news card that fits is one message *and one container*](CHANGELOG.md#2026-11-18--polishing-a-news-card-that-fits-is-one-message-and-one-container).
 
