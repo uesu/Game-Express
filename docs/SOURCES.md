@@ -453,8 +453,32 @@ xpost, media[], body, bodyTruncated`) into a private Discord channel shared with
   `items()` / `program_post()` never call `resolve_post()` for it).
 - **Settings** (shared names with News-Express, passed through `GE_SECRETS_JSON`/`GE_VARS_JSON`):
   secret `DISCORD_BOT_TOKEN`, Variables `INTAKE_CHANNEL_ID`, `INTAKE_READER=primary|shadow|off`,
-  `INTAKE_STALE_SECONDS=1800`, `INTAKE_LOOKBACK_SECONDS=21600`. The step summary carries one
-  `📡 reddit intake: …` line whenever Reddit was consulted.
+  `INTAKE_STALE_SECONDS=1800`, `INTAKE_LOOKBACK_SECONDS=21600`, `INTAKE_QUIET_TARGETS=0`. The step
+  summary carries one `📡 reddit intake: …` line whenever Reddit was consulted.
+- **Quiet targets (`INTAKE_QUIET_TARGETS=1`, off by default):** with a healthy relay, a target that
+  has no record in the window is *quiet* — `[]` ("no new post") instead of `None` ("let the fleet
+  fetch it"), so a run that served some subreddits makes **0** redlib / reddit.com requests for the
+  rest, and the summary says so (`quiet (no new post) r/…`). This is the News-Express round-105
+  rule (its summary calls the same state `quiet, not missing; no archive attempt`): the relay polls
+  every target every 5 minutes, so absence in a *fresh* relay is evidence, not a failed fetch.
+  Two guards keep it honest — the relay must be `ok`/`primary` (never `shadow`, `off`, `stale`,
+  `empty` or error), and it must already list **another target of the same kind** among this run's
+  own targets (`r/…` for subreddits, `u/…` for publisher accounts, a removed post still counts).
+  Otherwise the per-target fallback runs exactly as before, because a relay that lists none of this
+  engine's targets may simply not poll them — silence there would be a missed post. Quiet targets
+  stay *reachable* (they answered), so no "source unreachable" warning appears for them.
+- **Scope — one channel, two engines (News-Express PRs #100 / #107).** The relay's default
+  `subreddits` is twelve names: the six **leak** subreddits for News-Express
+  (`AnantaLeaks`, `Genshin_Impact_Leaks`, `HonkaiNexusAnimaLeaks`, `HonkaiStarRail_leaks`,
+  `WutheringWavesLeaks`, `Zenlesszonezeroleaks_`) **and** the six **official** subreddits for
+  Game-Express (`Genshin_Impact`, `HonkaiStarRail`, `ZZZ_Official`, `WutheringWaves`,
+  `HonkaiNexusAnima`, `AnantaOfficial`), plus the verified `officialUsers` feeds (default
+  `genshinimpact`, `HonkaiStarRail`, `HonkaiNexusAnima`; dormant ZZZ / ANANTA accounts and
+  Wuthering Waves are covered by their subreddit via flair). Game-Express's own scope is the six
+  official subreddits, its `reddit_official` accounts and any `reddit:<sub>` code source —
+  **never a leak subreddit**. `runner.reddit_targets()` builds exactly that set, and the quiet
+  mode trusts only records inside it: leak traffic in the shared channel proves the relay is
+  alive, never that one of these targets is quiet.
 - **Complete source (relay 0.0.7 / 0.0.8):** each record message also carries `record.json` (full
   body, every media URL, crosspost parent) — fetched from `cdn.discordapp.com` only for cut
   records and crossposts, ≤ 10 per run, no token — and the relay re-checks delivered posts

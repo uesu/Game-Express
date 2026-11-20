@@ -38,6 +38,7 @@ Sensitive — *Settings → Secrets and variables → Actions → **Secrets***.
 | `INTAKE_READER` | optional (Variable) — `primary` (default) \| `shadow` (read and report, old chain decides) \| `off` (never read). Rollback switch |
 | `INTAKE_STALE_SECONDS` | optional — default `1800`; a newest relay record older than this means *stale* → old chain |
 | `INTAKE_LOOKBACK_SECONDS` | optional — default `21600`; how far back the channel is read each run (newest-first, ≤ 800 messages) |
+| `INTAKE_QUIET_TARGETS` | optional — default off; `1` = a healthy relay that already lists **another target of the same kind** (a subreddit for `r/…`, an account for `u/…`) is the listing even for a target with **no record in the window**, so that target is *quiet* (`0` fleet requests) instead of re-fetched from redlib/reddit.com. Off by default: a relay that does not poll one of your targets would turn a real miss into silence. `shadow`/`off` ignore it, and a relay that lists none of your targets keeps the per-target fallback |
 
 **Webhook routing**, most specific first:
 
