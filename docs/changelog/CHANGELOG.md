@@ -28,11 +28,20 @@
   "every code source was unreachable" warning appears, and `community_codes()` returns `[]`
   (no codes) rather than `None` (unavailable). Default `0` = byte-identical behaviour for every
   deployment that does not set it.
+- **Scope.** The shared channel carries two engines (News-Express PRs #100 / #107): the relay's
+  default poll set is the six `*_Leaks` subreddits **plus** the six official ones and the verified
+  publisher accounts. Game-Express's scope is the six official subreddits, its `reddit_official`
+  accounts and any `reddit:<sub>` code source — never a leak subreddit. `runner.reddit_targets()`
+  builds that set (codes sources included) and hands it to the reader, so leak traffic can never
+  make an official target look quiet; a scope-invariant test pins the six + five names.
 - **Tests.** `test_quiet_targets_skip_the_fleet_only_for_a_kind_the_relay_lists` (served sub +
   quiet sub with zero fleet calls, per-kind guard for `u/…`, and the five fallback controls) and
   `test_quiet_trusts_a_relay_that_only_removed_a_post` (coverage from a removed record, target
-  normalisation, empty coverage), plus the `INTAKE_QUIET_TARGETS` settings wiring and the runner
-  wiring assertion. `pytest -q`: 719 passed; ruff clean.
+  normalisation, empty coverage), `test_quiet_scope_is_game_express_only_and_leak_traffic_proves_nothing`
+  (a leak-only window grants no coverage), `test_game_express_reddit_scope_is_the_six_official_subs_and_its_accounts`
+  (the scope invariant) and `test_reddit_targets_collects_code_sources_too`, plus the
+  `INTAKE_QUIET_TARGETS` settings wiring and the runner wiring assertion. `pytest -q`: 722 passed;
+  ruff clean.
 
 ## 2026-11-18 — Feature 3: the reveal ping skips Wuthering Waves
 

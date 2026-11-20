@@ -467,6 +467,18 @@ xpost, media[], body, bodyTruncated`) into a private Discord channel shared with
   Otherwise the per-target fallback runs exactly as before, because a relay that lists none of this
   engine's targets may simply not poll them — silence there would be a missed post. Quiet targets
   stay *reachable* (they answered), so no "source unreachable" warning appears for them.
+- **Scope — one channel, two engines (News-Express PRs #100 / #107).** The relay's default
+  `subreddits` is twelve names: the six **leak** subreddits for News-Express
+  (`AnantaLeaks`, `Genshin_Impact_Leaks`, `HonkaiNexusAnimaLeaks`, `HonkaiStarRail_leaks`,
+  `WutheringWavesLeaks`, `Zenlesszonezeroleaks_`) **and** the six **official** subreddits for
+  Game-Express (`Genshin_Impact`, `HonkaiStarRail`, `ZZZ_Official`, `WutheringWaves`,
+  `HonkaiNexusAnima`, `AnantaOfficial`), plus the verified `officialUsers` feeds (default
+  `genshinimpact`, `HonkaiStarRail`, `HonkaiNexusAnima`; dormant ZZZ / ANANTA accounts and
+  Wuthering Waves are covered by their subreddit via flair). Game-Express's own scope is the six
+  official subreddits, its `reddit_official` accounts and any `reddit:<sub>` code source —
+  **never a leak subreddit**. `runner.reddit_targets()` builds exactly that set, and the quiet
+  mode trusts only records inside it: leak traffic in the shared channel proves the relay is
+  alive, never that one of these targets is quiet.
 - **Complete source (relay 0.0.7 / 0.0.8):** each record message also carries `record.json` (full
   body, every media URL, crosspost parent) — fetched from `cdn.discordapp.com` only for cut
   records and crossposts, ≤ 10 per run, no token — and the relay re-checks delivered posts

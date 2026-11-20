@@ -352,6 +352,57 @@ def test_quiet_trusts_a_relay_that_only_removed_a_post():
     assert reader._coverage([]) == {"sub": False, "user": False}
 
 
+def test_quiet_scope_is_game_express_only_and_leak_traffic_proves_nothing():
+    """The shared relay also carries News-Express leak subs (PRs #100/#107); a `*_Leaks` record
+    must never make a Game-Express target look quiet."""
+    leak = [_rec(id="1xleak01", sub="Genshin_Impact_Leaks", author="leaker",
+                 permalink="/r/Genshin_Impact_Leaks/comments/1xleak01/x/", created=int(NOW) - 60)]
+    want = {"sub": ["Genshin_Impact", "AnantaOfficial"], "user": ["genshinimpact"]}
+
+    f = _Fetcher(_msgs(leak, [60]))
+    rc = RedditClient(f, _settings(INTAKE_QUIET_TARGETS="1"), targets=want)  # type: ignore[arg-type]
+    rc.intake.now = NOW
+    assert _run(rc.subreddit("AnantaOfficial")) is None      # leak record grants no coverage
+    assert any("discord.com" not in c[0] for c in f.calls)
+    assert "quiet" not in rc.intake.summary_line()
+
+    # inside the engine's own scope it is trusted
+    f2 = _Fetcher(_msgs(leak + [_rec(id="1xoff01", sub="Genshin_Impact", author="genshinimpact",
+                                     permalink="/r/Genshin_Impact/comments/1xoff01/x/",
+                                     created=int(NOW) - 120)], [60, 120]))
+    rc2 = RedditClient(f2, _settings(INTAKE_QUIET_TARGETS="1"), targets=want)  # type: ignore[arg-type]
+    rc2.intake.now = NOW
+    assert [e["id"] for e in _run(rc2.subreddit("Genshin_Impact")) or []] == ["1xoff01"]
+    assert _run(rc2.subreddit("AnantaOfficial")) == []
+    assert "quiet (no new post) r/AnantaOfficial" in rc2.intake.summary_line()
+
+
+def test_game_express_reddit_scope_is_the_six_official_subs_and_its_accounts():
+    """Scope invariant: Game-Express reads the official subreddits + its accounts, never a leak sub."""
+    from gamexpress.config import load_games
+    from gamexpress.runner import reddit_targets
+
+    targets = reddit_targets(list(load_games().values()))
+    assert targets["sub"] == {"Genshin_Impact", "HonkaiStarRail", "ZZZ_Official", "WutheringWaves",
+                              "HonkaiNexusAnima", "AnantaOfficial"}
+    assert targets["user"] == {"genshinimpact", "HonkaiStarRail", "ZZZ_Official",
+                               "HonkaiNexusAnima", "AnantaOfficial"}
+    assert not [t for t in targets["sub"] | targets["user"] if "leak" in t.lower()]
+
+
+def test_reddit_targets_collects_code_sources_too():
+    """A `reddit:<sub>` code source is a listing target like any other; junk specs are ignored."""
+    from gamexpress.config import Game
+    from gamexpress.runner import reddit_targets
+
+    game = Game(key="x", name="X", short="X", enabled=True, color=0,
+                subreddits=["OfficialSub"], reddit_official=["acct"],
+                codes={"sources": ["reddit:CodesSub", "reddit: OfficialSub ", "reddit:", "x",
+                                   "hoyolab:2", ""]})
+    assert reddit_targets([game]) == {"sub": {"OfficialSub", "CodesSub"}, "user": {"acct"}}
+    assert reddit_targets([]) == {"sub": set(), "user": set()}
+
+
 def _update_msg(age: int, posts: list[dict]) -> dict:
     return {"id": str(ri.snowflake_from_epoch(NOW - age)),
             "content": "```json\n" + json.dumps({"v": 2, "kind": "update", "at": int(NOW - age), "posts": posts}) + "\n```"}
@@ -540,8 +591,8 @@ def test_wiring_is_in_place():
     assert src.index("await self.intake.listing(kind, target)") < src.index("feed_q = format_reddit_feed_query")
     assert "reddit.intake.summary_line()" in inspect.getsource(runner.run_once)
     src_once = inspect.getsource(runner.run_once)
-    assert '"sub": {sub for g in games for sub in g.subreddits}' in src_once
-    assert '"user": {acct for g in games for acct in g.reddit_official}' in src_once
+    assert "targets=reddit_targets(games)" in src_once
+    assert callable(runner.reddit_targets)   # the scope builder, covered by its own tests above
     assert isinstance(Fetcher.get_json, object) and time.time() > 0
 
 

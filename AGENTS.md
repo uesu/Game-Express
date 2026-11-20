@@ -751,7 +751,12 @@ quiet needs `INTAKE_READER=primary` **and** an `ok` relay **and** another alread
 the **same kind** among this run's own targets (`r/…` for subreddits, `u/…` for publisher
 accounts; a removed record still counts), so a relay that does not poll your targets degrades to
 the per-target fallback instead of hiding a post. A quiet target stays *reachable* (`[]`, never
-`None`), so `community_codes()` reports "no codes", not "unreachable". Facts about the relay —
+`None`), so `community_codes()` reports "no codes", not "unreachable". **Scope:** the relay's default poll set is twelve subreddits — the six `*_Leaks` ones for
+News-Express and the six official ones for this engine — plus the verified publisher accounts
+(News-Express PRs #100 / #107). This engine's scope is the six official subreddits, its
+`reddit_official` accounts and any `reddit:<sub>` code source, **never a leak subreddit**;
+`runner.reddit_targets()` is the single place that builds it, and leak records in the shared
+channel prove the relay is alive, never that a target of ours is quiet. Facts about the relay —
 statuses, stale/empty/error handling, the 5-minute poll interval — belong in
 [docs/SOURCES.md](docs/SOURCES.md), not in the code's guesses.
 
