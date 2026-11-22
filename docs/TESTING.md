@@ -77,8 +77,10 @@ Check each of these:
 
 - [ ] The **codes are real** — try one in the game. A made-up code means a source is returning
       stale data.
-- [ ] The **Redeem buttons** open the official page with the code filled in (GI / HSR / ZZZ).
-- [ ] The **buttons are inside the card**, and the `Citlali News` row sits underneath.
+- [ ] The **Redeem buttons** open the official page with the code filled in (GI / HSR / ZZZ), and
+      each one sits on its own code's row.
+- [ ] The **buttons are inside the card**, and the `Citlali News` footer sits underneath — with the
+      card artwork (the game icon, or your `CODES_THUMBNAIL`) beside the headline.
 - [ ] **The emojis animate.** If you see `:name:` instead, give `@everyone` *Use External Emojis*
       in that channel, or change `EMOJI_*`.
 - [ ] **Nothing was saved**: run the live monitor afterwards and the same codes are still posted
