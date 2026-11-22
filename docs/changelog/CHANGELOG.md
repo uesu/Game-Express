@@ -1,5 +1,34 @@
 # Changelog — current entries
 
+## 2026-11-22 — Feature 2 follow-up: the card's full-width picture (media gallery), as a variable
+
+- **What happened.** The design grew one element: the codes card now carries a **full-width picture
+  under the codes** — a one-item media gallery sitting between the last code row and the `※`/source
+  block, with no divider in front of it (the code rows and the hint used to be separated by a
+  hairline; the picture takes that place). Everything else in the design is unchanged from #165, and
+  so is every code behaviour.
+- **Change.** New `CODES_MEDIA` variable: an `http(s)` image or GIF URL rendered as
+  `{"type": 12, "items": [{"media": {"url": …}}]}`. Unset (the default) = **no gallery and the old
+  divider**, so a deployment that does not want a picture gets exactly yesterday's card. Per game,
+  `codes.media` in `config/games.json` beats the variable, the same way `codes.thumbnail` beats
+  `CODES_THUMBNAIL`; there is deliberately **no icon fallback** here — a game icon blown up to
+  full width is not artwork, it is a placeholder.
+- **Why a variable and not the design's URL.** The spec's URLs are `cdn.discordapp.com/attachments/…`
+  with `?ex=&is=&hm=` **signature parameters that expire**. The file stays on Discord, but the signed
+  link stops resolving, and a card rendered after that (a new post, an *edit* when a code expires, a
+  preview) would point at a dead URL. Both pictures are therefore plain variables, never hardcoded,
+  and `codes_media()` / `codes_thumbnail()` reject anything that is not absolute `http(s)`.
+- **Component budget.** A gallery costs one component, which is exactly what the trimmed divider used
+  to cost: a full 10-code card with a footer and a picture still fits Discord's 40-component cap
+  (the divider-trim + `codes_chunk_size()` guards from #165 keep it there), pinned by test.
+- **Tests.** `test_codes_card_artwork_and_headline_emoji_are_configurable` now also pins the gallery
+  position (`[9, 14, 9, 12, 10, 14, 9]` for one code), the exact gallery payload, `codes.media`
+  precedence, rejected values (empty / `javascript:` / plain filename / `data:`) leaving no gallery,
+  the no-picture card keeping its divider, and ten codes + both pictures + footer validating.
+  `pytest -q`: 725 passed; ruff clean.
+- **Docs.** README §2 (picture in the mock, the "two pictures, both yours" bullet with the expiring-
+  link warning), `docs/CONFIGURATION.md` (`CODES_MEDIA`, `codes.media`), `.env.example`.
+
 ## 2026-11-22 — Feature 2: the redemption code card gets the new look (one Redeem button per code)
 
 - **What happened.** The codes card still looked like its first version: `## 🎁 …`, every code in
