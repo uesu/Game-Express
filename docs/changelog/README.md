@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Feature 2: the redemption code card gets the new look (one Redeem button per code)](CHANGELOG.md#2026-11-22--feature-2-the-redemption-code-card-gets-the-new-look-one-redeem-button-per-code).
+Latest: [Feature 2 follow-up: the card's full-width picture (media gallery), as a variable](CHANGELOG.md#2026-11-22--feature-2-follow-up-the-cards-full-width-picture-media-gallery-as-a-variable).
+
+Previous: [Feature 2: the redemption code card gets the new look (one Redeem button per code)](CHANGELOG.md#2026-11-22--feature-2-the-redemption-code-card-gets-the-new-look-one-redeem-button-per-code).
 
 Previous: [Reddit intake: quiet targets, and no fleet probe for what the relay already covers](CHANGELOG.md#2026-11-20--reddit-intake-quiet-targets-and-no-fleet-probe-for-what-the-relay-already-covers).
 

@@ -135,7 +135,9 @@ same run share a card.
 │ -# Primogem ×40 • Mora ×20000 • Hero's Wit ×3
 │ ✦ EPIC2026                        [ <a:starwardthink> Redeem ]
 │ -# 40 primogems, five hero's wit, and 20k mora
-│ ─────────────
+│ ┌─────────────────────────────────────────────────────────┐
+│ │        your own full-width picture (CODES_MEDIA)        │   ← optional, one image
+│ └─────────────────────────────────────────────────────────┘
 │ ※ Tap a code to open the official redemption page with it filled in (log in first)
 │ -# Source: PromoGacha, hoyo-codes.seria.moe (verified) • Codes expire — redeem soon
 │ ─────────────
@@ -150,10 +152,15 @@ same run share a card.
   (*Settings → Other Settings → Account → Redemption Code*, Union Level 2+).
 - **Codes are never wrapped in backticks** — `✦ NS4DU8AAGXBP` is a code you can select and copy, not
   a code block, and the hint plus the source share one quiet block under the list.
-- **Card artwork**: the game's own icon by default; set `CODES_THUMBNAIL` (or `codes.thumbnail` for
-  one game in [`config/games.json`](config/games.json)) to use your own image or GIF instead.
-  The headline emoji and the Redeem-button emoji are `EMOJI_REDEEM` / `EMOJI_REDEEM_BUTTON`
-  (defaults: `<a:starwarddonut:1483083005361913959>` and `<a:starwardthink:1573969377038958644>`).
+- **Two pictures, both yours** (both optional, both plain `http(s)` URLs):
+  `CODES_THUMBNAIL` is the small artwork beside the headline — the game's own icon when unset — and
+  `CODES_MEDIA` is the full-width picture under the codes, which simply does not appear when unset.
+  Per game, the same two live in [`config/games.json`](config/games.json) as `codes.thumbnail` /
+  `codes.media`, and win over the variables. Use a **stable** URL: a Discord attachment link carries
+  `?ex=&is=&hm=` signature parameters that expire, so re-copy the link (or host the file yourself)
+  before it lapses. The headline emoji and the Redeem-button emoji are `EMOJI_REDEEM` /
+  `EMOJI_REDEEM_BUTTON` (defaults: `<a:starwarddonut:1483083005361913959>` and
+  `<a:starwardthink:1573969377038958644>`).
 - **Expired codes are struck through automatically.** When every source that still lists a posted
   code says it expired, the same message is edited silently: `~~CODE~~ · expired`, and its button
   is removed. No second ping. `CODES_MARK_EXPIRED=off` disables it.
