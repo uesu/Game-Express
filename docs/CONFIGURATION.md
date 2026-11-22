@@ -124,9 +124,11 @@ being dropped. A codes drop split across several messages mentions the role on *
 |---|---|---|
 | `EMOJI_TITLE` | `<:ananta1:1558340472525693018>` | the scroll on every game's card headline, after the title link. `none` leaves the headline bare. Custom emoji render as long as your server can reach them: **your own server's** emoji always work via the webhook, and so do emoji from servers a helper bot (Discohook, Embed Generator) bridges by sitting in both your server and the emoji server — animated ones too. An emoji from a random bot's own server (the original `ananta2`, now deleted) has no bridge and posts as the raw `<:name:id>` text |
 | `EMOJI_YOUTUBE` / `EMOJI_TWITCH` | the animated defaults | format `a:name:id` (animated), `name:id`, a unicode emoji, or `none` |
-| `EMOJI_SOURCE` / `EMOJI_REDEEM` | `<a:starwardcat:1564242587987087420>` / 🎁 | emojis for the schedule card's third button (`Watch` / `Source`) and the Redeem button. These five are the only emoji settings — `EMOJI_BANNERS` was accepted but never rendered, and was removed. |
+| `EMOJI_SOURCE` | `<a:starwardcat:1564242587987087420>` | emoji on the schedule card's third button (`Watch` / `Source`) |
+| `EMOJI_REDEEM` / `EMOJI_REDEEM_BUTTON` | `<a:starwarddonut:1483083005361913959>` / `<a:starwardthink:1573969377038958644>` | the codes card's headline emoji (in front of the game name) and the emoji on each per-code `Redeem` button. `EMOJI_REDEEM=none` leaves the headline bare. These six are the only emoji settings — `EMOJI_BANNERS` was accepted but never rendered, and was removed |
+| `CODES_THUMBNAIL` | *(unset)* | artwork on the top-right of every codes card: an `http(s)` image or GIF URL. Unset = the game's own icon. A `codes.thumbnail` for one game in [`config/games.json`](../config/games.json) beats this. Anything that is not `http(s)` is ignored |
 | `EXTRA_BUTTONS` | — | JSON list (max 3) of extra buttons on every card, e.g. a community invite |
-| `COMMUNITY_BUTTONS` | `[{"label":"Citlali News","url":"https://discord.gg/HyrVP9wRXu","emoji":"a:starward11:1439878792653832253"}]` | the bottom row of a **codes** card (`none` = no row). Youtube / Twitch / Redeem Page are not shown there — they belong to the livestream card |
+| `COMMUNITY_BUTTONS` | `[{"label":"Citlali News","url":"https://discord.gg/HyrVP9wRXu","emoji":"a:starward11:1439878792653832253"}]` | the footer of a **codes** card: the first button becomes the card's last Section (its label is the bold headline) with `-# Delivering news and official updates` under it, any further ones follow in a row (`none` = no footer). Youtube / Twitch / Redeem Page are not shown there — they belong to the livestream card |
 | `SHOW_LEGEND` | on | the `STC — Subject to Change • TBA — To be Announced` footer |
 
 ### What is monitored
@@ -203,6 +205,10 @@ Two flags are deliberately separate:
 | `released` | **is the game out.** A pre-release game is still monitored, it just has no real codes to fetch, so the test bench checks its card with sample data (`test-card --kind codes --unlaunched`) |
 
 `auto_enable_on: "YYYY-MM-DD"` lets a prepared game switch itself on at launch.
+
+A game's `codes` object holds its `redeem_url`, its `redeem_hint` (the line under the codes) and,
+optionally, `thumbnail`: an `http(s)` image/GIF for that game's codes card only, overriding both
+`CODES_THUMBNAIL` and the game `icon`.
 
 Card text templates can use `{game}`, `{version}`, `{program}` and `{version_name}`. For example,
 set `"title": "{game} Version {version} \"{version_name}\" {program}"` to include the version's

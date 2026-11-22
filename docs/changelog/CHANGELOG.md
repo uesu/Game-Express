@@ -1,5 +1,48 @@
 # Changelog — current entries
 
+## 2026-11-22 — Feature 2: the redemption code card gets the new look (one Redeem button per code)
+
+- **What happened.** The codes card still looked like its first version: `## 🎁 …`, every code in
+  backticks, one row of buttons *under* the list labelled with the codes themselves, the in-game
+  hint on a block of its own and the community invite as a bare button row. The design that was
+  handed over for Feature 2 replaces all five pieces — this PR is that design, and **nothing else**:
+  detection, corroboration, expiry, dedupe, posting and `CODES_MARK_EXPIRED` are untouched.
+- **Change — the card.** Every code is now its own Section: `✦ NS4DU8AAGXBP` (no backticks) with its
+  rewards as a `-# …` sub-line, and that code's `Redeem` link button as the Section's **accessory**,
+  so the button sits on the code's own row instead of in a row underneath. The button lost the code
+  label (Discord truncates long ones) and carries the animated thinking-star emoji. The headline
+  emoji is now the animated donut (`EMOJI_REDEEM`, was 🎁), the artwork beside the headline is a
+  configurable image/GIF (`CODES_THUMBNAIL`, or `codes.thumbnail` for one game in
+  `config/games.json`; the game icon stays the default), the in-game hint and the `-# Source:` line
+  share one quiet block, and the community invite became the card's last Section —
+  `**Citlali News**` with `-# Delivering news and official updates` under it and its button as that
+  Section's accessory (further `EXTRA_BUTTONS` follow in one row).
+- **Unchanged on purpose.** ≤10 codes per card and the `part n/m` suffix, part 1 pings and only
+  part 1, an expired code is struck through (`✦ ~~CODE~~ · expired`) with no button while the live
+  ones keep theirs, the hint disappears when nothing is live and the source line then reads
+  `Expired codes are kept for reference`, `COMMUNITY_BUTTONS=none` removes the footer, `NO_PING` /
+  `TEST_MODE` / `mark_test` behave as before.
+- **Guards.** Two new ways to break a card were closed while restyling it. (1) Discord allows **40
+  components per message, accessories and nestlings included**, and one Section per code spends
+  three of them: a full 10-code card with a footer lands exactly on the cap, and a very wide footer
+  (community + `EXTRA_BUTTONS`) would cross it, so `codes_card()` drops the purely decorative
+  dividers first and `codes_chunk_size()` asks a probe card how many codes fit before chunking — the
+  default deployment still posts 10 per card, unchanged. (2) `CODES_THUMBNAIL` is accepted only as an
+  absolute `http(s)` URL: a typo (`codes.gif`, `javascript:…`, `data:…`) is dropped and the game icon
+  is used, instead of Discord rejecting the whole post. The design's own GIF is a signed
+  `cdn.discordapp.com` attachment with `ex/is/hm` parameters that expire, so it is a **variable**,
+  never hardcoded.
+- **Tests.** `test_code_card_has_a_redeem_button_per_code_then_the_community_footer` (button per
+  code on its own row, no backticks, no code-named button, hint + source in one block, footer
+  Section last with its separator, WuWa's buttonless rows, `COMMUNITY_BUTTONS=none`, livestream
+  buttons still absent) and `test_codes_card_artwork_and_headline_emoji_are_configurable`
+  (`CODES_THUMBNAIL`, per-game `codes.thumbnail` precedence, rejected non-`http(s)` values, a card
+  with no icon at all, `EMOJI_REDEEM=none`, the all-expired card and the 40-component trim) plus the
+  updated heading/ping/expired-edit assertions. `pytest -q`: 723 passed; ruff clean.
+- **Docs.** README §2 (new ASCII mock and bullets), `docs/CONFIGURATION.md` (`EMOJI_REDEEM` /
+  `EMOJI_REDEEM_BUTTON`, `CODES_THUMBNAIL`, the footer semantics of `COMMUNITY_BUTTONS`, the
+  per-game `codes.thumbnail`), `docs/TESTING.md` (what to look at in a test post) and `.env.example`.
+
 ## 2026-11-20 — Reddit intake: quiet targets, and no fleet probe for what the relay already covers
 
 - **What happened.** Production runs were relay-primary —

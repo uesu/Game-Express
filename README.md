@@ -128,28 +128,37 @@ same run share a card.
 
 ```
 ┌───────────────────────────────────────────────────────────── (game color)
-│ ## 🎁 Genshin Impact Redemption Codes                     [game icon]
+│ ## <a:starwarddonut> Genshin Impact Redemption Codes      [card artwork]
 │ -# 2 new codes • detected <t:…:R> <@&ROLE>                ← ping (optional)
 │ ─────────────
-│ ✦ `VESNAONPATROL`
+│ ✦ VESNAONPATROL                   [ <a:starwardthink> Redeem ]  ← the code's own button, on its row
 │ -# Primogem ×40 • Mora ×20000 • Hero's Wit ×3
-│ ✦ `EPIC2026`
+│ ✦ EPIC2026                        [ <a:starwardthink> Redeem ]
 │ -# 40 primogems, five hero's wit, and 20k mora
 │ ─────────────
-│ [ 🎁 VESNAONPATROL ] [ 🎁 EPIC2026 ]                    ← one Redeem button per code, INSIDE the card
-│ ※ Tap a code to open the official redemption page with it filled in, or redeem in-game: …
+│ ※ Tap a code to open the official redemption page with it filled in (log in first)
+│ -# Source: PromoGacha, hoyo-codes.seria.moe (verified) • Codes expire — redeem soon
 │ ─────────────
-│ [ <a:starward11> Citlali News ]                       ← community row, its own row (COMMUNITY_BUTTONS)
-│ -# Source: PromoGacha, hoyo-codes.seria.moe (verified) • Codes expire — redeem soon.
+│ **Citlali News**                  [ <a:starward11> Citlali News ]   ← footer (COMMUNITY_BUTTONS)
+│ -# Delivering news and official updates
 └─────────────────────────────────────────────────────────────
 ```
 
-- **GI / HSR / ZZZ**: every Redeem button opens the official page with the code prefilled.
-  **Wuthering Waves** has no web redemption, so the card shows the in-game path instead
+- **GI / HSR / ZZZ**: each `Redeem` button opens the official page with *that* code prefilled — the
+  button sits on the code's own row, not in a row of buttons underneath. **Wuthering Waves** has no
+  web redemption, so its codes are plain lines and the card shows the in-game path instead
   (*Settings → Other Settings → Account → Redemption Code*, Union Level 2+).
+- **Codes are never wrapped in backticks** — `✦ NS4DU8AAGXBP` is a code you can select and copy, not
+  a code block, and the hint plus the source share one quiet block under the list.
+- **Card artwork**: the game's own icon by default; set `CODES_THUMBNAIL` (or `codes.thumbnail` for
+  one game in [`config/games.json`](config/games.json)) to use your own image or GIF instead.
+  The headline emoji and the Redeem-button emoji are `EMOJI_REDEEM` / `EMOJI_REDEEM_BUTTON`
+  (defaults: `<a:starwarddonut:1483083005361913959>` and `<a:starwardthink:1573969377038958644>`).
 - **Expired codes are struck through automatically.** When every source that still lists a posted
   code says it expired, the same message is edited silently: `~~CODE~~ · expired`, and its button
   is removed. No second ping. `CODES_MARK_EXPIRED=off` disables it.
+- At most **10 codes per card**; a bigger drop continues on a second card (`part 2/2`) and only
+  part 1 pings.
 - Codes only post after passing the [accuracy gate](#-how-it-decides-to-post).
 
 > Want to see every card before touching Discord? `python -m gamexpress preview` →

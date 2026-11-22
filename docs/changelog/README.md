@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Reddit intake: quiet targets, and no fleet probe for what the relay already covers](CHANGELOG.md#2026-11-20--reddit-intake-quiet-targets-and-no-fleet-probe-for-what-the-relay-already-covers).
+Latest: [Feature 2: the redemption code card gets the new look (one Redeem button per code)](CHANGELOG.md#2026-11-22--feature-2-the-redemption-code-card-gets-the-new-look-one-redeem-button-per-code).
+
+Previous: [Reddit intake: quiet targets, and no fleet probe for what the relay already covers](CHANGELOG.md#2026-11-20--reddit-intake-quiet-targets-and-no-fleet-probe-for-what-the-relay-already-covers).
 
 Previous: [Feature 3: the reveal ping skips Wuthering Waves](CHANGELOG.md#2026-11-18--feature-3-the-reveal-ping-skips-wuthering-waves).
 

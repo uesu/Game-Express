@@ -273,7 +273,7 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
 | `cache: 'pip'` after the uv switch | warns on every run about a missing `~/.cache/pip` | removed in PR #21; uv has its own cache |
 | `setup-uv` with no `version:` | fetches the version manifest over the network every run | `version: latest-known` |
 | Hung nitter mirror | `asyncio.gather` waited the full 12 s timeout (run #217: 16.2 s vs 5 s) | fixed in v1.9.0; see invariant #10 |
-| Hardcoded chunk size | `codeposter` chunked by `10` while cards used `CODES_PER_CARD` | always import the constant |
+| Hardcoded chunk size | `codeposter` chunked by `10` while cards used `CODES_PER_CARD` | always import the constant — and since the 2026-11-22 codes card spends **three components per code** against Discord's 40, use `codes_chunk_size()`, not the bare constant: a wide `COMMUNITY_BUTTONS` + `EXTRA_BUTTONS` footer drops a card to 9 codes, and `msg_codes` must be cut with the same size the payload used |
 | Python 3.14 locally | sandboxes usually cannot download it (TLS proxy); CI pins 3.14 | develop on 3.11, let CI prove 3.14 |
 | `actionlint` locally | `actionlint-py` needs a Go toolchain; it will not install | rely on CI's advisory job + `yaml.safe_load` |
 
