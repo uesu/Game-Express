@@ -1,7 +1,7 @@
 # Keeping the Python version current
 
-CI, the live monitor and the bump bootstrap use exact CPython **3.14.10** pins.
-A patch no longer changes implicitly through a `3.14` series selector.
+CI, the live monitor and the bump bootstrap use exact CPython **3.15.2** pins.
+A patch no longer changes implicitly through a `3.15` series selector.
 
 The existing weekly/manual `python_version_bump.yml` and script read the stable
 Linux x64 builds in actions/python-versions. They prefer a newer current-series
