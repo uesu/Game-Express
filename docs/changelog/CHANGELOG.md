@@ -1,5 +1,41 @@
 # Changelog — current entries
 
+## 2026-11-23 — Housekeeping: the Python 3.15 bump's leftovers, and a guard so the docs cannot drift again
+
+- **What happened.** The automated bump (#167) moved the runtime from 3.14.10 to **3.15.2** — four
+  workflows, `ruff.toml`'s `target-version` — and stopped exactly where it is supposed to stop: by
+  design that script never writes a Markdown file or a comment (`docs/PYTHON_VERSION.md`: "the
+  script never blindly rewrites README, docs or dated history"). So the prose that also names the
+  pin was left behind: `ruff.toml`'s header still said *"Matches the interpreter pinned in
+  …/ci,monitor}.yml (python-version: '3.14')"*, the README badge and its "Runtime updates use exact
+  CPython **3.14.10** pins" line, `docs/PYTHON_VERSION.md`, `docs/PROD-REPO-SETUP.md`'s "currently
+  `'3.14.10'`", and `AGENTS.md`'s trap row ("CI pins 3.14 … let CI prove 3.14"). None of it was a
+  failed sync — the workflows were correct the whole time — it was documentation drift.
+- **Change.** The `ruff.toml` header now **names no version at all** and says why: the bump rewrites
+  the `target-version` line and nothing else, so any number written in that comment is guaranteed to
+  rot at the next bump. Everything else was corrected to the pinned **3.15.2** (badge, README prose,
+  `docs/PYTHON_VERSION.md`, `docs/PROD-REPO-SETUP.md`), and the `AGENTS.md` row now reads "Python
+  3.15 locally … let CI prove the pin" with the local-venv line spelling out that any 3.11+ works
+  locally because CI proves the exact pin. The same pass fixed a second stale sentence in
+  `docs/PROD-REPO-SETUP.md`: the bump script writes **five** allowlisted files
+  (`ci.yml`, `monitor.yml`, `python_version_bump.yml`, `sync_prod.yml`, `ruff.toml`), not three.
+- **Guard.** New
+  `test_every_doc_naming_the_runtime_python_agrees_with_the_pinned_pin`: every workflow must pin one
+  and the same `X.Y.Z`, the README badge and its "exact CPython **…**" line must name that version,
+  `docs/PYTHON_VERSION.md` and `docs/PROD-REPO-SETUP.md` must mention it, `ruff.toml`'s
+  `target-version` must be its `pyXY`, `ruff.toml` must contain no `python-version:` at all, and the
+  `AGENTS.md` row must describe the current series. Both halves were verified to fail on exactly the
+  two leftovers #167 produced (the `'3.14'` comment and the 3.14.10 badge) before being committed.
+- **Scope.** Documentation and one test — no runtime behaviour, no workflow and no card changed.
+  `pytest -q tests`: 726 passed; `ruff check .` clean.
+- **Local-suite note.** Four pinned-digest benchmark tests (`…main_baseline…`,
+  `…followup_4…`, `…final_acceptance…`) compare today's news payloads against code archived from an
+  old hardcoded revision. They pass on CI (a depth-1 checkout, where that revision is absent and the
+  test takes its documented `stored_sha256_only_shallow_clone` path) and pass in a copy without
+  `.git`. Deepening this sandbox's shallow clone makes the older revision *reachable*, which wakes
+  the comparison up and fails it — a property of the checkout, not of this change; it reproduces
+  identically on a pristine `main` worktree.
+
 ## 2026-11-22 — Feature 2 follow-up: the card's full-width picture (media gallery), as a variable
 
 - **What happened.** The design grew one element: the codes card now carries a **full-width picture

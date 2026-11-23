@@ -242,7 +242,7 @@ so a newly added variable works without touching the workflow.
 ## 5. How to verify a change (exact commands)
 
 ```bash
-uv venv --python 3.11 && uv pip install -r requirements.txt pyyaml ruff pytest vulture
+uv venv --python 3.11 && uv pip install -r requirements.txt pyyaml ruff pytest vulture  # any local 3.11+; CI proves the exact pin
 .venv/bin/python -m compileall -q gamexpress tests .github/scripts
 .venv/bin/ruff check .                      # ruff.toml is authoritative
 .venv/bin/python tests/test_smoke.py        # must end N/N, 0 failed — the plain runners are what CI uses
@@ -274,7 +274,7 @@ DRY_RUN=1 STATE_PATH=/tmp/s.json .venv/bin/python -m gamexpress run   # end-to-e
 | `setup-uv` with no `version:` | fetches the version manifest over the network every run | `version: latest-known` |
 | Hung nitter mirror | `asyncio.gather` waited the full 12 s timeout (run #217: 16.2 s vs 5 s) | fixed in v1.9.0; see invariant #10 |
 | Hardcoded chunk size | `codeposter` chunked by `10` while cards used `CODES_PER_CARD` | always import the constant — and since the 2026-11-22 codes card spends **three components per code** against Discord's 40, use `codes_chunk_size()`, not the bare constant: a wide `COMMUNITY_BUTTONS` + `EXTRA_BUTTONS` footer drops a card to 9 codes, and `msg_codes` must be cut with the same size the payload used |
-| Python 3.14 locally | sandboxes usually cannot download it (TLS proxy); CI pins 3.14 | develop on 3.11, let CI prove 3.14 |
+| Python 3.15 locally | sandboxes usually cannot download it (TLS proxy); CI pins an exact 3.15 patch | develop on whatever interpreter you already have (3.11 is enough — the code supports it), let CI prove the pin |
 | `actionlint` locally | `actionlint-py` needs a Go toolchain; it will not install | rely on CI's advisory job + `yaml.safe_load` |
 
 ---
