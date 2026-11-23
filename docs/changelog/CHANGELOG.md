@@ -1,5 +1,29 @@
 # Changelog — current entries
 
+## 2026-11-23 — Fix: the Python-doc guard must survive the production repo (it reddened the monitor)
+
+- **What happened.** The guard added a few hours earlier
+  (`test_every_doc_naming_the_runtime_python_agrees_with_the_pinned_pin`) shipped to production and
+  took the whole monitor run red: `635/636 passed`, one `FAIL`, exit 1. The production repo is a
+  *subset* — `sync_prod.py` deliberately excludes `README.md`, `AGENTS.md`, `docs/` and
+  `sync_prod.yml` — so the test's first `read_text()` on a file that does not exist there raised
+  `FileNotFoundError`. Same class of mistake the bump script already avoids ("safe in a
+  documentation-free production repo"), and the guard had no equivalent test.
+- **Change.** The checks moved into `_assert_runtime_python_docs_agree(root)` and each one is now
+  "**if** this artefact is present, it must agree": missing workflows are skipped, and
+  `README.md` / `docs/PYTHON_VERSION.md` / `docs/PROD-REPO-SETUP.md` / `AGENTS.md` are read only when
+  they exist. The hard requirements stay: at least one workflow must pin an exact `X.Y.Z`, every
+  present workflow must agree on it, and a present `ruff.toml` must carry that `pyXY` target and no
+  `python-version:` string. The dev-tree test is unchanged in behaviour.
+- **Proof.** New `test_the_python_doc_guard_is_safe_in_the_docless_production_repo` builds the prod
+  shape in a temp dir (the three workflows + `ruff.toml`, no docs) and asserts the guard passes
+  there, still fails when one workflow's pin drifts, and fails when no workflow pins anything. The
+  real gate was also replayed offline in an exact prod-shape copy
+  (`compileall` + `gamexpress validate` + `tests/test_smoke.py` → **637/637 passed**), which is what
+  production runs.
+- **Effect.** Nothing about the runtime, the cards or the variables changed; the monitor simply stops
+  being blocked by a documentation test. `pytest -q tests`: 727 passed; ruff clean.
+
 ## 2026-11-23 — Housekeeping: the Python 3.15 bump's leftovers, and a guard so the docs cannot drift again
 
 - **What happened.** The automated bump (#167) moved the runtime from 3.14.10 to **3.15.2** — four
