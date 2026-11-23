@@ -7,7 +7,7 @@ official news and pre-load/maintenance alerts — posted to Discord as Component
 with no server or bot token.**
 
 [![CI](https://github.com/uesu/Game-Express/actions/workflows/ci.yml/badge.svg)](https://github.com/uesu/Game-Express/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.14.10-3776AB?logo=python&logoColor=white&labelColor=2b2d31)](docs/PYTHON_VERSION.md)
+[![Python](https://img.shields.io/badge/python-3.15.2-3776AB?logo=python&logoColor=white&labelColor=2b2d31)](docs/PYTHON_VERSION.md)
 [![Tests](https://img.shields.io/badge/tests-offline%20%C2%B7%20no%20secrets-3FB950?labelColor=2b2d31)](docs/TESTING.md)
 [![Discord](https://img.shields.io/badge/posts%20to-Discord-5865F2?logo=discord&logoColor=white&labelColor=2b2d31)](https://discord.com/developers/docs/components/reference)
 
@@ -739,7 +739,7 @@ is not proof of healthy sources or no eligible items. The summary precedes the
 workflow's repository commit/push; check that later step for persistence. Summary
 output failure does not add a report file or change posting/state behavior.
 
-Runtime updates use exact CPython **3.14.10** pins. Python update proposals are
+Runtime updates use exact CPython **3.15.2** pins. Python update proposals are
 validated automatically but always merged while an operator is available.
 Package-only Dependabot auto-merge remains opt-in; workflow-file updates wait
 for review. See [Python policy](docs/PYTHON_VERSION.md). A live-workflow update
