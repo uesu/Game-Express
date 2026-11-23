@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Feature 2 follow-up: the card's full-width picture (media gallery), as a variable](CHANGELOG.md#2026-11-22--feature-2-follow-up-the-cards-full-width-picture-media-gallery-as-a-variable).
+Latest: [Housekeeping: the Python 3.15 bump's leftovers, and a guard so the docs cannot drift again](CHANGELOG.md#2026-11-23--housekeeping-the-python-315-bumps-leftovers-and-a-guard-so-the-docs-cannot-drift-again).
+
+Previous: [Feature 2 follow-up: the card's full-width picture (media gallery), as a variable](CHANGELOG.md#2026-11-22--feature-2-follow-up-the-cards-full-width-picture-media-gallery-as-a-variable).
 
 Previous: [Feature 2: the redemption code card gets the new look (one Redeem button per code)](CHANGELOG.md#2026-11-22--feature-2-the-redemption-code-card-gets-the-new-look-one-redeem-button-per-code).
 
