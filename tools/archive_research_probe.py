@@ -94,6 +94,40 @@ def nte_url(index):
     return NTE_BASE + ("index.html" if index == 0 else f"index{index}.html")
 
 
+class _ListingLinks(nte_candidate._Listing):
+    """Keep only canonical paths from the same rows validated by the parser."""
+    def handle_starttag(self, tag, attrs):
+        was_inside = bool(self.stack)
+        super().handle_starttag(tag, attrs)
+        if was_inside and tag == "a" and self.current is not None:
+            href = dict(attrs).get("href") or ""
+            prefix = "https://nte.perfectworld.com"
+            path = href[len(prefix):] if href.startswith(prefix + "/") else href
+            self.current["path"] = path
+
+
+def nte_rows_with_urls(html):
+    rows = nte_candidate.parse_list_page(html)
+    if rows is None:
+        return None
+    parser = _ListingLinks()
+    try:
+        parser.feed(html)
+        parser.close()
+    except (ValueError, RecursionError):
+        return None
+    if len(parser.rows) != len(rows):
+        return None
+    result = []
+    for raw, row in zip(parser.rows, rows):
+        path = raw.get("path")
+        match = nte_candidate._PATH.fullmatch(path) if isinstance(path, str) else None
+        if not match or match.group(1) != row["id"]:
+            return None
+        result.append({**row, "url": "https://nte.perfectworld.com" + path})
+    return result
+
+
 async def nte_walk(fetcher):
     first = await fetcher.get_text(nte_url(0), source="research-nte-archive", retries=1)
     total = nte_pages(first)
@@ -112,7 +146,7 @@ async def nte_walk(fetcher):
     seen = set()
     width = len(initial)
     for index, html in enumerate(pages):
-        parsed = nte_candidate.parse_list_page(html)
+        parsed = nte_rows_with_urls(html)
         if (parsed is None or (index < total - 1 and len(parsed) != width)
                 or len(parsed) > width):
             return None
@@ -195,7 +229,10 @@ class Tests(unittest.TestCase):
                     return first if self.count == 1 else self.final
                 return last
 
-        self.assertEqual(len(asyncio.run(nte_walk(FetcherFake()))), 2)
+        rows = asyncio.run(nte_walk(FetcherFake()))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["url"], "https://nte.perfectworld.com/en/article/news/gamenews/20260101/1.html")
+        self.assertIsNone(nte_rows_with_urls(first.replace("/en/article", "https://evil.invalid/en/article")))
         self.assertIsNone(asyncio.run(nte_walk(FetcherFake(final=first.replace("Title", "Changed")))))
         self.assertIsNone(asyncio.run(nte_walk(FetcherFake(final=None))))
 

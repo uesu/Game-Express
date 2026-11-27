@@ -457,7 +457,13 @@ observation cannot prove freshness, uptime, complete pagination, or successful r
   its URL creation-date segment, and accepts only canonical official article paths. It is not
   complete pagination, a detail reader, a source snapshot, or a production adapter. The capture
   and screenshot show article `265053` displayed as 2026-11-20 although its path has 20261113;
-  no publication hour or timezone should be inferred from either value.
+  no publication hour or timezone should be inferred from either value. User screenshots and
+  the supplied `nte.txt` contain three article HTML documents: the 2024-08-30 trailer has a
+  YouTube iframe, the 2026-11-09 maintenance notes have one body image, and the 2026-05-26
+  special-program recap has ten body images. Those counts are structural, not Discord playback
+  proof. The bounded development-only media inventory scans candidate article bodies without
+  fetching embedded media, following redirects, writing fixtures or printing content; it is
+  exploratory and does not enable a production reader.
 - **Endfield CMS discovery:** [jino9492/subculture-calendar](https://github.com/jino9492/subculture-calendar)
   documents the official `web-news.gryphline.com/api/bulletin` endpoint and
   `code=arknights_endfield_official`. A separate page-fetching service returned `code: 0` from
