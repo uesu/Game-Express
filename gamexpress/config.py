@@ -26,6 +26,10 @@ DEFAULT_STATE_PATH = ROOT / "state" / "state.json"
 FEATURES = ("schedule", "codes", "news", "maintenance", "beta")
 DEDICATED_FEATURES = ("news", "maintenance", "beta")
 DEFAULT_OPTIONAL_GAMES = ("genshin", "starrail", "zzz", "wuwa", "hna")
+# Feature 3 (official news) defaults. It used to be DEFAULT_OPTIONAL_GAMES; Neverness to
+# Everness was added 2026-11-27 because its own news archive is a verified, parsed source
+# (sources/perfectworld.py). ANANTA still stays out: no news source was verified for it.
+DEFAULT_NEWS_GAMES = ("genshin", "starrail", "zzz", "wuwa", "hna", "nte")
 DEFAULT_BETA_GAMES = ("genshin", "starrail", "zzz", "wuwa")
 ALL_MAINTENANCE_GAMES = ("genshin", "starrail", "zzz", "wuwa", "hna", "ananta")
 DEFAULT_COLOR = 14922399  # the gold accent used by every reference card
@@ -858,7 +862,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         aliases=aliases,
         codes_mark_expired=_bool(env, "CODES_MARK_EXPIRED", True),
         news_enabled=news_enabled,
-        news_games=_game_set_env(env, "NEWS_GAMES", aliases),
+        news_games=_game_set_env(env, "NEWS_GAMES", aliases, DEFAULT_NEWS_GAMES, DEFAULT_NEWS_GAMES),
         news_group_long_strips=_bool(env, "NEWS_GROUP_LONG_STRIPS", False),
         news_timestamps=_bool(env, "NEWS_TIMESTAMPS", False),
         news_expand_full=_bool(env, "NEWS_EXPAND_FULL", False),
@@ -1026,6 +1030,9 @@ class Game:
     subreddits: list[str] = field(default_factory=list)
     reddit_official: list[str] = field(default_factory=list)
     kuro_news: bool = False
+    # Perfect World's own news archive (Neverness to Everness): static server-rendered HTML,
+    # see sources/perfectworld.py. One flag, one adapter -- the same shape as `kuro_news`.
+    pw_news: bool = False
     program_label: str = "Special Program"
     program_patterns: list[str] = field(default_factory=lambda: ["special program"])
     banner_patterns: list[str] = field(default_factory=list)
@@ -1081,6 +1088,7 @@ def load_games(path: Path | None = None) -> dict[str, Game]:
             subreddits=list(rd.get("subreddits") or []),
             reddit_official=list(rd.get("official") or []),
             kuro_news=bool(g.get("kuro_news", False)),
+            pw_news=bool(g.get("pw_news", False)),
             program_label=g.get("program_label", "Special Program"),
             program_patterns=list(g.get("program_patterns") or ["special program"]),
             banner_patterns=list(g.get("banner_patterns") or []),
