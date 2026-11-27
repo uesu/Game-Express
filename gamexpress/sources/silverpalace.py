@@ -14,6 +14,7 @@ from ..textutil import news_blocks
 
 BASE = "https://silverpalace.elementagames.com/server/index.php/home/news_list"
 DETAIL = "https://silverpalace.elementagames.com/server/index.php/home/news_detail"
+ARTICLE = "https://silverpalace.elementagames.com/en-us/newsDetail?id={}"
 MAX_PAGES = 30
 MAX_ROWS_PER_PAGE = 100
 _ID = re.compile(r"[0-9]{1,32}\Z")
@@ -92,7 +93,7 @@ def _official_cover(value):
 
 
 async def detail(fetcher, row):
-    """Fetch matching publisher detail as ordered blocks, without inventing a URL/time.
+    """Fetch matching publisher detail as ordered blocks, without inventing a time.
 
     This is exploratory, not an article-fidelity or Discord-readiness guarantee.
     Delivery must separately validate every media URL and its redirect chain.
@@ -122,4 +123,4 @@ async def detail(fetcher, row):
     if not blocks:
         return None
     return {"id": cid, "title": detail_title.strip(), "date": day,
-            "cover": cover, "blocks": blocks}
+            "url": ARTICLE.format(cid), "cover": cover, "blocks": blocks}

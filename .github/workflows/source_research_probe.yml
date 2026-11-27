@@ -56,3 +56,21 @@ jobs:
       - name: Limited old Reddit fallback fleet
         if: always()
         run: python tools/live_candidate_probe.py --group redditfleet --annotations
+
+  archive:
+    name: Bounded historical listing research
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install reader dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline archive checks
+        run: python tools/archive_research_probe.py --self-test
+      - name: Walk observed candidate listing archives
+        run: python tools/archive_research_probe.py

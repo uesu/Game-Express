@@ -57,7 +57,7 @@ class SilverCandidateTests(unittest.TestCase):
         self.assertIn("First", found["blocks"][0]["text"])
         self.assertIn("Last", found["blocks"][2]["text"])
         self.assertNotIn("ts", found)
-        self.assertNotIn("url", found)
+        self.assertEqual(found["url"], "https://silverpalace.elementagames.com/en-us/newsDetail?id=01")
         self.assertEqual(f.calls[0][0], silverpalace.DETAIL)
         self.assertEqual(f.calls[0][1]["params"], {"lang": "en-us", "id": "01"})
         bad = (

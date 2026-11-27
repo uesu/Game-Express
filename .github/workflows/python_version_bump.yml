@@ -128,6 +128,7 @@ jobs:
           # The research tool is dev-only and is not part of the production manifest.
           if [ -f tools/source_research_probe.py ]; then python tools/source_research_probe.py --self-test; fi
           if [ -f tools/live_candidate_probe.py ]; then python tools/live_candidate_probe.py --self-test; fi
+          if [ -f tools/archive_research_probe.py ]; then python tools/archive_research_probe.py --self-test; fi
           python -m gamexpress preview --out "$RUNNER_TEMP/previews" > /dev/null
 
       # Values reach the shell through env, never through ${{ }} inlined into `run:` —

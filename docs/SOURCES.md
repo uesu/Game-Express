@@ -509,8 +509,10 @@ observation cannot prove freshness, uptime, complete pagination, or successful r
   rejects drift, ambiguous empty pages and duplicate IDs. Matching walks reduce some races but
   do not prove an atomic upstream snapshot. The detail experiment checks matching ID, title and
   day, requires the observed exact cover host, and passes content to the existing block parser;
-  it does not verify body fidelity, validate embedded media or redirects, produce article links,
-  post to Discord, or integrate with the runner. In [run 45983530944](https://github.com/uesu/Game-Express/actions/runs/45983530944),
+  The user's browser screenshot shows the official article route `en-us/newsDetail?id=120`
+  alongside detail 120; the prototype now constructs that fixed-host route from the validated ID.
+  One example does not prove all links. It does not verify body fidelity, validate embedded media
+  or redirects, post to Discord, or integrate with the runner. In [run 45983530944](https://github.com/uesu/Game-Express/actions/runs/45983530944),
   the production Fetcher completed two walks (21 rows) and parsed matching detail 120 (one
   block); that is a single structural observation, not article fidelity or delivery proof.
   An independent, unregistered
@@ -573,8 +575,10 @@ Select the intended branch when dispatching. A successful dispatch is not eviden
 or that a future run will succeed. In
 [runner 45964838716](https://github.com/uesu/Game-Express/actions/runs/45964838716) three fixed
 observed image URLs, one per game, returned HTTP 200 with recognized image signatures, but the
-Endfield prototype's actual rendered payload failed existing production media preflight. No Discord
-rendering was tested. Required CI passed; the temporary research job failed because three Crimson
+Endfield prototype's actual rendered payload failed existing production media preflight. A later
+user screenshot shows all three fixed image links rendered when manually pasted into Discord; that
+is not a bot/webhook payload test, video test, redirect-safety guarantee or proof that Endfield's
+existing production preflight accepts its CDN. Required CI passed; the temporary research job failed because three Crimson
 Witch RSS endpoints returned 404, and its separate steps continued to completion.
 
 ## Evaluated but not integrated (and why)
