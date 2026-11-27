@@ -6,7 +6,11 @@
   candidate code endpoints and official news/community sources for Endfield, NTE and Silver
   Palace, including the limits of the observations and remaining integration gates.
 - Added a manual, secret-free, bounded public-source research probe with offline self-tests.
-  This is not a production monitor, an adapter, or a reliability guarantee. Existing games,
+  Follow-up research found the Endfield CMS host and app code; the probe covers two listing
+  pages and one detail endpoint for each of Endfield and Silver Palace, and documents sticky
+  and out-of-order items plus day-only timestamps. Observations came
+  from a page-fetching service, not the production fetcher. This is not a production monitor,
+  an adapter, or a reliability guarantee. Existing games,
   source votes, Reddit/X scope, cards, webhooks and state are unchanged.
 
 ## 2026-11-24 — Reddit intake: match News-Express's newest relay work (body media, `429` evidence)

@@ -449,13 +449,38 @@ observation cannot prove freshness, uptime, complete pagination, or successful r
   [NTE](https://nte.perfectworld.com/en/article/news/index.html), and
   [Silver Palace](https://silverpalace.elementagames.com/en-us/news). The page fetcher rendered
   the listings; NTE exposed dated article links and a paginated list, and one article was fetched.
-  The rendered Endfield and Silver Palace listings did not expose article links in that output;
-  their network contracts, pagination, IDs, timestamps, bodies and media are not yet validated
-  with the production fetcher. NTE's list has only three entries per page in this observation;
-  a first-page-only poll can lose articles. A rendered browser page alone is not an adapter.
-- Silver Palace's official news page title reported a **December 14, 2026** global launch; the
-  provided screenshot also shows that date. Launch hour was not established. Treat feature 3 as
-  the requested candidate, not permission to activate the other features automatically.
+  The rendered Endfield and Silver Palace listings did not expose article links in that output.
+  NTE's list had only three entries per page in this observation; a first-page-only poll can lose
+  articles. A rendered browser page alone is not an adapter.
+- **Endfield CMS discovery:** [jino9492/subculture-calendar](https://github.com/jino9492/subculture-calendar)
+  documents the official `web-news.gryphline.com/api/bulletin` endpoint and
+  `code=arknights_endfield_official`. A separate page-fetching service returned `code: 0` from
+  [English page 1](https://web-news.gryphline.com/api/bulletin?lang=en-us&code=arknights_endfield_official&page=1&pageSize=20)
+  and [page 2](https://web-news.gryphline.com/api/bulletin?lang=en-us&code=arknights_endfield_official&page=2&pageSize=20)
+  on 2026-11-27. Page 1 had 20 rows, `current: 1`, `pageSize: 20`, `total: 143`, with `cid`,
+  `tab`, `displayTime`, `cover` and `brief`. Its sticky rows precede newer non-sticky rows, so
+  **never stop pagination simply at the first old row**. Detail requests for
+  [7011](https://web-news.gryphline.com/api/bulletin/7011?lang=en-us&code=arknights_endfield_official)
+  and [0740](https://web-news.gryphline.com/api/bulletin/0740?lang=en-us&code=arknights_endfield_official)
+  returned corresponding article data; `cid` is a string and leading zeroes must be preserved.
+  This corrects the earlier assessment that the CMS host and app code were unknown. It is
+  **not** evidence of production Fetcher or GitHub-runner reachability, complete pagination,
+  safe media rendering, fidelity of the article body, or an implemented news adapter. The
+  read-only research probe now includes both listing pages and one fixed detail URL.
+- **Silver Palace news API:** [logreus-cloud/genshinflex #53](https://github.com/logreus-cloud/genshinflex/issues/53)
+  documents `server/index.php/home/news_list` and `news_detail` on the official site. The separate
+  page-fetching service returned `code: 0` for [English page 1](https://silverpalace.elementagames.com/server/index.php/home/news_list?lang=en-us&page=1),
+  [page 2](https://silverpalace.elementagames.com/server/index.php/home/news_list?lang=en-us&page=2),
+  and [detail id 120](https://silverpalace.elementagames.com/server/index.php/home/news_detail?lang=en-us&id=120).
+  Page 1 returned three rows and `total_page: 7`; page 2 was not strictly date-sorted. The
+  observed `publish_date` is day-only: converting it to midnight then using the existing
+  timestamp floor risks silently skipping same-day additions. Determine timezone, publication
+  precision and an ID-aware safe baseline before implementing. Body markup/media fidelity and
+  runner reachability remain unverified; the probe covers the two pages and one detail URL.
+- [Elementa's official press release](https://www.elementagames.com/en-us/newsDetail/?id=14)
+  states that Silver Palace launches globally **December 14, 2026 (UTC+8)**, matching the
+  screenshot. Launch hour was not established. Treat feature 3 as the requested candidate,
+  not permission to activate the other features automatically.
 - Reddit candidates: [r/Endfield](https://www.reddit.com/r/Endfield/) describes itself as
   community-run and partnered with Gryphline in the supplied screenshot; partnership does not
   make every author official. [r/ArknightsEndfield](https://www.reddit.com/r/ArknightsEndfield/)

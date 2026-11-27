@@ -49,7 +49,9 @@ Research candidates, not new monitor integrations: [Crimson Witch](https://www.c
 [Endfield](https://endfield.gryphline.com/en-us/news), [NTE](https://nte.perfectworld.com/en/article/news/index.html)
 and [Silver Palace](https://silverpalace.elementagames.com/en-us/news) official news sites.
 See [source research](SOURCES.md#research-crimson-witch-hoyocodes-and-prospective-games-2026-11-27)
-for evidence and unresolved integration questions.
+for evidence and unresolved integration questions. Thanks to [jino9492/subculture-calendar](https://github.com/jino9492/subculture-calendar)
+for documenting the Endfield CMS host and app code, and [logreus-cloud/genshinflex](https://github.com/logreus-cloud/genshinflex/issues/53)
+for documenting Silver Palace news endpoints.
 
 - [seriaati/hoyo-codes](https://github.com/seriaati/hoyo-codes) and [hoyo-update-notifier](https://github.com/seriaati/hoyo-update-notifier) ([hun.seria.moe](https://hun.seria.moe/)) — the verified code API, the Sophon/launcher endpoints, and the `getGlobalApplicationMaintenance` maintenance gate with its headers and `game_biz` values behind feature 4's *Servers Live* card
 - [yeci226/ZZZ](https://github.com/yeci226/ZZZ) — an independent production reader of the same maintenance gate (`src/utilities/news/sources.ts`), used to cross-check the response shape (`application_maintenance: object | null`) and the Star Rail gateway host

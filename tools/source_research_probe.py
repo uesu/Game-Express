@@ -29,8 +29,14 @@ TARGETS = (
     ("ennead-starrail", "https://api.ennead.cc/mihoyo/starrail/codes", "ennead"),
     ("ennead-zenless", "https://api.ennead.cc/mihoyo/zenless/codes", "ennead"),
     ("news-endfield", "https://endfield.gryphline.com/en-us/news", "html"),
+    ("endfield-cms-list", "https://web-news.gryphline.com/api/bulletin?lang=en-us&code=arknights_endfield_official&page=1&pageSize=20", "endfield-list"),
+    ("endfield-cms-page-2", "https://web-news.gryphline.com/api/bulletin?lang=en-us&code=arknights_endfield_official&page=2&pageSize=20", "endfield-list"),
+    ("endfield-cms-detail", "https://web-news.gryphline.com/api/bulletin/7011?lang=en-us&code=arknights_endfield_official", "endfield-detail"),
     ("news-nte", "https://nte.perfectworld.com/en/article/news/index.html", "html"),
     ("news-silver", "https://silverpalace.elementagames.com/en-us/news", "html"),
+    ("silver-list", "https://silverpalace.elementagames.com/server/index.php/home/news_list?lang=en-us&page=1", "silver-list"),
+    ("silver-page-2", "https://silverpalace.elementagames.com/server/index.php/home/news_list?lang=en-us&page=2", "silver-list"),
+    ("silver-detail", "https://silverpalace.elementagames.com/server/index.php/home/news_detail?lang=en-us&id=120", "silver-detail"),
 )
 
 
@@ -56,11 +62,49 @@ class Page(HTMLParser):
 
 def describe(kind: str, body: bytes) -> str:
     """Report structure, never actual upstream strings or content."""
-    if kind in ("codes", "ennead"):
+    if kind in ("codes", "ennead", "endfield-list", "endfield-detail", "silver-list", "silver-detail"):
         try:
             value = json.loads(body)
         except (ValueError, UnicodeError):
             return "invalid-json"
+        if kind.startswith("silver-"):
+            if (not isinstance(value, dict) or type(value.get("code")) is not int
+                    or value["code"] != 0 or not isinstance(value.get("data"), dict)):
+                return "unexpected-json-envelope"
+            data = value["data"]
+            if kind == "silver-detail":
+                fields = ("id", "title", "publish_date", "cover", "content")
+                present = sum(key in data for key in fields)
+                return f"expected-detail-fields={present}/{len(fields)}"
+            rows = data.get("list")
+            if not isinstance(rows, list):
+                return "unexpected-list-shape"
+            valid = sum(isinstance(row, dict) and isinstance(row.get("id"), str)
+                        and isinstance(row.get("title"), str)
+                        and isinstance(row.get("publish_date"), str) for row in rows)
+            pages = data.get("total_page")
+            pages = pages if isinstance(pages, int) and not isinstance(pages, bool) and pages >= 0 else "invalid"
+            return f"rows={len(rows)} valid-id-title-date={valid} total-pages={pages}"
+        if kind.startswith("endfield-"):
+            if (not isinstance(value, dict) or type(value.get("code")) is not int
+                    or value["code"] != 0 or not isinstance(value.get("data"), dict)):
+                return "unexpected-json-envelope"
+            data = value["data"]
+            if kind == "endfield-detail":
+                fields = ("cid", "title", "displayTime", "cover", "data")
+                present = sum(key in data for key in fields)
+                return f"expected-detail-fields={present}/{len(fields)}"
+            rows = data.get("list")
+            if not isinstance(rows, list):
+                return "unexpected-list-shape"
+            valid = sum(isinstance(row, dict) and isinstance(row.get("cid"), str)
+                        and isinstance(row.get("title"), str)
+                        and isinstance(row.get("displayTime"), int)
+                        and not isinstance(row.get("displayTime"), bool) for row in rows)
+            sticky = sum(isinstance(row, dict) and row.get("sticky") is True for row in rows)
+            total = data.get("total")
+            total = total if isinstance(total, int) and not isinstance(total, bool) and total >= 0 else "invalid"
+            return f"rows={len(rows)} valid-id-title-time={valid} sticky={sticky} total={total}"
         if kind == "codes":
             if not isinstance(value, list):
                 return "unexpected-json-shape"
@@ -124,6 +168,37 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(describe("codes", b'{}'), "unexpected-json-shape")
         self.assertEqual(describe("codes", b'{'), "invalid-json")
         self.assertEqual(describe("ennead", b'{"active":[],"inactive":[1]}'), "active=0 inactive=1")
+
+    def test_endfield_cms_shapes(self):
+        page = {"code": 0, "data": {"list": [
+            {"cid": "0740", "title": "not printed", "displayTime": 100, "sticky": True},
+            {"cid": "12", "title": "x", "displayTime": 101, "sticky": False},
+            {"cid": 12, "title": "x", "displayTime": True},
+        ], "total": 3}}
+        self.assertEqual(describe("endfield-list", json.dumps(page).encode()),
+                         "rows=3 valid-id-title-time=2 sticky=1 total=3")
+        self.assertEqual(describe("endfield-list", b'{"code":1,"data":{"list":[]}}'),
+                         "unexpected-json-envelope")
+        self.assertEqual(describe("endfield-list", b'{"code":0,"data":{"list":{}}}'),
+                         "unexpected-list-shape")
+        self.assertEqual(describe("endfield-detail", b'{"code":0,"data":{"cid":"0740",'
+                             b'"title":"x","displayTime":123,"cover":"url","data":"body"}}'),
+                         "expected-detail-fields=5/5")
+
+    def test_silver_cms_shapes(self):
+        payload = {"code": 0, "data": {"list": [
+            {"id": "120", "title": "not printed", "publish_date": "2026-10-09"},
+            {"id": 2, "title": "x", "publish_date": None},
+        ], "total_page": 7}}
+        self.assertEqual(describe("silver-list", json.dumps(payload).encode()),
+                         "rows=2 valid-id-title-date=1 total-pages=7")
+        self.assertEqual(describe("silver-list", b'{"code":1,"data":{"list":[]}}'),
+                         "unexpected-json-envelope")
+        self.assertEqual(describe("silver-list", b'{"code":0,"data":{"list":{}}}'),
+                         "unexpected-list-shape")
+        self.assertEqual(describe("silver-detail", b'{"code":0,"data":{"id":"120",'
+                             b'"title":"x","publish_date":"2026-10-09","cover":"url","content":"body"}}'),
+                         "expected-detail-fields=5/5")
 
     def test_rss_and_html(self):
         self.assertEqual(describe("rss", b'<rss><channel><item/></channel></rss>'), "rss-items=1 atom-entries=0")
