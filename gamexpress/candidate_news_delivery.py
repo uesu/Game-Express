@@ -146,6 +146,33 @@ def ingest(source, route, current, snapshot):
     return state
 
 
+def reconcile_inflight(state, source, route, *, article_id, page, signature, resolution, message_id=None):
+    """Create a reviewed correction for one ambiguous page; never send or persist it.
+
+    An operator must pause every writer, independently inspect the destination, and
+    checkpoint the correction authoritatively before any resume. ``delivered`` needs
+    the actual Discord message ID. ``absent`` is only for independently established
+    non-delivery, never merely for an unknown result. The exact article, page, route
+    and payload signature must match the held record, preventing stale corrections.
+    """
+    corrected = _validate(state, source, route)
+    partial = corrected["partial"]
+    if (not partial or not partial["inflight"] or article_id != partial["id"]
+            or type(page) is not int or page != len(partial["messages"]) + 1
+            or signature != partial["signature"]):
+        raise DeliveryHold("held article/page/signature mismatch")
+    if resolution == "delivered":
+        existing = {mid for item in corrected["posted"].values() for mid in item["messages"]}
+        existing.update(partial["messages"])
+        if not isinstance(message_id, str) or not _ID.fullmatch(message_id) or message_id in existing:
+            raise DeliveryHold("a new confirmed Discord message ID is required")
+        partial["messages"].append(message_id)
+    elif resolution != "absent" or message_id is not None:
+        raise DeliveryHold("invalid reconciliation resolution")
+    partial["inflight"] = False
+    return _validate(corrected, source, route)
+
+
 async def deliver_oldest(state, source, route, *, as_of, checkpoint, render, send, max_pages=120):
     """Deliver at most one article, persisting intent BEFORE each one-shot POST.
 

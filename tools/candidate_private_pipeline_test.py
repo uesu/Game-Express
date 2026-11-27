@@ -34,6 +34,9 @@ ALREADY_TESTED = {"nte": {"252469", "252474"}, "endfield": {"0766", "7011", "134
 MAX_MESSAGES = 8
 # Pinned after the no-post preparation: any upstream change holds the test.
 EXPECTED = (("nte", "252471", 1), ("endfield", "3857", 2), ("silverpalace", "7", 1))
+# The pinned run completed. A new test must select and review different examples;
+# rerunning these four cards would be an unintentional duplicate.
+PRIVATE_TEST_COMPLETED = True
 
 
 async def prepare(fetcher, settings):
@@ -150,6 +153,8 @@ async def send_prepared(session, prepared, webhook):
 
 
 async def main(prepare_only):
+    if not prepare_only and PRIVATE_TEST_COMPLETED:
+        raise ValueError("this private test has already completed")
     if not prepare_only and os.environ.get("GITHUB_RUN_ATTEMPT") != "1":
         raise ValueError("automatic or manual workflow reruns are not allowed")
     settings = load_settings({"NEWS_EXPAND_FULL": "1"})

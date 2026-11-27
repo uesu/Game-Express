@@ -446,6 +446,17 @@ validation and an operational reconciliation procedure before removing the gate.
 Actions concurrency group is not a distributed lock. No backlog or production state change has
 been performed. Existing game news routing and behavior remain unchanged.
 
+A [private candidate pipeline test](https://github.com/uesu/Game-Express/actions/runs/46033400200)
+used three previously untested articles (NTE 252471, Endfield 3857, Silver Palace 7). Four
+messages were confirmed; the two-page Endfield article resumed from an isolated local bare-Git
+JSON ledger after page one. The pinned test is now locked against reruns. This is real Discord
+but **not** a real GitHub remote or production/failover test. The separate earlier NTE 252469
+max-resolution test was not repeated. Automated reconciliation tests now hold ambiguous pages and
+verify a human-reviewed resolution against the exact article, page, route and payload signature.
+An `absent` decision requires independently established non-delivery, not merely an unknown outcome;
+the corrected record must be durably checkpointed before resuming. An operator-facing workflow and
+production-grade recovery procedure remain unfinished.
+
 - [Crimson Witch](https://www.crimsonwitch.com/codes): its Genshin, Star Rail and ZZZ pages
   displayed active code/reward sections and links to RSS feeds (`/feeds/genshin/rss.xml`,
   `/feeds/star%20rail/rss.xml`, `/feeds/zzz/rss.xml`). A page fetch of the Star Rail feed failed;

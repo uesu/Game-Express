@@ -51,6 +51,11 @@ class PrivateHarnessTests(unittest.TestCase):
         self.assertEqual(sent, 4)
         self.assertEqual(calls, ["nte", "endfield", "endfield", "silverpalace"])
 
+    def test_completed_private_test_is_locked_against_repeat(self):
+        with (patch.object(private, "prepare", side_effect=AssertionError("unexpected discovery")),
+              self.assertRaises(ValueError)):
+            asyncio.run(private.main(prepare_only=False))
+
     def test_invalid_webhook_stops_before_any_send(self):
         with (patch.object(private.delivery, "send_candidate_once", side_effect=AssertionError("unexpected post")),
               self.assertRaises(ValueError)):

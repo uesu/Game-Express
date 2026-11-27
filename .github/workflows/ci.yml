@@ -88,6 +88,7 @@ jobs:
           python tests/test_nte_candidate.py
           python tests/test_candidate_thumbnail.py
           python tests/test_candidate_news_delivery.py
+          python tests/test_candidate_private_pipeline.py
           python tests/test_maintenance_live.py
           python tools/source_research_probe.py --self-test
           python tools/live_candidate_probe.py --self-test

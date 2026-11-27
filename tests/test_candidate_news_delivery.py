@@ -109,6 +109,72 @@ class CandidateDeliveryTests(unittest.TestCase):
             self.assertFalse(asyncio.run(checkpoint(posted)))  # never commit unrelated staged files
             self.assertEqual(git("diff", "--cached", "--name-only").stdout.strip(), b"unrelated.txt")
 
+    def test_stale_writer_and_crash_hold_until_reviewed_git_reconciliation(self):
+        branch = "arena/98b5f4e1-game-express"
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            remote, seed = base / "remote.git", base / "seed"
+            seed.mkdir()
+
+            def git(cwd, *args):
+                return subprocess.run(["git", *args], cwd=cwd, capture_output=True, check=True).stdout
+
+            git(seed, "init", "--bare", str(remote))
+            git(seed, "init", "-b", branch)
+            git(seed, "config", "user.name", "Test")
+            git(seed, "config", "user.email", "test@example.invalid")
+            (seed / "state").mkdir()
+            (seed / "state/state.json").write_text('{"schema":1}\n', encoding="utf-8")
+            git(seed, "add", "state/state.json")
+            git(seed, "commit", "-m", "initial")
+            git(seed, "remote", "add", "origin", str(remote))
+            git(seed, "push", "origin", "HEAD:refs/heads/" + branch)
+            writer_a, writer_b, restarted = base / "a", base / "b", base / "restarted"
+            for dest in (writer_a, writer_b):
+                git(base, "clone", "-b", branch, str(remote), str(dest))
+            state_a, state_b = (State.load(p / "state/state.json") for p in (writer_a, writer_b))
+            queued = delivery.ingest("silverpalace", ROUTE, None, [row("1")])
+            sends = []
+
+            async def render(article):
+                return [payload(article["id"])]
+
+            async def ambiguous(card):
+                sends.append("ambiguous")
+                raise TimeoutError("lost after send")
+
+            async def unexpected(card):
+                sends.append("unexpected")
+                return SimpleNamespace(ok=True, message_id="999", ambiguous=False)
+
+            with self.assertRaises(delivery.DeliveryHold):
+                asyncio.run(delivery.deliver_oldest(queued, "silverpalace", ROUTE, as_of=NOW,
+                            checkpoint=GitCheckpoint(writer_a, state_a, "silverpalace", branch),
+                            render=render, send=ambiguous))
+            # A writer with the old HEAD must not send, even though it started before the first one.
+            with self.assertRaises(delivery.DeliveryHold):
+                asyncio.run(delivery.deliver_oldest(queued, "silverpalace", ROUTE, as_of=NOW,
+                            checkpoint=GitCheckpoint(writer_b, state_b, "silverpalace", branch),
+                            render=render, send=unexpected))
+            git(base, "clone", "-b", branch, str(remote), str(restarted))
+            state_c = State.load(restarted / "state/state.json")
+            held = state_c.data["candidate_news"]["silverpalace"]
+            self.assertTrue(held["partial"]["inflight"])
+            checkpoint = GitCheckpoint(restarted, state_c, "silverpalace", branch)
+            with self.assertRaises(delivery.DeliveryHold):
+                asyncio.run(delivery.deliver_oldest(held, "silverpalace", ROUTE, as_of=NOW,
+                            checkpoint=checkpoint, render=render, send=unexpected))
+            reviewed = delivery.reconcile_inflight(held, "silverpalace", ROUTE, article_id="1", page=1,
+                                                   signature=held["partial"]["signature"],
+                                                   resolution="delivered", message_id="101")
+            self.assertTrue(asyncio.run(checkpoint(reviewed)))
+            result = asyncio.run(delivery.deliver_oldest(reviewed, "silverpalace", ROUTE, as_of=NOW,
+                                 checkpoint=checkpoint, render=render, send=unexpected))
+            self.assertEqual(sends, ["ambiguous"])
+            self.assertEqual(result["posted"]["1"]["messages"], ["101"])
+            persisted = json.loads(git(base, "--git-dir", str(remote), "show", f"refs/heads/{branch}:state/state.json"))
+            self.assertEqual(persisted["candidate_news"]["silverpalace"], result)
+
     def test_validation_accepts_only_opted_in_candidate_news_and_checks_dedicated_route(self):
         from gamexpress.__main__ import cmd_validate
         base = {"NEWS_GAMES": "silverpalace", "NEWS_CANDIDATES_BACKFILL": "1",
@@ -365,6 +431,70 @@ class CandidateDeliveryTests(unittest.TestCase):
         self.assertNotIn("webhook", str(result).lower())
         after = delivery.ingest("silverpalace", ROUTE, result, [row("1"), row("2")])
         self.assertEqual(after["pending"], [row("2")])
+
+    def test_reviewed_reconciliation_prevents_blind_resend_and_rejects_stale_evidence(self):
+        state = delivery.ingest("silverpalace", ROUTE, None, [row("1")])
+        store = Storage()
+        calls = []
+
+        async def render(candidate):
+            return [payload("1"), payload("1")]
+
+        async def ambiguous(card):
+            calls.append(card)
+            return SimpleNamespace(ok=False, ambiguous=True, message_id=None)
+
+        with self.assertRaises(delivery.DeliveryHold):
+            asyncio.run(delivery.deliver_oldest(state, "silverpalace", ROUTE, as_of=NOW,
+                                               checkpoint=store.checkpoint, render=render, send=ambiguous))
+        held = store.states[-1]
+        original = copy.deepcopy(held)
+        signature = held["partial"]["signature"]
+        for kwargs in (
+            {"article_id": "2", "page": 1, "signature": signature, "resolution": "delivered", "message_id": "101"},
+            {"article_id": "1", "page": 2, "signature": signature, "resolution": "delivered", "message_id": "101"},
+            {"article_id": "1", "page": 1, "signature": "b" * 64, "resolution": "delivered", "message_id": "101"},
+            {"article_id": "1", "page": 1, "signature": signature, "resolution": "delivered", "message_id": None},
+            {"article_id": "1", "page": 1, "signature": signature, "resolution": "absent", "message_id": "101"},
+        ):
+            with self.assertRaises(delivery.DeliveryHold):
+                delivery.reconcile_inflight(held, "silverpalace", ROUTE, **kwargs)
+        self.assertEqual(held, original)
+        corrected = delivery.reconcile_inflight(held, "silverpalace", ROUTE, article_id="1", page=1,
+                                                signature=signature, resolution="delivered", message_id="101")
+        self.assertEqual(corrected["partial"]["messages"], ["101"])
+        self.assertTrue(held["partial"]["inflight"])  # no silent state mutation
+        self.assertTrue(asyncio.run(store.checkpoint(corrected)))
+
+        async def confirmed(card):
+            calls.append(card)
+            return SimpleNamespace(ok=True, ambiguous=False, message_id="102")
+
+        posted = asyncio.run(delivery.deliver_oldest(corrected, "silverpalace", ROUTE, as_of=NOW,
+                                                     checkpoint=store.checkpoint, render=render, send=confirmed))
+        self.assertEqual(posted["posted"]["1"]["messages"], ["101", "102"])
+        self.assertEqual(len(calls), 2)  # initial ambiguous page and only the second page
+        self.assertFalse(posted["pending"])
+
+    def test_reconcile_absence_requires_explicit_resolution_and_preserves_page(self):
+        state = delivery.ingest("silverpalace", ROUTE, None, [row("1")])
+        store = Storage()
+
+        async def render(candidate):
+            return [payload("1")]
+
+        async def lost(card):
+            raise TimeoutError("unknown")
+
+        with self.assertRaises(delivery.DeliveryHold):
+            asyncio.run(delivery.deliver_oldest(state, "silverpalace", ROUTE, as_of=NOW,
+                                               checkpoint=store.checkpoint, render=render, send=lost))
+        held = store.states[-1]
+        fixed = delivery.reconcile_inflight(held, "silverpalace", ROUTE, article_id="1", page=1,
+                                            signature=held["partial"]["signature"], resolution="absent")
+        self.assertFalse(fixed["partial"]["inflight"])
+        self.assertEqual(fixed["partial"]["messages"], [])
+        self.assertTrue(held["partial"]["inflight"])
 
     def test_bounded_pages_resume_without_marking_incomplete_article_posted(self):
         state = delivery.ingest("silverpalace", ROUTE, None, [row("1"), row("2")])
