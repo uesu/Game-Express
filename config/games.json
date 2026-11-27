@@ -44,7 +44,7 @@
         "banners_url": "https://lunaris.moe/banners"
       },
       "codes": {
-        "sources": ["hoyolab:2", "seria:genshin", "humbao:GENSHIN", "ogc:genshin", "ennead:genshin", "fandom:genshin-impact/Promotional_Code", "codehub:genshin-impact", "reddit:Genshin_Impact", "x"],
+        "sources": ["hoyolab:2", "seria:genshin", "humbao:GENSHIN", "ogc:genshin", "ennead:genshin", "fandom:genshin-impact/Promotional_Code", "codehub:genshin-impact", "crimsonwitch:Genshin_Impact", "reddit:Genshin_Impact", "x"],
         "redeem_url": "https://genshin.hoyoverse.com/en/gift?code={code}",
         "redeem_hint": "Tap a code to open the official redemption page with it filled in, or redeem in-game: Paimon Menu → Settings → Account → Redeem Now."
       }
@@ -79,7 +79,7 @@
         "maintenance_heading": "Maintenance Details (STC)"
       },
       "codes": {
-        "sources": ["hoyolab:6", "seria:hkrpg", "humbao:HSR", "ogc:starrail", "ennead:starrail", "fandom:honkai-star-rail/Redemption_Code", "codehub:honkai-star-rail", "reddit:HonkaiStarRail", "x"],
+        "sources": ["hoyolab:6", "seria:hkrpg", "humbao:HSR", "ogc:starrail", "ennead:starrail", "fandom:honkai-star-rail/Redemption_Code", "codehub:honkai-star-rail", "crimsonwitch:Honkai_Star_Rail", "reddit:HonkaiStarRail", "x"],
         "redeem_url": "https://hsr.hoyoverse.com/gift?code={code}",
         "redeem_hint": "Tap a code to open the official redemption page with it filled in (log in first)."
       }
@@ -115,7 +115,7 @@
         "four_star_label": "4 Star Characters (Default)"
       },
       "codes": {
-        "sources": ["hoyolab:8", "seria:nap", "humbao:ZZZ", "ogc:zenless", "ennead:zenless", "fandom:zenless-zone-zero/Redemption_Code", "codehub:zenless-zone-zero", "reddit:ZZZ_Official", "x"],
+        "sources": ["hoyolab:8", "seria:nap", "humbao:ZZZ", "ogc:zenless", "ennead:zenless", "fandom:zenless-zone-zero/Redemption_Code", "codehub:zenless-zone-zero", "crimsonwitch:Zenless_Zone_Zero", "reddit:ZZZ_Official", "x"],
         "redeem_url": "https://zenless.hoyoverse.com/redemption?code={code}",
         "redeem_hint": "Tap a code to open the official redemption page with it filled in (log in first)."
       }

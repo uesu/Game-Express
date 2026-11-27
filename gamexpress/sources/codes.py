@@ -14,6 +14,10 @@
   codehub       PromoGacha's GitHub-hosted data/codes.json — an AGGREGATOR of seria + the wikis
                 that never deletes entries: each hit counts as its upstream (CodeHit.origin)
   wuthering.gg  https://wuthering.gg/codes  (HTML table; marks expired codes explicitly)
+  crimsonwitch  https://www.crimsonwitch.com/codes/{Genshin_Impact|Honkai_Star_Rail|Zenless_Zone_Zero}
+                (HTML page, Next.js server-rendered: the RSC stream carries a structured
+                `initialCodes` array — code, added, expires, rewards[{item,qty}], region_locked.
+                Verified 2026-11-27; see docs/RESEARCH_NEW_GAMES.md for the probe evidence)
   x             official tweets (codes are extracted only with explicit code wording)
 
 Every parser also reports codes a source explicitly marks EXPIRED (seria NOT_OK, ennead
@@ -26,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import calendar
+import json
 import logging
 import re
 import time
@@ -42,6 +47,7 @@ OGC = "https://api.ennead.cc/codes/{}"
 FANDOM = ("https://{wiki}.fandom.com/api.php?action=query&prop=revisions&titles={page}"
           "&rvprop=content&rvslots=main&format=json")
 WUTHERING_GG = "https://wuthering.gg/codes"
+CRIMSONWITCH = "https://www.crimsonwitch.com/codes/{}"
 # GitHub-hosted data: raw.githubusercontent.com first, jsDelivr's GitHub mirror as the fallback
 CODEHUB = ("gripcrip-blip/codehub", "main", "data/codes.json")
 HUMBAO = ("Hum-Bao/hoyoverse-codes", "main", "{}.txt")
@@ -467,6 +473,112 @@ def parse_wuthering_gg(html: str) -> list[CodeHit]:
     return hits
 
 
+# ----------------------------------------------------------------- crimsonwitch (Next.js RSC)
+# The codes page is a Next.js App Router page: the client component's props are streamed as
+# `self.__next_f.push([1, "<js string>"])` chunks, and the decoded text carries
+#   {"initialCodes":[{"id":186,"code":"AZHGG7H2ZQZS","code_variants":null,
+#                     "added":"2026-11-25T06:37:20+00:00","start_date":null,
+#                     "expires":null,"rewards":[{"item":"Mora","qty":10000}],
+#                     "region_locked":null}, …]}
+# So the codes are server-rendered (no JavaScript needed) and the rewards are itemised — better
+# than any other source here. The parse deliberately depends on `initialCodes` only: the page's
+# CSS-module class names and its navigation are rebuild noise, the payload is the data.
+_RSC_PUSH = re.compile(r'self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)', re.S)
+
+
+def _rsc_text(html: str) -> str:
+    """Every `self.__next_f.push([1, "…"])` payload of a Next.js page, decoded and concatenated."""
+    parts = []
+    for m in _RSC_PUSH.finditer(html or ""):
+        try:
+            parts.append(json.loads(m.group(1)))
+        except (ValueError, TypeError):
+            continue
+    return "".join(parts)
+
+
+def _json_array_after(text: str, key: str):
+    """The JSON array that follows `"<key>":[` in `text`, or None (string-aware bracket match)."""
+    marker = f'"{key}":['
+    i = text.find(marker)
+    if i < 0:
+        return None
+    start = i + len(marker) - 1
+    depth, in_str, esc = 0, False, False
+    for j in range(start, len(text)):
+        ch = text[j]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start:j + 1])
+                except ValueError:
+                    return None
+    return None
+
+
+def _cw_rewards(rewards) -> list[str] | None:
+    """[{"item":"Mora","qty":10000}, …] -> ["Mora ×10000", …] (quantity-less items kept as-is)."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for r in rewards if isinstance(rewards, list) else []:
+        if not isinstance(r, dict):
+            continue
+        item = re.sub(r"\s+", " ", str(r.get("item") or "")).strip()
+        qty = r.get("qty")
+        if not item:
+            continue
+        if isinstance(qty, int) and not isinstance(qty, bool) and qty > 0:
+            text = f"{item} ×{qty:,}"
+        else:
+            text = item
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+    return out or None
+
+
+def parse_crimsonwitch(html: str, now: float | None = None) -> list[CodeHit]:
+    """Crimson Witch codes page -> hits (active first, expired ones marked, never guessed).
+
+    The page lists exactly the codes it believes are live: an entry whose `expires` has passed is
+    marked expired (the code gate then needs an official source or a validator to post it), and a
+    REGION-LOCKED entry — one this monitor cannot redeem on the global server — is skipped.
+    Values the payload does not carry (no `expires`) stay `None`: an absent date is not a date.
+    """
+    codes = _json_array_after(_rsc_text(html), "initialCodes")
+    hits: list[CodeHit] = []
+    seen: set[str] = set()
+    for c in codes if isinstance(codes, list) else []:
+        if not isinstance(c, dict):
+            continue
+        code = sanitize(c.get("code") or "")
+        if not code or code in seen:
+            continue
+        region = str(c.get("region_locked") or "").strip().lower()
+        if region and region not in ("global", "all", "everywhere"):
+            continue
+        seen.add(code)
+        expired, expires_at = parse_expiry(str(c.get("expires") or ""), now)
+        hits.append(CodeHit(code, "crimsonwitch", _cw_rewards(c.get("rewards")),
+                            expired=expired, expires_at=expires_at))
+    return hits
+
+
 _CODE_CONTEXT = re.compile(r"(?:redemption|redeem|promo|gift|exchange)\s*codes?|\bcodes?\s*[:：]|\bcode\s*>>", re.I)
 _TOKEN = re.compile(r"(?<![#@/\w.])([A-Z0-9]{6,20})(?![\w/.])")
 _STOP = {
@@ -562,6 +674,10 @@ class CodeSources:
         if kind == "codehub":
             d = await self._once("codehub", lambda: self._github_raw(CODEHUB, source="codes:codehub", as_json=True))
             return parse_codehub(d, arg) if d is not None else None
+        if kind == "crimsonwitch":
+            t = await f.get_text(CRIMSONWITCH.format(arg), source="codes:crimsonwitch", retries=1,
+                                 headers={"Accept": "text/html,application/xhtml+xml"})
+            return parse_crimsonwitch(t) if t is not None else None
         if kind == "wuthering.gg":
             t = await f.get_text(WUTHERING_GG, source="codes:wuthering.gg", retries=1,
                                  headers={"Accept": "text/html,application/xhtml+xml"})
