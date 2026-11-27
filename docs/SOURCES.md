@@ -501,7 +501,7 @@ observation cannot prove freshness, uptime, complete pagination, or successful r
   observed `publish_date` is day-only: converting it to midnight then using the existing
   timestamp floor risks silently skipping same-day additions. Determine timezone, publication
   precision and an ID-aware safe baseline before implementing. Body markup/media fidelity and
-  reachability through the production Fetcher remain unverified. Fixed-URL runner structural checks
+  safe delivery remain unverified. Fixed-URL runner structural checks
   passed for two pages and one detail in [run 45961114831](https://github.com/uesu/Game-Express/actions/runs/45961114831);
   this confirms neither ongoing availability nor completeness, nor the timestamp semantics.
   `sources/silverpalace.py` is an **unregistered listing and detail prototype**. It makes two bounded
@@ -510,7 +510,10 @@ observation cannot prove freshness, uptime, complete pagination, or successful r
   do not prove an atomic upstream snapshot. The detail experiment checks matching ID, title and
   day, requires the observed exact cover host, and passes content to the existing block parser;
   it does not verify body fidelity, validate embedded media or redirects, produce article links,
-  post to Discord, or integrate with the runner. An independent, unregistered
+  post to Discord, or integrate with the runner. In [run 45983530944](https://github.com/uesu/Game-Express/actions/runs/45983530944),
+  the production Fetcher completed two walks (21 rows) and parsed matching detail 120 (one
+  block); that is a single structural observation, not article fidelity or delivery proof.
+  An independent, unregistered
   `day_news_candidate.py` tests a possible ID-based silent baseline and retry queue without
   converting date-only values into timestamps. It queues newly observed IDs even when their
   displayed dates are old, retains pending items if they disappear, fails closed at a fixed ID
