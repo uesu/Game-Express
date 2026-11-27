@@ -7890,6 +7890,27 @@ def test_news_media_preflight_status_signature_redirect_and_query_preservation()
     asyncio.run(run())
 
 
+def test_silver_palace_exact_cdn_media_preflight_keeps_host_and_signature_guards():
+    from gamexpress.http import Fetcher
+
+    async def run():
+        url = "https://s.elementagames.com/official/image/example.jpg"
+        session = _NewsGifMimeSession(_NewsGifMimeResponse(b"\xff\xd8\xff" + bytes(80), "image/jpeg"))
+        assert await Fetcher(session).verify_media(url)
+        assert session.calls[0][1]["allow_redirects"] is False
+        assert not await Fetcher(_NewsGifMimeSession(_NewsGifMimeResponse(b"bad", "image/jpeg"))).verify_media(url)
+        for bad in ("http://s.elementagames.com/a.jpg", "https://elementagames.com/a.jpg",
+                    "https://other.elementagames.com/a.jpg", "https://sub.s.elementagames.com/a.jpg",
+                    "https://s.elementagames.com.evil.test/a.jpg", "https://u@s.elementagames.com/a.jpg",
+                    "https://s.elementagames.com:444/a.jpg"):
+            session = _NewsGifMimeSession()
+            assert not await Fetcher(session).verify_media(bad) and not session.calls
+        session = _NewsGifMimeSession(_NewsGifMimeResponse(status=302, extra={"Location": "http://127.0.0.1/x"}))
+        assert not await Fetcher(session).verify_media(url) and len(session.calls) == 1
+
+    asyncio.run(run())
+
+
 def test_nte_exact_cdn_media_preflight_keeps_host_and_signature_guards():
     from gamexpress.http import Fetcher
 

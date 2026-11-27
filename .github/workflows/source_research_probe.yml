@@ -6,7 +6,7 @@ on:
       scope:
         description: Research scope
         type: choice
-        options: [all, endfield-card, feature3-prepare, feature3-post, video-research, video-followup]
+        options: [all, endfield-card, feature3-prepare, feature3-post, video-research, video-followup, feature3-expanded-prepare, feature3-expanded-post]
         default: all
 
 permissions:
@@ -223,3 +223,46 @@ jobs:
         run: python tools/video_archive_research.py --self-test
       - name: Check two fixed flagged articles
         run: python tools/video_archive_research.py --nte-hint-check
+
+  feature3-expanded-prepare:
+    if: ${{ inputs.scope == 'feature3-expanded-prepare' }}
+    name: Prepare expanded Feature 3 cards (no posting)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline expanded card checks
+        run: python tools/feature3_expanded_test.py --self-test
+      - name: Prepare full fixed articles without posting
+        env:
+          NEWS_EXPAND_FULL: '1'
+        run: python tools/feature3_expanded_test.py --prepare-only
+
+  feature3-expanded-post:
+    if: ${{ inputs.scope == 'feature3-expanded-post' }}
+    name: Send expanded Feature 3 cards to private test webhook
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline expanded card checks
+        run: python tools/feature3_expanded_test.py --self-test
+      - name: Send full fixed articles to dedicated private webhook
+        env:
+          NEWS_EXPAND_FULL: '1'
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/feature3_expanded_test.py
