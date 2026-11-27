@@ -146,7 +146,13 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def probe(target: str | None = None, *, require_html: bool = False) -> int:
+def print_result(message: str, annotations: bool) -> None:
+    # Only the probe's fixed labels, numbers and structural tokens reach annotations.
+    safe = re.sub(r"[^A-Za-z0-9 _=./():;>,+-]", "?", message)[:250]
+    print(f"::notice title=Source research::{safe}" if annotations else safe)
+
+
+def probe(target: str | None = None, *, require_html: bool = False, annotations: bool = False) -> int:
     opener = urllib.request.build_opener(NoRedirect())
     failures = 0
     for name, url, kind in TARGETS:
@@ -157,21 +163,21 @@ def probe(target: str | None = None, *, require_html: bool = False) -> int:
             with opener.open(request, timeout=TIMEOUT) as response:
                 body = response.read(LIMIT + 1)
                 if len(body) > LIMIT:
-                    print(f"{name}: response-too-large (>{LIMIT} bytes)")
+                    print_result(f"{name}: response-too-large (>{LIMIT} bytes)", annotations)
                     failures += 1
                     continue
                 description = describe(kind, body)
-                print(f"{name}: http={response.status} bytes={len(body)} {description}")
+                print_result(f"{name}: http={response.status} bytes={len(body)} {description}", annotations)
                 if target and not structurally_valid(kind, description, require_html):
                     failures += 1
         except urllib.error.HTTPError as exc:
             # Do not follow redirects or print attacker-controlled headers or bodies.
-            print(f"{name}: http={exc.code} (redirects not followed)")
+            print_result(f"{name}: http={exc.code} (redirects not followed)", annotations)
             failures += 1
         except (OSError, ValueError) as exc:
-            print(f"{name}: request-failed ({type(exc).__name__})")
+            print_result(f"{name}: request-failed ({type(exc).__name__})", annotations)
             failures += 1
-    print(f"HTTP/request failures={failures}; structural reports require human review; empty is not proof of health.")
+    print_result(f"HTTP/request failures={failures}; structural reports require human review; empty is not proof of health.", annotations)
     return 1 if failures else 0
 
 
@@ -246,12 +252,14 @@ class ProbeTests(unittest.TestCase):
 if __name__ == "__main__":
     if sys.argv[1:] == ["--self-test"]:
         unittest.main(argv=[sys.argv[0]])
+    elif sys.argv[1:] == ["--annotations"]:
+        raise SystemExit(probe(annotations=True))
     elif len(sys.argv) in (3, 4) and sys.argv[1] == "--target":
         names = {name for name, _, _ in TARGETS}
         if sys.argv[2] not in names or (len(sys.argv) == 4 and sys.argv[3] != "--require-html"):
             raise SystemExit("Unknown fixed target or option")
         raise SystemExit(probe(sys.argv[2], require_html=len(sys.argv) == 4))
     elif sys.argv[1:]:
-        raise SystemExit("Usage: python tools/source_research_probe.py [--self-test | --target NAME [--require-html]]")
+        raise SystemExit("Usage: python tools/source_research_probe.py [--self-test | --annotations | --target NAME [--require-html]]")
     else:
         raise SystemExit(probe())
