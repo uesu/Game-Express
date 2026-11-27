@@ -461,6 +461,15 @@ writer holds and a normal state commit can rebase over the separate ledger witho
 The file is not provisioned or protected by production sync yet; this is not GitHub or failover
 validation, and the release gate remains closed.
 
+Silver Palace article 7 exposed a duplicated lead image: the cover and first body image had
+different URLs but were byte-identical 1626×500 JPEGs. Its separate 800×444 `banner_img` is the
+listing artwork, not the missing article image ([read-only comparison](https://github.com/uesu/Game-Express/actions/runs/46036322461)).
+The candidate renderer now compares complete, bounded official-host image responses and drops only
+a cover proven byte-identical to the first body image, retaining body order. On comparison failure
+or distinct content it keeps both; this is not perceptual deduplication. The corrected
+[private card](https://github.com/uesu/Game-Express/actions/runs/46036854435) sent exactly once
+with one body image and unchanged production state; the test is locked against reruns.
+
 - [Crimson Witch](https://www.crimsonwitch.com/codes): its Genshin, Star Rail and ZZZ pages
   displayed active code/reward sections and links to RSS feeds (`/feeds/genshin/rss.xml`,
   `/feeds/star%20rail/rss.xml`, `/feeds/zzz/rss.xml`). A page fetch of the Star Rail feed failed;

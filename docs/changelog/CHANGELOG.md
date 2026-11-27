@@ -12,6 +12,9 @@
   reconciliation primitives and local stale-writer/crash tests; production recovery is still gated.
   An unwired detached-worktree ledger prototype isolates candidate Git writes from monitor state,
   but its production provisioning, GitHub behavior and cross-instance operation are unverified.
+- Corrected candidate Silver Palace duplicate lead artwork only when a bounded official-host byte
+  comparison proves the cover equals the first body image. Other media remain unchanged; the
+  corrected article 7 card was tested once privately and the test was locked against reruns.
 - Candidate YouTube fallback prefers verified maximum-resolution thumbnails without overriding
   native media. Private card tests and read-only source observations are recorded in the source
   research notes; same-day publication order remains unproven for day-only feeds.

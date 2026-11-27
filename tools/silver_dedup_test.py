@@ -17,7 +17,8 @@ from gamexpress.config import load_settings  # noqa: E402
 from gamexpress.http import Fetcher  # noqa: E402
 
 BODY = "https://s.elementagames.com/official/image/20251218/e4a8b3d37c628be4e73294c8469e73d6.jpg"
-PRIVATE_TEST_COMPLETED = False
+# Run 46036854435 confirmed the one corrected card. Do not send it again.
+PRIVATE_TEST_COMPLETED = True
 
 
 async def prepare(fetcher):
