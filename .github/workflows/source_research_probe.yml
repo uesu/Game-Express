@@ -6,7 +6,7 @@ on:
       scope:
         description: Research scope
         type: choice
-        options: [all, endfield-card, feature3-prepare, feature3-post, video-research, video-followup, feature3-expanded-prepare, feature3-expanded-post, nte-thumbnail-post, candidate-pipeline, candidate-private-prepare, candidate-private-post, silver-image-research, silver-dedup-private, candidate-git-remote]
+        options: [all, endfield-card, feature3-prepare, feature3-post, video-research, video-followup, feature3-expanded-prepare, feature3-expanded-post, nte-thumbnail-post, candidate-pipeline, candidate-private-prepare, candidate-private-post, silver-image-research, silver-dedup-private]
         default: all
 
 permissions:
@@ -377,25 +377,3 @@ jobs:
         env:
           FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
         run: python tools/silver_dedup_test.py
-
-  candidate-git-remote:
-    if: ${{ github.repository == 'uesu/Game-Express' && github.ref_name == 'arena/98b5f4e1-game-express' && inputs.scope == 'candidate-git-remote' }}
-    name: Test development-branch Git checkpoint (no Discord)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    concurrency:
-      group: candidate-development-git-probe
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.ref_name }}
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: '3.15.2'
-      - name: Install dependencies
-        run: python -m pip install -q -r requirements.txt
-      - name: Check remote ledger with simulated messages only
-        run: python tools/candidate_git_remote_probe.py
