@@ -32,7 +32,10 @@ TARGETS = (
     ("endfield-cms-list", "https://web-news.gryphline.com/api/bulletin?lang=en-us&code=arknights_endfield_official&page=1&pageSize=20", "endfield-list"),
     ("endfield-cms-page-2", "https://web-news.gryphline.com/api/bulletin?lang=en-us&code=arknights_endfield_official&page=2&pageSize=20", "endfield-list"),
     ("endfield-cms-detail", "https://web-news.gryphline.com/api/bulletin/7011?lang=en-us&code=arknights_endfield_official", "endfield-detail"),
+    ("endfield-update-notice", "https://web-news.gryphline.com/api/bulletin/3835?lang=en-us&code=arknights_endfield_official", "endfield-detail"),
     ("news-nte", "https://nte.perfectworld.com/en/article/news/index.html", "html"),
+    ("news-nte-page-2", "https://nte.perfectworld.com/en/article/news/index1.html", "html"),
+    ("news-nte-patch-notes", "https://nte.perfectworld.com/en/article/news/gamenews/20261109/264948.html", "html"),
     ("news-silver", "https://silverpalace.elementagames.com/en-us/news", "html"),
     ("silver-list", "https://silverpalace.elementagames.com/server/index.php/home/news_list?lang=en-us&page=1", "silver-list"),
     ("silver-page-2", "https://silverpalace.elementagames.com/server/index.php/home/news_list?lang=en-us&page=2", "silver-list"),
@@ -75,7 +78,9 @@ def describe(kind: str, body: bytes) -> str:
             if kind == "silver-detail":
                 fields = ("id", "title", "publish_date", "cover", "content")
                 present = sum(key in data for key in fields)
-                return f"expected-detail-fields={present}/{len(fields)}"
+                body_field = data.get("content" if kind == "silver-detail" else "data")
+                body_shape = "html" if isinstance(body_field, str) and "<" in body_field and ">" in body_field else "other"
+                return f"expected-detail-fields={present}/{len(fields)} body-shape={body_shape}"
             rows = data.get("list")
             if not isinstance(rows, list):
                 return "unexpected-list-shape"
@@ -93,7 +98,9 @@ def describe(kind: str, body: bytes) -> str:
             if kind == "endfield-detail":
                 fields = ("cid", "title", "displayTime", "cover", "data")
                 present = sum(key in data for key in fields)
-                return f"expected-detail-fields={present}/{len(fields)}"
+                body_field = data.get("content" if kind == "silver-detail" else "data")
+                body_shape = "html" if isinstance(body_field, str) and "<" in body_field and ">" in body_field else "other"
+                return f"expected-detail-fields={present}/{len(fields)} body-shape={body_shape}"
             rows = data.get("list")
             if not isinstance(rows, list):
                 return "unexpected-list-shape"
@@ -183,7 +190,7 @@ class ProbeTests(unittest.TestCase):
                          "unexpected-list-shape")
         self.assertEqual(describe("endfield-detail", b'{"code":0,"data":{"cid":"0740",'
                              b'"title":"x","displayTime":123,"cover":"url","data":"body"}}'),
-                         "expected-detail-fields=5/5")
+                         "expected-detail-fields=5/5 body-shape=other")
 
     def test_silver_cms_shapes(self):
         payload = {"code": 0, "data": {"list": [
@@ -198,7 +205,7 @@ class ProbeTests(unittest.TestCase):
                          "unexpected-list-shape")
         self.assertEqual(describe("silver-detail", b'{"code":0,"data":{"id":"120",'
                              b'"title":"x","publish_date":"2026-10-09","cover":"url","content":"body"}}'),
-                         "expected-detail-fields=5/5")
+                         "expected-detail-fields=5/5 body-shape=other")
 
     def test_rss_and_html(self):
         self.assertEqual(describe("rss", b'<rss><channel><item/></channel></rss>'), "rss-items=1 atom-entries=0")
