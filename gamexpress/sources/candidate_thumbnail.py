@@ -24,13 +24,27 @@ def fallback_url(item):
         watch = _youtube_watch_url(block.get("url", ""))
         if watch:
             video_id = parse_qs(urlsplit(watch).query)["v"][0]
-            return f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+            return f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg"
     return None
 
 
 async def with_verified_fallback(fetcher, item):
     """Copy the item only when a thumbnail passes preflight; never mutate the original."""
-    url = fallback_url(item)
-    if url and await fetcher.verify_media(url):
-        return replace(item, images=[url])
+    max_url = fallback_url(item)
+    if not max_url:
+        return item
+    # YouTube may return a tiny 120x90 placeholder with HTTP 200 when a size
+    # does not exist. Check actual dimensions before trusting max/SD variants;
+    # portrait thumbnails are accepted too. The regular signature/MIME check
+    # is still required. Bounded requests only, with the existing host policy.
+    for suffix, minimum in (("maxresdefault.jpg", (1280, 720)),
+                            ("sddefault.jpg", (640, 360)),
+                            ("hqdefault.jpg", None)):
+        url = max_url.rsplit("/", 1)[0] + "/" + suffix
+        if minimum is not None:
+            dims = await fetcher.media_dimensions(url)
+            if not dims or max(dims) < minimum[0] or min(dims) < minimum[1]:
+                continue
+        if await fetcher.verify_media(url):
+            return replace(item, images=[url])
     return item

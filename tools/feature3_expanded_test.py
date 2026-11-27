@@ -78,6 +78,8 @@ async def prepare(fetcher, settings):
     nte = await with_verified_fallback(fetcher, nte)
     if not nte.images:
         raise ValueError("YouTube thumbnail could not be preflighted")
+    selected_size = nte.images[0].rsplit("/", 1)[-1]
+    print(f"::notice title=YouTube thumbnail::nte-252469 selected={selected_size}", flush=True)
     entries = [("nte-252469", nte_game, nte)]
 
     end_game = Game(key="endfield", name="Arknights: Endfield", short="Endfield", enabled=False, color=14922399)
@@ -110,6 +112,9 @@ async def prepare(fetcher, settings):
 
     posts = []
     for label, game, item in entries:
+        default = news_payloads(game, item, expand_full=False)
+        if not default or any(validate_payload(p) for p in default):
+            raise ValueError("default card invalid")
         payloads = news_payloads(game, item, expand_full=settings.news_expand_full,
                                  max_pages=settings.news_expand_max_pages, max_chars=settings.news_expand_max_chars,
                                  max_media=settings.news_expand_max_media)
@@ -123,7 +128,10 @@ async def prepare(fetcher, settings):
         gif_count = sum(url.lower().split("?", 1)[0].endswith(".gif") for url in media)
         print(f"::notice title=Expanded test article::{label} pages={len(payloads)} "
               f"body-images={len(media)} gifs={gif_count} media={len(rendered_images(payloads))} "
-              "excerpt=0 preflight=pass", flush=True)
+              f"excerpt=0 preflight=pass default-pages={len(default)} "
+              f"default-media={len(rendered_images(default))} "
+              f"default-body-images-in-order={int(preserves_body_images(item, default))} "
+              f"default-excerpt={int(excerpted(default))}", flush=True)
         posts.extend((label, payload) for payload in payloads)
     if not 1 <= len(posts) <= MAX_POSTS:
         raise ValueError("expanded message count outside test bound")

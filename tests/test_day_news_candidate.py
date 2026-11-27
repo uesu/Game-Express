@@ -33,6 +33,24 @@ class DayNewsCandidateTests(unittest.TestCase):
         self.assertEqual(updated["known"], ["01", "2", "3"])
         self.assertNotIn("ts", updated["pending"][0])
 
+    def test_explicit_initial_backfill_queues_every_id_oldest_day_first_and_resumes(self):
+        snapshot = [row("30", "2026-11-03"), row("9", "2026-11-01"),
+                    row("02", "2026-11-01"), row("1", "2026-10-31")]
+        initial = copy.deepcopy(snapshot)
+        state = daynews.plan(None, snapshot, route=ROUTE, bootstrap_backfill=True)
+        self.assertEqual(snapshot, initial)
+        self.assertEqual([r["id"] for r in state["pending"]], ["1", "02", "9", "30"])
+        self.assertEqual(set(state["known"]), {"1", "02", "9", "30"})
+        state = daynews.confirm_delivered(state, "1", route=ROUTE)
+        resumed = daynews.plan(state, snapshot, route=ROUTE, bootstrap_backfill=True)
+        self.assertEqual([r["id"] for r in resumed["pending"]], ["02", "9", "30"])
+        before = copy.deepcopy(resumed)
+        with self.assertRaises(daynews.InvalidSnapshot):
+            daynews.plan(resumed, None, route=ROUTE, bootstrap_backfill=True)
+        self.assertEqual(resumed, before)
+        with self.assertRaises(daynews.InvalidSnapshot):
+            daynews.plan(None, snapshot, route=ROUTE, bootstrap_backfill="1")
+
     def test_pending_survives_disappearance_restart_and_unavailable_snapshot(self):
         state = daynews.plan(None, [row("1")], route=ROUTE)
         state = daynews.plan(state, [row("1"), row("2", "2026-11-01")], route=ROUTE)

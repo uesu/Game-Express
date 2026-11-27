@@ -17,11 +17,16 @@ from gamexpress.sources.candidate_thumbnail import fallback_url, with_verified_f
 
 
 class Fetcher:
-    def __init__(self, ok=True):
+    def __init__(self, ok=True, sizes=None):
         self.ok, self.calls = ok, []
+        self.sizes = sizes if sizes is not None else {"maxresdefault.jpg": (1280, 720)}
+
+    async def media_dimensions(self, url):
+        self.calls.append(("dimensions", url))
+        return self.sizes.get(url.rsplit("/", 1)[-1])
 
     async def verify_media(self, url):
-        self.calls.append(url)
+        self.calls.append(("verify", url))
         return self.ok
 
 
@@ -38,8 +43,8 @@ class CandidateThumbnailTests(unittest.TestCase):
         before = deepcopy(original)
         fetcher = Fetcher()
         result = asyncio.run(with_verified_fallback(fetcher, original))
-        url = "https://i.ytimg.com/vi/tdZN6H1N3PU/hqdefault.jpg"
-        self.assertEqual(fetcher.calls, [url])
+        url = "https://i.ytimg.com/vi/tdZN6H1N3PU/maxresdefault.jpg"
+        self.assertEqual(fetcher.calls, [("dimensions", url), ("verify", url)])
         self.assertEqual(result.images, [url])
         self.assertEqual(original, before)
         game = Game(key="nte", name="NTE", short="NTE", enabled=False, color=0)
@@ -77,7 +82,21 @@ class CandidateThumbnailTests(unittest.TestCase):
         f = Fetcher(False)
         self.assertIs(asyncio.run(with_verified_fallback(f, failed)), failed)
         self.assertEqual(failed.images, [])
-        self.assertEqual(len(f.calls), 1)
+        self.assertEqual(len(f.calls), 4)
+
+    def test_missing_or_placeholder_maxres_uses_best_verified_fallback(self):
+        original = item()
+        f = Fetcher(sizes={"maxresdefault.jpg": (120, 90), "sddefault.jpg": (640, 480)})
+        result = asyncio.run(with_verified_fallback(f, original))
+        self.assertTrue(result.images[0].endswith("/sddefault.jpg"))
+        self.assertEqual([x[0] for x in f.calls], ["dimensions", "dimensions", "verify"])
+        f = Fetcher(sizes={})
+        result = asyncio.run(with_verified_fallback(f, original))
+        self.assertTrue(result.images[0].endswith("/hqdefault.jpg"))
+        self.assertEqual([x[0] for x in f.calls], ["dimensions", "dimensions", "verify"])
+        f = Fetcher(sizes={"maxresdefault.jpg": (720, 1280)})
+        result = asyncio.run(with_verified_fallback(f, original))
+        self.assertTrue(result.images[0].endswith("/maxresdefault.jpg"))
 
 
 if __name__ == "__main__":

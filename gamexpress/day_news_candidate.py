@@ -59,13 +59,16 @@ def _validate_state(state, route):
     return {"version": 1, "route": route, "known": list(known), "pending": clean_pending}
 
 
-def plan(state, snapshot, *, route):
+def plan(state, snapshot, *, route, bootstrap_backfill=False):
     """Plan baseline/discovery without mutating input; ``None`` snapshot fails closed.
 
-    Initial complete snapshot is silently remembered. Later newly observed IDs are
-    queued regardless of day, including backdated articles. Pending rows survive
-    subsequent source failures or disappearance. The caller must explicitly decide
-    whether this no-day-cutoff policy is acceptable before any production wiring.
+    Default remains a silent baseline. Explicit backfill instead queues the entire
+    initial snapshot in ascending displayed day, with an ID tie-breaker (not a
+    claim of time-of-day order). Caller must persist pending before any send,
+    stop on failure, and reconcile partial/ambiguous deliveries before advancing.
+    Later newly observed IDs are queued regardless of day, including backdated
+    articles. Pending survives source failures or disappearance. This is not
+    production wiring or proof of a complete, atomic source snapshot.
     """
     if not isinstance(route, str) or not _ROUTE.fullmatch(route):
         raise InvalidSnapshot("destination fingerprint required")
@@ -75,8 +78,11 @@ def plan(state, snapshot, *, route):
     ids = [row["id"] for row in rows]
     if len(ids) != len(set(ids)):
         raise InvalidSnapshot("duplicate snapshot IDs")
+    if type(bootstrap_backfill) is not bool:
+        raise InvalidSnapshot("invalid backfill setting")
     if state is None:
-        return {"version": 1, "route": route, "known": ids, "pending": []}
+        pending = sorted(rows, key=lambda row: (row["date"], int(row["id"]), row["id"])) if bootstrap_backfill else []
+        return {"version": 1, "route": route, "known": ids, "pending": pending}
     next_state = _validate_state(state, route)
     known = set(next_state["known"])
     new = [row for row in rows if row["id"] not in known]
