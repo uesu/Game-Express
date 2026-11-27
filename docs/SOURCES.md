@@ -523,15 +523,22 @@ secrets for these three games and no new game entries in the feature selection v
 schedule mirror is optional; the primary schedule webhook is shared. Do not change secrets or
 production switches until reviewed and configured by the operator.
 
-The manual `Source research probe (manual, read-only)` workflow runs
-`python tools/source_research_probe.py`; `--self-test` is offline. It requests fixed public URLs,
-reports bounded structural counts (not raw content), follows no redirects, uses no secrets, and
-never touches Discord or state. It is a **reconnaissance** tool, not a parser, correctness test,
+The manual `Source research probe (manual, read-only)` workflow runs fixed target groups from
+`tools/source_research_probe.py` and `tools/live_candidate_probe.py`; `--self-test` is offline.
+They request fixed public URLs, report bounded structural counts (not raw content), follow no
+redirects, use no secrets, and never touch Discord or state. The limited Reddit fleet and Endfield
+prototype run through existing reader code; they are not representative of authenticated or
+redirect-following production traffic. It is a **reconnaissance** tool, not a parser, correctness test,
 continuous monitor, or proof that any source is ready. HTTP failures fail the job; malformed
 shapes and empty lists are printed for human review, not silently accepted as validated data.
 GitHub only registers a new `workflow_dispatch` workflow after the workflow file exists on the
 default branch; after that, select the intended branch when dispatching. A successful dispatch
-is not evidence the probe ran or that a future run will succeed.
+is not evidence the probe ran or that a future run will succeed. In
+[runner 45964838716](https://github.com/uesu/Game-Express/actions/runs/45964838716) three fixed
+observed image URLs, one per game, returned HTTP 200 with recognized image signatures, but the
+Endfield prototype's actual rendered payload failed existing production media preflight. No Discord
+rendering was tested. Required CI passed; the temporary research job failed because three Crimson
+Witch RSS endpoints returned 404, and its separate steps continued to completion.
 
 ## Evaluated but not integrated (and why)
 

@@ -4,7 +4,8 @@
 
 - Prototype an **unregistered** Endfield official-news reader with bounded all-or-nothing
   pagination, safe IDs and matching details; existing games and routing remain unchanged. Record
-  read-only GitHub runner probes and official maintenance notice evidence. This is not a complete
+  read-only GitHub runner probes, direct image and legacy Reddit fallback results, and official
+  maintenance notice evidence. Image preflight remains a blocker. This is not a complete
   new-game integration.
 
 - Documented Crimson Witch's upstream overlap with Ennead, Hoyocodes' use of Ennead,
