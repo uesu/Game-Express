@@ -455,7 +455,11 @@ max-resolution test was not repeated. Automated reconciliation tests now hold am
 verify a human-reviewed resolution against the exact article, page, route and payload signature.
 An `absent` decision requires independently established non-delivery, not merely an unknown outcome;
 the corrected record must be durably checkpointed before resuming. An operator-facing workflow and
-production-grade recovery procedure remain unfinished.
+production-grade recovery procedure remain unfinished. A second, **unwired** checkpoint prototype
+uses a separate tracked candidate ledger in a detached worktree. Local bare-Git tests show a stale
+writer holds and a normal state commit can rebase over the separate ledger without changing it.
+The file is not provisioned or protected by production sync yet; this is not GitHub or failover
+validation, and the release gate remains closed.
 
 - [Crimson Witch](https://www.crimsonwitch.com/codes): its Genshin, Star Rail and ZZZ pages
   displayed active code/reward sections and links to RSS feeds (`/feeds/genshin/rss.xml`,

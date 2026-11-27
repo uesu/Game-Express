@@ -94,3 +94,138 @@ class GitCheckpoint:
 
     async def __call__(self, snapshot):
         return await asyncio.to_thread(self._save, snapshot)
+
+
+class IsolatedGitLedger:
+    """Experimental separate-file ledger in a disposable detached worktree.
+
+    It never modifies the monitor checkout/index/HEAD; failed or ambiguous pushes
+    poison the instance. A pre-existing, tracked ledger is mandatory: silently
+    recreating a lost ledger could replay an entire backlog. This prototype is
+    deliberately NOT wired to the released monitor.
+    """
+
+    LEDGER = "state/candidate_news.json"
+
+    def __init__(self, root: Path, branch: str):
+        self.root = root.resolve()
+        self.branch = branch
+        self.worktree = None
+        self._temp = None
+        self.data = None
+        self.poisoned = False
+
+    def _git(self, root, *args):
+        return subprocess.run(["git", *args], cwd=root, stdin=subprocess.DEVNULL,
+                              capture_output=True, timeout=30, check=False)
+
+    def _remote(self):
+        result = self._git(self.root, "ls-remote", "--heads", "origin", f"refs/heads/{self.branch}")
+        lines = result.stdout.splitlines()
+        if result.returncode or len(lines) != 1:
+            return None
+        parts = lines[0].split()
+        return parts[0] if len(parts) == 2 and parts[1] == f"refs/heads/{self.branch}".encode() else None
+
+    def _head(self, root):
+        result = self._git(root, "rev-parse", "--verify", "HEAD")
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    def _parse(self, content):
+        value = json.loads(content)
+        if not isinstance(value, dict) or set(value) != {"schema", "candidate_news"} or type(value["schema"]) is not int or value["schema"] != 1:
+            raise ValueError("invalid candidate ledger")
+        records = value["candidate_news"]
+        if not isinstance(records, dict) or not set(records) <= SOURCES:
+            raise ValueError("invalid candidate ledger")
+        for source, record in records.items():
+            _validate(record, source, record.get("route") if isinstance(record, dict) else None)
+        return value
+
+    def _open(self):
+        import tempfile
+
+        try:
+            if not isinstance(self.branch, str) or not self.branch:
+                return False
+            current = self._git(self.root, "symbolic-ref", "--quiet", "--short", "HEAD")
+            if (current.returncode or current.stdout.strip() != self.branch.encode()
+                    or self._git(self.root, "check-ref-format", "--branch", self.branch).returncode):
+                return False
+            head = self._head(self.root)
+            if not head or self._remote() != head:
+                return False
+            tree = self._git(self.root, "ls-tree", "HEAD", "--", self.LEDGER)
+            if tree.returncode or not tree.stdout.startswith(b"100644 blob "):
+                return False
+            blob = self._git(self.root, "show", f"HEAD:{self.LEDGER}")
+            if blob.returncode:
+                return False
+            self.data = self._parse(blob.stdout)
+            self._temp = tempfile.TemporaryDirectory(prefix="candidate-ledger-")
+            self.worktree = Path(self._temp.name) / "worktree"
+            added = self._git(self.root, "worktree", "add", "--detach", "--quiet", str(self.worktree), "HEAD")
+            return added.returncode == 0
+        except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+            return False
+
+    def _save(self, source, snapshot):
+        try:
+            if self.poisoned or self.worktree is None or self.data is None or source not in SOURCES:
+                return False
+            _validate(snapshot, source, snapshot.get("route") if isinstance(snapshot, dict) else None)
+            head = self._head(self.worktree)
+            if not head or self._remote() != head:
+                return False
+            blob = self._git(self.worktree, "show", f"HEAD:{self.LEDGER}")
+            if blob.returncode or self._parse(blob.stdout) != self.data:
+                return False
+            new = copy.deepcopy(self.data)
+            new["candidate_news"][source] = copy.deepcopy(snapshot)
+            path = self.worktree / self.LEDGER
+            path.write_text(json.dumps(new, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+            if self._git(self.worktree, "add", "--", self.LEDGER).returncode:
+                return False
+            staged = self._git(self.worktree, "diff", "--cached", "--name-only", "-z")
+            if staged.returncode or set(filter(None, staged.stdout.split(b"\0"))) - {self.LEDGER.encode()}:
+                return False
+            if staged.stdout:
+                commit = self._git(self.worktree, "-c", "user.name=github-actions[bot]",
+                                   "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
+                                   "commit", "-m", "auto: checkpoint candidate news [skip ci]")
+                if commit.returncode:
+                    return False
+                if self._git(self.worktree, "push", "origin", f"HEAD:refs/heads/{self.branch}").returncode:
+                    return False
+            head = self._head(self.worktree)
+            if not head or self._remote() != head:
+                return False
+            self.data = new
+            return True
+        except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+            return False
+
+    def _close(self):
+        try:
+            if self.worktree is not None:
+                self._git(self.root, "worktree", "remove", "--force", str(self.worktree))
+        finally:
+            if self._temp is not None:
+                self._temp.cleanup()
+            self.worktree = self._temp = None
+
+    async def open(self):
+        ok = await asyncio.to_thread(self._open)
+        if not ok:
+            self.poisoned = True
+            await asyncio.to_thread(self._close)
+        return ok
+
+    async def checkpoint(self, source, snapshot):
+        ok = await asyncio.to_thread(self._save, source, snapshot)
+        if not ok:
+            self.poisoned = True
+        return ok
+
+    async def close(self):
+        await asyncio.to_thread(self._close)

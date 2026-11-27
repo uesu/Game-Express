@@ -10,6 +10,8 @@
 - A bounded private test confirmed four messages across three new articles, including a two-page
   resume using an isolated local Git ledger. It did not touch production state. Added fail-closed
   reconciliation primitives and local stale-writer/crash tests; production recovery is still gated.
+  An unwired detached-worktree ledger prototype isolates candidate Git writes from monitor state,
+  but its production provisioning, GitHub behavior and cross-instance operation are unverified.
 - Candidate YouTube fallback prefers verified maximum-resolution thumbnails without overriding
   native media. Private card tests and read-only source observations are recorded in the source
   research notes; same-day publication order remains unproven for day-only feeds.

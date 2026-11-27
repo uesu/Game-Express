@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 
 from gamexpress import candidate_news_delivery as delivery  # noqa: E402
 from gamexpress import candidate_news_runner as runner  # noqa: E402
-from gamexpress.candidate_news_checkpoint import GitCheckpoint  # noqa: E402
+from gamexpress.candidate_news_checkpoint import GitCheckpoint, IsolatedGitLedger  # noqa: E402
 from gamexpress.cards import news_payloads  # noqa: E402
 from gamexpress.config import Game, load_settings  # noqa: E402
 from gamexpress.models import Item  # noqa: E402
@@ -108,6 +108,90 @@ class CandidateDeliveryTests(unittest.TestCase):
             git("add", "unrelated.txt")
             self.assertFalse(asyncio.run(checkpoint(posted)))  # never commit unrelated staged files
             self.assertEqual(git("diff", "--cached", "--name-only").stdout.strip(), b"unrelated.txt")
+
+    def test_isolated_ledger_holds_stale_writer_and_leaves_monitor_checkout_alone(self):
+        branch = "arena/98b5f4e1-game-express"
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            remote, seed = base / "remote.git", base / "seed"
+            seed.mkdir()
+
+            def git(cwd, *args):
+                return subprocess.run(["git", *args], cwd=cwd, capture_output=True, check=True).stdout
+
+            git(seed, "init", "--bare", str(remote))
+            git(seed, "init", "-b", branch)
+            git(seed, "config", "user.name", "Test")
+            git(seed, "config", "user.email", "test@example.invalid")
+            (seed / "state").mkdir()
+            (seed / "state/state.json").write_text('{"schema":1}\n', encoding="utf-8")
+            (seed / "state/candidate_news.json").write_text('{"schema":1,"candidate_news":{}}\n', encoding="utf-8")
+            git(seed, "add", "state")
+            git(seed, "commit", "-m", "initial")
+            git(seed, "remote", "add", "origin", str(remote))
+            git(seed, "push", "origin", "HEAD:refs/heads/" + branch)
+            other = base / "other"
+            git(base, "clone", "-b", branch, str(remote), str(other))
+            original = git(seed, "rev-parse", "HEAD")
+            first, stale = IsolatedGitLedger(seed, branch), IsolatedGitLedger(other, branch)
+            self.assertTrue(asyncio.run(first.open()))
+            self.assertTrue(asyncio.run(stale.open()))
+            try:
+                queued = delivery.ingest("silverpalace", ROUTE, None, [row("1")])
+                self.assertTrue(asyncio.run(first.checkpoint("silverpalace", queued)))
+                self.assertFalse(asyncio.run(stale.checkpoint("silverpalace", queued)))
+                self.assertTrue(stale.poisoned)
+                self.assertFalse(asyncio.run(stale.checkpoint("silverpalace", queued)))
+                self.assertEqual(git(seed, "rev-parse", "HEAD"), original)
+                self.assertEqual(git(seed, "status", "--porcelain"), b"")
+                self.assertEqual(json.loads((seed / "state/candidate_news.json").read_text())["candidate_news"], {})
+                # The existing final monitor-state commit can rebase over the separate ledger.
+                (seed / "state/state.json").write_text('{"schema":1,"existing":"preserved"}\n', encoding="utf-8")
+                git(seed, "add", "state/state.json")
+                git(seed, "commit", "-m", "monitor state")
+                git(seed, "pull", "--rebase", "origin", branch)
+                git(seed, "push", "origin", f"HEAD:refs/heads/{branch}")
+                persisted = json.loads(git(seed, "--git-dir", str(remote), "show",
+                                           f"refs/heads/{branch}:state/candidate_news.json"))
+                self.assertEqual(persisted["candidate_news"]["silverpalace"], queued)
+                self.assertFalse(asyncio.run(first.checkpoint("silverpalace", queued)))
+                self.assertTrue(first.poisoned)
+            finally:
+                asyncio.run(first.close())
+                asyncio.run(stale.close())
+            self.assertEqual(git(seed, "worktree", "list", "--porcelain").count(b"worktree "), 1)
+
+    def test_isolated_ledger_requires_existing_tracked_valid_file(self):
+        branch = "arena/98b5f4e1-game-express"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "work"
+            remote = Path(tmp) / "remote.git"
+            root.mkdir()
+
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=root, capture_output=True, check=True).stdout
+
+            git("init", "--bare", str(remote))
+            git("init", "-b", branch)
+            git("config", "user.name", "Test")
+            git("config", "user.email", "test@example.invalid")
+            (root / "state").mkdir()
+            (root / "state/state.json").write_text('{"schema":1}\n', encoding="utf-8")
+            git("add", "state")
+            git("commit", "-m", "initial")
+            git("remote", "add", "origin", str(remote))
+            git("push", "origin", f"HEAD:refs/heads/{branch}")
+            ledger = IsolatedGitLedger(root, branch)
+            self.assertFalse(asyncio.run(ledger.open()))  # no ledger is not a fresh empty ledger
+            self.assertTrue(ledger.poisoned)
+            (root / "state/candidate_news.json").write_text('{"schema":true,"candidate_news":{}}\n', encoding="utf-8")
+            git("add", "state/candidate_news.json")
+            git("commit", "-m", "malformed ledger")
+            git("push", "origin", f"HEAD:refs/heads/{branch}")
+            ledger = IsolatedGitLedger(root, branch)
+            self.assertFalse(asyncio.run(ledger.open()))
+            self.assertTrue(ledger.poisoned)
+            self.assertIsNone(ledger.data)
 
     def test_stale_writer_and_crash_hold_until_reviewed_git_reconciliation(self):
         branch = "arena/98b5f4e1-game-express"
