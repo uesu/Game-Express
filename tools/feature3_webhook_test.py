@@ -181,6 +181,41 @@ async def run(*, prepare_only=False):
 
 
 class Tests(unittest.TestCase):
+    def test_workflow_requires_explicit_scope_and_dedicated_secret(self):
+        workflow = (ROOT / ".github/workflows/source_research_probe.yml").read_text(encoding="utf-8")
+        self.assertIn("default: all", workflow)
+        self.assertIn("if: ${{ inputs.scope == 'feature3-prepare' }}", workflow)
+        self.assertIn("if: ${{ inputs.scope == 'feature3-post' }}", workflow)
+        self.assertEqual(workflow.count("secrets.FEATURE3_TEST_WEBHOOK"), 1)
+        self.assertEqual(workflow.count("python tools/feature3_webhook_test.py --prepare-only"), 1)
+        self.assertEqual(workflow.count("run: python tools/feature3_webhook_test.py\n"), 1)
+
+    def test_one_shot_sender_stops_on_non_success_without_retry(self):
+        class Response:
+            status = 500
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            async def json(self, **kwargs):
+                return {}
+
+        class Session:
+            def __init__(self):
+                self.calls = []
+
+            def post(self, *args, **kwargs):
+                self.calls.append(kwargs)
+                return Response()
+
+        session = Session()
+        self.assertEqual(asyncio.run(send_once(session, "not-used", {})), (False, 500))
+        self.assertEqual(len(session.calls), 1)
+        self.assertIs(session.calls[0]["allow_redirects"], False)
+
     def test_url_restrictions(self):
         good = "https://discord.com/api/webhooks/123/" + "a" * 32
         self.assertTrue(valid_webhook(good))
