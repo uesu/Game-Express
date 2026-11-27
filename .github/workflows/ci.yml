@@ -75,6 +75,9 @@ jobs:
       - name: Redlib naa listings
         if: always()
         run: python tools/live_candidate_probe.py --group reddit2 --annotations
+      - name: Limited old Reddit fallback fleet
+        if: always()
+        run: python tools/live_candidate_probe.py --group redditfleet --annotations
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -28,13 +28,16 @@ from gamexpress.sources import endfield, reddit  # noqa: E402
 
 SUBS = ("Endfield", "ArknightsEndfield", "NevernessToEverness", "SilverPalaceOfficial")
 ORIGINS = ("https://old.reddit.com", "https://redlib.mint.lgbt", "https://r.naa.gg")
+FLEET = ("https://redlib.mint.lgbt", "https://reddit.idevicehacked.com",
+         "https://redlib.reallyaweso.me", "https://r.naa.gg",
+         "https://redlib.thepixora.com", "https://redlib.r4fo.com")
 
 
 def format_result(name: str, status: str, count: int = 0) -> str:
     """Reject upstream-controlled text so annotations cannot contain content or directives."""
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name):
         raise ValueError("invalid label")
-    if status not in {"ok", "empty", "unavailable", "rejected", "invalid"}:
+    if status not in {"ok", "empty", "unavailable", "rejected", "invalid", "unreadable", "network-error"} and not re.fullmatch(r"http-[1-5][0-9]{2}", status):
         raise ValueError("invalid status")
     if type(count) is not int or not 0 <= count <= 100000:
         raise ValueError("invalid count")
@@ -61,6 +64,8 @@ async def probe(fetcher, *, annotations: bool = False, group: str = "all") -> No
         await probe_endfield(fetcher, annotations=annotations)
     if group in ("all", "reddit0", "reddit1", "reddit2"):
         await probe_reddit(fetcher, annotations=annotations, group=group)
+    if group == "redditfleet":
+        await probe_reddit_fleet(fetcher, annotations=annotations)
 
 
 async def probe_endfield(fetcher, *, annotations: bool) -> None:
@@ -90,9 +95,25 @@ async def probe_reddit(fetcher, *, annotations: bool, group: str) -> None:
         if group != "all" and group != f"reddit{idx}":
             continue
         for sub in SUBS:
+            health = getattr(fetcher, "health", {}).get("reddit")
+            previous_failures = health.fail if health else 0
             rows = await client._fetch_listing_on(origin, "sub", sub)
-            status = "unavailable" if rows is None else "ok" if rows else "empty"
+            health = getattr(fetcher, "health", {}).get("reddit")
+            if rows is None and health and health.fail > previous_failures:
+                match = re.match(r"HTTP ([1-5][0-9]{2})(?:$| )", health.last_error)
+                status = f"http-{match[1]}" if match else "network-error"
+            else:
+                status = "unreadable" if rows is None else "ok" if rows else "empty"
             show(f"reddit-{idx}-{sub}", status, len(rows or []), annotations)
+
+
+async def probe_reddit_fleet(fetcher, *, annotations: bool) -> None:
+    settings = load_settings({"INTAKE_READER": "off", "REDDIT_INSTANCES": ",".join(FLEET)})
+    client = reddit.RedditClient(fetcher, settings)
+    results = await asyncio.gather(*(client.subreddit(sub) for sub in SUBS))
+    for sub, rows in zip(SUBS, results):
+        status = "unavailable" if rows is None else "ok" if rows else "empty"
+        show(f"reddit-fleet-{sub}", status, len(rows or []), annotations)
 
 
 class Tests(unittest.TestCase):
@@ -132,7 +153,7 @@ class Tests(unittest.TestCase):
         text = output.getvalue()
         self.assertIn("endfield-list status=ok count=1", text)
         self.assertIn("endfield-card-media-preflight status=rejected count=1", text)
-        self.assertIn("reddit-0-Endfield status=unavailable count=0", text)
+        self.assertIn("reddit-0-Endfield status=unreadable count=0", text)
         self.assertEqual(len(FakeReddit.calls), 12)
         self.assertNotIn("secret", text)
         self.assertNotIn("never emit", text)
@@ -156,7 +177,7 @@ if __name__ == "__main__":
     elif sys.argv[1:] in ([], ["--annotations"]):
         asyncio.run(main(bool(sys.argv[1:])))
     elif len(sys.argv) == 4 and sys.argv[1] == "--group" and sys.argv[3] == "--annotations":
-        if sys.argv[2] not in ("endfield", "reddit0", "reddit1", "reddit2"):
+        if sys.argv[2] not in ("endfield", "reddit0", "reddit1", "reddit2", "redditfleet"):
             raise SystemExit("Unknown fixed group")
         asyncio.run(main(True, sys.argv[2]))
     else:
