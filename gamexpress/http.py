@@ -186,9 +186,9 @@ class Fetcher:
                  "vxreddit.com", "embedez.com", "deltandy.me",
                  # feature 5 (beta): the community databases that publish beta revisions
                  "nanoka.cc", "gachabase.net")
-        # Endfield's observed official image CDN; use an exact host, not the entire
-        # hg-cdn.com namespace. Every redirect still passes this same policy.
-        exact_hosts = ("web-static.hg-cdn.com",)
+        # Only the observed official Endfield/NTE image hosts, not their entire
+        # parent namespaces. Every redirect still passes this same policy.
+        exact_hosts = ("web-static.hg-cdn.com", "ntevmg.perfectworld.com")
         asked = url
         try:
             for _ in range(4):
