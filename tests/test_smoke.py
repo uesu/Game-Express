@@ -7890,6 +7890,35 @@ def test_news_media_preflight_status_signature_redirect_and_query_preservation()
     asyncio.run(run())
 
 
+def test_endfield_exact_cdn_media_preflight_keeps_signature_and_redirect_guards():
+    from gamexpress.http import Fetcher
+
+    async def run():
+        host = "https://web-static.hg-cdn.com/upload/image/"
+        for path, raw, mime in (
+            ("example.gif", b"GIF89a" + bytes(80), "image/gif"),
+            ("example.png", b"\x89PNG\r\n\x1a\n" + bytes(80), "image/png"),
+            ("example.jpg", b"\xff\xd8\xff" + bytes(80), "image/jpeg"),
+        ):
+            session = _NewsGifMimeSession(_NewsGifMimeResponse(raw, mime))
+            assert await Fetcher(session).verify_media(host + path)
+            assert session.calls[0][1]["allow_redirects"] is False
+        session = _NewsGifMimeSession(_NewsGifMimeResponse(b"<html>bad</html>", "image/gif"))
+        assert not await Fetcher(session).verify_media(host + "bad.gif")
+        for url in ("https://hg-cdn.com/image.gif", "https://other.hg-cdn.com/image.gif",
+                    "https://sub.web-static.hg-cdn.com/image.gif", "https://web-static.hg-cdn.com.evil.test/x",
+                    "http://web-static.hg-cdn.com/image.gif", "https://u:p@web-static.hg-cdn.com/image.gif",
+                    "https://web-static.hg-cdn.com:444/image.gif"):
+            session = _NewsGifMimeSession()
+            assert not await Fetcher(session).verify_media(url) and not session.calls
+        session = _NewsGifMimeSession(_NewsGifMimeResponse(
+            status=302, extra={"Location": "https://other.hg-cdn.com/private"}))
+        assert not await Fetcher(session).verify_media(host + "redirect.gif")
+        assert len(session.calls) == 1
+
+    asyncio.run(run())
+
+
 def test_news_media_failure_refreshes_official_source_once_then_holds_without_posting():
     from unittest.mock import AsyncMock, patch
 

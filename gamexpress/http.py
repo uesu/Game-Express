@@ -186,6 +186,9 @@ class Fetcher:
                  "vxreddit.com", "embedez.com", "deltandy.me",
                  # feature 5 (beta): the community databases that publish beta revisions
                  "nanoka.cc", "gachabase.net")
+        # Endfield's observed official image CDN; use an exact host, not the entire
+        # hg-cdn.com namespace. Every redirect still passes this same policy.
+        exact_hosts = ("web-static.hg-cdn.com",)
         asked = url
         try:
             for _ in range(4):
@@ -193,7 +196,7 @@ class Fetcher:
                 host = (parts.hostname or "").lower()
                 if (parts.scheme != "https" or parts.username or parts.password
                         or parts.port not in (None, 443)
-                        or not any(host == h or host.endswith("." + h) for h in hosts)):
+                        or not (host in exact_hosts or any(host == h or host.endswith("." + h) for h in hosts))):
                     log.warning("news media rejected: host=%s reason=URL policy", host)
                     return None
                 async with self._gate(), self.session.get(
