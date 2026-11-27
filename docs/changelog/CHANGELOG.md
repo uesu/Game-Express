@@ -1,5 +1,24 @@
 # Changelog — current entries
 
+## 2026-11-27 — Read-only source research (no production behavior changes)
+
+- Prototype an **unregistered** Endfield official-news reader with bounded all-or-nothing
+  pagination, safe IDs and matching details; existing games and routing remain unchanged. Record
+  read-only GitHub runner probes, direct image and legacy Reddit fallback results, and official
+  maintenance notice evidence. Image preflight remains a blocker. This is not a complete
+  new-game integration.
+
+- Documented Crimson Witch's upstream overlap with Ennead, Hoyocodes' use of Ennead,
+  candidate code endpoints and official news/community sources for Endfield, NTE and Silver
+  Palace, including the limits of the observations and remaining integration gates.
+- Added a manual, secret-free, bounded public-source research probe with offline self-tests.
+  Follow-up research found the Endfield CMS host and app code; the probe covers two listing
+  pages and one detail endpoint for each of Endfield and Silver Palace, and documents sticky
+  and out-of-order items plus day-only timestamps. Initial observations came from a page-fetching
+  service; the later runner observations and prototype are described above. The research probe
+  is not a production monitor or reliability guarantee. Existing games,
+  source votes, Reddit/X scope, cards, webhooks and state are unchanged.
+
 ## 2026-11-24 — Reddit intake: match News-Express's newest relay work (body media, `429` evidence)
 
 - **What happened.** Game-Express's Reddit and X adapters were ported from the sibling

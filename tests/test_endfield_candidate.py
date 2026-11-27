@@ -1,0 +1,85 @@
+"""Offline contract tests for the unregistered Endfield reader (synthetic fixtures)."""
+from __future__ import annotations
+
+import asyncio
+import sys
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from gamexpress.sources import endfield  # noqa: E402
+
+
+def row(cid, timestamp):
+    return {"cid": cid, "title": "Official notice " + cid, "displayTime": timestamp}
+
+
+def page(number, rows, total):
+    return {"code": 0, "data": {"current": number, "pageSize": 20, "total": total, "list": rows}}
+
+
+class Fetcher:
+    def __init__(self, pages, detail=None):
+        self.pages, self.detail, self.calls = pages, detail, []
+
+    async def get_json(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        if url == endfield.BASE:
+            return self.pages.get(kwargs["params"]["page"])
+        return self.detail
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+class EndfieldCandidateTests(unittest.TestCase):
+    def test_complete_paginated_listing_does_not_stop_at_old_or_sticky(self):
+        first = [row(f"{i:04d}", 100 if i == 0 else 300) for i in range(20)]
+        second = [row("0020", 400)]
+        fetcher = Fetcher({1: page(1, first, 21), 2: page(2, second, 21)})
+        found = run(endfield.discover_news(fetcher, SimpleNamespace(key="endfield"), 200))
+        self.assertEqual(len(found), 20)
+        self.assertEqual(found[-1], {"id": "0020", "ts": 400, "title": "Official notice 0020"})
+        self.assertEqual([call[1]["params"]["page"] for call in fetcher.calls], [1, 2])
+        self.assertEqual(fetcher.calls[0][1]["params"]["code"], "arknights_endfield_official")
+
+    def test_fail_closed_on_incomplete_drift_duplicates_and_bad_shapes(self):
+        first = [row(str(i), 300) for i in range(20)]
+        for pages in (
+            {1: page(1, first, 21)},
+            {1: page(1, first, 21), 2: page(2, [row("20", 300)], 22)},
+            {1: page(1, first, 21), 2: page(2, [row("0", 300)], 21)},
+            {1: page(1, [row("1", True)], 1)},
+            {1: page(1, [row("../a", 300)], 1)},
+            {1: page(1, [], 1)},
+            {1: page(1, first, 401)},
+            {1: {"code": False, "data": {}}},
+        ):
+            with self.subTest(pages=pages):
+                self.assertIsNone(run(endfield.discover_news(Fetcher(pages), None, 0)))
+        self.assertEqual(run(endfield.discover_news(Fetcher({1: page(1, [], 0)}), None, 0)), [])
+
+    def test_detail_preserves_leading_zero_body_order_and_rejects_mismatch(self):
+        detail = {"code": 0, "data": {"cid": "0740", "displayTime": 300, "title": "Update",
+                 "cover": "https://web-static.hg-cdn.com/test.jpg",
+                 "data": '<p>Hello <b>friend</b></p><img src="https://web-static.hg-cdn.com/a.png"><p>Goodbye</p>'}}
+        fetcher = Fetcher({}, detail)
+        item = run(endfield.news_article(fetcher, SimpleNamespace(key="endfield"), {"id": "0740", "ts": 300}))
+        self.assertEqual(item.url, "https://endfield.gryphline.com/en-us/news/0740")
+        self.assertEqual(item.images, ["https://web-static.hg-cdn.com/test.jpg"])
+        self.assertEqual([b["kind"] for b in item.article_blocks], ["text", "image", "text"])
+        self.assertIn("Hello", item.article_blocks[0]["text"])
+        self.assertIn("Goodbye", item.article_blocks[2]["text"])
+        self.assertEqual(fetcher.calls[0][0], endfield.BASE + "/0740")
+        self.assertIsNone(run(endfield.news_article(fetcher, None, {"id": "0740", "ts": 301})))
+        self.assertIsNone(run(endfield.news_article(fetcher, None, {"id": "../0740", "ts": 300})))
+        detail["data"]["data"] = ""
+        self.assertIsNone(run(endfield.news_article(fetcher, None, {"id": "0740", "ts": 300})))
+
+
+if __name__ == "__main__":
+    unittest.main()
