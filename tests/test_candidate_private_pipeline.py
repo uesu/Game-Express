@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import io
 import sys
 import unittest
 from pathlib import Path
@@ -47,7 +49,8 @@ class PrivateHarnessTests(unittest.TestCase):
         async def sleep(seconds):
             self.assertEqual(seconds, 1.5)
 
-        with patch.object(private.delivery, "send_candidate_once", send), patch.object(private.asyncio, "sleep", sleep):
+        with (patch.object(private.delivery, "send_candidate_once", send), patch.object(private.asyncio, "sleep", sleep),
+              contextlib.redirect_stdout(io.StringIO())):
             sent = asyncio.run(private.send_prepared(None, prepared, HOOK))
         self.assertEqual(sent, 4)
         self.assertEqual(calls, ["nte", "endfield", "endfield", "silverpalace"])
@@ -109,7 +112,8 @@ class PrivateHarnessTests(unittest.TestCase):
         async def render(fetcher, settings, source, row):
             return [card()] * (2 if row["id"] == "101" else 1)
 
-        with patch.object(private.delivery, "discover", discover), patch.object(private.delivery, "render_candidate", render):
+        with (patch.object(private.delivery, "discover", discover), patch.object(private.delivery, "render_candidate", render),
+              contextlib.redirect_stdout(io.StringIO())):
             chosen = asyncio.run(private.prepare(None, load_settings({})))
         self.assertEqual([row["id"] for _, row, _ in chosen], ["252475", "101", "2"])
 
