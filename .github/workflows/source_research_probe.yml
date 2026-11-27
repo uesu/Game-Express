@@ -6,7 +6,7 @@ on:
       scope:
         description: Research scope
         type: choice
-        options: [all, endfield-card, feature3-prepare, feature3-post, video-research]
+        options: [all, endfield-card, feature3-prepare, feature3-post, video-research, video-followup]
         default: all
 
 permissions:
@@ -204,3 +204,22 @@ jobs:
         env:
           AUDIT_GAME: ${{ matrix.game }}
         run: python tools/video_archive_research.py "$AUDIT_GAME"
+
+  video-followup:
+    if: ${{ inputs.scope == 'video-followup' }}
+    name: Check NTE video marker hints
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install reader dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline video search checks
+        run: python tools/video_archive_research.py --self-test
+      - name: Check two fixed flagged articles
+        run: python tools/video_archive_research.py --nte-hint-check

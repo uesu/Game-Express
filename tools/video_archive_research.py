@@ -62,6 +62,13 @@ class Tags(HTMLParser):
             self.counts["object_embed"] += 1
 
 
+def normalize(body):
+    normalized = html.unescape(body).replace(r"\/", "/")
+    normalized = re.sub(r"\\u00(2e|2f|3a|26|3d|3f|23)", lambda m: chr(int(m[1], 16)), normalized, flags=re.I)
+    normalized = unquote(normalized)
+    return normalized
+
+
 def analyze(body):
     if not isinstance(body, str) or not body.strip() or len(body) > MAX_BODY:
         return None
@@ -71,11 +78,7 @@ def analyze(body):
         parser.close()
     except (ValueError, RecursionError):
         return None
-    # Inspect literal markup, text and script contents, including common JSON/HTML
-    # URL escaping. This does not execute scripts or decode arbitrary data.
-    normalized = html.unescape(body).replace(r"\/", "/")
-    normalized = re.sub(r"\\u00(2e|2f|3a|26|3d|3f|23)", lambda m: chr(int(m[1], 16)), normalized, flags=re.I)
-    normalized = unquote(normalized)
+    normalized = normalize(body)
     counts = parser.counts
     for key, regex in (("extension_hint", EXTENSION), ("mime_hint", MIME),
                        ("youtube_hint", YOUTUBE), ("player_hint", PLAYER)):
@@ -189,6 +192,24 @@ async def run(game_name):
             raise ValueError("archive audit incomplete")
 
 
+async def nte_hint_check():
+    """Revisit only the two fixed article bodies flagged by the full scan."""
+    rows = (
+        {"id": "256375", "date": "2025-12-23", "url": "https://nte.perfectworld.com/en/article/news/gameevent/20250514/256375.html"},
+        {"id": "261416", "date": "2026-03-26", "url": "https://nte.perfectworld.com/en/article/news/gameevent/20260324/261416.html"},
+    )
+    async with aiohttp.ClientSession(trust_env=False) as session:
+        fetcher = Fetcher(NoRedirectSession(session))
+        for row in rows:
+            body = await get_body(fetcher, "nte", row)
+            if analyze(body) is None:
+                raise ValueError("NTE follow-up unavailable")
+            found = [match.group(0).lower() for match in MIME.finditer(normalize(body))]
+            prose = sum(value == "video/live" for value in found)
+            print("::notice title=NTE video hint follow-up::"
+                  f"id={row['id']} mime-matches={len(found)} video-live-text={prose} other={len(found) - prose}")
+
+
 class Tests(unittest.TestCase):
     def test_static_markers_and_escapes(self):
         body = ('<video><source src="https://example.org/a.mp4?x=1" type="video/mp4"></video>'
@@ -234,7 +255,9 @@ class Tests(unittest.TestCase):
 if __name__ == "__main__":
     if sys.argv[1:] == ["--self-test"]:
         unittest.main(argv=[sys.argv[0]])
+    elif sys.argv[1:] == ["--nte-hint-check"]:
+        asyncio.run(nte_hint_check())
     elif len(sys.argv) == 2 and sys.argv[1] in ("nte", "endfield", "silver"):
         asyncio.run(run(sys.argv[1]))
     else:
-        raise SystemExit("Usage: video_archive_research.py [nte|endfield|silver|--self-test]")
+        raise SystemExit("Usage: video_archive_research.py [nte|endfield|silver|--nte-hint-check|--self-test]")
