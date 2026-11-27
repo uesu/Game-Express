@@ -1,11 +1,12 @@
 """Fail-closed delivery primitives for the three inactive candidate news sources.
 
-NOT registered in the production runner. The checkpoint callback MUST durably commit
-state to the authoritative store before returning True. A local temp-file save alone
+The production integration has a hard release gate and cannot post yet. The checkpoint
+callback MUST durably commit state to the authoritative store before returning True. A local temp-file save alone
 is not such a checkpoint for an ephemeral Actions runner. No webhook URL is stored.
 """
 from __future__ import annotations
 
+import asyncio
 import copy
 import hashlib
 import json
@@ -145,12 +146,12 @@ def ingest(source, route, current, snapshot):
     return state
 
 
-async def deliver_oldest(state, source, route, *, as_of, checkpoint, render, send):
+async def deliver_oldest(state, source, route, *, as_of, checkpoint, render, send, max_pages=120):
     """Deliver at most one article, persisting intent BEFORE each one-shot POST.
 
     A restart with `inflight` is held for human reconciliation. A payload signature
     mismatch also holds. Each successful message ID is checkpointed before continuing.
-    Both the checkpoint and the sender must be supplied by the future integration.
+    The checkpoint and sender must be supplied by the integration.
     """
     state = _validate(state, source, route)
     if not state["pending"]:
@@ -159,6 +160,8 @@ async def deliver_oldest(state, source, route, *, as_of, checkpoint, render, sen
         raise DeliveryHold("ambiguous in-flight page requires reconciliation")
     if type(as_of) is not int or not 0 < as_of <= 253402300799:
         raise DeliveryHold("valid observation time required")
+    if type(max_pages) is not int or not 1 <= max_pages <= 120:
+        raise DeliveryHold("invalid per-run page limit")
     row = state["pending"][0]
     # Day-only feeds have no publisher time zone. UTC calendar-day gating is
     # deliberately conservative; it does not invent an instant for the card.
@@ -187,7 +190,8 @@ async def deliver_oldest(state, source, route, *, as_of, checkpoint, render, sen
         partial = {"id": row["id"], "signature": signature, "pages": len(payloads), "messages": [], "inflight": False}
         state["partial"] = partial
         await persist()
-    for payload in payloads[len(partial["messages"]):]:
+    start = len(partial["messages"])
+    for payload in payloads[start:start + max_pages]:
         partial["inflight"] = True
         await persist()
         try:
@@ -201,6 +205,8 @@ async def deliver_oldest(state, source, route, *, as_of, checkpoint, render, sen
         partial["messages"].append(mid)
         partial["inflight"] = False
         await persist()
+    if len(partial["messages"]) < len(payloads):
+        return state
     state["posted"][row["id"]] = {"messages": list(partial["messages"]), "signature": signature}
     state["pending"].pop(0)
     state["partial"] = None
@@ -247,8 +253,14 @@ async def render_candidate(fetcher, settings, source, row):
         raise DeliveryHold("official article unavailable or mismatched")
     item = await with_verified_fallback(fetcher, item)
     pages = news_payloads(game, item, timestamps=settings.news_timestamps,
-                          expand_full=settings.news_expand_full, max_pages=settings.news_expand_max_pages,
+                          expand_full=True, max_pages=settings.news_expand_max_pages,
                           max_chars=settings.news_expand_max_chars, max_media=settings.news_expand_max_media)
+    # The common renderer deliberately falls back to an excerpt at its safety
+    # limits. Candidate catch-up requires the full article: hold instead.
+    if any("**Excerpt — this article " in str(child.get("content", ""))
+           for page in pages for card in page.get("components", [])
+           for child in card.get("components", [])):
+        raise DeliveryHold("full article exceeds rendering safety limits")
     if (not pages or len(pages) > 120 or any(validate_payload(page) for page in pages)
             or not await news_media_available(fetcher, pages, max_urls=settings.news_expand_max_media)):
         raise DeliveryHold("article media preflight or payload validation failed")
@@ -257,3 +269,40 @@ async def render_candidate(fetcher, settings, source, row):
     if any(validate_payload(page) for page in pages):
         raise DeliveryHold("grouped article payload invalid")
     return pages
+
+
+async def send_candidate_once(session, settings, source, payload):
+    """One guarded POST to the dedicated destination; never retries or logs secrets.
+
+    Even a non-success response is held for review by the delivery coordinator.
+    The production path remains behind a hard release gate.
+    """
+    import aiohttp
+
+    from .discord import SendResult
+
+    target = destination(settings, source)
+    if target is None or not isinstance(payload, dict) or validate_payload(payload):
+        return SendResult(False, 0, ambiguous=False, error="invalid dedicated route or payload")
+    parts = urlsplit(target[0])
+    url = parts._replace(query="").geturl()
+    params = {"wait": "true", "with_components": "true", **dict(parse_qsl(parts.query))}
+    try:
+        async with session.post(url, params=params, json=payload, allow_redirects=False,
+                                timeout=aiohttp.ClientTimeout(total=30)) as response:
+            status = response.status
+            body = bytearray()
+            async for chunk in response.content.iter_chunked(4096):
+                body.extend(chunk)
+                if len(body) > 65536:
+                    return SendResult(False, status, ambiguous=True, error="oversized Discord response")
+            try:
+                data = json.loads(body)
+            except (ValueError, UnicodeDecodeError):
+                data = None
+            mid = data.get("id") if isinstance(data, dict) else None
+            if 200 <= status < 300 and isinstance(mid, str) and _ID.fullmatch(mid):
+                return SendResult(True, status, message_id=mid, message=data)
+            return SendResult(False, status, ambiguous=True, error="Discord result not confirmed")
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+        return SendResult(False, 0, ambiguous=True, error="Discord result not confirmed")

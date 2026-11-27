@@ -373,6 +373,10 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
                         record["paused"] = True
             if "news" in features:
                 await _safe_step(ctx, "news", run_news(ctx))
+                if settings.env.get("NEWS_CANDIDATES_BACKFILL", "").strip() == "1":
+                    from .candidate_news_runner import run_candidate_news
+
+                    await _safe_step(ctx, "candidate news", run_candidate_news(ctx))
             elif ctx.active and not settings.news_enabled:
                 # One control-marker write on disabling, no discovery or per-tick news churn.
                 news_map = state.data.get("news")

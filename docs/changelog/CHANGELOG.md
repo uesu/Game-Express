@@ -2,24 +2,16 @@
 
 ## 2026-11-27 — Read-only source research (no production behavior changes)
 
-- Prepared inactive candidate news source adapters and a fail-closed routing/backfill delivery
-  coordinator, tested offline without posting. It requires an authoritative durable checkpoint
-  callback, which is not yet integrated with the Actions monitor; no source is enabled.
-- The inactive candidate YouTube fallback now prefers a verified maximum-resolution thumbnail,
-  then verified smaller variants if unavailable, without overriding native media. An explicit
-  prototype backfill queues the initial day-only snapshot oldest day first; it is not yet wired
-  to production or durable delivery. Private test and default/expanded comparisons are recorded
-  in the source research notes; existing production sources and activation are unchanged.
-
-- Prototype an **unregistered** Endfield official-news reader with bounded all-or-nothing
-  pagination, safe IDs and matching details; existing games and routing remain unchanged. Record
-  read-only GitHub runner probes, direct image and legacy Reddit fallback results, and official
-  maintenance notice evidence. An unregistered Silver Palace listing prototype validates two
-  bounded scans without inventing precise timestamps. Private media-preflight and detail tests
-  passed, but authoritative checkpoints and runner wiring remain blockers. Inactive ID-based
-  planning and NTE listing/detail readers preserve displayed days and reject foreign paths.
-  Existing news routing and floors are unchanged.
-  This is not a complete new-game integration.
+- Prepared candidate news source adapters, queue, full-article rendering and a fail-closed
+  coordinator. An experimental monitor path remains behind a hard-coded release gate: no
+  candidate source is enabled or can post through it. Local tests exercise same-branch Git
+  checkpoints, a one-shot sender, bounded paging and mock runner wiring; production persistence,
+  failure/reconciliation and cross-instance safety are not yet validated. No backlog was sent.
+- Candidate YouTube fallback prefers verified maximum-resolution thumbnails without overriding
+  native media. Private card tests and read-only source observations are recorded in the source
+  research notes; same-day publication order remains unproven for day-only feeds.
+- Prototyped unregistered Endfield, NTE and Silver Palace readers with checked listing scans,
+  detail validation and candidate-only routing. Existing game news behavior is unchanged.
 
 - Documented Crimson Witch's upstream overlap with Ennead, Hoyocodes' use of Ennead,
   candidate code endpoints and official news/community sources for Endfield, NTE and Silver

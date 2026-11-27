@@ -429,18 +429,22 @@ are fixed-article observations, not proof for all future articles. The inactive 
 YouTube fallback verifies maximum-resolution thumbnail dimensions/signature first and falls
 back when unavailable; native images/video remain preferred. It is not wired into production.
 
-The owner requests that initial production news catch-up post existing items oldest to newest
-and record confirmed delivery in state. An inactive candidate pipeline now checks two complete
-listing walks, adapts details to the existing card renderer, uses exact dedicated webhook routes,
-and queues every observed ID oldest first. Numeric ID is only a deterministic tie-break for
-same-day sources, not evidence of publication time; Endfield exposes timestamps separately.
-An offline delivery coordinator requires a confirmed authoritative checkpoint of each write-ahead
-intent and each confirmed page ID and holds ambiguous sends or changed partial cards. **It is not
-wired to `run_news` or to a production checkpoint transport**. An ephemeral Actions runner's
-local `state.save()` is not sufficient: workflow state is normally pushed at the end of a job.
-Production integration, a checkpoint mechanism that survives job loss, cross-instance/failover
-handling, bounded backlog pacing, reconciliation procedures and source registration remain
-required. No backlog or production state change has been performed.
+The owner requests initial production catch-up oldest to newest, recording confirmed delivery.
+The candidate pipeline checks two complete listing walks, adapts details to the existing card
+renderer, uses exact dedicated webhook routes, and queues every observed ID oldest first. Numeric
+ID is only a deterministic same-day tie-break, not evidence of publication time. Two matching scans
+reduce but cannot eliminate source pagination races.
+
+An experimental monitor path and Git checkpoint are under a **hard-coded release gate**: no
+candidate discovery or posts occur there, even if `NEWS_CANDIDATES_BACKFILL=1` is configured. Its
+prototype checkpoints write-ahead intent and confirmed IDs via same-branch Git push/ref checks,
+uses one-shot Discord POSTs, limits a source to one article / three pages per run, and requires full
+expanded output (holding rather than sending a safety-limit excerpt). Local mocked runner and bare
+Git tests do not establish production correctness. End-of-job persistence/rebase interactions,
+ambiguous Git/Discord outcomes, concurrent workflows and cross-repository failover still require
+validation and an operational reconciliation procedure before removing the gate. A single-repo
+Actions concurrency group is not a distributed lock. No backlog or production state change has
+been performed. Existing game news routing and behavior remain unchanged.
 
 - [Crimson Witch](https://www.crimsonwitch.com/codes): its Genshin, Star Rail and ZZZ pages
   displayed active code/reward sections and links to RSS feeds (`/feeds/genshin/rss.xml`,
