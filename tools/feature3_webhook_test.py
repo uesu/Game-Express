@@ -164,14 +164,18 @@ async def run(*, prepare_only=False):
     async with aiohttp.ClientSession(trust_env=False) as session:
         fetcher = Fetcher(NoRedirectSession(session))
         posts = await prepare(fetcher)
-        print(f"Prepared {len(posts)} validated and preflighted card messages; no state changes.", flush=True)
+        print(f"::notice title=Private card preparation::prepared={len(posts)} no-state=1", flush=True)
+        for label in ("nte-252469", "nte-252474", "endfield-0766", "endfield-7011"):
+            print(f"::notice title=Private card preparation::{label} pages="
+                  f"{sum(entry_label == label for entry_label, _ in posts)}", flush=True)
         if prepare_only:
             return
         for number, (label, payload) in enumerate(posts, 1):
             if number > 1:
                 await asyncio.sleep(1.5)
             ok, status = await send_once(session, webhook, payload)
-            print(f"{label} message={number}/{len(posts)} http={status} confirmed={int(ok)}", flush=True)
+            print(f"::notice title=Private card send::{label} message={number}/{len(posts)} "
+                  f"http={status} confirmed={int(ok)}", flush=True)
             if not ok:
                 raise ValueError("send failed or outcome ambiguous; stopped, inspect channel before rerunning")
 
