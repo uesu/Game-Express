@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Fix: the Python-doc guard must survive the production repo (it reddened the monitor)](CHANGELOG.md#2026-11-23--fix-the-python-doc-guard-must-survive-the-production-repo-it-reddened-the-monitor).
+Latest: [Reddit intake: match News-Express's newest relay work (body media, `429` evidence)](CHANGELOG.md#2026-11-24--reddit-intake-match-news-expresss-newest-relay-work-body-media-429-evidence).
+
+Previous: [Fix: the Python-doc guard must survive the production repo (it reddened the monitor)](CHANGELOG.md#2026-11-23--fix-the-python-doc-guard-must-survive-the-production-repo-it-reddened-the-monitor).
 
 Previous: [Housekeeping: the Python 3.15 bump's leftovers, and a guard so the docs cannot drift again](CHANGELOG.md#2026-11-23--housekeeping-the-python-315-bumps-leftovers-and-a-guard-so-the-docs-cannot-drift-again).
 

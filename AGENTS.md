@@ -757,8 +757,23 @@ News-Express and the six official ones for this engine — plus the verified pub
 `reddit_official` accounts and any `reddit:<sub>` code source, **never a leak subreddit**;
 `runner.reddit_targets()` is the single place that builds it, and leak records in the shared
 channel prove the relay is alive, never that a target of ours is quiet. Facts about the relay —
-statuses, stale/empty/error handling, the 5-minute poll interval — belong in
+statuses, stale/empty/error handling, the poll interval (5 minutes on the live app build, 3 minutes
+after the pending Devvit 0.15.6 update), the read window — belong in
 [docs/SOURCES.md](docs/SOURCES.md), not in the code's guesses.
+
+Relay record media is authoritative but incomplete, and both halves matter. A rich-text "GIF" is
+stored as the shorthand `![gif](<media-id>)` with no CDN URL and no extension, and the Devvit post
+payload has no `media[]` entry for it, so `record_to_entry()` resolves that one form to
+`https://i.redd.it/<media-id>.gif` and merges it with the body's bare `i.redd.it` /
+`preview.redd.it` URLs **in source order**, after the record's own `media[]` (News-Express round
+115 / PR #148). Keep it conservative: only an explicit `gif` marker with an id-shaped target (5–64
+chars of `[A-Za-z0-9_-]`) becomes media — never guess `![image](…)` or any other markdown target
+into a URL — and never let this become a gate on the post; `text`, `links`, the official rule and
+`relay_complete` are untouched. A Discord `429` on the channel history is the one failure whose
+evidence matters, so the summary names the failing history page and the `Retry-After` /
+`X-RateLimit-*` values Discord sent (News-Express round 116 / PR #146) — that text is a diagnostic:
+the status stays `http_<code>`, the per-target fallback runs, and no retry, wait or bypass may
+change because of it.
 
 ### Gachabase response formats
 
