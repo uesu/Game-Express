@@ -922,12 +922,10 @@ def news_payloads(
 ) -> list[dict]:
     """Full article in one message, or paged according to the active policy switch.
 
-    When `expand_full` is False (default): attempts 1 message, then at most 2 pages up to
-    7,000 normalized text chars, otherwise 1 halved-word excerpt with 1 lead image.
-    When `expand_full` is True: lifts the 2-page / 7,000-char policy ceiling up to the
-    explicit `NEWS_EXPAND_MAX_PAGES` / `NEWS_EXPAND_MAX_CHARS` / `NEWS_EXPAND_MAX_MEDIA`
-    operational safety bounds, preserving inline text/media order and falling back honestly
-    if any bound is exceeded.
+    Default mode tries one message, then the legacy two-page layout, then smart-fits up to
+    `NEWS_DEFAULT_MAX_PAGES` messages. Expanded mode uses the explicit page, character and
+    media safety bounds. Both preserve inline order when the article fits and otherwise return
+    a labelled excerpt with a lead image and a link to the full article.
     """
     title = _md_link_text(strip_invisible(item.title))
     if len(title) > 500 or not safe_url(item.url):

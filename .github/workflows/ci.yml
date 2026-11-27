@@ -92,6 +92,7 @@ jobs:
           python tools/archive_research_probe.py --self-test
           python tools/nte_media_research.py --self-test
           python tools/endfield_media_research.py --self-test
+          python tools/endfield_card_research.py --self-test
 
       - name: Card preview renders (previews/index.html)
         run: python -m gamexpress preview --out /tmp/previews > /dev/null

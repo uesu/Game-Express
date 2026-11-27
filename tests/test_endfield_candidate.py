@@ -10,6 +10,8 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from gamexpress.cards import news_payloads, validate_payload  # noqa: E402
+from gamexpress.config import Game  # noqa: E402
 from gamexpress.sources import endfield  # noqa: E402
 
 
@@ -62,6 +64,38 @@ class EndfieldCandidateTests(unittest.TestCase):
             with self.subTest(pages=pages):
                 self.assertIsNone(run(endfield.discover_news(Fetcher(pages), None, 0)))
         self.assertEqual(run(endfield.discover_news(Fetcher({1: page(1, [], 0)}), None, 0)), [])
+
+    def test_reader_and_renderer_preserve_trailer_and_media_order_in_synthetic_examples(self):
+        game = Game(key="endfield", name="Endfield", short="Endfield", enabled=False, color=0)
+        url = "https://web-static.hg-cdn.com/upload/image/"
+        cases = (
+            ("0766", '<p>Before</p><iframe src="https://www.youtube.com/embed/Yt7eUS1X0Ec"></iframe><p>After</p>'),
+            ("1340", f'<p>Before</p><img src="{url}example.gif"><p>Middle</p>'
+                     f'<img src="{url}example.png"><p>After</p>'),
+            ("3840", "".join(f'<p>Caption {i}</p><img src="{url}{i}.png">' for i in range(50))),
+        )
+        for cid, html in cases:
+            with self.subTest(cid=cid):
+                detail = {"code": 0, "data": {"cid": cid, "displayTime": 300,
+                          "title": "Example", "data": html}}
+                item = run(endfield.news_article(Fetcher({}, detail), game, {"id": cid, "ts": 300}))
+                pages = news_payloads(game, item)
+                self.assertTrue(all(not validate_payload(p) for p in pages))
+                children = [c for p in pages for container in p["components"]
+                            for c in container.get("components", [])]
+                texts = [c.get("content", "") for c in children if c["type"] == 10]
+                media = [i["media"]["url"] for c in children if c["type"] == 12 for i in c["items"]]
+                if cid == "0766":
+                    self.assertEqual(len(pages), 1)
+                    self.assertIn("https://www.youtube.com/watch?v=Yt7eUS1X0Ec", texts)
+                    self.assertLess(texts.index("Before"), texts.index("https://www.youtube.com/watch?v=Yt7eUS1X0Ec"))
+                    self.assertLess(texts.index("https://www.youtube.com/watch?v=Yt7eUS1X0Ec"), texts.index("After"))
+                elif cid == "1340":
+                    self.assertEqual(media, [url + "example.gif", url + "example.png"])
+                else:
+                    self.assertEqual(media, [url + str(i) + ".png" for i in range(50)])
+                    self.assertGreater(len(pages), 1)
+                    self.assertFalse(any("**Excerpt" in t for t in texts))
 
     def test_detail_preserves_leading_zero_body_order_and_rejects_mismatch(self):
         detail = {"code": 0, "data": {"cid": "0740", "displayTime": 300, "title": "Update",

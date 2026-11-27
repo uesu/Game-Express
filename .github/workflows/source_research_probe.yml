@@ -2,12 +2,19 @@ name: Source research probe (manual, read-only)
 
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Research scope
+        type: choice
+        options: [all, endfield-card]
+        default: all
 
 permissions:
   contents: read
 
 jobs:
   probe:
+    if: ${{ inputs.scope != 'endfield-card' }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -58,6 +65,7 @@ jobs:
         run: python tools/live_candidate_probe.py --group redditfleet --annotations
 
   archive:
+    if: ${{ inputs.scope != 'endfield-card' }}
     name: Bounded historical listing research
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -76,6 +84,7 @@ jobs:
         run: python tools/archive_research_probe.py
 
   nte-media:
+    if: ${{ inputs.scope != 'endfield-card' }}
     name: NTE article media inventory
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -94,6 +103,7 @@ jobs:
         run: python tools/nte_media_research.py
 
   endfield-media:
+    if: ${{ inputs.scope != 'endfield-card' }}
     name: Endfield article media inventory
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -110,3 +120,21 @@ jobs:
         run: python tools/endfield_media_research.py --self-test
       - name: Read Endfield article bodies for media structure
         run: python tools/endfield_media_research.py
+
+  endfield-card:
+    name: Endfield reader and card comparison
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install reader dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline reader card checks
+        run: python tools/endfield_card_research.py --self-test
+      - name: Compare four fixed official article cards
+        run: python tools/endfield_card_research.py
