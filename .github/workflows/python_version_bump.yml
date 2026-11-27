@@ -133,6 +133,7 @@ jobs:
           if [ -f tools/endfield_media_research.py ]; then python tools/endfield_media_research.py --self-test; fi
           if [ -f tools/endfield_card_research.py ]; then python tools/endfield_card_research.py --self-test; fi
           if [ -f tools/feature3_webhook_test.py ]; then python tools/feature3_webhook_test.py --self-test; fi
+          if [ -f tools/video_archive_research.py ]; then python tools/video_archive_research.py --self-test; fi
           python -m gamexpress preview --out "$RUNNER_TEMP/previews" > /dev/null
 
       # Values reach the shell through env, never through ${{ }} inlined into `run:` —
