@@ -1,5 +1,60 @@
 # Changelog — current entries
 
+## 2026-11-24 — Reddit intake: match News-Express's newest relay work (body media, `429` evidence)
+
+- **What happened.** Game-Express's Reddit and X adapters were ported from the sibling
+  News-Express repo, so every round there can leave this engine a version behind. Its newest batch
+  was audited PR by PR against this codebase: **#145** honor relay removal status, **#146** cap
+  relay history/re-checks at five hours, **#147** lookback summary label, **#148** shorthand
+  inline GIF media, **#149** relay-first targeted dry-runs, **#150** inline media across pages,
+  **#151** post-level spoiler bodies, **#152** link-only tables, **#154** Devvit upgrade +
+  3-minute poll + unified spoiler reveals, **#156** poll-choice artwork, **#157** Twitter poll
+  labels, **#158** Twitter video headroom + no age cutoff, **#159** delayed relay posts past the
+  age window. Two of them are relay-*reading* fixes this engine genuinely lacked; the rest are
+  News-Express card rendering, delivery windows or the Devvit app itself, which this engine does
+  not have. **Nothing Game-Express looks for changed** — same targets, same rules, same windows.
+- **Ported 1 — body media (#148).** Reddit's rich-text editor stores an inline "GIF" as the
+  shorthand `![gif](<media-id>)`: no CDN URL, no extension, and no `media[]` entry in the Devvit
+  post payload, so a relay-only listing lost it. `record_to_entry()` now resolves that form to
+  `https://i.redd.it/<media-id>.gif` and merges it with the body's bare `i.redd.it` /
+  `preview.redd.it` URLs **in source order**, after the record's own `media[]`; the existing dedupe
+  collapses a reference the relay already listed. Deliberately conservative: only an explicit
+  `gif` marker with an id-shaped target (5–64 chars of `[A-Za-z0-9_-]`) becomes media, so
+  `![image](…)` and any other markdown target are never guessed into a URL. `text`, `links`, the
+  official rule and `relay_complete` are untouched — media discovery is not a gate.
+- **Ported 2 — `429` evidence (#146).** A Discord rate limit on the channel history is the one
+  intake failure where the page and the headers decide the next move, so the summary now names
+  both: `relay http_429 (rate limited on history page 3 — retry-after=5, x-ratelimit-scope=user,
+  …)`, built from `Retry-After` / `X-RateLimit-Scope` / `-Global` / `-Remaining` / `-Bucket` when
+  Discord sent them. `Fetcher.get_text()` attaches them to its failure line; the intake keeps
+  `http_<code>` as the status. **Diagnostics only** — no retry, wait or bypass changes, the other
+  failure wordings stay identical (`http_401` / `http_403` / `http_404` / `http_5xx`).
+- **Deliberately not ported, and why.** Rendering-only: #150 inline media across pages, #151
+  spoiler bodies, #152 link-only tables, #154's unified spoiler reveals (this engine posts no
+  full-article Reddit card). Already shipped here: #145 (a removed/deleted post is excluded before
+  it becomes an item, and the newest `v: 2` look wins; removed records still prove the relay is
+  alive for quiet mode). Wrong shape for this engine: #159 (there is no per-candidate age cutoff —
+  the relay's 6 h read window sits well inside the 72 h schedule/code window); #146's five-hour
+  retention cap and #147's label (the read window is this deployment's own
+  `INTAKE_LOOKBACK_SECONDS=21600`, now documented with the 5 h comparison and the `18000`
+  override; the summary already reports minutes); #156/#157/#158 Twitter card polls, poll-choice
+  artwork and the 400 MiB gallery-video cap (the X client here is a lookup client: no gallery
+  uploads, no video budget, no age cutoff, no poll cards); #154 Devvit app (this repo has no
+  `devvit/` tree — the app is shared and owned by News-Express).
+- **Docs.** `docs/SOURCES.md` §Reddit intake gains the body-media rule, the `429` diagnostics, the
+  read-window-vs-horizon note, and the relay's current cadence (5 minutes on the live build, 3
+  minutes after the pending Devvit 0.15.6 update) plus the shortened re-check tail;
+  `docs/CONFIGURATION.md` explains the lookback default; `README.md` gains a short intake-reader
+  paragraph; `AGENTS.md` records the "media is authoritative but incomplete" and "`429` text is
+  evidence, not policy" rules.
+- **Proof.** New `test_relay_body_shorthand_gif_refs_become_media` (source order, dedupe against
+  `media[]`, conservative `![image]` / short-id cases, unchanged `text`/`links`) and
+  `test_rate_limited_history_page_names_the_page_and_keeps_the_headers` (page number, header
+  passthrough, unchanged `http_429` status, untouched 503 wording). `pytest -q tests`: 729 tests,
+  725 passed — the four pinned-digest benchmark tests fail in this *deepened* local clone exactly
+  as they do on the untouched tree, and pass on CI's depth-1 checkout. `tests/test_smoke.py`:
+  633/637 (the same four). Markdown link/anchor guard: pass. `ruff check .`: clean.
+
 ## 2026-11-23 — Fix: the Python-doc guard must survive the production repo (it reddened the monitor)
 
 - **What happened.** The guard added a few hours earlier

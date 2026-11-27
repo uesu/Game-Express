@@ -705,6 +705,19 @@ A dead source is logged, shown in the job summary, and skipped. Everything is fe
 down. If every announcement source of a game is down, the summary says so and the next run
 re-reads the last `LOOKBACK_HOURS` — nothing is missed.
 
+**Reddit intake reader (`INTAKE_READER`, on when `DISCORD_BOT_TOKEN` + `INTAKE_CHANNEL_ID` are
+set).** The shared Devvit relay is the Reddit listing whenever it is fresh, so a relay-served
+target costs **0** redlib / reddit.com requests and the fleet below stays the automatic fallback.
+It keeps News-Express's relay semantics: one channel read per run, newest-first paging, removed or
+deleted posts excluded before they become items, `record.json` fetched only for cut records and
+crossposts, and inline body media resolved — including Reddit's rich-text shorthand
+`![gif](<media-id>)`, which becomes `https://i.redd.it/<media-id>.gif` (News-Express PR #148). A
+Discord `429` on the history names the failing page and the rate-limit headers it answered with
+(`relay http_429 (rate limited on history page 3 — retry-after=5, x-ratelimit-scope=user)`) — a
+diagnostic, never a longer wait or a bypass (PR #146). The relay app polls every 5 minutes today;
+the pending Devvit 0.15.6 update polls every 3 minutes, and freshness is measured on the newest
+relay message either way. See [SOURCES.md §Reddit intake](docs/SOURCES.md#reddit-intake-reader--the-devvit-relay-is-the-listing-2026-11-02).
+
 **Layer 2 — two instances, automatic fail-over, shared dedup.**
 
 | Instance | Variables |
