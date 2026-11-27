@@ -6,7 +6,7 @@ on:
       scope:
         description: Research scope
         type: choice
-        options: [all, endfield-card, feature3-prepare, feature3-post, video-research, video-followup, feature3-expanded-prepare, feature3-expanded-post]
+        options: [all, endfield-card, feature3-prepare, feature3-post, video-research, video-followup, feature3-expanded-prepare, feature3-expanded-post, nte-thumbnail-post]
         default: all
 
 permissions:
@@ -266,3 +266,26 @@ jobs:
           NEWS_EXPAND_FULL: '1'
           FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
         run: python tools/feature3_expanded_test.py
+
+  nte-thumbnail-post:
+    if: ${{ inputs.scope == 'nte-thumbnail-post' }}
+    name: Send one NTE max-resolution thumbnail card privately
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline fixed-card checks
+        run: python tools/nte_thumbnail_test.py --self-test
+      - name: Prepare the fixed card without posting
+        run: python tools/nte_thumbnail_test.py --prepare-only
+      - name: Post one fixed card to the dedicated private webhook
+        env:
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/nte_thumbnail_test.py

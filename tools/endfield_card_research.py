@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT))
 import aiohttp  # noqa: E402
 from live_candidate_probe import NoRedirectSession  # noqa: E402
 
-from gamexpress.cards import _youtube_watch_url, news_payloads, validate_payload  # noqa: E402
+from gamexpress.cards import _youtube_watch_url, news_payloads, text_length, validate_payload  # noqa: E402
 from gamexpress.config import Game  # noqa: E402
 from gamexpress.http import Fetcher  # noqa: E402
 from gamexpress.models import Item  # noqa: E402
@@ -84,6 +84,15 @@ async def run():
                     print(f"::notice title=Endfield reader card::id={cid} expanded={int(mode)} {metrics}")
                 except (KeyError, TypeError, ValueError, AttributeError):
                     print(f"::notice title=Endfield reader card::id={cid} expanded={int(mode)} status=invalid")
+            if cid == "1340":
+                expanded = news_payloads(game, item, expand_full=True)
+                article_chars = sum(len(b.get("text", "")) for b in item.article_blocks if b.get("kind") == "text")
+                text_per_page = [text_length(page["components"]) for page in expanded]
+                print("::notice title=Endfield 1340 character metrics::"
+                      f"parsed-body-text-characters={article_chars} "
+                      f"expanded-card-text-characters={sum(text_per_page)} "
+                      f"expanded-page-text-characters={','.join(map(str, text_per_page))} "
+                      "count=python-unicode-codepoints-including-formatting", flush=True)
             if cid == "7011":
                 samples = await preflight_samples(fetcher, item)
                 for ext in ("jpg", "png", "gif"):
