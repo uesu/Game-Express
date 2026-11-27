@@ -28,7 +28,6 @@ from gamexpress.sources import endfield, silverpalace  # noqa: E402
 from gamexpress.sources.candidate_thumbnail import with_verified_fallback  # noqa: E402
 
 NTE_URL = "https://nte.perfectworld.com/en/article/news/gamenews/20240830/252469.html"
-LABELS = ("nte-252469", "endfield-1340", "endfield-3840", "silver-1", "silver-120")
 MAX_POSTS = 20
 
 
@@ -140,9 +139,6 @@ async def run(*, prepare_only=False):
         fetcher = Fetcher(NoRedirectSession(session))
         posts = await prepare(fetcher, settings)
         print(f"::notice title=Expanded test preparation::expanded=1 prepared={len(posts)} no-state=1", flush=True)
-        for label in LABELS:
-            print(f"::notice title=Expanded test preparation::{label} pages="
-                  f"{sum(found == label for found, _ in posts)}", flush=True)
         if prepare_only:
             return
         sent = 0
