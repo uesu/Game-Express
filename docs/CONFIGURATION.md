@@ -214,11 +214,10 @@ second overriding `CODES_MEDIA`.
 
 `codes.sources` is a list of fetch specs, each `"<kind>:<argument>"` — `hoyolab:2` / `hoyolab:6`,
 `seria:genshin`, `humbao:GENSHIN`, `ogc:<game>`, `ennead:<game>`, `fandom:<wiki>/<Page>`,
-`codehub:<wiki>`, `wuthering:<game>`, `crimsonwitch:<PageSlug>` (e.g.
-`crimsonwitch:Genshin_Impact`, `crimsonwitch:Honkai_Star_Rail`, `crimsonwitch:Zenless_Zone_Zero`),
-`reddit:<Subreddit>`, plus the bare `x` switch. `crimsonwitch` is a community tracker with itemised
-rewards and a real expiry stamp; it is its own witness family (see
-[SOURCES.md](SOURCES.md#redemption-codes)), so it never double-counts `ennead`/`ogc`.
+`codehub:<wiki>`, `wuthering:<game>`, `reddit:<Subreddit>`, plus the bare `x` switch. Only those
+exist: a spec for a kind the code does not implement is a configuration error, not a silent no-op.
+Crimson Witch and heartlog/Hoyocodes were **evaluated and rejected** — see
+[SOURCES.md](SOURCES.md#evaluated-but-not-integrated-and-why).
 
 Card text templates can use `{game}`, `{version}`, `{program}` and `{version_name}`. For example,
 set `"title": "{game} Version {version} \"{version_name}\" {program}"` to include the version's

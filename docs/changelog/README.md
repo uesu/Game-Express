@@ -1,6 +1,6 @@
 # Changelog
 
-Latest: [Crimson Witch is a code source, and the new-game probe](CHANGELOG.md#2026-11-27--crimson-witch-is-a-code-source-and-the-new-game-probe).
+Latest: [Probe verdicts: two code sources rejected, and the new-game findings](CHANGELOG.md#2026-11-27--probe-verdicts-two-code-sources-rejected-and-the-new-game-findings).
 
 Previous: [Reddit intake: match News-Express's newest relay work (body media, `429` evidence)](CHANGELOG.md#2026-11-24--reddit-intake-match-news-expresss-newest-relay-work-body-media-429-evidence).
 
