@@ -451,7 +451,9 @@ observation cannot prove freshness, uptime, complete pagination, or successful r
   the listings; NTE exposed dated article links and a paginated list, and one article was fetched.
   The rendered Endfield and Silver Palace listings did not expose article links in that output.
   NTE's list had only three entries per page in this observation; a first-page-only poll can lose
-  articles. A rendered browser page alone is not an adapter.
+  articles. Two NTE list pages also passed fixed-URL HTML structure checks on
+  [runner 45961114831](https://github.com/uesu/Game-Express/actions/runs/45961114831).
+  A rendered browser page alone is not an adapter.
 - **Endfield CMS discovery:** [jino9492/subculture-calendar](https://github.com/jino9492/subculture-calendar)
   documents the official `web-news.gryphline.com/api/bulletin` endpoint and
   `code=arknights_endfield_official`. A separate page-fetching service returned `code: 0` from
@@ -466,7 +468,26 @@ observation cannot prove freshness, uptime, complete pagination, or successful r
   This corrects the earlier assessment that the CMS host and app code were unknown. It is
   **not** evidence of production Fetcher or GitHub-runner reachability, complete pagination,
   safe media rendering, fidelity of the article body, or an implemented news adapter. The
-  read-only research probe now includes both listing pages and one fixed detail URL.
+  read-only research probe includes listing pages and detail URLs. On GitHub-hosted runner
+  [45961114831](https://github.com/uesu/Game-Express/actions/runs/45961114831), fixed-URL
+  structural checks for two list pages and two details passed; a separate
+  [run 45961382489](https://github.com/uesu/Game-Express/actions/runs/45961382489) successfully
+  exercised a complete bounded listing and detail 0740 through the production `Fetcher` and
+  the unregistered prototype `sources/endfield.py`. The latter run's required CI test failed
+  on the production-manifest file count, subsequently corrected; the candidate step itself passed.
+  Log downloads were unavailable here, so no raw response fixtures were captured. A single run
+  does not establish uptime, publication completeness, article/media fidelity, bootstrap or
+  operational readiness. The prototype fails closed on pagination drift, duplicate IDs, invalid
+  shapes or a greater than 20-page listing. It is not selected by `run_news` and no game is enabled.
+- **Maintenance candidates:** Endfield's [pre-download and update notice](https://endfield.gryphline.com/en-us/news/3835)
+  states that pre-download is available, plus Asia and Americas/Europe maintenance windows with
+  explicit UTC offsets. Its version is given by name, not a numeric version. NTE's official
+  [1.5 patch notes](https://nte.perfectworld.com/en/article/news/gamenews/20261109/264948.html)
+  state a scheduled 06:00–11:00 (UTC+8) maintenance and note it may finish early or late.
+  Scheduled end is not evidence servers actually opened; parsing, version identity, source
+  ingestion and false-positive tests are still needed before feature 4 is safe to activate.
+  [NTE's launch pre-download notice](https://nte.perfectworld.com/en/article/news/gamenews/20260424/261919.html)
+  states it is live but describes the initial release, not proof of recurring update pre-downloads.
 - **Silver Palace news API:** [logreus-cloud/genshinflex #53](https://github.com/logreus-cloud/genshinflex/issues/53)
   documents `server/index.php/home/news_list` and `news_detail` on the official site. The separate
   page-fetching service returned `code: 0` for [English page 1](https://silverpalace.elementagames.com/server/index.php/home/news_list?lang=en-us&page=1),
@@ -476,7 +497,9 @@ observation cannot prove freshness, uptime, complete pagination, or successful r
   observed `publish_date` is day-only: converting it to midnight then using the existing
   timestamp floor risks silently skipping same-day additions. Determine timezone, publication
   precision and an ID-aware safe baseline before implementing. Body markup/media fidelity and
-  runner reachability remain unverified; the probe covers the two pages and one detail URL.
+  reachability through the production Fetcher remain unverified. Fixed-URL runner structural checks
+  passed for two pages and one detail in [run 45961114831](https://github.com/uesu/Game-Express/actions/runs/45961114831);
+  this confirms neither ongoing availability nor completeness, nor the timestamp semantics.
 - [Elementa's official press release](https://www.elementagames.com/en-us/newsDetail/?id=14)
   states that Silver Palace launches globally **December 14, 2026 (UTC+8)**, matching the
   screenshot. Launch hour was not established. Treat feature 3 as the requested candidate,

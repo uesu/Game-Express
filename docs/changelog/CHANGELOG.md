@@ -2,6 +2,11 @@
 
 ## 2026-11-27 — Read-only source research (no production behavior changes)
 
+- Prototype an **unregistered** Endfield official-news reader with bounded all-or-nothing
+  pagination, safe IDs and matching details; existing games and routing remain unchanged. Record
+  read-only GitHub runner probes and official maintenance notice evidence. This is not a complete
+  new-game integration.
+
 - Documented Crimson Witch's upstream overlap with Ennead, Hoyocodes' use of Ennead,
   candidate code endpoints and official news/community sources for Endfield, NTE and Silver
   Palace, including the limits of the observations and remaining integration gates.

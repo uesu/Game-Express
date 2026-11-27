@@ -35,78 +35,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Temporary read-only research on this draft PR; remove after collecting the run.
-  source-research-once:
-    if: github.event_name == 'pull_request' && github.event.pull_request.number == 172 && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 8
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: '3.15.2'
-      - name: Endfield list page 1
-        if: always()
-        run: python tools/source_research_probe.py --target endfield-cms-list
-      - name: Endfield list page 2
-        if: always()
-        run: python tools/source_research_probe.py --target endfield-cms-page-2
-      - name: Endfield detail
-        if: always()
-        run: python tools/source_research_probe.py --target endfield-cms-detail
-      - name: Endfield detail markup
-        if: always()
-        run: python tools/source_research_probe.py --target endfield-cms-detail --require-html
-      - name: Endfield maintenance detail
-        if: always()
-        run: python tools/source_research_probe.py --target endfield-update-notice
-      - name: Silver Palace list page 1
-        if: always()
-        run: python tools/source_research_probe.py --target silver-list
-      - name: Silver Palace list page 2
-        if: always()
-        run: python tools/source_research_probe.py --target silver-page-2
-      - name: Silver Palace detail
-        if: always()
-        run: python tools/source_research_probe.py --target silver-detail
-      - name: Silver Palace detail markup
-        if: always()
-        run: python tools/source_research_probe.py --target silver-detail --require-html
-      - name: NTE list page 1
-        if: always()
-        run: python tools/source_research_probe.py --target news-nte
-      - name: NTE list page 2
-        if: always()
-        run: python tools/source_research_probe.py --target news-nte-page-2
-      - name: Install candidate dependencies
-        if: always()
-        run: python -m pip install -q -r requirements.txt
-      - name: Exercise unregistered Endfield candidate with production Fetcher
-        if: always()
-        run: |
-          python - <<'PYCODE'
-          import asyncio
-          from types import SimpleNamespace
-          import aiohttp
-          from gamexpress.http import Fetcher
-          from gamexpress.sources import endfield
-
-          async def main():
-              async with aiohttp.ClientSession() as session:
-                  fetcher = Fetcher(session)
-                  game = SimpleNamespace(key="endfield")
-                  rows = await endfield.discover_news(fetcher, game, 0)
-                  assert rows is not None and rows, "complete listing unavailable"
-                  selected = next(row for row in rows if row["id"] == "0740")
-                  item = await endfield.news_article(fetcher, game, selected)
-                  assert item and item.id == "0740" and item.article_blocks, "detail unavailable"
-                  print(f"Complete rows={len(rows)} blocks={len(item.article_blocks)}; no content printed")
-          asyncio.run(main())
-          PYCODE
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -154,7 +82,7 @@ jobs:
           python tests/test_gachawiki_placeholder.py
           python tests/test_reddit_intake.py
           python tests/test_reddit_usecases.py
-          if [ -f tests/test_endfield_candidate.py ] && [ -f gamexpress/sources/endfield.py ]; then python tests/test_endfield_candidate.py; fi
+          python tests/test_endfield_candidate.py
           python tests/test_maintenance_live.py
           python tools/source_research_probe.py --self-test
 
