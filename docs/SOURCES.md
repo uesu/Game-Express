@@ -228,6 +228,8 @@ trustworthy as any other official post, because that is what it is.
 | Genshin news page | https://genshin.hoyoverse.com/en/news | same template | ⏳ same template, not separately captured |
 | ZZZ news page | https://zenless.hoyoverse.com/en-us/news | same template | ⏳ same template, not separately captured |
 | WW news page | https://wutheringwaves.kurogames.com/en/main/news | Kuro's own template; the JSON article menus in `sources/kuro.py` remain the primary WW source | ⏳ client-rendered list — the menus cover it |
+| **NTE official archive** *(2026-11-27)* | `https://nte.perfectworld.com/en/article/news/{index,gamenews,gamebroad,gameevent}/index[N].html` and one article per `/en/article/news/<tab>/YYYYMMDD/<id>.html` | server-rendered HTML: the entry is the `href` (tab + day + id), the title is the row's `<h2>`, and the article gives `h1.articleTitle`, `p.articleDate`, `og:image` and the `div.articleContent` body. The **day comes from the URL**, never from the printed date (list `2026-11-23`, article `2026.11.23`, no zone). Adapter: [`sources/perfectworld.py`](../gamexpress/sources/perfectworld.py) — the first feature-3 source here that is neither HoYoLAB nor Kuro | ✅ parsed against the live bytes (2026-11-27), fixture-pinned |
+| **Endfield news — blocked at the publisher** *(2026-11-27)* | `https://endfield.gryphline.com/en-us/news` | SSR list carries titles, dates and covers but **empty `href`s**; the client resolves them through a CMS call (`GET /api/bulletin?lang=…&code=<appCode>`) that answers `404 Cannot GET /api/bulletin` on `endfield.gryphline.com`, `web-api.gryphline.com` and `/api/bulletin/1`. `cms.appCode` is in no captured chunk | ❌ **not integrated** — no endpoint to call yet |
 | **WW news mirrors** *(v1.7.0)* | `raw.githubusercontent.com/TheLovinator1/wutheringwaves/…/articles_{latest,all}.xml` | RSS/Atom mirrors of the same news list; used when Kuro's client-rendered page cannot be scraped | ✅ parsed against the live `articles_latest.xml` (2026-09-26) |
 
 **Image renditions** (`gamexpress/media.py`) — every source hands back a small picture by default:
@@ -546,6 +548,24 @@ makes the relay answer sooner.
   - **Configured now:** X `@Ananta_EN`, official Reddit `u/AnantaOfficial`, Fandom `ananta/Redemption_Code`, and `reddit:AnantaOfficial` community witness.
   - **Banners:** it has no gacha character unlocking, so the card hides banners.
 
+
+### Added 2026-11-27 — Neverness to Everness, Arknights: Endfield, Silver Palace
+
+- **Neverness to Everness** (`nte`, **on**): feature 3 is live through its own Perfect World archive
+  (`sources/perfectworld.py`, three tabs, `indexN.html` pagination, day taken from the article URL);
+  feature 2 is live through `ogc:nte` (a known game that answers `[]` = no live codes) plus the
+  `r/NevernessToEverness` witness, which never posts alone. Features 1/4 are inactive: no HoYoLAB
+  gid, launcher gate or version cadence was verified. X `@NTE_EN` and YouTube
+  `@NevernessToEverness` were found by probing (`x.com/NTE_Game` and `@NTE_Game` do not exist), but
+  neither is linked from the server-rendered site, so treat an X-only card as unconfirmed until the
+  handles are checked once in Settings.
+- **Arknights: Endfield** (`endfield`, **on**): feature 2 is live (`ogc:endfield`: five codes with
+  rewards, no expiry) plus the `r/Endfield` and `r/ArknightsEndfield` witnesses; feature 1 can ride
+  the existing `Kitsudock-data` line-ups. Feature 3 is **blocked upstream** — see the table above.
+- **Silver Palace** (`silverpalace`, **prepared, off**): feature 3 only, and there is nothing to
+  read yet — `_payload.json` is a 69-byte placeholder and `__NUXT_DATA__` carries only i18n/site
+  config, so no news entry exists in the server output. Launch **2026-12-14**. Re-probe after the
+  launch; the `r/SilverPalaceOfficial` listing is the only wired witness.
 
 ## Optional full-content news adapter (2026-10-18)
 

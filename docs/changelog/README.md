@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Probe verdicts: two code sources rejected, and the new-game findings](CHANGELOG.md#2026-11-27--probe-verdicts-two-code-sources-rejected-and-the-new-game-findings).
+Latest: [NTE and Endfield are monitored (and a news adapter that is not HoYoLAB or Kuro)](CHANGELOG.md#2026-11-27--nte-and-endfield-are-monitored-and-a-news-adapter-that-is-not-hoyolab-or-kuro).
+
+Previous: [Probe verdicts: two code sources rejected, and the new-game findings](CHANGELOG.md#2026-11-27--probe-verdicts-two-code-sources-rejected-and-the-new-game-findings).
 
 Previous: [Reddit intake: match News-Express's newest relay work (body media, `429` evidence)](CHANGELOG.md#2026-11-24--reddit-intake-match-news-expresss-newest-relay-work-body-media-429-evidence).
 

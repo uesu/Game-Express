@@ -301,7 +301,7 @@ A schedule/code-only selector does not count as toggling news off.
 | `NEWS_MEDIA_HEAL` | `1` | Media heal: when Discord's create/edit response returns a gallery tile or thumbnail with a `proxy_url` but no dimensions/content type (the client shows "Image not found"), the message is re-read after `NEWS_MEDIA_HEAL_DELAY` and, only if that tile is still cold, re-sent identically once. Nothing is persisted; dry-run never edits |
 | `NEWS_MEDIA_HEAL_DELAY` | `6` | Grace period in seconds (0–60) before the re-read; one wait per game and run, not per card |
 | `NEWS_EXPAND_FULL` | `0` | Opt-in multi-page full articles beyond 2 pages (bounded at `NEWS_EXPAND_MAX_PAGES = 12`, `NEWS_EXPAND_MAX_CHARS = 120000`, `NEWS_EXPAND_MAX_MEDIA = 120`) |
-| `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna` | Canonical game keys; removing a game pauses its existing news state |
+| `NEWS_GAMES` | `genshin,starrail,zzz,wuwa,hna,nte` | Canonical game keys; removing a game pauses its existing news state. `nte` joined 2026-11-27 (its own official archive is parsed); `ananta`/`endfield` have no verified news source and stay out |
 | `NEWS_SUPPORT_NOTE` | *(built in)* | Not a variable: one small `-#` line under the news buttons (*"It takes time, tools, hosting and ongoing maintenance…"*). It shares the card's 4,000-character and 40-component budgets, is never split across messages, and moves with the buttons when a reveal mention reflows a page |
 
 Each run attempts all discovered eligible unposted articles in publication order,
@@ -319,7 +319,7 @@ truncated. Setting `NEWS_EXPAND_FULL=1` lifts that ceiling up to an explicit
 Migration: `NEWS_MAX_POSTS_PER_RUN` is retired and ignored. Remove a leftover
 repository variable or local environment entry; it cannot enable a cap.
 
-Use repository **secrets**, never variables, for the five destinations:
+Use repository **secrets**, never variables, for the news destinations:
 
 | Secret | Channel |
 |---|---|
@@ -328,6 +328,7 @@ Use repository **secrets**, never variables, for the five destinations:
 | `DISCORD_WEBHOOK_NEWS_HNA` | `hna-news` |
 | `DISCORD_WEBHOOK_NEWS_ZZZ` | `zzz-news` |
 | `DISCORD_WEBHOOK_NEWS_WUWA` | `wuwa-news` |
+| `DISCORD_WEBHOOK_NEWS_NTE` | `nte-news` (added 2026-11-27, [`sources/perfectworld.py`](../gamexpress/sources/perfectworld.py)) |
 
 Existing short game aliases also work. No `DISCORD_WEBHOOK_NEWS`, catch-all,
 `FORCE_WEBHOOK`, or mirror fallback is used for news. A missing destination skips

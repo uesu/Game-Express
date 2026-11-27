@@ -14,16 +14,17 @@ because it makes the other sources look silent.
 |---|---|---|
 | `crimsonwitch.com` as a code source | **No** — it is ennead's own upstream, and its availability is not guaranteed | **No** (see §2) |
 | `heartlog/Hoyocodes` | **No** — a client-side UI over `api.ennead.cc`, already covered | **No** (see §3) |
-| NTE — codes | `ogc:nte` is a known game that currently answers `[]` | Not yet (§4 why) |
-| NTE — feature 3 (news) | **Feasible** — static, server-rendered article HTML with pagination | Not yet (§4 why) |
-| Endfield — codes | `ogc:endfield` answers 5 live codes with rewards | Not yet (§4 why) |
+| NTE — codes | `ogc:nte` is a known game that currently answers `[]` | **Yes** — `nte` is on (§4) |
+| NTE — feature 3 (news) | **Feasible** — static, server-rendered article HTML with pagination | **Yes** — `sources/perfectworld.py` (§4) |
+| Endfield — codes | `ogc:endfield` answers 5 live codes with rewards | **Yes** — `endfield` is on (§5) |
 | Endfield — feature 3 (news) | **Blocked** — the CMS needs an undocumented `appCode` | No (§5) |
-| Silver Palace — feature 3 | **Blocked** — the SSR payload carries no news entries | No (§6) |
+| Silver Palace — feature 3 | **Blocked** — the SSR payload carries no news entries | No — prepared, off (§6) |
 
-**Nothing in the production path changed in this pass.** No game was added to `config/games.json`,
-no source kind was added to `sources/codes.py`, and no card, gate, ranking, expiry, dedupe,
-corroboration or posting behaviour moved. The one shipped change is the operator-invoked,
-read-only probe job described in §7.
+**What shipped.** `nte` and `endfield` joined `config/games.json` (both **on**), NTE's official
+news archive is read by a new adapter (`gamexpress/sources/perfectworld.py`, §4), and
+`silverpalace` ships prepared (`enabled: false`, §6). **No code source was added**: the code gate,
+its family ranking, expiry handling, dedupe and corroboration are untouched — the two rejected
+trackers in §2–§3 stay rejected. The operator-invoked probe job (§7) is what proved every line.
 
 ## 1 · How the probe was run
 
@@ -90,13 +91,13 @@ The ranking is unaffected by design: `ennead`/`ogc` keep their single vote and t
 Reddit listing keeps its witness role (`CODES_MIN_SOURCES = 2`, one family = one vote). **No change
 made.**
 
-## 4 · Neverness to Everness (`nte`)
+## 4 · Neverness to Everness (`nte`) — implemented
 
 | Feature | Verdict | Evidence |
 |---|---|---|
 | 1 · schedule | **not verified** — no official banner table was found for a title that has not launched | `www.nte.perfectworld.com_en_article_news_index.html` |
-| 2 · codes | **ready to configure** — `ogc:nte` is a known game that currently answers `[]` (valid, simply no live codes) | probe of `https://api.ennead.cc/codes/nte` |
-| 3 · news | **feasible** — static, server-rendered article HTML | `www.nte.perfectworld.com_en_article_news_gamebroad_20261123_265196.html` (25 KB of real article body) |
+| 2 · codes | **implemented** — `ogc:nte` is a known game that currently answers `[]` (valid, simply no live codes) | probe of `https://api.ennead.cc/codes/nte` |
+| 3 · news | **implemented** — static, server-rendered article HTML, read by `sources/perfectworld.py` | `www.nte.perfectworld.com_en_article_news_gamebroad_20261123_265196.html` (25 KB of real article body) |
 | 4 · pre-load / maintenance | **not verified** — Perfect World publishes no endpoint this probe could confirm | — |
 
 The news index at `https://nte.perfectworld.com/en/article/news/index.html` lists three tabs —
@@ -116,7 +117,7 @@ members) is the community witness for News-Express.
 | Feature | Verdict | Evidence |
 |---|---|---|
 | 1 · schedule | **partial** — `endfield.wiki.gg` line-ups already travel through `Kitsudock-data` (`hub.json`), the same path the other games use | [BANNER_DATABASE.md](BANNER_DATABASE.md) |
-| 2 · codes | **ready to configure** — `ogc:endfield` answered with 5 live codes carrying rewards and no expiry | probe of `https://api.ennead.cc/codes/endfield` |
+| 2 · codes | **implemented** — `ogc:endfield` answered with 5 live codes carrying rewards and no expiry | probe of `https://api.ennead.cc/codes/endfield` |
 | 3 · news | **blocked** on one missing constant | below |
 | 4 · pre-load / maintenance | **not verified** — Gryphline exposes no maintenance gate this probe could confirm | — |
 
@@ -164,34 +165,18 @@ The only production-file change in this pass is the manual probe: a `source-prob
 every mode except `save`, it never posts to Discord, never writes state, and never gates a merge.
 Its `actions/checkout` is pinned to a commit SHA like every other `uses:` in this repository.
 
-## 8 · Why NTE and Endfield are not in `config/games.json` yet
+## 8 · What is still switched off, and why
 
-`config/games.json` is not a list of pages to read — it is the contract every feature is tested
-against. `tests/test_smoke.py` asserts, for **every** configured game:
+`config/games.json` is the contract every feature is tested against, so a game is only enabled with
+metadata that was actually verified. Silver Palace is the one that stays **prepared**
+(`enabled: false`): its news page renders no entries, and no X account, YouTube channel, code source
+or maintenance gate could be confirmed for it — `api.ennead.cc/codes/silverpalace` is a 404. Its
+entry records all of that, and the launch date (2026-12-14) is the next thing to probe.
 
-* a YouTube channel and X account (`test_games_config_is_valid`),
-* at least one row in each reveal-ping table (`test_reveal_ping_*`),
-* a beta/benchmark row (`test_reproducible_beta_enabled_benchmark_…`),
-* participation in the official-feed inventory (`test_every_official_feed_a_game_declares_is_actually_requested`).
-
-Those guards are what stop a half-configured game from shipping silent. Adding the new titles needs
-metadata this probe could **not** verify — launch schedules, X handles, YouTube channel ids and
-reveal-format rows for three titles, one of which has not launched. Wiring the two that *can* be
-wired (NTE, Endfield) means either inventing that data or relaxing the invariants; the first is a lie
-in the config, the second removes the guard that keeps the config honest. (This was not theoretical:
-adding the entries made exactly those four checks fail.)
-
-Ready to paste once the metadata is verified:
-
-```json
-"nte":      { "enabled": false, "released": false,
-              "codes": { "sources": ["ogc:nte", "reddit:NevernessToEverness"] } }
-"endfield": { "enabled": false, "released": false,
-              "codes": { "sources": ["ogc:endfield", "reddit:Endfield", "reddit:ArknightsEndfield"] } }
-```
-
-Both pass `python -m gamexpress validate` today (codes-only entries are legal, and there is no
-`Redeem` button until a `redeem_url` is verified).
+For **NTE** and **Endfield** the only fields resting on inference rather than a server-rendered
+cross-link are the X/YouTube handles (`@NTE_EN`, `@AKEndfield`; the obvious alternatives return no
+account at all). Their `note` says so, and both are on because codes — and, for NTE, news — are
+proven; an X-only card is the one thing to confirm once in Settings.
 
 ## 9 · Checklist for the next pass
 

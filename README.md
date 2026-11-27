@@ -402,10 +402,16 @@ Sources: **[docs/SOURCES.md → Beta kit & revision-diff sources](docs/SOURCES.m
 | Wuthering Waves | ✅ on | X `@Wuthering_Waves` · Kuro official site · Kuro launcher · `r/WutheringWaves` official-flair backup | official X/Reddit posts · wuthering.gg (active/expired) · Open Gacha Codes · fandom · PromoGacha · `r/WutheringWaves` witness |
 | Honkai: Nexus Anima | ✅ on · ⏳ not released yet | HoYoLAB API (gid 9) · X `@HonkaiNA` · Reddit `u/HonkaiNexusAnima` backup | HoYoLAB livestream module (gid 9) · fandom · `r/HonkaiNexusAnima` witness · official X/Reddit |
 | ANANTA (NetEase) | ✅ on · ⏳ releases 2027‑01‑15 | X `@Ananta_EN` · Reddit `u/AnantaOfficial` backup | fandom · `r/AnantaOfficial` witness · official X/Reddit |
+| Neverness to Everness (Perfect World) | ✅ on · 2026‑11‑27 | X `@NTE_EN` · Reddit `r/NevernessToEverness` backup · no launcher or maintenance gate yet | **its own official news archive** ([`sources/perfectworld.py`](gamexpress/sources/perfectworld.py), the only feature‑3 adapter here that is not HoYoLAB or Kuro) · Open Gacha Codes (`ogc:nte`, no live codes yet) · `r/NevernessToEverness` witness |
+| Arknights: Endfield (Gryphline) | ✅ on · 2026‑11‑27 | X `@AKEndfield` · Reddit `r/Endfield` + `r/ArknightsEndfield` · `Kitsudock-data` line‑ups | Open Gacha Codes (`ogc:endfield`, 5 live codes) · the two Reddit listings as witnesses · **news blocked upstream** (see [SOURCES.md](docs/SOURCES.md)) |
+| Silver Palace (Elementa) | ⏳ prepared · releases 2026‑12‑14 | — | `r/SilverPalaceOfficial` witness only; its news page carries no server‑rendered entries yet |
 
-**All six are monitored**, including the two that are not out yet, so a pre-release Special
-Program is caught the moment it is announced. Enabling a game is never retroactive: its **first
-run seeds silently**, so nothing old is posted.
+**Eight are monitored** — the six above plus Neverness to Everness and Arknights: Endfield, added
+2026-11-27 — including the three that are not out yet, so a pre-release Special Program is caught
+the moment it is announced. Silver Palace ships **prepared** (`enabled: false`) because its news
+page still renders no entries and no official X/YouTube channel could be verified: it is one line
+away from switching on. Enabling a game is never retroactive: its **first run seeds silently**, so
+nothing old is posted.
 
 - `enabled` = *do we watch it*. `released` = *is the game out*. Separate on purpose: an
   unreleased game is watched, but it has no real codes to fetch, so the test bench checks its
