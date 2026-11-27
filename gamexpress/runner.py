@@ -18,7 +18,7 @@ from .config import Game, Ping, Settings, active_games, load_games, load_overrid
 from .discord import WebhookClient, payload_media_urls, unresolved_media_urls, webhook_fingerprint
 from .http import BOT_UA, Fetcher, Probe
 from .models import Item
-from .sources import bannerfeed, countdown, hoyolab, kuro, launcher, newspage
+from .sources import bannerfeed, countdown, hoyolab, kuro, launcher, newspage, perfectworld
 from .sources.codes import CodeSources
 from .sources.reddit import RedditClient
 from .sources.twitter import XClient
@@ -631,7 +631,8 @@ async def run_news(ctx: Ctx) -> None:
     for game in ctx.games:
         if game.key not in ctx.settings.news_games:
             continue
-        source = hoyolab if game.hoyolab_gid else kuro if game.kuro_news else None
+        source = (hoyolab if game.hoyolab_gid else kuro if game.kuro_news
+                  else perfectworld if game.pw_news else None)
         if source is None:
             ctx.report.append(f"ℹ️ {game.short} news: no verified source (inactive)")
             continue

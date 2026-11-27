@@ -587,6 +587,7 @@ SOURCE_LABELS = {
     "hoyolab": "HoYoLAB (official)",
     "x": "Official X",
     "kuro": "Kuro official news",
+    "perfectworld": "Perfect World official news",
     "reddit_official": "Official Reddit",
     "reddit": "Reddit",
     "seria": "hoyo-codes.seria.moe (verified)",
