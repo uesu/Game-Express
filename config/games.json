@@ -194,6 +194,46 @@
       "twitch": "",
       "card": {"show_banners": false},
       "codes": {"sources": ["fandom:ananta/Redemption_Code", "reddit:AnantaOfficial", "x"]}
+    },
+    "nte": {
+      "name": "Neverness to Everness",
+      "short": "NTE",
+      "enabled": true,
+      "released": true,
+      "pw_news": true,
+      "note": "Added 2026-11-27. Feature 3 is LIVE: the official news archive is static, server-rendered HTML (nte.perfectworld.com/en/article/news/, tabs gamenews/gamebroad/gameevent, indexN.html pagination) and sources/perfectworld.py reads the list, the article title, the article body and its cover with no JavaScript and no API key; the printed date is ignored in favour of the day in the article URL. Feature 2 is LIVE: ogc:nte is a known game that currently answers [] = no live codes, plus the community listing as a second witness that never posts alone. Feature 1/4 are inactive because no HoYoLAB gid, launcher/mantenance gate or version cadence was verified for this title. Handle evidence (2026-11-27, committed under tests/fixtures/probes/): @NevernessToEverness is a YouTube channel whose page title is the game and x.com/NTE_EN is an existing account (NTE_Game returns no account) -- neither is linked from the server-rendered site, so confirm both once in Settings before trusting an X-only card.",
+      "x_accounts": ["NTE_EN"],
+      "reddit": {"subreddits": ["NevernessToEverness"], "official": []},
+      "youtube": "https://www.youtube.com/@NevernessToEverness",
+      "twitch": "",
+      "card": {"show_banners": false},
+      "codes": {"sources": ["ogc:nte", "reddit:NevernessToEverness"]}
+    },
+    "endfield": {
+      "name": "Arknights: Endfield",
+      "short": "Endfield",
+      "enabled": true,
+      "released": true,
+      "note": "Added 2026-11-27: codes are READY (ogc:endfield answers 5 live codes with rewards and no expiry), and the banner line-ups already travel through Kitsudock-data hub.json like the other games. Feature 3 is BLOCKED at the publisher, not here: endfield.gryphline.com/en-us/news renders titles, dates and covers but every href is empty, and the CMS call the client makes (GET /api/bulletin?lang=..&code=<appCode>) answers 'Cannot GET /api/bulletin' (404) on endfield.gryphline.com, web-api.gryphline.com and /api/bulletin/1 alike -- cms.appCode is not in any captured chunk. Feature 3 therefore reports 'no verified source (inactive)' on every run until the publisher exposes one. Features 1/4 stay inactive until a version cadence or a launcher gate is verified. Handle evidence (2026-11-27, committed under tests/fixtures/probes/): @ArknightsEndfield is a YouTube channel whose page title is the game and x.com/AKEndfield is an existing account (ArknightsEndfield returns no account) -- neither is linked from the server-rendered site, so confirm both once in Settings before trusting an X-only card.",
+      "x_accounts": ["AKEndfield"],
+      "reddit": {"subreddits": ["Endfield", "ArknightsEndfield"], "official": []},
+      "youtube": "https://www.youtube.com/@ArknightsEndfield",
+      "twitch": "",
+      "card": {"show_banners": false},
+      "codes": {"sources": ["ogc:endfield", "reddit:Endfield", "reddit:ArknightsEndfield"]}
+    },
+    "silverpalace": {
+      "name": "Silver Palace",
+      "short": "Silver Palace",
+      "enabled": false,
+      "released": false,
+      "note": "Feature 3 only, and prepared rather than enabled: the page confirms the 2026-12-14 global launch, but silverpalace.elementagames.com/en-us/news is a Nuxt site whose _payload.json is a 69-byte placeholder and whose __NUXT_DATA__ carries only i18n/site config -- no news entry exists in the server output at all, so there is nothing to parse and no fallback to reach. No X account, YouTube channel, code source or maintenance gate for this title could be verified either (api.ennead.cc/codes/silverpalace is a 404). Re-probe after 2026-12-14 for a hydrated news endpoint; the Reddit listing is the only witness wired, and it never posts alone.",
+      "x_accounts": [],
+      "reddit": {"subreddits": ["SilverPalaceOfficial"], "official": []},
+      "youtube": "",
+      "twitch": "",
+      "card": {"show_banners": false},
+      "codes": {"sources": ["reddit:SilverPalaceOfficial"]}
     }
   }
 }

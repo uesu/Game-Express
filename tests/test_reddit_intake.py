@@ -378,14 +378,20 @@ def test_quiet_scope_is_game_express_only_and_leak_traffic_proves_nothing():
     assert "quiet (no new post) r/AnantaOfficial" in rc2.intake.summary_line()
 
 
-def test_game_express_reddit_scope_is_the_six_official_subs_and_its_accounts():
-    """Scope invariant: Game-Express reads the official subreddits + its accounts, never a leak sub."""
+def test_game_express_reddit_scope_is_the_official_subs_and_its_accounts():
+    """Scope invariant: Game-Express reads the official subreddits + its accounts, never a leak sub.
+
+    Nine subs since 2026-11-27: the two Endfield listings (one partnered with Gryphline, one
+    unofficial) and `r/NevernessToEverness` are the witnesses for the games added that day; the
+    Silver Palace listing is carried by its prepared entry. Still never a leak sub.
+    """
     from gamexpress.config import load_games
     from gamexpress.runner import reddit_targets
 
     targets = reddit_targets(list(load_games().values()))
     assert targets["sub"] == {"Genshin_Impact", "HonkaiStarRail", "ZZZ_Official", "WutheringWaves",
-                              "HonkaiNexusAnima", "AnantaOfficial"}
+                              "HonkaiNexusAnima", "AnantaOfficial", "NevernessToEverness",
+                              "Endfield", "ArknightsEndfield", "SilverPalaceOfficial"}
     assert targets["user"] == {"genshinimpact", "HonkaiStarRail", "ZZZ_Official",
                                "HonkaiNexusAnima", "AnantaOfficial"}
     assert not [t for t in targets["sub"] | targets["user"] if "leak" in t.lower()]
