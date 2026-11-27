@@ -1,0 +1,116 @@
+name: Source probe (manual, read-only)
+
+# Investigation tool, NOT part of the monitor or the production sync.
+#
+# Why it exists: a candidate source for a new game or a new code tracker has to be *proven*
+# before it becomes a code path — does the URL answer, is it a static page or a JSON API, which
+# shape do the entries have, does it need JS? A development sandbox usually cannot reach the
+# vendor hosts (only GitHub/PyPI are allowed there), while a GitHub runner can. This workflow
+# turns the runner into the probe: it fetches the URLs you give it, prints status, content type,
+# size and a bounded extract, and never writes anything anywhere.
+#
+# Nothing is uploaded, posted, committed or stored; every value is printed into the run log,
+# which the operator (and the agent) reads with `gh run view --log`. It is `workflow_dispatch`
+# only — no schedule, no push trigger — so it costs a runner minute only when asked.
+#
+# Inputs
+#   urls        one URL per line (default: the reddit / news / code candidates of this round)
+#   mode        summary  status + type + size + the handful of hints we care about (default)
+#               links    every anchor href on the page (deduped, first 200)
+#               grep     lines matching `pattern` (POST-body / JSON / API discovery)
+#               raw      the first `max_bytes` of the body, verbatim
+#   pattern     the regex `mode: grep` uses (extended grep, case-insensitive)
+#   max_bytes   per-URL output cap for `raw` / `grep` (default 6000)
+
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: 'One URL per line (empty = the built-in candidate list)'
+        required: false
+        default: ''
+      mode:
+        description: 'summary | links | grep | raw'
+        required: false
+        default: summary
+      pattern:
+        description: 'EXTENDED regex for mode=grep (case-insensitive)'
+        required: false
+        default: 'api|json|__NEXT_DATA__|article|news|code'
+      max_bytes:
+        description: 'per-URL cap for raw/grep'
+        required: false
+        default: '6000'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fetch the candidates and print the evidence
+        env:
+          URLS: ${{ inputs.urls }}
+          MODE: ${{ inputs.mode }}
+          PATTERN: ${{ inputs.pattern }}
+          MAX_BYTES: ${{ inputs.max_bytes }}
+        run: |
+          set -u
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+          DEFAULT_URLS=$(cat <<'LIST'
+          https://www.crimsonwitch.com/codes
+          https://www.crimsonwitch.com/codes/Genshin_Impact
+          https://www.crimsonwitch.com/feeds/genshin/rss.xml
+          https://api.ennead.cc/codes/nte
+          https://api.ennead.cc/codes/endfield
+          https://api.ennead.cc/codes/silverpalace
+          https://api.ennead.cc/mihoyo/nte/codes
+          https://nte.perfectworld.com/en/article/news/index.html
+          https://endfield.gryphline.com/en-us/news
+          https://silverpalace.elementagames.com/en-us/news
+          LIST
+          )
+          [ -n "${URLS:-}" ] || URLS="$DEFAULT_URLS"
+          cap="${MAX_BYTES:-6000}"
+          case "$cap" in ''|*[!0-9]*) cap=6000 ;; esac
+          n=0
+          while IFS= read -r url; do
+            url="$(printf '%s' "$url" | tr -d '\r' | sed 's/[[:space:]]*$//')"
+            [ -n "$url" ] || continue
+            n=$((n + 1))
+            body="$(mktemp)"
+            code="$(curl -sS -L -m 25 -A "$UA" -H 'Accept: */*' -o "$body" -w '%{http_code}' "$url" 2>/dev/null || echo 000)"
+            ctype="$(file -b --mime-type "$body" 2>/dev/null || echo unknown)"
+            bytes="$(wc -c < "$body" | tr -d ' ')"
+            echo "================================================================"
+            echo "URL   $url"
+            echo "HTTP  $code   TYPE  $ctype   BYTES $bytes"
+            case "${MODE:-summary}" in
+              raw)
+                head -c "$cap" "$body"; echo; echo "---- (truncated at $cap bytes)" ;;
+              grep)
+                grep -Eio "$PATTERN" "$body" | sort | uniq -c | sort -rn | head -40 || echo "---- no match"
+                echo "---- matching lines (first 40, capped)"
+                grep -Ein "$PATTERN" "$body" | head -40 | cut -c1-300 || true ;;
+              links)
+                grep -Eo 'href="[^"]+"' "$body" | sed 's/^href="//; s/"$//' | sort -u | head -200 || true ;;
+              *)
+                # summary: the hints that decide whether a source is usable at all
+                for hint in __NEXT_DATA__ __NUXT__ application/ld+json data-api 'api\.' '\.json' '<script' 'window\.__' 'var ' \
+                            'article' 'news' 'code'; do
+                  hits="$(grep -Eic "$hint" "$body" 2>/dev/null || true)"
+                  [ "${hits:-0}" -gt 0 ] && echo "  hint  $hint  x$hits"
+                done
+                echo "  title $(grep -Eio '<title>[^<]*</title>' "$body" | head -1)"
+                echo "  first bytes:"; head -c 600 "$body" | tr -s '[:space:]' ' ' ; echo ;;
+            esac
+            rm -f "$body"
+          done <<< "$URLS"
+          echo "================================================================"
+          echo "probed $n URL(s)"
