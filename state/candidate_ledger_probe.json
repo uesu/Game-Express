@@ -3,7 +3,7 @@
     "silverpalace": {
       "partial": {
         "id": "999999",
-        "inflight": false,
+        "inflight": true,
         "messages": [
           "900001"
         ],
