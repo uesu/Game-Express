@@ -596,7 +596,6 @@ SOURCE_LABELS = {
     "fandom": "Fandom wiki",
     "codehub": "PromoGacha",
     "wuthering.gg": "wuthering.gg",
-    "crimsonwitch": "Crimson Witch",
     "manual": "manual",
 }
 

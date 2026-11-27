@@ -1,61 +1,59 @@
 # Changelog — current entries
 
-## 2026-11-27 — Crimson Witch is a code source, and the new-game probe
+## 2026-11-27 — Probe verdicts: two code sources rejected, and the new-game findings
 
 - **What was asked.** A full investigation, not a patch: is `crimsonwitch.com` a usable code source,
   is `heartlog/Hoyocodes` already covered, and can **Neverness to Everness**, **Arknights:
   Endfield** and **Silver Palace** be added for feature 1 (schedule), 2 (codes), 3 (official news)
   and 4 (pre-load / maintenance / servers live)? Every answer had to rest on live bytes.
-- **Crimson Witch — yes, and now shipped.** The first probe called it "a client-rendered SPA with no
-  codes in the HTML". **That was wrong.** The codes are in the **React Server Components stream**
-  (`self.__next_f.push([1,"…"])`), which is plain text in the response: the decoded chunk carries a
-  structured `initialCodes` array with code, `added`, `expires`, `rewards[{item,qty}]` and
-  `region_locked`. `sources/codes.py` now concatenates the pushed strings, finds that array with a
-  **string-aware bracket matcher** (so a `]` inside a reward name cannot truncate it) and
-  `json.loads` it — no per-field regex, no class names, no browser. Itemised rewards reach the card
-  (`Primogem ×20`, `Mora ×10,000`), an `expires` stamp becomes the usual "Codes expire — redeem
-  soon" marker, region-locked entries are skipped, duplicates/empty codes/non-dict entries dropped,
-  and a page without the payload is `[]` — never a guess.
-- **Trust.** `family("crimsonwitch") == "crimsonwitch"`: its own family, so it can be the *second*
-  independent witness next to `ennead`/`ogc`, `seria`, `hum-bao`, `fandom` or a Reddit listing and
-  never double-counts them. It is **not** a `VALIDATORS` entry — it publishes no redemption
-  validation, so the "verified (validated)" wording stays reserved for seria and Hum-Bao.
-- **Wiring.** `crimsonwitch:Genshin_Impact`, `crimsonwitch:Honkai_Star_Rail` and
-  `crimsonwitch:Zenless_Zone_Zero` sit before the `reddit:` witness of their game; the card's
-  source line reads `Crimson Witch`. Evidence: 5 live GI codes and 2 live ZZZ codes in
-  `tests/fixtures/probes/`, trimmed real payloads as
-  `tests/fixtures/crimsonwitch_{genshin,zzz}_trimmed.html`, and 8 new assertions in
-  `tests/test_crimsonwitch_codes.py` (parse, rewards formatting, expiry before/after, region lock,
-  duplicates, escapes, truncation, fetch URL/tag, family, label, config order).
-- **`heartlog/Hoyocodes` — already covered.** It is a static UI whose bundle calls
-  `api.ennead.cc/mihoyo/…` in the visitor's browser (last commit 2026-09-07), i.e. the same backend
-  the `ennead:` sources read directly, so it can never be an independent witness. No source added;
-  the verdict is recorded in SOURCES.md.
+- **Crimson Witch — rejected, on two verified counts.** The page *is* readable server-side (its
+  Next.js RSC stream carries a structured `initialCodes` array with rewards and expiry, and the probe
+  captured 5 GI and 2 ZZZ codes that way), but readable is not admissible:
+  1. **It is not an independent witness — it is `ennead`'s upstream.** `api.ennead.cc` is served by
+     `torikushiii/hoyoverse-api`, whose collectors fetch Crimson Witch themselves: at `85be7728`,
+     `src/scraper/sources/genshin/mod.rs` declares
+     `CRIMSON_WITCH_URL = "https://www.crimsonwitch.com/codes/Genshin_Impact"`, joins
+     `crimson_witch::scrape(…)` into a `tokio::join!` beside fandom/game8/hoyolab and stores it as
+     the `crimson_witch` source (starrail and zenless have the same collector). A `crimsonwitch:`
+     source would re-read ennead's own upstream and double-count it — exactly what `SOURCE_FAMILY`
+     exists to prevent.
+  2. **Its availability is not guaranteed.** One volunteer-run tracker; its RSS was dead and its
+     in-page search returned nothing for codes during the probe. A monitor cannot be built on "it
+     answered twice on a good day".
+  **Nothing is wired, nothing is configured**, and the codes still reach a card through
+  `ogc`/`ennead`, which is where they come from. The investigation wrote a parser and tests, then
+  removed both — the verdict, not the code, is the deliverable.
+- **`heartlog/Hoyocodes` — already covered, nothing added.** It is a static UI whose bundle fetches
+  `api.ennead.cc/mihoyo/…` in the visitor's browser (last commit 2026-09-07), i.e. the backend the
+  `ennead:`/`ogc:` sources already read, so it can never be an independent witness. **The ranking is
+  untouched**: one family, one vote, `CODES_MIN_SOURCES = 2`.
 - **NTE.** Codes are ready to configure (`ogc:nte` is a known game answering `[]`), and feature 3 is
-  **feasible**: `nte.perfectworld.com/en/article/news/index.html` is static and server-rendered,
-  with tabs `gamenews`/`gamebroad`/`gameevent`, article URLs of the shape
+  **feasible**: `nte.perfectworld.com/en/article/news/index.html` is static and server-rendered, with
+  tabs `gamenews`/`gamebroad`/`gameevent`, article URLs
   `/en/article/news/<tab>/YYYYMMDD/<id>.html` and `indexN.html` pagination (a 25 KB article body is
   committed as evidence). Features 1 and 4 are not verified.
 - **Endfield.** Codes are ready to configure (`ogc:endfield`: 5 live codes with rewards, no expiry).
   Feature 3 is **blocked**: `/en-us/news` renders titles, dates and covers but empty `href`s, and the
   CMS call `GET /api/bulletin?lang=…&code=<appCode>` answers `Cannot GET /api/bulletin` (404) on
   `endfield.gryphline.com` and `web-api.gryphline.com` alike — `appCode` is not in the chunks the
-  probe captured. A schematic `Kitsudock-data` lineup path exists for feature 1.
+  probe captured. Feature 1 can ride the existing `Kitsudock-data` line-up path.
 - **Silver Palace.** Feature 3 only, and **blocked**: `_payload.json` is a 69-byte placeholder and
   `__NUXT_DATA__` holds only i18n/site config — the SSR output contains no news entry at all. The
-  page does confirm the 2026-12-14 global launch. Codes/schedule stay out of scope.
-- **The games are not in `config/games.json` yet, deliberately.** That file is the contract every
-  feature is tested against: the smoke suite requires a YouTube channel, X accounts, reveal-ping
-  rows, a benchmark row and official-feed participation for **every** configured game. For three
-  titles — two unlaunched — that data could not be verified here, and a codes-only entry would mean
-  either inventing it or relaxing the guards. Both are worse than waiting; the exact spec lines
-  (which already pass `validate`) and the per-game checklist are in
-  [RESEARCH_NEW_GAMES.md](../RESEARCH_NEW_GAMES.md).
-- **Probe tooling.** The dispatch-only `source-probe` job in `ci.yml` gained `mode=save`, which
-  commits the fetched bytes (plus a `.url.txt`) to `tests/fixtures/probes/` so evidence is
-  reviewable in the PR instead of dying with a log. It is never a merge gate, and its checkout
-  action is pinned to a commit SHA like every other `uses:` in this repository. The offline suite
-  now also runs `tests/test_crimsonwitch_codes.py` in both `ci.yml` and the Python-bump gate.
+  page does confirm the 2026-12-14 global launch.
+- **No game was added to `config/games.json`.** That file is the contract every feature is tested
+  against: the smoke suite requires a YouTube channel, X accounts, reveal-ping rows, a benchmark row
+  and official-feed participation for **every** configured game, and for three titles — two
+  unlaunched — that metadata could not be verified here. A codes-only entry would mean inventing it
+  or relaxing the guards; both are worse than waiting. The exact spec lines (which already pass
+  `validate`) and the per-game checklist are in [RESEARCH_NEW_GAMES.md](../RESEARCH_NEW_GAMES.md).
+- **Shipped: the manual probe.** The dispatch-only `source-probe` job in `ci.yml` can now
+  `mode=save` the fetched bytes (plus a `.url.txt`) into `tests/fixtures/probes/`, so evidence is
+  reviewable instead of dying with a log. It is never a merge gate, its candidate list is explicitly
+  *candidates, not sources*, and its checkout action is pinned to a commit SHA like every other
+  `uses:` here — the unpinned `@v7` it started with was what reddened the `test` job on the earlier
+  dispatch runs.
+- **No behaviour moved.** No card, gate, ranking, expiry, dedupe, corroboration or posting rule
+  changed; the production path is byte-for-byte what it was before this branch's research.
 
 ## 2026-11-24 — Reddit intake: match News-Express's newest relay work (body media, `429` evidence)
 

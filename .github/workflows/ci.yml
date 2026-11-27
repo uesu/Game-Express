@@ -104,7 +104,6 @@ jobs:
           python tests/test_reddit_intake.py
           python tests/test_reddit_usecases.py
           python tests/test_maintenance_live.py
-          python tests/test_crimsonwitch_codes.py
 
       - name: Card preview renders (previews/index.html)
         run: python -m gamexpress preview --out /tmp/previews > /dev/null
@@ -237,6 +236,7 @@ jobs:
         run: |
           set -u
           UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+          # Candidates only — an entry here is a URL worth re-probing, never a configured source.
           DEFAULT_URLS=$(cat <<'LIST'
           https://www.crimsonwitch.com/codes
           https://www.crimsonwitch.com/codes/Genshin_Impact
