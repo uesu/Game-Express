@@ -498,7 +498,11 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
 `.github/dependabot.yml`, `.github/zizmor.yml`, `.gitignore`, `requirements.txt`, `ruff.toml`,
 `state/.gitkeep`) to `uesu/8mqzv4k2n7c`:
 
-- **Live state is untouchable:** `state/state.json` is never created, overwritten, staged, or deleted.
+- **Live state is untouchable:** `state/state.json` and the gated candidate ledger
+  `state/candidate_news.json` are never created, overwritten, staged, or deleted by sync. The
+  candidate ledger is not provisioned automatically; do not create or reset it during research.
+  Its production provisioning, recovery and failover process remain unverified and candidate
+  delivery is hard-gated off.
 - **Program announcement seeds are union-merged:** `config/program_announcements.json` preserves any
   tweet IDs discovered live by the production monitor while adding/updating entries from dev.
 - **Dev-only files stay in dev:** `docs/`, `README.md`, `AGENTS.md`, `PRIVACY_POLICY.md`,

@@ -10,7 +10,7 @@ import asyncio
 import os
 
 from . import candidate_news_delivery as delivery
-from .candidate_news_checkpoint import GitCheckpoint
+from .candidate_news_checkpoint import IsolatedGitLedger
 from .config import ROOT
 
 # A release gate, not a configuration flag. No production posts until the
@@ -44,43 +44,50 @@ async def run_candidate_news(ctx):
     if os.environ.get("GITHUB_ACTIONS") != "true" or not branch:
         ctx.warnings.append("Candidate news: durable Actions branch checkpoint unavailable; no posts")
         return
-    records = ctx.state.data.get("candidate_news", {})
-    if not isinstance(records, dict):
-        ctx.warnings.append("Candidate news: invalid stored state; no posts")
+    ledger = IsolatedGitLedger(ROOT, branch)
+    if not await ledger.open():
+        ctx.warnings.append("Candidate news: authoritative ledger unavailable or stale; no posts")
         return
-
-    for source in selected:
-        target = delivery.destination(settings, source)
-        if target is None:
-            ctx.warnings.append(f"{source} news: dedicated destination missing or invalid; no discovery or posts")
-            continue
-        _, fingerprint = target
-        try:
-            # Validate existing route/state before any source requests.
-            prior = records.get(source)
-            if prior is not None:
-                delivery._validate(prior, source, fingerprint)
-            rows = await delivery.discover(ctx.fetcher, source)
-            state = delivery.ingest(source, fingerprint, prior, rows)
-            if not state["pending"]:
-                ctx.report.append(f"{source} news: caught up ({len(state['posted'])} recorded)")
+    try:
+        for source in selected:
+            if ledger.poisoned:
+                ctx.warnings.append("Candidate news: checkpoint failed; remaining sources held")
+                break
+            target = delivery.destination(settings, source)
+            if target is None:
+                ctx.warnings.append(f"{source} news: dedicated destination missing or invalid; no discovery or posts")
                 continue
-            checkpoint = GitCheckpoint(ROOT, ctx.state, source, branch)
+            _, fingerprint = target
+            try:
+                # Read each record from the separately checkpointed authoritative ledger.
+                prior = ledger.data["candidate_news"].get(source)
+                if prior is not None:
+                    delivery._validate(prior, source, fingerprint)
+                rows = await delivery.discover(ctx.fetcher, source)
+                state = delivery.ingest(source, fingerprint, prior, rows)
+                if not state["pending"]:
+                    ctx.report.append(f"{source} news: caught up ({len(state['posted'])} recorded)")
+                    continue
 
-            async def render(row, *, _source=source):
-                return await delivery.render_candidate(ctx.fetcher, settings, _source, row)
+                async def checkpoint(snapshot, *, _source=source):
+                    return await ledger.checkpoint(_source, snapshot)
 
-            async def send(payload, *, _source=source):
-                # Git checkpoints usually exceed this delay, but never rely on that for pacing.
-                await asyncio.sleep(1.5)
-                return await delivery.send_candidate_once(ctx.webhook.session, settings, _source, payload)
+                async def render(row, *, _source=source):
+                    return await delivery.render_candidate(ctx.fetcher, settings, _source, row)
 
-            state = await delivery.deliver_oldest(state, source, fingerprint, as_of=ctx.now,
-                                                  checkpoint=checkpoint, render=render, send=send,
-                                                  max_pages=MAX_PAGES_PER_SOURCE_RUN)
-            pages = len(state["partial"]["messages"]) if state["partial"] else 0
-            ctx.report.append(f"{source} news: queued={len(state['pending'])} recorded={len(state['posted'])} "
-                              f"partial-pages={pages}")
-        except Exception as exc:  # noqa: BLE001 — hold this source without affecting unrelated news
-            # Never interpolate exceptions: HTTP clients can include secret URLs.
-            ctx.warnings.append(f"{source} news: held ({type(exc).__name__}); inspect before retry")
+                async def send(payload, *, _source=source):
+                    # Git checkpoints usually exceed this delay, but never rely on that for pacing.
+                    await asyncio.sleep(1.5)
+                    return await delivery.send_candidate_once(ctx.webhook.session, settings, _source, payload)
+
+                state = await delivery.deliver_oldest(state, source, fingerprint, as_of=ctx.now,
+                                                      checkpoint=checkpoint, render=render, send=send,
+                                                      max_pages=MAX_PAGES_PER_SOURCE_RUN)
+                pages = len(state["partial"]["messages"]) if state["partial"] else 0
+                ctx.report.append(f"{source} news: queued={len(state['pending'])} recorded={len(state['posted'])} "
+                                  f"partial-pages={pages}")
+            except Exception as exc:  # noqa: BLE001 — hold this source without affecting unrelated news
+                # Never interpolate exceptions: HTTP clients can include secret URLs.
+                ctx.warnings.append(f"{source} news: held ({type(exc).__name__}); inspect before retry")
+    finally:
+        await ledger.close()

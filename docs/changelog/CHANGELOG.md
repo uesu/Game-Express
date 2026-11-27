@@ -10,8 +10,8 @@
 - A bounded private test confirmed four messages across three new articles, including a two-page
   resume using an isolated local Git ledger. It did not touch production state. Added fail-closed
   reconciliation primitives and local stale-writer/crash tests; production recovery is still gated.
-  An unwired detached-worktree ledger prototype isolates candidate Git writes from monitor state,
-  but its production provisioning, GitHub behavior and cross-instance operation are unverified.
+  The gated path now uses a detached-worktree ledger, isolated from monitor state, and prod sync
+  protects it. Provisioning, GitHub behavior and cross-instance operation remain unverified.
 - Corrected candidate Silver Palace duplicate lead artwork only when a bounded official-host byte
   comparison proves the cover equals the first body image. Other media remain unchanged; the
   corrected article 7 card was tested once privately and the test was locked against reruns.

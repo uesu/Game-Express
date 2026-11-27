@@ -437,7 +437,8 @@ reduce but cannot eliminate source pagination races.
 
 An experimental monitor path and Git checkpoint are under a **hard-coded release gate**: no
 candidate discovery or posts occur there, even if `NEWS_CANDIDATES_BACKFILL=1` is configured. Its
-prototype checkpoints write-ahead intent and confirmed IDs via same-branch Git push/ref checks,
+prototype uses a separate detached-worktree Git ledger to checkpoint write-ahead intent and
+confirmed IDs via same-branch push/ref checks,
 uses one-shot Discord POSTs, limits a source to one article / three pages per run, and requires full
 expanded output (holding rather than sending a safety-limit excerpt). Local mocked runner and bare
 Git tests do not establish production correctness. End-of-job persistence/rebase interactions,
@@ -455,11 +456,11 @@ max-resolution test was not repeated. Automated reconciliation tests now hold am
 verify a human-reviewed resolution against the exact article, page, route and payload signature.
 An `absent` decision requires independently established non-delivery, not merely an unknown outcome;
 the corrected record must be durably checkpointed before resuming. An operator-facing workflow and
-production-grade recovery procedure remain unfinished. A second, **unwired** checkpoint prototype
-uses a separate tracked candidate ledger in a detached worktree. Local bare-Git tests show a stale
-writer holds and a normal state commit can rebase over the separate ledger without changing it.
-The file is not provisioned or protected by production sync yet; this is not GitHub or failover
-validation, and the release gate remains closed.
+production-grade recovery procedure remain unfinished. Local bare-Git tests show the gated runner
+can checkpoint separately, a stale writer holds, and a normal state commit can rebase over the
+candidate ledger without changing it. Production sync protects `state/candidate_news.json` from
+creation, modification or deletion; it is not provisioned automatically. This is not GitHub or
+failover validation, and the release gate remains closed.
 
 Silver Palace article 7 exposed a duplicated lead image: the cover and first body image had
 different URLs but were byte-identical 1626×500 JPEGs. Its separate 800×444 `banner_img` is the

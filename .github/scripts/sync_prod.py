@@ -3,7 +3,7 @@
 Used by .github/workflows/sync_prod.yml whenever commits land on main (or via workflow_dispatch).
 
 Safety guarantees:
-  1. Live state protection: `state/state.json` is NEVER created, overwritten, staged, or deleted
+  1. Live state protection: `state/state.json` and `state/candidate_news.json` are NEVER created, overwritten, staged, or deleted
      in the target production repository.
   2. Program announcement seed union: `config/program_announcements.json` preserves any tweet IDs
      discovered live by the production monitor while adding/updating entries from the dev repo.
@@ -68,6 +68,7 @@ SEMANTIC_MERGE_FILES = (
 
 PROTECTED_PROD_FILES = (
     "state/state.json",
+    "state/candidate_news.json",
 )
 
 EXCLUDED_DEV_PATHS = (

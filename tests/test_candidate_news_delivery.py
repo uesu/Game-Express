@@ -294,38 +294,104 @@ class CandidateDeliveryTests(unittest.TestCase):
             rendered.append(candidate["id"])
             return [payload(candidate["id"])]
 
-        async def send(session, conf, source, card):
-            self.assertEqual(source, "silverpalace")
-            self.assertTrue(state.data["candidate_news"][source]["partial"]["inflight"])
-            sent.append(card)
-            return SimpleNamespace(ok=True, message_id="101", ambiguous=False)
-
         async def sleep(seconds):
             self.assertEqual(seconds, 1.5)
 
-        class Checkpoint:
-            def __init__(self, root, target, source, branch):
-                self.target, self.source = target, source
-                self_branch = branch
-                if self_branch != "arena/98b5f4e1-game-express":
-                    raise AssertionError("wrong branch")
+        ledgers = []
 
-            async def __call__(self, snapshot):
-                self.target.data.setdefault("candidate_news", {})[self.source] = copy.deepcopy(snapshot)
+        class Ledger:
+            def __init__(self, root, branch):
+                self.data, self.poisoned = {"candidate_news": {}}, False
+                if branch != "arena/98b5f4e1-game-express":
+                    raise AssertionError("wrong branch")
+                ledgers.append(self)
+
+            async def open(self):
                 return True
 
+            async def checkpoint(self, source, snapshot):
+                self.data["candidate_news"][source] = copy.deepcopy(snapshot)
+                return True
+
+            async def close(self):
+                pass
+
+        # The send callback observes the ledger, not the monitor state.
+        async def send(session, conf, source, card):
+            self.assertEqual(source, "silverpalace")
+            self.assertTrue(ledgers[0].data["candidate_news"][source]["partial"]["inflight"])
+            sent.append(card)
+            return SimpleNamespace(ok=True, message_id="101", ambiguous=False)
+
         with (patch.dict("os.environ", {"GITHUB_ACTIONS": "true", "GITHUB_REF_NAME": "arena/98b5f4e1-game-express"}),
-              patch.object(runner, "CANDIDATE_NEWS_READY", True), patch.object(runner, "GitCheckpoint", Checkpoint), patch.object(runner.asyncio, "sleep", sleep),
-              patch.object(delivery, "discover", discover), patch.object(delivery, "render_candidate", render),
-              patch.object(delivery, "send_candidate_once", send)):
+              patch.object(runner, "CANDIDATE_NEWS_READY", True), patch.object(runner, "IsolatedGitLedger", Ledger),
+              patch.object(runner.asyncio, "sleep", sleep), patch.object(delivery, "discover", discover),
+              patch.object(delivery, "render_candidate", render), patch.object(delivery, "send_candidate_once", send)):
             asyncio.run(runner.run_candidate_news(ctx))
-        result = state.data["candidate_news"]["silverpalace"]
+        result = ledgers[0].data["candidate_news"]["silverpalace"]
         self.assertEqual(rendered, ["1"])
         self.assertEqual(len(sent), 1)
         self.assertEqual(result["posted"]["1"]["messages"], ["101"])
         self.assertEqual([r["id"] for r in result["pending"]], ["2"])
         self.assertEqual(state.data["news"], {"genshin": {"unchanged": True}})
         self.assertFalse(ctx.warnings)
+
+    def test_gated_runner_uses_real_isolated_ledger_without_touching_monitor_state(self):
+        branch = "arena/98b5f4e1-game-express"
+        with tempfile.TemporaryDirectory() as tmp:
+            root, remote = Path(tmp) / "work", Path(tmp) / "remote.git"
+            root.mkdir()
+
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=root, capture_output=True, check=True).stdout
+
+            git("init", "--bare", str(remote))
+            git("init", "-b", branch)
+            git("config", "user.name", "Test")
+            git("config", "user.email", "test@example.invalid")
+            (root / "state").mkdir()
+            (root / "state/state.json").write_text('{"schema":1,"news":{"old":"unchanged"}}\n', encoding="utf-8")
+            (root / "state/candidate_news.json").write_text('{"schema":1,"candidate_news":{}}\n', encoding="utf-8")
+            git("add", "state")
+            git("commit", "-m", "initial")
+            git("remote", "add", "origin", str(remote))
+            git("push", "origin", f"HEAD:refs/heads/{branch}")
+            before = git("rev-parse", "HEAD")
+            settings = load_settings({"ENABLED_FEATURES": "news", "NEWS_GAMES": "silverpalace",
+                                      "NEWS_CANDIDATES_BACKFILL": "1", "DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK})
+            ctx = SimpleNamespace(settings=settings, active=True, state=State.load(root / "state/state.json"), now=NOW,
+                                  fetcher=None, webhook=SimpleNamespace(session=None), report=[], warnings=[])
+            sends = []
+
+            async def discover(fetcher, source):
+                return [row("1"), row("2")]
+
+            async def render(fetcher, conf, source, article):
+                return [payload(article["id"])]
+
+            async def send(session, conf, source, card):
+                recorded = json.loads(git("--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json"))
+                self.assertTrue(recorded["candidate_news"][source]["partial"]["inflight"])
+                sends.append(source)
+                return SimpleNamespace(ok=True, message_id="101", ambiguous=False)
+
+            async def sleep(seconds):
+                pass
+
+            with (patch.dict("os.environ", {"GITHUB_ACTIONS": "true", "GITHUB_REF_NAME": branch}),
+                  patch.object(runner, "ROOT", root), patch.object(runner, "CANDIDATE_NEWS_READY", True),
+                  patch.object(runner.asyncio, "sleep", sleep), patch.object(delivery, "discover", discover),
+                  patch.object(delivery, "render_candidate", render), patch.object(delivery, "send_candidate_once", send)):
+                asyncio.run(runner.run_candidate_news(ctx))
+            self.assertEqual(sends, ["silverpalace"])
+            self.assertFalse(ctx.warnings)
+            self.assertEqual(git("rev-parse", "HEAD"), before)
+            self.assertEqual(git("status", "--porcelain"), b"")
+            self.assertEqual(ctx.state.data["news"], {"old": "unchanged"})
+            self.assertNotIn("candidate_news", ctx.state.data)
+            recorded = json.loads(git("--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json"))
+            self.assertEqual(recorded["candidate_news"]["silverpalace"]["posted"]["1"]["messages"], ["101"])
+            self.assertEqual(recorded["candidate_news"]["silverpalace"]["pending"][0]["id"], "2")
 
     def test_runner_stays_inert_without_explicit_opt_in_and_on_peer_config(self):
         settings = load_settings({"ENABLED_FEATURES": "news", "NEWS_GAMES": "silverpalace",

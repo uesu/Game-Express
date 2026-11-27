@@ -17839,6 +17839,8 @@ def test_prod_sync_workflow_and_tree_synchronizer_preserve_live_state_and_merge_
 
         live_state_payload = b'{"posted": {"genshin:7.2": {"message_id": "999888777"}}, "live": true}\n'
         (prod_root / "state" / "state.json").write_bytes(live_state_payload)
+        candidate_state_payload = b'{"schema":1,"candidate_news":{"test":"preserve"}}\n'
+        (prod_root / "state" / "candidate_news.json").write_bytes(candidate_state_payload)
         (prod_root / "placeholder" / "README.txt").write_text("keep placeholder\n", encoding="utf-8")
         (prod_root / "gamexpress" / "obsolete_module.py").write_text("# stale\n", encoding="utf-8")
         (prod_root / ".github" / "workflows" / "sync_prod.yml").write_text("# accidental copy\n", encoding="utf-8")
@@ -17850,7 +17852,9 @@ def test_prod_sync_workflow_and_tree_synchronizer_preserve_live_state_and_merge_
         assert "gamexpress/obsolete_module.py" in res["removed"]
         assert ".github/workflows/sync_prod.yml" in res["removed"]
         assert "state/state.json" in res["preserved"]
+        assert "state/candidate_news.json" in res["preserved"]
         assert (prod_root / "state" / "state.json").read_bytes() == live_state_payload
+        assert (prod_root / "state" / "candidate_news.json").read_bytes() == candidate_state_payload
         assert (prod_root / "placeholder" / "README.txt").read_text(encoding="utf-8") == "keep placeholder\n"
         assert not (prod_root / ".github" / "workflows" / "sync_prod.yml").exists()
         assert not (prod_root / "docs").exists()
@@ -17866,6 +17870,12 @@ def test_prod_sync_workflow_and_tree_synchronizer_preserve_live_state_and_merge_
         res_idempotent = sync_mod.sync_tree(ROOT, prod_root, include_workflows=True)
         assert res_idempotent["updated"] == [] and res_idempotent["removed"] == []
         assert (prod_root / "state" / "state.json").read_bytes() == live_state_payload
+        # Sync must never bootstrap a missing candidate ledger either; an accidental
+        # empty replacement after loss would cause a full backlog replay.
+        (prod_root / "state" / "candidate_news.json").unlink()
+        sync_mod.sync_tree(ROOT, prod_root, include_workflows=True)
+        assert not (prod_root / "state" / "candidate_news.json").exists()
+        (prod_root / "state" / "candidate_news.json").write_bytes(candidate_state_payload)
 
         # Monotonic workflow pin guard: newer prod Dependabot / python_version_bump pins
         # (e.g. Python 3.14.99 or a newer SHA-pinned action) are NEVER downgraded by dev -> prod sync,
@@ -17905,11 +17915,14 @@ def test_prod_sync_workflow_and_tree_synchronizer_preserve_live_state_and_merge_
         sync_mod._run_git(["init", "-q"], cwd=prod_root)
         sync_mod._run_git(["config", "user.name", "test"], cwd=prod_root)
         sync_mod._run_git(["config", "user.email", "test@example.com"], cwd=prod_root)
-        sync_mod._run_git(["add", "-f", "state/state.json", "config/games.json"], cwd=prod_root)
+        sync_mod._run_git(["add", "-f", "state/state.json", "state/candidate_news.json", "config/games.json"], cwd=prod_root)
         sync_mod._run_git(["commit", "-q", "-m", "init"], cwd=prod_root)
         (prod_root / "state" / "state.json").write_bytes(b'{"corrupted": true}\n')
+        (prod_root / "state" / "candidate_news.json").write_bytes(b'{"corrupted": true}\n')
         staged_files = sync_mod._stage_and_verify(prod_root)
         assert "state/state.json" not in staged_files
+        assert "state/candidate_news.json" not in staged_files
+        assert (prod_root / "state" / "candidate_news.json").read_bytes() == candidate_state_payload
         assert ".github/workflows/sync_prod.yml" not in staged_files
         assert (prod_root / "state" / "state.json").read_bytes() == live_state_payload
 
