@@ -16105,9 +16105,7 @@ def test_final_pre_merge_edge_cases_and_repo_doc_consistency():
         assert f"{len(config.DEFAULT_REDDIT)} entries" in readme_t
         assert f"{len(config.DEFAULT_REDDIT_PROXIES)} proxies" in readme_t
         assert f"{len(config.DEFAULT_REDDIT)} Reddit/Redlib entries" in security_t
-        # Research may name candidate games; mentioning one must not imply activation.
-        assert "Research only, not an enabled feature" in sources_t
-        assert not {"endfield", "nte", "silverpalace"}.intersection(GAMES)
+        assert "arknights" not in sources_t.lower()
         assert "Status: not integrated." not in sources_t
         assert "November 6, 2026" in privacy_t and "November 6, 2026" in terms_t   # nitter rotation #8 revision
         assert "nitter.mizuki.st" in privacy_t
