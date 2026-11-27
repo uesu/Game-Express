@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT))
 
 import candidate_private_pipeline_test as private  # noqa: E402
+import silver_dedup_test as silver_fix  # noqa: E402
 
 from gamexpress.cards import news_payloads  # noqa: E402
 from gamexpress.config import Game, load_settings  # noqa: E402
@@ -50,6 +51,35 @@ class PrivateHarnessTests(unittest.TestCase):
             sent = asyncio.run(private.send_prepared(None, prepared, HOOK))
         self.assertEqual(sent, 4)
         self.assertEqual(calls, ["nte", "endfield", "endfield", "silverpalace"])
+
+    def test_silver_fix_preparation_requires_one_article_image_and_full_text(self):
+        async def discover(fetcher, source):
+            return [{"id": "7", "title": "[Monotype] Beta Test Recruitment has officially started!"}]
+
+        async def render(fetcher, settings, source, row):
+            return [{"components": [{"components": [
+                {"type": 12, "items": [{"media": {"url": silver_fix.BODY}}]},
+                {"type": 10, "content": "How to Participate\nRecruitment Overview"}]}]}]
+
+        with patch.object(silver_fix.delivery, "discover", discover), patch.object(silver_fix.delivery, "render_candidate", render):
+            payload = asyncio.run(silver_fix.prepare(None))
+        self.assertIn("components", payload)
+
+        async def bad_render(fetcher, settings, source, row):
+            result = await render(fetcher, settings, source, row)
+            result[0]["components"][0]["components"].append({"type": 12, "items": [{"media": {"url": silver_fix.BODY}}]})
+            return result
+
+        with (patch.object(silver_fix.delivery, "discover", discover),
+              patch.object(silver_fix.delivery, "render_candidate", bad_render), self.assertRaises(ValueError)):
+            asyncio.run(silver_fix.prepare(None))
+
+    def test_silver_fix_refuses_rerun_and_completed_test(self):
+        with patch.dict("os.environ", {"GITHUB_RUN_ATTEMPT": "2"}), self.assertRaises(ValueError):
+            asyncio.run(silver_fix.run())
+        with (patch.dict("os.environ", {"GITHUB_RUN_ATTEMPT": "1"}),
+              patch.object(silver_fix, "PRIVATE_TEST_COMPLETED", True), self.assertRaises(ValueError)):
+            asyncio.run(silver_fix.run())
 
     def test_completed_private_test_is_locked_against_repeat(self):
         with (patch.object(private, "prepare", side_effect=AssertionError("unexpected discovery")),
