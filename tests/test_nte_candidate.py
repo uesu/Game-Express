@@ -5,6 +5,7 @@ listing and #173 capture, not a raw HTML fixture or an assumed publication time.
 """
 from __future__ import annotations
 
+import asyncio
 import sys
 import unittest
 from pathlib import Path
@@ -28,6 +29,62 @@ def listing(content):
 
 
 class NteCandidateTests(unittest.TestCase):
+    def test_complete_double_walk_rejects_partial_and_listing_drift(self):
+        path1 = "/en/article/news/gamenews/20240830/252469.html"
+        path2 = "/en/article/news/gamebroad/20261113/265053.html"
+        pager = '<ul class="pagination"><li><a href="#">1</a></li><li><a href="index1.html">2</a></li></ul>'
+        first = listing(article(path1, "Trailer", "2024-08-30")) + pager
+        second = listing(article(path2, "Guidelines", "2026-11-20"))
+
+        class Fetcher:
+            def __init__(self, firsts, last=second):
+                self.firsts, self.last, self.calls = iter(firsts), last, []
+
+            async def get_text(self, url, **kwargs):
+                self.calls.append((url, kwargs))
+                return next(self.firsts, None) if url.endswith("index.html") else self.last
+
+        f = Fetcher([first, first, first, first])
+        rows = asyncio.run(nte_candidate.snapshot(f))
+        self.assertEqual([r["id"] for r in rows], ["252469", "265053"])
+        self.assertEqual(rows[1]["date"], "2026-11-20")
+        self.assertEqual(rows[1]["url"], "https://nte.perfectworld.com" + path2)
+        self.assertEqual(len(f.calls), 6)
+        self.assertTrue(all(call[1]["allow_redirects"] is False for call in f.calls))
+        self.assertIsNone(asyncio.run(nte_candidate.snapshot(Fetcher([first, first], last=None))))
+        changed = first.replace("Trailer", "Changed")
+        self.assertIsNone(asyncio.run(nte_candidate.snapshot(Fetcher([first, changed]))))
+        self.assertIsNone(asyncio.run(nte_candidate.snapshot(Fetcher([first, first, changed, changed]))))
+
+    def test_detail_reader_preserves_body_and_rejects_untrusted_or_incomplete(self):
+        row = {"id": "252469", "title": "Trailer", "date": "2024-08-30",
+               "url": "https://nte.perfectworld.com/en/article/news/gamenews/20240830/252469.html"}
+        html = ('<div class="articleContent"><p>Before</p><iframe '
+                'src="https://www.youtube.com/embed/tdZN6H1N3PU"></iframe><p>After</p></div>')
+
+        class Fetcher:
+            def __init__(self, body):
+                self.body, self.calls = body, []
+
+            async def get_text(self, url, **kwargs):
+                self.calls.append((url, kwargs))
+                return self.body
+
+        game = Game(key="nte", name="NTE", short="NTE", enabled=False, color=0)
+        fetcher = Fetcher(html)
+        result = asyncio.run(nte_candidate.news_article(fetcher, game, row))
+        self.assertEqual(result.published_ts, 0)
+        self.assertEqual([b["kind"] for b in result.article_blocks], ["text", "link", "text"])
+        self.assertEqual(fetcher.calls[0][0], row["url"])
+        self.assertFalse(fetcher.calls[0][1]["allow_redirects"])
+        for bad in (None, html.replace("</div>", ""), html + html, "<p>unavailable</p>"):
+            self.assertIsNone(asyncio.run(nte_candidate.news_article(Fetcher(bad), game, row)))
+        for url in (row["url"].replace("nte.perfectworld.com", "nte.perfectworld.com.evil.test"),
+                    row["url"].replace("252469", "999"), row["url"] + "?redirect=1"):
+            fetcher = Fetcher(html)
+            self.assertIsNone(asyncio.run(nte_candidate.news_article(fetcher, game, {**row, "url": url})))
+            self.assertFalse(fetcher.calls)
+
     def test_synthetic_short_trailer_keeps_watch_link_in_same_news_card(self):
         # Contract experiment only: no NTE detail reader or delivery is registered.
         game = Game(key="nte", name="Neverness to Everness", short="NTE", enabled=False, color=0)

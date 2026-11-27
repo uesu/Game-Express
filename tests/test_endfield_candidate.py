@@ -65,6 +65,25 @@ class EndfieldCandidateTests(unittest.TestCase):
                 self.assertIsNone(run(endfield.discover_news(Fetcher(pages), None, 0)))
         self.assertEqual(run(endfield.discover_news(Fetcher({1: page(1, [], 0)}), None, 0)), [])
 
+    def test_complete_snapshot_rechecks_and_holds_on_drift(self):
+        class ChangingFetcher:
+            def __init__(self, pages):
+                self.pages = iter(pages)
+                self.calls = []
+
+            async def get_json(self, url, **kwargs):
+                self.calls.append((url, kwargs))
+                return next(self.pages, None)
+
+        first = page(1, [row("001", 300)], 1)
+        fetcher = ChangingFetcher([first, first])
+        result = run(endfield.snapshot(fetcher, None))
+        self.assertEqual(result, [{"id": "001", "ts": 300, "title": "Official notice 001"}])
+        self.assertTrue(all(call[1]["allow_redirects"] is False for call in fetcher.calls))
+        changed = page(1, [row("002", 300)], 1)
+        self.assertIsNone(run(endfield.snapshot(ChangingFetcher([first, changed]), None)))
+        self.assertIsNone(run(endfield.snapshot(ChangingFetcher([first, None]), None)))
+
     def test_reader_and_renderer_preserve_trailer_and_media_order_in_synthetic_examples(self):
         game = Game(key="endfield", name="Endfield", short="Endfield", enabled=False, color=0)
         url = "https://web-static.hg-cdn.com/upload/image/"

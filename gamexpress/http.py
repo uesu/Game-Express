@@ -106,7 +106,8 @@ class Fetcher:
 
     async def get_text(self, url: str, *, source: str, headers: dict | None = None,
                        params: dict | None = None, retries: int = 2,
-                       ok_statuses: tuple[int, ...] = (200,), timeout: float | None = None) -> str | None:
+                       ok_statuses: tuple[int, ...] = (200,), timeout: float | None = None,
+                       allow_redirects: bool = True) -> str | None:
         hdrs = {"User-Agent": BROWSER_UA, "Accept": "*/*"}
         if headers:
             hdrs.update(headers)
@@ -114,8 +115,10 @@ class Fetcher:
         last = ""
         for attempt in range(retries + 1):
             try:
+                redirect_options = {} if allow_redirects else {"allow_redirects": False}
                 async with self._gate(), self.session.get(url, headers=hdrs, params=params,
-                                            timeout=aiohttp.ClientTimeout(total=timeout or self.timeout)) as r:
+                                            timeout=aiohttp.ClientTimeout(total=timeout or self.timeout),
+                                            **redirect_options) as r:
                     if r.status in ok_statuses:
                         # read in chunks, NOT `content.read(MAX_BYTES + 1)`: aiohttp's read(n)
                         # returns whatever is buffered RIGHT NOW (up to n), so a body that
@@ -149,9 +152,11 @@ class Fetcher:
         return None
 
     async def get_json(self, url: str, *, source: str, headers: dict | None = None,
-                       params: dict | None = None, retries: int = 2, timeout: float | None = None):
+                       params: dict | None = None, retries: int = 2, timeout: float | None = None,
+                       allow_redirects: bool = True):
+        redirect_options = {} if allow_redirects else {"allow_redirects": False}
         body = await self.get_text(url, source=source, headers=headers, params=params, retries=retries,
-                                   timeout=timeout)
+                                   timeout=timeout, **redirect_options)
         if body is None:
             return None
         try:

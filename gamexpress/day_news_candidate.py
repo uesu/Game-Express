@@ -90,6 +90,7 @@ def plan(state, snapshot, *, route, bootstrap_backfill=False):
         raise InvalidSnapshot("ID capacity reached; operator review required")
     next_state["known"].extend(row["id"] for row in new)
     next_state["pending"].extend(new)
+    next_state["pending"].sort(key=lambda row: (row["date"], int(row["id"]), row["id"]))
     return next_state
 
 
@@ -100,8 +101,8 @@ def confirm_delivered(state, cid, *, route):
     partial multi-message delivery. Those require the real runner's delivery protocol.
     """
     next_state = _validate_state(state, route)
-    if not _valid_id(cid) or cid not in {row["id"] for row in next_state["pending"]}:
-        raise InvalidSnapshot("ID is not pending")
+    if not _valid_id(cid) or not next_state["pending"] or next_state["pending"][0]["id"] != cid:
+        raise InvalidSnapshot("ID is not the oldest pending item")
     result = copy.deepcopy(next_state)
     result["pending"] = [row for row in result["pending"] if row["id"] != cid]
     return result

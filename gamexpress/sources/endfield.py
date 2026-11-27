@@ -37,7 +37,7 @@ async def discover_news(fetcher, game, since: int) -> list[dict] | None:
     page = 1
     while page <= pages:
         params = {**PARAMS, "page": page, "pageSize": PAGE_SIZE}
-        response = await fetcher.get_json(BASE, source="news-endfield", params=params, retries=1)
+        response = await fetcher.get_json(BASE, source="news-endfield", params=params, retries=1, allow_redirects=False)
         data = _envelope(response)
         if data is None:
             return None
@@ -73,17 +73,31 @@ async def news_article(fetcher, game, row: dict) -> Item | None:
     if not isinstance(cid, str) or not _ID.fullmatch(cid) or not _integer(row.get("ts"), 1):
         return None
     data = _envelope(await fetcher.get_json(f"{BASE}/{cid}", source="news-endfield",
-                                            params=PARAMS, retries=1))
+                                            params=PARAMS, retries=1, allow_redirects=False))
     if (data is None or data.get("cid") != cid or data.get("displayTime") != row["ts"]
             or type(data.get("displayTime")) is not int):
         return None
     title, content = data.get("title"), data.get("data")
-    if not isinstance(title, str) or not title.strip() or not isinstance(content, str) or not content.strip():
+    if (not isinstance(title, str) or not title.strip() or not isinstance(content, str) or not content.strip()
+            or len(content) > 2 * 1024 * 1024
+            or ("title" in row and (not isinstance(row["title"], str) or title.strip() != row["title"].strip()))):
         return None
-    blocks = news_blocks(content)
+    try:
+        blocks = news_blocks(content)
+    except (ValueError, TypeError, AttributeError, RecursionError):
+        return None
     if not blocks:
         return None
     cover = data.get("cover")
     return Item(source="endfield", game=game.key, id=cid, url=ARTICLE.format(cid), title=title.strip(),
                 text="", published_ts=row["ts"], article_blocks=blocks,
                 images=[cover] if isinstance(cover, str) and cover else [], author="GRYPHLINE")
+
+
+async def snapshot(fetcher, game):
+    """Two identical complete scans; does not prove publisher snapshot atomicity."""
+    first = await discover_news(fetcher, game, 0)
+    if first is None:
+        return None
+    second = await discover_news(fetcher, game, 0)
+    return first if first == second else None

@@ -430,11 +430,17 @@ YouTube fallback verifies maximum-resolution thumbnail dimensions/signature firs
 back when unavailable; native images/video remain preferred. It is not wired into production.
 
 The owner requests that initial production news catch-up post existing items oldest to newest
-and record confirmed delivery in state. The inactive planner can queue a complete snapshot by
-displayed day; numeric ID is only a deterministic tie-break for same-day sources, not evidence
-of publication time. Endfield exposes timestamps separately. Production backfill, durable
-per-page checkpointing, failed/ambiguous delivery reconciliation, safe routing, bounded pacing,
-and source registration are still required; no backlog or state change has been performed.
+and record confirmed delivery in state. An inactive candidate pipeline now checks two complete
+listing walks, adapts details to the existing card renderer, uses exact dedicated webhook routes,
+and queues every observed ID oldest first. Numeric ID is only a deterministic tie-break for
+same-day sources, not evidence of publication time; Endfield exposes timestamps separately.
+An offline delivery coordinator requires a confirmed authoritative checkpoint of each write-ahead
+intent and each confirmed page ID and holds ambiguous sends or changed partial cards. **It is not
+wired to `run_news` or to a production checkpoint transport**. An ephemeral Actions runner's
+local `state.save()` is not sufficient: workflow state is normally pushed at the end of a job.
+Production integration, a checkpoint mechanism that survives job loss, cross-instance/failover
+handling, bounded backlog pacing, reconciliation procedures and source registration remain
+required. No backlog or production state change has been performed.
 
 - [Crimson Witch](https://www.crimsonwitch.com/codes): its Genshin, Star Rail and ZZZ pages
   displayed active code/reward sections and links to RSS feeds (`/feeds/genshin/rss.xml`,
@@ -470,9 +476,9 @@ and source registration are still required; no backlog or state change has been 
   NTE's list had only three entries per page in this observation; a first-page-only poll can lose
   articles. Two NTE list pages also passed fixed-URL HTML structure checks on
   [runner 45961114831](https://github.com/uesu/Game-Express/actions/runs/45961114831).
-  An inactive `nte_candidate.py` parses one listing page's displayed calendar day rather than
-  its URL creation-date segment, and accepts only canonical official article paths. It is not
-  complete pagination, a detail reader, a source snapshot, or a production adapter. The capture
+  An inactive `nte_candidate.py` parses displayed calendar days rather than URL creation dates,
+  validates canonical article paths and bodies, and compares two bounded complete listing walks.
+  It is not a registered production source or proof of an atomic upstream snapshot. The capture
   and screenshot show article `265053` displayed as 2026-11-20 although its path has 20261113;
   no publication hour or timezone should be inferred from either value. User screenshots and
   the supplied `nte.txt` contain three article HTML documents: the 2024-08-30 trailer has a

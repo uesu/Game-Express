@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from gamexpress.config import Game  # noqa: E402
 from gamexpress.sources import silverpalace  # noqa: E402
 
 
@@ -79,6 +80,20 @@ class SilverCandidateTests(unittest.TestCase):
         f = Fetcher([])
         self.assertIsNone(asyncio.run(silverpalace.detail(f, {**candidate, "id": "../1"})))
         self.assertEqual(f.calls, [])
+
+    def test_item_adapter_allows_no_cover_but_not_a_foreign_one(self):
+        candidate = {"id": "1", "title": "Official 1", "date": "2026-10-09"}
+        data = {"id": "1", "title": "Official 1", "publish_date": "2026-10-09",
+                "cover": "", "content": '<p>Watch https://youtu.be/ELC4r7fbKEQ</p>'}
+        game = Game(key="silverpalace", name="Silver Palace", short="Silver", enabled=False, color=0)
+        fetcher = Fetcher([{"code": 0, "data": data}])
+        item = asyncio.run(silverpalace.news_article(fetcher, game, candidate))
+        self.assertEqual(item.images, [])
+        self.assertEqual(item.published_ts, 0)
+        self.assertEqual(item.source, "silverpalace")
+        self.assertFalse(fetcher.calls[0][1]["allow_redirects"])
+        data["cover"] = "https://evil.example/x.jpg"
+        self.assertIsNone(asyncio.run(silverpalace.news_article(Fetcher([{"code": 0, "data": data}]), game, candidate)))
 
     def test_invalid_incomplete_or_mutating_walks_fail_closed(self):
         one = page(1, 2, [row("1", "2026-01-01")])

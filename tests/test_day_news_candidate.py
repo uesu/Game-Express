@@ -51,6 +51,16 @@ class DayNewsCandidateTests(unittest.TestCase):
         with self.assertRaises(daynews.InvalidSnapshot):
             daynews.plan(None, snapshot, route=ROUTE, bootstrap_backfill="1")
 
+    def test_backdated_discovery_resorts_queue_and_out_of_order_confirmation_is_rejected(self):
+        state = daynews.plan(None, [row("1", "2026-01-05"), row("2", "2026-01-06")],
+                             route=ROUTE, bootstrap_backfill=True)
+        state = daynews.plan(state, [row("2", "2026-01-06"), row("3", "2026-01-01")], route=ROUTE)
+        self.assertEqual([r["id"] for r in state["pending"]], ["3", "1", "2"])
+        with self.assertRaises(daynews.InvalidSnapshot):
+            daynews.confirm_delivered(state, "2", route=ROUTE)
+        state = daynews.confirm_delivered(state, "3", route=ROUTE)
+        self.assertEqual([r["id"] for r in state["pending"]], ["1", "2"])
+
     def test_pending_survives_disappearance_restart_and_unavailable_snapshot(self):
         state = daynews.plan(None, [row("1")], route=ROUTE)
         state = daynews.plan(state, [row("1"), row("2", "2026-11-01")], route=ROUTE)

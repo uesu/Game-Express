@@ -10,6 +10,7 @@ import re
 from datetime import date
 from urllib.parse import urlsplit
 
+from ..models import Item
 from ..textutil import news_blocks
 
 BASE = "https://silverpalace.elementagames.com/server/index.php/home/news_list"
@@ -35,7 +36,7 @@ async def _walk(fetcher):
     number = 1
     while pages is None or number <= pages:
         response = await fetcher.get_json(BASE, source="news-silverpalace", retries=1,
-                                          params={"lang": "en-us", "page": number})
+                                          params={"lang": "en-us", "page": number}, allow_redirects=False)
         if (not isinstance(response, dict) or type(response.get("code")) is not int
                 or response["code"] != 0 or not isinstance(response.get("data"), dict)):
             return None
@@ -105,7 +106,7 @@ async def detail(fetcher, row):
             or not title.strip() or len(title) > 512 or not _valid_date(day)):
         return None
     response = await fetcher.get_json(DETAIL, source="news-silverpalace", retries=1,
-                                      params={"lang": "en-us", "id": cid})
+                                      params={"lang": "en-us", "id": cid}, allow_redirects=False)
     if (not isinstance(response, dict) or type(response.get("code")) is not int
             or response["code"] != 0 or not isinstance(response.get("data"), dict)):
         return None
@@ -114,7 +115,7 @@ async def detail(fetcher, row):
     if (data.get("id") != cid or data.get("publish_date") != day
             or not isinstance(detail_title, str) or detail_title.strip() != title.strip()
             or not isinstance(content, str) or not content.strip() or len(content) > 1024 * 1024
-            or not _official_cover(cover)):
+            or (cover not in (None, "") and not _official_cover(cover))):
         return None
     try:
         blocks = news_blocks(content)
@@ -124,3 +125,13 @@ async def detail(fetcher, row):
         return None
     return {"id": cid, "title": detail_title.strip(), "date": day,
             "url": ARTICLE.format(cid), "cover": cover, "blocks": blocks}
+
+
+async def news_article(fetcher, game, row):
+    """Adapt a validated detail without inventing a time or a native cover."""
+    data = await detail(fetcher, row)
+    if data is None:
+        return None
+    return Item(source="silverpalace", game=game.key, id=data["id"], url=data["url"], title=data["title"],
+                text="", published_ts=0, images=[data["cover"]] if data["cover"] else [],
+                article_blocks=data["blocks"], author="Silver Palace")

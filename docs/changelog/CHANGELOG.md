@@ -2,6 +2,9 @@
 
 ## 2026-11-27 — Read-only source research (no production behavior changes)
 
+- Prepared inactive candidate news source adapters and a fail-closed routing/backfill delivery
+  coordinator, tested offline without posting. It requires an authoritative durable checkpoint
+  callback, which is not yet integrated with the Actions monitor; no source is enabled.
 - The inactive candidate YouTube fallback now prefers a verified maximum-resolution thumbnail,
   then verified smaller variants if unavailable, without overriding native media. An explicit
   prototype backfill queues the initial day-only snapshot oldest day first; it is not yet wired
@@ -12,10 +15,10 @@
   pagination, safe IDs and matching details; existing games and routing remain unchanged. Record
   read-only GitHub runner probes, direct image and legacy Reddit fallback results, and official
   maintenance notice evidence. An unregistered Silver Palace listing prototype validates two
-  bounded scans without inventing precise timestamps. Image preflight, detail parsing, safe
-  baseline and runner wiring remain blockers. An inactive ID-based baseline prototype tests
-  same-day additions and persistent pending IDs; an inactive NTE one-page parser preserves
-  displayed dates and rejects foreign article hosts. Existing news routing and floors are unchanged.
+  bounded scans without inventing precise timestamps. Private media-preflight and detail tests
+  passed, but authoritative checkpoints and runner wiring remain blockers. Inactive ID-based
+  planning and NTE listing/detail readers preserve displayed days and reject foreign paths.
+  Existing news routing and floors are unchanged.
   This is not a complete new-game integration.
 
 - Documented Crimson Witch's upstream overlap with Ennead, Hoyocodes' use of Ennead,
