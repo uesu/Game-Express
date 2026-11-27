@@ -29,6 +29,9 @@ jobs:
       - name: Official Silver Palace sources
         if: always()
         run: python tools/source_research_probe.py --group silver --annotations
+      - name: Fixed official image URLs
+        if: always()
+        run: python tools/source_research_probe.py --group media --annotations
       - name: Code aggregator checks
         if: always()
         run: python tools/source_research_probe.py --group codes --annotations

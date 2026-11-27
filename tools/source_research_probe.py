@@ -41,6 +41,9 @@ TARGETS = (
     ("silver-list", "https://silverpalace.elementagames.com/server/index.php/home/news_list?lang=en-us&page=1", "silver-list"),
     ("silver-page-2", "https://silverpalace.elementagames.com/server/index.php/home/news_list?lang=en-us&page=2", "silver-list"),
     ("silver-detail", "https://silverpalace.elementagames.com/server/index.php/home/news_detail?lang=en-us&id=120", "silver-detail"),
+    ("media-endfield", "https://web-static.hg-cdn.com/upload/image/20261124/a3a96dba4a3e82dbcedce572ff553b12.jpg", "media"),
+    ("media-nte", "https://ntevmg.perfectworld.com/webops/nte/104en.jpg", "media"),
+    ("media-silver", "https://s.elementagames.com/official/image/20260928/2b8cc49efcf5a2c3e456955935f2cb02.jpg", "media"),
 )
 
 
@@ -49,6 +52,7 @@ GROUPS = {
     "crimson": tuple(name for name, _, _ in TARGETS if name.startswith("crimson-")),
     "endfield-nte": tuple(name for name, _, _ in TARGETS if name.startswith(("endfield-", "news-endfield", "news-nte"))),
     "silver": tuple(name for name, _, _ in TARGETS if name.startswith(("silver-", "news-silver"))),
+    "media": tuple(name for name, _, _ in TARGETS if name.startswith("media-")),
 }
 
 
@@ -131,6 +135,10 @@ def describe(kind: str, body: bytes) -> str:
             return "unexpected-json-shape"
         return " ".join(f"{key}={len(value[key]) if isinstance(value.get(key), list) else 'missing-or-not-list'}"
                         for key in ("active", "inactive"))
+    if kind == "media":
+        image = (body.startswith((b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n", b"GIF87a", b"GIF89a"))
+                 or (body[:4] == b"RIFF" and body[8:12] == b"WEBP"))
+        return f"recognized-image-signature={image}"
     if kind == "rss":
         # Reject DTD/entity expansion and avoid logging upstream titles/links.
         if b"<!DOCTYPE" in body.upper() or b"<!ENTITY" in body.upper():
@@ -248,6 +256,10 @@ class ProbeTests(unittest.TestCase):
         self.assertFalse(structurally_valid("silver-list", "unexpected-list-shape"))
         self.assertFalse(structurally_valid("silver-list", "rows=1 valid-id-title-date=1 total-pages=invalid"))
         self.assertFalse(structurally_valid("html", "links=3 news-shaped-links=0 scripts=1"))
+
+    def test_media_signatures(self):
+        self.assertEqual(describe("media", b"\xff\xd8\xffdummy"), "recognized-image-signature=True")
+        self.assertEqual(describe("media", b"<html>not an image</html>"), "recognized-image-signature=False")
 
     def test_rss_and_html(self):
         self.assertEqual(describe("rss", b'<rss><channel><item/></channel></rss>'), "rss-items=1 atom-entries=0")
