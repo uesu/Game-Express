@@ -82,7 +82,7 @@ def test_no_fixture_contains_a_credential_shaped_string():
 
 def test_the_scrubber_actually_scrubs():
     """The same substitutions the probe job runs, so a regression in either place is caught here."""
-    sample = ("key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8&x=1 "
+    sample = ("key=AIzaSyTESTONLYnotAarealkey0000000000000&x=1 "   # shape only, never a live key
               "token=ghp_" + "a" * 36 + " pat=github_pat_" + "b" * 30 +
               " aws=AKIA" + "C" * 16 + " hook=https://discord.com/api/webhooks/123456789012345678/"
               + "d" * 32)
