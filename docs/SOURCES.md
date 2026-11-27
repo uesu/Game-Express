@@ -429,6 +429,16 @@ are fixed-article observations, not proof for all future articles. The inactive 
 YouTube fallback verifies maximum-resolution thumbnail dimensions/signature first and falls
 back when unavailable; native images/video remain preferred. It is not wired into production.
 
+The user separately authorized a full **private-channel** historic test. A fixed read-only snapshot
+observed 103 NTE, 143 Endfield and 21 Silver Palace articles. Test-only JSON journals in three
+[PR comments](https://github.com/uesu/Game-Express/pull/174) persist the queue and page intents;
+they contain no webhook, token or raw Discord message ID (IDs are keyed hashes). Only one
+non-cancelling Actions job sends at a time. Every unknown delivery or unconfirmed journal update
+holds the entire test, and no automatic retry is permitted. Ordering across sources is by UTC
+calendar date; the day-only sources cannot prove within-day chronology. The private test includes
+earlier sample articles intentionally. It does not write production state, and a finite snapshot
+cannot prove that an upstream listing never omitted an item.
+
 The owner requests initial production catch-up oldest to newest, recording confirmed delivery.
 The candidate pipeline checks two complete listing walks, adapts details to the existing card
 renderer, uses exact dedicated webhook routes, and queues every observed ID oldest first. Numeric

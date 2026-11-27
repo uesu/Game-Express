@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT))
 
 import candidate_private_backfill as historical  # noqa: E402
+import candidate_private_backfill_control as control  # noqa: E402
 import candidate_private_pipeline_test as private  # noqa: E402
 import silver_dedup_test as silver_fix  # noqa: E402
 
@@ -56,6 +57,28 @@ class PrivateHarnessTests(unittest.TestCase):
             sent = asyncio.run(private.send_prepared(None, prepared, HOOK))
         self.assertEqual(sent, 4)
         self.assertEqual(calls, ["nte", "endfield", "endfield", "silverpalace"])
+
+    def test_historical_supervisor_dispatches_one_run_and_requires_progress(self):
+        seen = []
+        run_record = {"id": 42, "head_sha": "abc", "event": "workflow_dispatch"}
+
+        def command(*args, timeout=50):
+            seen.append(args)
+            return b"abc\n" if args[:3] == ("git", "rev-parse", "HEAD") else b""
+
+        with (patch.object(control, "current_head", return_value="abc"), patch.object(control, "command", command),
+              patch.object(control, "status", side_effect=[(266, 1, 0), (267, 0, 0)]),
+              patch.object(control, "runs", side_effect=[{}, {42: run_record}]), patch.object(control, "watch") as watch,
+              contextlib.redirect_stdout(io.StringIO())):
+            control.run()
+        watch.assert_called_once_with(42)
+        self.assertEqual(sum(args[:3] == ("gh", "workflow", "run") for args in seen), 1)
+
+        with (patch.object(control, "current_head", return_value="abc"), patch.object(control, "command", command),
+              patch.object(control, "status", side_effect=[(266, 1, 0), (266, 1, 0)]),
+              patch.object(control, "runs", side_effect=[{}, {42: run_record}]), patch.object(control, "watch"),
+              contextlib.redirect_stdout(io.StringIO()), self.assertRaises(ValueError)):
+            control.run()
 
     def test_historical_batch_is_ordered_persisted_and_hides_message_ids(self):
         from gamexpress import candidate_news_delivery as delivery
