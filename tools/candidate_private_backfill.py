@@ -56,8 +56,14 @@ def gh_api(endpoint, *, method="GET", body=None, paginate=False):
         process = subprocess.run(args, input=json.dumps(body).encode() if body is not None else None,
                                  stdin=None if body is not None else subprocess.DEVNULL,
                                  capture_output=True, timeout=40, check=False)
-        if process.returncode or len(process.stdout) > 5 * 1024 * 1024:
+        if process.returncode:
+            text = process.stderr.decode("utf-8", errors="replace")
+            status = re.search(r"HTTP ([1-5][0-9]{2})", text)
+            print(f"::notice title=Private historic GitHub request::method={method} "
+                  f"status={status.group(1) if status else 'unknown'}", flush=True)
             raise ValueError("GitHub journal request not confirmed")
+        if len(process.stdout) > 5 * 1024 * 1024:
+            raise ValueError("GitHub journal response oversized")
         return json.loads(process.stdout)
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         raise ValueError("GitHub journal request not confirmed") from exc

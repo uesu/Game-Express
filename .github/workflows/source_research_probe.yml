@@ -386,6 +386,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      pull-requests: write
     concurrency:
       group: candidate-private-pipeline
       cancel-in-progress: false
