@@ -504,11 +504,13 @@ observation cannot prove freshness, uptime, complete pagination, or successful r
   reachability through the production Fetcher remain unverified. Fixed-URL runner structural checks
   passed for two pages and one detail in [run 45961114831](https://github.com/uesu/Game-Express/actions/runs/45961114831);
   this confirms neither ongoing availability nor completeness, nor the timestamp semantics.
-  `sources/silverpalace.py` is an **unregistered listing-only prototype**. It makes two bounded
+  `sources/silverpalace.py` is an **unregistered listing and detail prototype**. It makes two bounded
   complete walks, validates IDs and calendar dates without inventing a publication instant, and
   rejects drift, ambiguous empty pages and duplicate IDs. Matching walks reduce some races but
-  do not prove an atomic upstream snapshot. Detail parsing, article links, ID-aware baseline,
-  media delivery and runner integration are not implemented. An independent, unregistered
+  do not prove an atomic upstream snapshot. The detail experiment checks matching ID, title and
+  day, requires the observed exact cover host, and passes content to the existing block parser;
+  it does not verify body fidelity, validate embedded media or redirects, produce article links,
+  post to Discord, or integrate with the runner. An independent, unregistered
   `day_news_candidate.py` tests a possible ID-based silent baseline and retry queue without
   converting date-only values into timestamps. It queues newly observed IDs even when their
   displayed dates are old, retains pending items if they disappear, fails closed at a fixed ID
@@ -529,9 +531,12 @@ observation cannot prove freshness, uptime, complete pagination, or successful r
   official in the screenshots. Independent account verification is still needed; these labels
   do not make every poster official. [News-Express #160](https://github.com/uesu/News-Express/pull/160)
   added four Game-Express communities to Devvit defaults, and [#161](https://github.com/uesu/News-Express/pull/161)
-  split the 19 defaults across `subreddits` and `subredditsAdditional`. The user reports the
-  related Devvit work was addressed; this checkout has not independently verified the installed
-  build or persisted values. Merged defaults alone do not prove live coverage. The optional
+  split the 19 defaults across `subreddits` and `subredditsAdditional`. Supplied screenshots show
+  Devvit v0.0.14 uploaded and installed in r/GamingExpressRelay, both settings accepted, polls
+  reporting 19 subs and zero failed fetches, and Discord intake records for NevernessToEverness,
+  Endfield and SilverPalaceOfficial. These are examples of relay delivery, not evidence of
+  per-target ArknightsEndfield delivery or Game-Express consuming those records. Merged defaults
+  and aggregate polling alone do not prove every target is healthy. The optional
   `INTAKE_QUIET_TARGETS=1` infers coverage by kind, not by each target. No subreddit,
   official-author allowlist, or trust rule was added to Game-Express.
 

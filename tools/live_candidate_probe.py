@@ -78,6 +78,13 @@ async def probe(fetcher, *, annotations: bool = False, group: str = "all") -> No
         rows = await silverpalace.snapshot(fetcher)
         show("silver-snapshot", "unavailable" if rows is None else "ok" if rows else "empty",
              len(rows or []), annotations)
+        selected = next((row for row in rows or [] if row["id"] == "120"), None)
+        if selected:
+            item = await silverpalace.detail(fetcher, selected)
+            show("silver-detail-120", "ok" if item else "unavailable",
+                 len(item["blocks"]) if item else 0, annotations)
+        else:
+            show("silver-detail-120", "unavailable", 0, annotations)
     if group == "redditfleet":
         await probe_reddit_fleet(fetcher, annotations=annotations)
 
@@ -192,6 +199,10 @@ class Tests(unittest.TestCase):
 
             async def get_json(self, url, **kwargs):
                 self.calls += 1
+                if url == silverpalace.DETAIL:
+                    return {"code": 0, "data": {"id": "120", "title": "never emit this title",
+                            "publish_date": "2026-10-09", "cover": "https://s.elementagames.com/a.jpg",
+                            "content": "<p>never emit article content</p>"}}
                 return {"code": 0, "data": {"current_page": "1", "total_page": 1,
                         "list": [{"id": "120", "title": "never emit this title",
                                   "publish_date": "2026-10-09"}]}}
@@ -201,8 +212,9 @@ class Tests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             asyncio.run(probe(fetcher, annotations=True, group="silver"))
         self.assertIn("silver-snapshot status=ok count=1", output.getvalue())
+        self.assertIn("silver-detail-120 status=ok count=1", output.getvalue())
         self.assertNotIn("never emit", output.getvalue())
-        self.assertEqual(fetcher.calls, 2)
+        self.assertEqual(fetcher.calls, 3)
 
     def test_redirect_override(self):
         class Fake:

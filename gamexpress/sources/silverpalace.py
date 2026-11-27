@@ -8,8 +8,12 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from urllib.parse import urlsplit
+
+from ..textutil import news_blocks
 
 BASE = "https://silverpalace.elementagames.com/server/index.php/home/news_list"
+DETAIL = "https://silverpalace.elementagames.com/server/index.php/home/news_detail"
 MAX_PAGES = 30
 MAX_ROWS_PER_PAGE = 100
 _ID = re.compile(r"[0-9]{1,32}\Z")
@@ -62,7 +66,7 @@ async def snapshot(fetcher):
     """Return two matching complete scans, or None for any ambiguity or drift.
 
     The caller must not interpret a missing snapshot as an empty listing or use
-    day-only dates as exact instants. No detail, state, or delivery is implemented.
+    day-only dates as exact instants. No state or delivery is implemented.
     """
     first = await _walk(fetcher)
     if first is None:
@@ -71,3 +75,51 @@ async def snapshot(fetcher):
     if second is None or first != second:
         return None
     return first
+
+
+def _official_cover(value):
+    """Only accept the exact observed image host; no network or redirects here."""
+    if (not isinstance(value, str) or not value
+            or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in value)):
+        return False
+    try:
+        parts = urlsplit(value)
+        return (parts.scheme == "https" and parts.hostname == "s.elementagames.com"
+                and not parts.username and not parts.password and parts.port in (None, 443)
+                and bool(parts.path) and not parts.fragment)
+    except ValueError:
+        return False
+
+
+async def detail(fetcher, row):
+    """Fetch matching publisher detail as ordered blocks, without inventing a URL/time.
+
+    This is exploratory, not an article-fidelity or Discord-readiness guarantee.
+    Delivery must separately validate every media URL and its redirect chain.
+    """
+    if not isinstance(row, dict) or set(row) != {"id", "title", "date"}:
+        return None
+    cid, title, day = row.get("id"), row.get("title"), row.get("date")
+    if (not isinstance(cid, str) or not _ID.fullmatch(cid) or not isinstance(title, str)
+            or not title.strip() or len(title) > 512 or not _valid_date(day)):
+        return None
+    response = await fetcher.get_json(DETAIL, source="news-silverpalace", retries=1,
+                                      params={"lang": "en-us", "id": cid})
+    if (not isinstance(response, dict) or type(response.get("code")) is not int
+            or response["code"] != 0 or not isinstance(response.get("data"), dict)):
+        return None
+    data = response["data"]
+    detail_title, content, cover = data.get("title"), data.get("content"), data.get("cover")
+    if (data.get("id") != cid or data.get("publish_date") != day
+            or not isinstance(detail_title, str) or detail_title.strip() != title.strip()
+            or not isinstance(content, str) or not content.strip() or len(content) > 1024 * 1024
+            or not _official_cover(cover)):
+        return None
+    try:
+        blocks = news_blocks(content)
+    except (ValueError, TypeError, AttributeError, RecursionError):
+        return None
+    if not blocks:
+        return None
+    return {"id": cid, "title": detail_title.strip(), "date": day,
+            "cover": cover, "blocks": blocks}

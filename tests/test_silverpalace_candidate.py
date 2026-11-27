@@ -45,6 +45,41 @@ class SilverCandidateTests(unittest.TestCase):
         self.assertEqual([call[1]["params"]["page"] for call in fetcher.calls], [1, 2, 1, 2])
         self.assertNotIn("ts", items[0])
 
+    def test_detail_preserves_id_day_order_and_rejects_mismatches(self):
+        candidate = {"id": "01", "title": "Official 01", "date": "2026-10-09"}
+        data = {"id": "01", "title": "Official 01", "publish_date": "2026-10-09",
+                "cover": "https://s.elementagames.com/official/image/a.jpg",
+                "content": '<p>First</p><img src="https://s.elementagames.com/a.png"><p>Last</p>'}
+        f = Fetcher([{"code": 0, "data": data}])
+        found = asyncio.run(silverpalace.detail(f, candidate))
+        self.assertEqual((found["id"], found["date"]), ("01", "2026-10-09"))
+        self.assertEqual([b["kind"] for b in found["blocks"]], ["text", "image", "text"])
+        self.assertIn("First", found["blocks"][0]["text"])
+        self.assertIn("Last", found["blocks"][2]["text"])
+        self.assertNotIn("ts", found)
+        self.assertNotIn("url", found)
+        self.assertEqual(f.calls[0][0], silverpalace.DETAIL)
+        self.assertEqual(f.calls[0][1]["params"], {"lang": "en-us", "id": "01"})
+        bad = (
+            None, {"code": False, "data": data}, {"code": 1, "data": data},
+            {"code": 0, "data": {**data, "id": "1"}},
+            {"code": 0, "data": {**data, "publish_date": "2026-10-10"}},
+            {"code": 0, "data": {**data, "title": "Different"}},
+            {"code": 0, "data": {**data, "content": ""}},
+            {"code": 0, "data": {**data, "content": "x" * (1024 * 1024 + 1)}},
+            *({"code": 0, "data": {**data, "cover": url}} for url in (
+                "https://evil.invalid/image.jpg", "https://s.elementagames.com.evil.invalid/x",
+                "https://u@s.elementagames.com/x", "http://s.elementagames.com/x",
+                "https://s.elementagames.com:444/x", "https://s.elementa\ngames.com/x",
+                "https://s.elementagames.com/x#fragment")),
+        )
+        for response in bad:
+            with self.subTest(response=str(response)[:160]):
+                self.assertIsNone(asyncio.run(silverpalace.detail(Fetcher([response]), candidate)))
+        f = Fetcher([])
+        self.assertIsNone(asyncio.run(silverpalace.detail(f, {**candidate, "id": "../1"})))
+        self.assertEqual(f.calls, [])
+
     def test_invalid_incomplete_or_mutating_walks_fail_closed(self):
         one = page(1, 2, [row("1", "2026-01-01")])
         two = page(2, 2, [row("2", "2026-01-02")])
