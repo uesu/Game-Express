@@ -12,7 +12,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from gamexpress.cards import news_payloads, validate_payload  # noqa: E402
+from gamexpress.config import Game  # noqa: E402
+from gamexpress.models import Item  # noqa: E402
 from gamexpress.sources import nte_candidate  # noqa: E402
+from gamexpress.textutil import news_blocks  # noqa: E402
 
 
 def article(href, title="Official &amp; news", day="2026-11-20"):
@@ -24,6 +28,23 @@ def listing(content):
 
 
 class NteCandidateTests(unittest.TestCase):
+    def test_synthetic_short_trailer_keeps_watch_link_in_same_news_card(self):
+        # Contract experiment only: no NTE detail reader or delivery is registered.
+        game = Game(key="nte", name="Neverness to Everness", short="NTE", enabled=False, color=0)
+        item = Item(source="nte", game="nte", id="252469",
+                    url="https://nte.perfectworld.com/en/article/news/gamenews/20240830/252469.html",
+                    title="Trailer", text="", published_ts=0,
+                    article_blocks=news_blocks('<p>Before</p><iframe src="https://www.youtube.com/embed/tdZN6H1N3PU"></iframe><p>After</p>'))
+        payloads = news_payloads(game, item)
+        self.assertEqual(len(payloads), 1)
+        self.assertEqual(validate_payload(payloads[0]), [])
+        texts = [child.get("content", "") for container in payloads[0]["components"]
+                 for child in container.get("components", []) if child["type"] == 10]
+        link = "https://www.youtube.com/watch?v=tdZN6H1N3PU"
+        self.assertIn(link, texts)
+        self.assertLess(texts.index("Before"), texts.index(link))
+        self.assertLess(texts.index(link), texts.index("After"))
+
     def test_observed_path_date_mismatch_uses_displayed_day(self):
         result = nte_candidate.parse_list_page(listing(article(
             "/en/article/news/gamebroad/20261113/265053.html", "Fan Content Guidelines", "2026-11-20")))
