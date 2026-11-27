@@ -1,0 +1,1 @@
+{"message":"Cannot GET /api/bulletin?lang=en-us&page=1&pageSize=9","error":"Not Found","statusCode":404}
