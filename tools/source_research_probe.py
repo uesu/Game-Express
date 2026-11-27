@@ -5,6 +5,8 @@ written. Run with --self-test for offline tests, or without arguments for live p
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import re
 import sys
@@ -13,6 +15,7 @@ import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
+from unittest.mock import patch
 from urllib.parse import urlsplit
 
 LIMIT = 4 * 1024 * 1024
@@ -213,6 +216,18 @@ def structurally_valid(kind: str, description: str, require_html: bool = False) 
 
 
 class ProbeTests(unittest.TestCase):
+    def test_http_failure_remains_a_failure_for_included_groups(self):
+        class FailingOpener:
+            def open(self, request, timeout):
+                raise urllib.error.HTTPError(request.full_url, 404, "not found", {}, None)
+
+        output = io.StringIO()
+        with patch.object(urllib.request, "build_opener", return_value=FailingOpener()), contextlib.redirect_stdout(output):
+            result = probe(group="media", annotations=True)
+        self.assertEqual(result, 1)
+        self.assertIn("HTTP/request failures=3", output.getvalue())
+        self.assertIn("media-endfield: http=404", output.getvalue())
+
     def test_json_shapes(self):
         self.assertEqual(describe("codes", b'[{"code":"X","rewards":[]},{}]'), "rows=2 code-and-rewards-shape=1")
         self.assertEqual(describe("codes", b'{}'), "unexpected-json-shape")

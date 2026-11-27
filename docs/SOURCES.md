@@ -537,8 +537,8 @@ observation cannot prove freshness, uptime, complete pagination, or successful r
   split the 19 defaults across `subreddits` and `subredditsAdditional`. Supplied screenshots show
   Devvit v0.0.14 uploaded and installed in r/GamingExpressRelay, both settings accepted, polls
   reporting 19 subs and zero failed fetches, and Discord intake records for NevernessToEverness,
-  Endfield and SilverPalaceOfficial. These are examples of relay delivery, not evidence of
-  per-target ArknightsEndfield delivery or Game-Express consuming those records. Merged defaults
+  Endfield, ArknightsEndfield and SilverPalaceOfficial. These are examples of relay delivery,
+  not evidence of Game-Express consuming those records or continual per-target health. Merged defaults
   and aggregate polling alone do not prove every target is healthy. The optional
   `INTAKE_QUIET_TARGETS=1` infers coverage by kind, not by each target. No subreddit,
   official-author allowlist, or trust rule was added to Game-Express.
@@ -564,6 +564,11 @@ shapes and empty lists are printed for human review, not silently accepted as va
 The workflow was registered by probe-only [PR #172](https://github.com/uesu/Game-Express/pull/172)
 and dispatched on main in [run 45972342468](https://github.com/uesu/Game-Express/actions/runs/45972342468).
 The run's official source groups succeeded, but the job failed on three Crimson Witch RSS 404s.
+The draft branch no longer runs that unrelated, unintegrated group in its standard workflow; the
+old failures remain valid observations, and the explicit diagnostic is still available in the
+probe script. The main workflow retains the old step until the draft is reviewed and merged.
+Removing this unrelated check does not make other sources healthy: candidate probe statuses such as
+`unavailable`, `empty` and `rejected` are informational and do not themselves fail the job.
 Select the intended branch when dispatching. A successful dispatch is not evidence the probe ran
 or that a future run will succeed. In
 [runner 45964838716](https://github.com/uesu/Game-Express/actions/runs/45964838716) three fixed

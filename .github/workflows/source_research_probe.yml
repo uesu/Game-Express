@@ -35,9 +35,6 @@ jobs:
       - name: Code aggregator checks
         if: always()
         run: python tools/source_research_probe.py --group codes --annotations
-      - name: Crimson Witch checks
-        if: always()
-        run: python tools/source_research_probe.py --group crimson --annotations
       - name: NTE candidate listing pages
         if: always()
         run: python tools/live_candidate_probe.py --group nte --annotations

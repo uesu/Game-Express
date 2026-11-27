@@ -138,6 +138,15 @@ async def probe_reddit_fleet(fetcher, *, annotations: bool) -> None:
 
 
 class Tests(unittest.TestCase):
+    def test_workflow_keeps_target_checks_and_excludes_unrelated_crimson(self):
+        workflow = (ROOT / ".github/workflows/source_research_probe.yml").read_text(encoding="utf-8")
+        self.assertNotIn("--group crimson", workflow)
+        self.assertNotIn("continue-on-error", workflow)
+        for group in ("endfield-nte", "silver", "media", "codes"):
+            self.assertIn(f"tools/source_research_probe.py --group {group} --annotations", workflow)
+        for group in ("nte", "silver", "endfield", "reddit0", "reddit1", "reddit2", "redditfleet"):
+            self.assertIn(f"tools/live_candidate_probe.py --group {group} --annotations", workflow)
+
     def test_annotation_content_is_restricted(self):
         self.assertEqual(format_result("reddit-0-Endfield", "ok", 2), "reddit-0-Endfield status=ok count=2")
         for args in (("unsafe\n::error::", "ok", 1), ("safe", "external text", 1),
