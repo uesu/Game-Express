@@ -83,6 +83,7 @@ jobs:
           python tests/test_reddit_intake.py
           python tests/test_reddit_usecases.py
           python tests/test_endfield_candidate.py
+          python tests/test_silverpalace_candidate.py
           python tests/test_maintenance_live.py
           python tools/source_research_probe.py --self-test
           python tools/live_candidate_probe.py --self-test

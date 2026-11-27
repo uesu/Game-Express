@@ -24,7 +24,7 @@ from gamexpress.config import Game, load_settings  # noqa: E402
 from gamexpress.discord import payload_media_urls  # noqa: E402
 from gamexpress.http import Fetcher  # noqa: E402
 from gamexpress.media import news_media_available  # noqa: E402
-from gamexpress.sources import endfield, reddit  # noqa: E402
+from gamexpress.sources import endfield, reddit, silverpalace  # noqa: E402
 
 SUBS = ("Endfield", "ArknightsEndfield", "NevernessToEverness", "SilverPalaceOfficial")
 ORIGINS = ("https://old.reddit.com", "https://redlib.mint.lgbt", "https://r.naa.gg")
@@ -64,6 +64,10 @@ async def probe(fetcher, *, annotations: bool = False, group: str = "all") -> No
         await probe_endfield(fetcher, annotations=annotations)
     if group in ("all", "reddit0", "reddit1", "reddit2"):
         await probe_reddit(fetcher, annotations=annotations, group=group)
+    if group == "silver":
+        rows = await silverpalace.snapshot(fetcher)
+        show("silver-snapshot", "unavailable" if rows is None else "ok" if rows else "empty",
+             len(rows or []), annotations)
     if group == "redditfleet":
         await probe_reddit_fleet(fetcher, annotations=annotations)
 
@@ -158,6 +162,24 @@ class Tests(unittest.TestCase):
         self.assertNotIn("secret", text)
         self.assertNotIn("never emit", text)
 
+    def test_silver_group_scans_twice_without_printing_article_content(self):
+        class FakeFetcher:
+            calls = 0
+
+            async def get_json(self, url, **kwargs):
+                self.calls += 1
+                return {"code": 0, "data": {"current_page": "1", "total_page": 1,
+                        "list": [{"id": "120", "title": "never emit this title",
+                                  "publish_date": "2026-10-09"}]}}
+
+        fetcher = FakeFetcher()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            asyncio.run(probe(fetcher, annotations=True, group="silver"))
+        self.assertIn("silver-snapshot status=ok count=1", output.getvalue())
+        self.assertNotIn("never emit", output.getvalue())
+        self.assertEqual(fetcher.calls, 2)
+
     def test_redirect_override(self):
         class Fake:
             def get(self, url, **kwargs):
@@ -177,7 +199,7 @@ if __name__ == "__main__":
     elif sys.argv[1:] in ([], ["--annotations"]):
         asyncio.run(main(bool(sys.argv[1:])))
     elif len(sys.argv) == 4 and sys.argv[1] == "--group" and sys.argv[3] == "--annotations":
-        if sys.argv[2] not in ("endfield", "reddit0", "reddit1", "reddit2", "redditfleet"):
+        if sys.argv[2] not in ("endfield", "silver", "reddit0", "reddit1", "reddit2", "redditfleet"):
             raise SystemExit("Unknown fixed group")
         asyncio.run(main(True, sys.argv[2]))
     else:

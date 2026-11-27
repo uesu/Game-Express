@@ -500,6 +500,11 @@ observation cannot prove freshness, uptime, complete pagination, or successful r
   reachability through the production Fetcher remain unverified. Fixed-URL runner structural checks
   passed for two pages and one detail in [run 45961114831](https://github.com/uesu/Game-Express/actions/runs/45961114831);
   this confirms neither ongoing availability nor completeness, nor the timestamp semantics.
+  `sources/silverpalace.py` is an **unregistered listing-only prototype**. It makes two bounded
+  complete walks, validates IDs and calendar dates without inventing a publication instant, and
+  rejects drift, ambiguous empty pages and duplicate IDs. Matching walks reduce some races but
+  do not prove an atomic upstream snapshot. Detail parsing, article links, ID-aware baseline,
+  media delivery and runner integration are not implemented.
 - [Elementa's official press release](https://www.elementagames.com/en-us/newsDetail/?id=14)
   states that Silver Palace launches globally **December 14, 2026 (UTC+8)**, matching the
   screenshot. Launch hour was not established. Treat feature 3 as the requested candidate,
@@ -531,9 +536,11 @@ prototype run through existing reader code; they are not representative of authe
 redirect-following production traffic. It is a **reconnaissance** tool, not a parser, correctness test,
 continuous monitor, or proof that any source is ready. HTTP failures fail the job; malformed
 shapes and empty lists are printed for human review, not silently accepted as validated data.
-GitHub only registers a new `workflow_dispatch` workflow after the workflow file exists on the
-default branch; after that, select the intended branch when dispatching. A successful dispatch
-is not evidence the probe ran or that a future run will succeed. In
+The workflow was registered by probe-only [PR #172](https://github.com/uesu/Game-Express/pull/172)
+and dispatched on main in [run 45972342468](https://github.com/uesu/Game-Express/actions/runs/45972342468).
+The run's official source groups succeeded, but the job failed on three Crimson Witch RSS 404s.
+Select the intended branch when dispatching. A successful dispatch is not evidence the probe ran
+or that a future run will succeed. In
 [runner 45964838716](https://github.com/uesu/Game-Express/actions/runs/45964838716) three fixed
 observed image URLs, one per game, returned HTTP 200 with recognized image signatures, but the
 Endfield prototype's actual rendered payload failed existing production media preflight. No Discord
