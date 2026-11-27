@@ -1,4 +1,4 @@
-name: Source research probe (manual, read-only)
+name: Source research and private card test (manual)
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
       scope:
         description: Research scope
         type: choice
-        options: [all, endfield-card]
+        options: [all, endfield-card, feature3-prepare, feature3-post]
         default: all
 
 permissions:
@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   probe:
-    if: ${{ inputs.scope != 'endfield-card' }}
+    if: ${{ inputs.scope == 'all' }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -65,7 +65,7 @@ jobs:
         run: python tools/live_candidate_probe.py --group redditfleet --annotations
 
   archive:
-    if: ${{ inputs.scope != 'endfield-card' }}
+    if: ${{ inputs.scope == 'all' }}
     name: Bounded historical listing research
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -84,7 +84,7 @@ jobs:
         run: python tools/archive_research_probe.py
 
   nte-media:
-    if: ${{ inputs.scope != 'endfield-card' }}
+    if: ${{ inputs.scope == 'all' }}
     name: NTE article media inventory
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -103,7 +103,7 @@ jobs:
         run: python tools/nte_media_research.py
 
   endfield-media:
-    if: ${{ inputs.scope != 'endfield-card' }}
+    if: ${{ inputs.scope == 'all' }}
     name: Endfield article media inventory
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -122,6 +122,7 @@ jobs:
         run: python tools/endfield_media_research.py
 
   endfield-card:
+    if: ${{ inputs.scope == 'all' || inputs.scope == 'endfield-card' }}
     name: Endfield reader and card comparison
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -138,3 +139,43 @@ jobs:
         run: python tools/endfield_card_research.py --self-test
       - name: Compare four fixed official article cards
         run: python tools/endfield_card_research.py
+
+  feature3-prepare:
+    if: ${{ inputs.scope == 'feature3-prepare' }}
+    name: Prepare private Feature 3 cards (no posting)
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline guards
+        run: python tools/feature3_webhook_test.py --self-test
+      - name: Prepare fixed official cards without posting
+        run: python tools/feature3_webhook_test.py --prepare-only
+
+  feature3-post:
+    if: ${{ inputs.scope == 'feature3-post' }}
+    name: Send Feature 3 cards to private test webhook
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline guards
+        run: python tools/feature3_webhook_test.py --self-test
+      - name: Send fixed cards to the private test webhook
+        env:
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/feature3_webhook_test.py
