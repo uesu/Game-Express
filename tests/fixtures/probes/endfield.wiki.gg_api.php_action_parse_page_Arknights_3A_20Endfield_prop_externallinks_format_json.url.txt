@@ -1,0 +1,1 @@
+https://endfield.wiki.gg/api.php?action=parse&page=Arknights%3A%20Endfield&prop=externallinks&format=json
