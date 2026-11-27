@@ -6,9 +6,14 @@ some pagination races; they cannot prove the upstream offers a consistent snapsh
 """
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import re
+from dataclasses import replace
 from datetime import date
 from urllib.parse import urlsplit
+
+import aiohttp
 
 from ..models import Item
 from ..textutil import news_blocks
@@ -125,6 +130,47 @@ async def detail(fetcher, row):
         return None
     return {"id": cid, "title": detail_title.strip(), "date": day,
             "url": ARTICLE.format(cid), "cover": cover, "blocks": blocks}
+
+
+async def without_duplicate_leading_cover(fetcher, item):
+    """Drop only a cover byte-identical to the first body image, keeping that body image.
+
+    Some Silver Palace entries publish the same file under different cover and
+    article URLs. Compare complete bounded responses from the official image
+    host, without redirects. An unavailable comparison preserves both images;
+    image/video blocks and distinct covers are never removed speculatively.
+    """
+    if (item.source != "silverpalace" or item.game != "silverpalace"
+            or len(item.images) != 1 or not item.article_blocks
+            or item.article_blocks[0].get("kind") != "image"):
+        return item
+    cover, body = item.images[0], item.article_blocks[0].get("url")
+    if cover == body or not _official_cover(cover) or not _official_cover(body):
+        # The shared renderer already handles identical URLs; never fetch foreign hosts.
+        return item
+
+    async def digest(url):
+        async with fetcher.session.get(url, allow_redirects=False) as response:
+            if (response.status != 200
+                    or not response.headers.get("Content-Type", "").lower().startswith("image/")):
+                return None
+            length = 0
+            digest = hashlib.sha256()
+            async for chunk in response.content.iter_chunked(65536):
+                length += len(chunk)
+                if length > 8 * 1024 * 1024:
+                    return None
+                digest.update(chunk)
+            return (length, digest.digest()) if length else None
+
+    try:
+        first, second = await asyncio.wait_for(asyncio.gather(digest(cover), digest(body)), timeout=12)
+        if first is not None and first == second:
+            return replace(item, images=[])
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError, TypeError, AttributeError):
+        pass
+    # HTTP failures are non-destructive: original media remains available to the renderer.
+    return item
 
 
 async def news_article(fetcher, game, row):

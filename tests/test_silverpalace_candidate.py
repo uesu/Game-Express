@@ -9,7 +9,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from gamexpress.cards import news_payloads  # noqa: E402
 from gamexpress.config import Game  # noqa: E402
+from gamexpress.models import Item  # noqa: E402
 from gamexpress.sources import silverpalace  # noqa: E402
 
 
@@ -94,6 +96,67 @@ class SilverCandidateTests(unittest.TestCase):
         self.assertFalse(fetcher.calls[0][1]["allow_redirects"])
         data["cover"] = "https://evil.example/x.jpg"
         self.assertIsNone(asyncio.run(silverpalace.news_article(Fetcher([{"code": 0, "data": data}]), game, candidate)))
+
+    def test_identical_cover_bytes_are_removed_but_body_and_different_media_are_preserved(self):
+        cover = "https://s.elementagames.com/official/image/cover.jpg"
+        body = "https://s.elementagames.com/official/image/body.jpg"
+        game = Game(key="silverpalace", name="Silver Palace", short="Silver", enabled=False, color=0)
+        item = Item(source="silverpalace", game="silverpalace", id="7", title="Official",
+                    url="https://silverpalace.elementagames.com/en-us/newsDetail?id=7", text="", published_ts=0,
+                    images=[cover], article_blocks=[{"kind": "image", "url": body},
+                                                   {"kind": "text", "text": "Article text"}])
+
+        class Response:
+            def __init__(self, content, status=200, mime="image/jpeg"):
+                self.content = self
+                self.data, self.status, self.headers = content, status, {"Content-Type": mime}
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def iter_chunked(self, size):
+                yield self.data
+
+        class Session:
+            def __init__(self, bodies):
+                self.bodies, self.calls = bodies, []
+
+            def get(self, url, **kwargs):
+                self.calls.append((url, kwargs))
+                return self.bodies[url]
+
+        same = Session({cover: Response(b"same contents"), body: Response(b"same contents")})
+        result = asyncio.run(silverpalace.without_duplicate_leading_cover(type("F", (), {"session": same})(), item))
+        self.assertEqual(result.images, [])
+        self.assertEqual(item.images, [cover])  # no mutation of the source item
+        self.assertEqual(result.article_blocks, item.article_blocks)
+        self.assertEqual(len(same.calls), 2)
+        self.assertTrue(all(kwargs["allow_redirects"] is False for _, kwargs in same.calls))
+        pages = news_payloads(game, result, expand_full=True)
+        galleries = [entry["media"]["url"] for page in pages for box in page["components"]
+                     for child in box["components"] if child["type"] == 12 for entry in child["items"]]
+        self.assertEqual(galleries, [body])
+        for response in (Response(b"different"), Response(b"same contents", status=302),
+                         Response(b"same contents", mime="text/html"), Response(b"x" * (8 * 1024 * 1024 + 1))):
+            with self.subTest(status=response.status, size=len(response.data)):
+                different = Session({cover: Response(b"same contents"), body: response})
+                result = asyncio.run(silverpalace.without_duplicate_leading_cover(
+                    type("F", (), {"session": different})(), item))
+                self.assertIs(result, item)
+
+    def test_duplicate_check_is_scoped_and_never_fetches_untrusted_or_nonleading_media(self):
+        cover = "https://s.elementagames.com/official/image/cover.jpg"
+        item = Item(source="silverpalace", game="silverpalace", id="7", title="Official",
+                    url="https://silverpalace.elementagames.com/en-us/newsDetail?id=7", text="", published_ts=0,
+                    images=[cover], article_blocks=[{"kind": "image", "url": "https://example.invalid/other.jpg"}])
+        self.assertIs(asyncio.run(silverpalace.without_duplicate_leading_cover(object(), item)), item)
+        item.article_blocks = [{"kind": "text", "text": "Intro"}, {"kind": "image", "url": cover}]
+        self.assertIs(asyncio.run(silverpalace.without_duplicate_leading_cover(object(), item)), item)
+        item.article_blocks = [{"kind": "image", "url": cover}]
+        self.assertIs(asyncio.run(silverpalace.without_duplicate_leading_cover(object(), item)), item)
 
     def test_invalid_incomplete_or_mutating_walks_fail_closed(self):
         one = page(1, 2, [row("1", "2026-01-01")])

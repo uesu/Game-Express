@@ -278,6 +278,8 @@ async def render_candidate(fetcher, settings, source, row):
     item = await source_module.news_article(fetcher, game, row)
     if item is None or item.source != source or item.game != source or item.id != row["id"]:
         raise DeliveryHold("official article unavailable or mismatched")
+    if source == "silverpalace":
+        item = await silverpalace.without_duplicate_leading_cover(fetcher, item)
     item = await with_verified_fallback(fetcher, item)
     pages = news_payloads(game, item, timestamps=settings.news_timestamps,
                           expand_full=True, max_pages=settings.news_expand_max_pages,

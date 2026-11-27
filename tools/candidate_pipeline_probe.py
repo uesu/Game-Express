@@ -15,7 +15,7 @@ from gamexpress import candidate_news_delivery as candidate  # noqa: E402
 from gamexpress.config import load_settings  # noqa: E402
 from gamexpress.http import Fetcher  # noqa: E402
 
-FIXED = {"nte": ("252469", "252474"), "endfield": ("0766", "7011"), "silverpalace": ("1", "120")}
+FIXED = {"nte": ("252469", "252474"), "endfield": ("0766", "7011"), "silverpalace": ("1", "7", "120")}
 
 
 async def run():
@@ -39,6 +39,8 @@ async def run():
                 maxres = sum(url.endswith("/maxresdefault.jpg") for url in urls)
                 print(f"::notice title=Candidate card::{source} id={cid} pages={len(pages)} "
                       f"media={len(urls)} maxres={maxres} preflight=pass", flush=True)
+                if source == "silverpalace" and cid == "7" and (len(urls) != 1 or not urls[0].endswith("/e4a8b3d37c628be4e73294c8469e73d6.jpg")):
+                    raise ValueError("duplicate cover/body image not removed")
                 if source == "nte" and cid == "252469" and maxres != 1:
                     raise ValueError("NTE maximum-resolution fallback missing")
 
