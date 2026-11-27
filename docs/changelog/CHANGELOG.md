@@ -1,5 +1,35 @@
 # Changelog — current entries
 
+## 2026-11-27 — Secret scanning: the probe job scrubs before it saves (five alerts closed)
+
+- **What happened.** GitHub's secret scanning opened **five "Google API Key" alerts**, all on
+  `tests/fixtures/probes/www.youtube.com__*.body.txt` — the channel pages saved as handle evidence
+  for Neverness to Everness and Arknights: Endfield. The key is **Google's public
+  `INNERTUBE_API_KEY`**, which YouTube embeds in every page a browser loads: it is not this
+  repository's credential, it was never in a workflow log, and nothing could be done with it that
+  a browser cannot already do. It still does not belong in a git history that every clone and
+  mirror copies.
+- **Removed, not just untracked.** The three `www.youtube.com__*.body.txt`/`.url.txt` pairs were
+  deleted and the branch history was rewritten so the blobs are gone, not merely absent from the
+  tip. The handle evidence survives where it belongs — in prose in
+  [RESEARCH_NEW_GAMES.md](../RESEARCH_NEW_GAMES.md) and in each game's `note`: `@NTE_EN` and
+  `@AKEndfield` were confirmed to exist (`x.com/NTE_Game`, `x.com/ArknightsEndfield`, `@Endfield`,
+  `@SilverPalace*` return nothing), which is exactly the claim the deleted files supported.
+- **The job now scrubs before it commits.** `mode=save` runs its bytes through `SECRET_SHAPES`
+  (Google API keys, `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_` tokens, fine-grained PATs, AWS key ids,
+  Discord webhook URLs) and writes `REDACTED-*` in place, then prints `scrubbed=N` so the operator
+  knows the evidence was edited. The markup, the sizes and the structure — everything a parser is
+  written against — survive; only the key-shaped strings do not.
+- **And a guard, because a rule with no gate is decoration.**
+  `tests/test_probe_evidence_is_scrubbed.py` scans every text file under `tests/fixtures/` for the
+  same shapes, checks that the scrubber really scrubs (and leaves the rest of the line alone), and
+  checks that the workflow still contains the step. It runs in `ci.yml` **and** the Python-bump
+  gate, so a fixture copied from a browser by hand fails the build too, not just the probe job.
+  Test *source* keeps its fake tokens: the scan is deliberately limited to fixtures, which are the
+  data copied from the wire.
+- **No application code changed.** Nothing in `gamexpress/` moved; the adapter and the games added
+  earlier today are untouched.
+
 ## 2026-11-27 — NTE and Endfield are monitored (and a news adapter that is not HoYoLAB or Kuro)
 
 - **What shipped.** Two games joined `config/games.json` and one new feature-3 source was written:

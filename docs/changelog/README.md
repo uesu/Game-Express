@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [NTE and Endfield are monitored (and a news adapter that is not HoYoLAB or Kuro)](CHANGELOG.md#2026-11-27--nte-and-endfield-are-monitored-and-a-news-adapter-that-is-not-hoyolab-or-kuro).
+Latest: [Secret scanning: the probe job scrubs before it saves (five alerts closed)](CHANGELOG.md#2026-11-27--secret-scanning-the-probe-job-scrubs-before-it-saves-five-alerts-closed).
+
+Previous: [NTE and Endfield are monitored (and a news adapter that is not HoYoLab or Kuro)](CHANGELOG.md#2026-11-27--nte-and-endfield-are-monitored-and-a-news-adapter-that-is-not-hoyolab-or-kuro).
 
 Previous: [Probe verdicts: two code sources rejected, and the new-game findings](CHANGELOG.md#2026-11-27--probe-verdicts-two-code-sources-rejected-and-the-new-game-findings).
 

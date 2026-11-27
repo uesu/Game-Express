@@ -105,6 +105,7 @@ jobs:
           python tests/test_reddit_usecases.py
           python tests/test_maintenance_live.py
           python tests/test_nte_news.py
+          python tests/test_probe_evidence_is_scrubbed.py
 
       - name: Card preview renders (previews/index.html)
         run: python -m gamexpress preview --out /tmp/previews > /dev/null
@@ -237,6 +238,9 @@ jobs:
         run: |
           set -u
           UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+          # Everything `mode=save` must never commit, in one place (used by the redaction below and
+          # mirrored by tests/test_probe_evidence_is_scrubbed.py, which fails CI if one ever lands).
+          SECRET_SHAPES='AIza[0-9A-Za-z_-]{35}|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|discord(app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]{20,}'
           # Candidates only — an entry here is a URL worth re-probing, never a configured source.
           DEFAULT_URLS=$(cat <<'LIST'
           https://www.crimsonwitch.com/codes
@@ -290,8 +294,26 @@ jobs:
             if [ "${MODE:-summary}" = "save" ]; then
               slug="$(printf '%s' "$url" | sed 's#^https\?://##; s#[^A-Za-z0-9._-]#_#g')"
               printf '%s' "$url" > "$out/$slug.url.txt"
-              cp "$body" "$out/$slug.body.txt"
-              echo "  saved $out/$slug.body.txt ($bytes bytes, HTTP $code)"
+              # Credential-shaped strings are scrubbed BEFORE the bytes are committed. A vendor
+              # page can carry a key that is public by design -- YouTube's HTML embeds Google's
+              # INNERTUBE_API_KEY, which GitHub's secret scanning rightly flags as a "Google API
+              # Key" and which opened five alerts on 2026-11-27. Redaction is not a claim that the
+              # key is secret; it is that this repository is not the place to keep it.
+              SCRUBBED=0
+              if grep -qE "$SECRET_SHAPES" "$body" 2>/dev/null; then
+                SCRUBBED="$(grep -Eoc "$SECRET_SHAPES" "$body" 2>/dev/null || echo 1)"
+                sed -E -e 's/AIza[0-9A-Za-z_-]{35}/REDACTED-GOOGLE-API-KEY/g' \
+                       -e 's/gh[pousr]_[A-Za-z0-9]{36,}/REDACTED-GITHUB-TOKEN/g' \
+                       -e 's/github_pat_[A-Za-z0-9_]{20,}/REDACTED-GITHUB-PAT/g' \
+                       -e 's/AKIA[0-9A-Z]{16}/REDACTED-AWS-KEY/g' \
+                       -e 's#(discord(app)?\.com/api/webhooks/[0-9]+/)[A-Za-z0-9_-]{20,}#\1REDACTED#g' \
+                       "$body" > "$out/$slug.body.txt"
+                bytes="$(wc -c < "$out/$slug.body.txt" | tr -d ' ')"
+                echo "  REDACTED $SCRUBBED credential-shaped string(s) before saving"
+              else
+                cp "$body" "$out/$slug.body.txt"
+              fi
+              echo "  saved $out/$slug.body.txt ($bytes bytes, HTTP $code, scrubbed=$SCRUBBED)"
             fi
             rm -f "$body"
           done <<< "$URLS"

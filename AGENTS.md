@@ -249,6 +249,7 @@ uv venv --python 3.11 && uv pip install -r requirements.txt pyyaml ruff pytest v
 .venv/bin/python tests/test_schedule_epithet_and_settled.py
 .venv/bin/python tests/test_gachawiki_placeholder.py
 .venv/bin/python tests/test_nte_news.py
+.venv/bin/python tests/test_probe_evidence_is_scrubbed.py
 .venv/bin/python -m pytest -q tests         # pytest must also pass (all three files in one go)
 .venv/bin/python -m gamexpress validate     # routing, pings, card limits -> "config OK"
 .venv/bin/python -m gamexpress preview --out /tmp/previews

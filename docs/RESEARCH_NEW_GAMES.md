@@ -165,6 +165,16 @@ The only production-file change in this pass is the manual probe: a `source-prob
 every mode except `save`, it never posts to Discord, never writes state, and never gates a merge.
 Its `actions/checkout` is pinned to a commit SHA like every other `uses:` in this repository.
 
+**`mode=save` scrubs before it commits.** The first version stored bytes verbatim, and three
+YouTube channel pages — the handle evidence in §4/§5 — carried Google's **public** `INNERTUBE_API_KEY`
+in their HTML. GitHub's secret scanning correctly opened five *"Google API Key"* alerts against
+`tests/fixtures/probes/www.youtube.com__*.body.txt`. Nothing was ours and nothing leaked, but a
+repository is not the place to keep a key-shaped string, so the job now replaces Google keys,
+GitHub tokens, AWS key ids and Discord webhook URLs with `REDACTED-*` markers before saving, and
+`tests/test_probe_evidence_is_scrubbed.py` fails the build if one lands by any other route. The
+three pages were deleted and purged from the branch history; the handles themselves stay documented
+in prose in §4/§5 and in each game's `note`.
+
 ## 8 · What is still switched off, and why
 
 `config/games.json` is the contract every feature is tested against, so a game is only enabled with
