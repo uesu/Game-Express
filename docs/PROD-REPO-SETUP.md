@@ -117,11 +117,13 @@ Create a fresh repository and upload these paths; a fork/clone relationship is n
 
 ```
 gamexpress/                      the whole package, including sources/ (no fixed file count)
-  __init__.py  __main__.py  benchmark.py  cards.py  codeposter.py  config.py  discord.py
+  __init__.py  __main__.py  benchmark.py  cards.py  codeposter.py  config.py
+  day_news_candidate.py  discord.py
   http.py  maintenance.py  media.py  models.py  news_timestamps.py  preview_html.py
   runner.py  samples.py  schedule.py  state.py  textutil.py  timeparse.py
   sources/__init__.py  banner_search.py  bannerfeed.py  calendarfeed.py  codes.py
           countdown.py  endfield.py  gachawiki.py  hoyolab.py  kuro.py  launcher.py  newspage.py
+          nte_candidate.py
           reddit.py  silverpalace.py  twitter.py
 config/games.json                game definitions, X accounts, code sources
 config/overrides.json            manual corrections
@@ -219,8 +221,8 @@ cp -r --parents \
   /tmp/prod/
 
 find /tmp/prod -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
-find /tmp/prod -type f | wc -l     # expect 49 (47 runtime + 2 policy files)
-                                  # 51 if you also copied the two python-bump files
+find /tmp/prod -type f | wc -l     # expect 51 (49 runtime + 2 policy files)
+                                  # 53 if you also copied the two python-bump files
 ```
 
 **Don't trust that number on its own — verify the package instead.** The count goes stale the

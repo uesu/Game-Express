@@ -453,7 +453,11 @@ observation cannot prove freshness, uptime, complete pagination, or successful r
   NTE's list had only three entries per page in this observation; a first-page-only poll can lose
   articles. Two NTE list pages also passed fixed-URL HTML structure checks on
   [runner 45961114831](https://github.com/uesu/Game-Express/actions/runs/45961114831).
-  A rendered browser page alone is not an adapter.
+  An inactive `nte_candidate.py` parses one listing page's displayed calendar day rather than
+  its URL creation-date segment, and accepts only canonical official article paths. It is not
+  complete pagination, a detail reader, a source snapshot, or a production adapter. The capture
+  and screenshot show article `265053` displayed as 2026-11-20 although its path has 20261113;
+  no publication hour or timezone should be inferred from either value.
 - **Endfield CMS discovery:** [jino9492/subculture-calendar](https://github.com/jino9492/subculture-calendar)
   documents the official `web-news.gryphline.com/api/bulletin` endpoint and
   `code=arknights_endfield_official`. A separate page-fetching service returned `code: 0` from
@@ -504,7 +508,15 @@ observation cannot prove freshness, uptime, complete pagination, or successful r
   complete walks, validates IDs and calendar dates without inventing a publication instant, and
   rejects drift, ambiguous empty pages and duplicate IDs. Matching walks reduce some races but
   do not prove an atomic upstream snapshot. Detail parsing, article links, ID-aware baseline,
-  media delivery and runner integration are not implemented.
+  media delivery and runner integration are not implemented. An independent, unregistered
+  `day_news_candidate.py` tests a possible ID-based silent baseline and retry queue without
+  converting date-only values into timestamps. It queues newly observed IDs even when their
+  displayed dates are old, retains pending items if they disappear, fails closed at a fixed ID
+  cap or on route/state mismatch, and needs a complete valid source snapshot. This explicitly
+  favors not silently dropping backdated arrivals over avoiding historical backfills. It has no
+  webhook, state-persistence or multi-message partial-delivery integration, and cannot resolve
+  webhook-accepted/state-save-failed ambiguity. The eventual operational policy and tests must
+  be reviewed before activation; unchanged timestamp-floor behavior remains in use elsewhere.
 - [Elementa's official press release](https://www.elementagames.com/en-us/newsDetail/?id=14)
   states that Silver Palace launches globally **December 14, 2026 (UTC+8)**, matching the
   screenshot. Launch hour was not established. Treat feature 3 as the requested candidate,
@@ -514,9 +526,14 @@ observation cannot prove freshness, uptime, complete pagination, or successful r
   make every author official. [r/ArknightsEndfield](https://www.reddit.com/r/ArknightsEndfield/)
   is unofficial; [r/NevernessToEverness](https://www.reddit.com/r/NevernessToEverness/) and
   [r/SilverPalaceOfficial](https://www.reddit.com/r/SilverPalaceOfficial/) describe themselves as
-  official in the screenshots. Independent moderator/account verification and the shared
-  News-Express Devvit target update are still needed. No subreddit, official-author allowlist,
-  or trust rule was added.
+  official in the screenshots. Independent account verification is still needed; these labels
+  do not make every poster official. [News-Express #160](https://github.com/uesu/News-Express/pull/160)
+  added four Game-Express communities to Devvit defaults, and [#161](https://github.com/uesu/News-Express/pull/161)
+  split the 19 defaults across `subreddits` and `subredditsAdditional`. The user reports the
+  related Devvit work was addressed; this checkout has not independently verified the installed
+  build or persisted values. Merged defaults alone do not prove live coverage. The optional
+  `INTAKE_QUIET_TARGETS=1` infers coverage by kind, not by each target. No subreddit,
+  official-author allowlist, or trust rule was added to Game-Express.
 
 **Before implementation:** establish stable official listing/detail contracts, complete bounded
 pagination, UTC/timezone and media handling, safe bootstrap, outage/partial-response semantics and

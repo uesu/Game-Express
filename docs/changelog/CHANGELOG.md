@@ -7,7 +7,10 @@
   read-only GitHub runner probes, direct image and legacy Reddit fallback results, and official
   maintenance notice evidence. An unregistered Silver Palace listing prototype validates two
   bounded scans without inventing precise timestamps. Image preflight, detail parsing, safe
-  baseline and runner wiring remain blockers. This is not a complete new-game integration.
+  baseline and runner wiring remain blockers. An inactive ID-based baseline prototype tests
+  same-day additions and persistent pending IDs; an inactive NTE one-page parser preserves
+  displayed dates and rejects foreign article hosts. Existing news routing and floors are unchanged.
+  This is not a complete new-game integration.
 
 - Documented Crimson Witch's upstream overlap with Ennead, Hoyocodes' use of Ennead,
   candidate code endpoints and official news/community sources for Endfield, NTE and Silver
