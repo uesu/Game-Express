@@ -434,9 +434,13 @@ page fetcher, and so were the ennead calendars. The production reachability of t
 `sources/reddit_intake.py` sits in front of the fleet below. The *Gaming Express* Devvit app
 (News-Express `devvit/gaming-express`, installed on Reddit's Developer Platform under the owner's
 account) polls `/new` of the six official subreddits plus the verified publisher accounts with
-Reddit's own API every 5 minutes and writes one fenced-JSON record per new post (`id, sub, title,
-permalink, url, created, author, flair, distinguished, spoiler, nsfw, score, comments, removed,
-xpost, media[], body, bodyTruncated`) into a private Discord channel shared with News-Express.
+Reddit's own API **every 5 minutes** — the app build live today; the pending 0.0.11 update
+(Devvit 0.15.6, News-Express PR #154) polls **every 3 minutes** — and writes one fenced-JSON record
+per new post (`id, sub, title, permalink, url, created, author, flair, distinguished, spoiler,
+nsfw, score, comments, removed, xpost, media[], body, bodyTruncated`) into a private Discord
+channel shared with News-Express. Nothing in this section depends on the exact cadence: the reader
+measures freshness on the newest relay message (`INTAKE_STALE_SECONDS`), so a faster poll only
+makes the relay answer sooner.
 
 - **One read per run** (`GET /channels/<INTAKE_CHANNEL_ID>/messages`, bot token in the
   `Authorization` header only, newest-first `before=` paging, ≤ 8 × 100 messages, 6 h window);
@@ -451,6 +455,15 @@ xpost, media[], body, bodyTruncated`) into a private Discord channel shared with
   budget arrive cut; `resolve_post()` fills them in as for any empty-text entry) and
   `relay_complete` (relay 0.0.8: nothing cut, parent named — such an entry IS the post, and
   `items()` / `program_post()` never call `resolve_post()` for it).
+- **Body media (News-Express round 115 / PR #148):** an inline "GIF" in Reddit's rich-text editor
+  is stored as the shorthand `![gif](<media-id>)` — no CDN URL, no extension — and the Devvit post
+  payload has no equivalent in `media[]`. The reader resolves that form to
+  `https://i.redd.it/<media-id>.gif` and merges it with the bare `i.redd.it` / `preview.redd.it`
+  URLs of the same body **in source order**, after the record's own `media[]`; the ordinary dedupe
+  collapses a reference the relay already listed. The rule stays conservative on purpose: only an
+  explicit `gif` marker with an id-shaped target (5–64 chars of `[A-Za-z0-9_-]`) becomes media, so
+  `![image](…)` and any other markdown target are never guessed into a URL. This is media
+  discovery only — no new gate, and `text`, `links` and the official rule are unchanged.
 - **Settings** (shared names with News-Express, passed through `GE_SECRETS_JSON`/`GE_VARS_JSON`):
   secret `DISCORD_BOT_TOKEN`, Variables `INTAKE_CHANNEL_ID`, `INTAKE_READER=primary|shadow|off`,
   `INTAKE_STALE_SECONDS=1800`, `INTAKE_LOOKBACK_SECONDS=21600`, `INTAKE_QUIET_TARGETS=0`. The step
@@ -479,10 +492,29 @@ xpost, media[], body, bodyTruncated`) into a private Discord channel shared with
   **never a leak subreddit**. `runner.reddit_targets()` builds exactly that set, and the quiet
   mode trusts only records inside it: leak traffic in the shared channel proves the relay is
   alive, never that one of these targets is quiet.
+- **Failure diagnostics (News-Express round 116 / PR #146):** a Discord `429` on the channel
+  history is the one failure where the failing page and the rate-limit headers decide the next
+  move, so the summary names both —
+  `relay http_429 (rate limited on history page 3 — retry-after=5, x-ratelimit-scope=user, …)`.
+  The values come straight from `Retry-After` / `X-RateLimit-Scope` / `-Global` / `-Remaining` /
+  `-Bucket` when Discord sent them and are omitted otherwise. This is evidence, **not** a retry
+  policy: the status stays `http_429`, the per-target fallback runs as for any other error, and
+  nothing waits longer or asks again because of the values. The other failures keep their wording
+  (`http_401` bot token rejected, `http_403` missing channel permissions, `http_404` unknown
+  channel id, `http_5xx` the raw status).
+- **Read window vs the relay's horizon:** `INTAKE_LOOKBACK_SECONDS=21600` (6 h) bounds the
+  paginated Discord history, and News-Express round 116 capped *its own* freshness, pending and
+  re-check retention at 5 h. This engine keeps its 6 h read window on purpose — its schedule and
+  code windows are wider (72 h), the relay's re-checks all fall inside 6 h, and shortening the read
+  would only drop late records. The setting is read through the shared name, so a deployment that
+  wants News-Express's 5 h figure can set `INTAKE_LOOKBACK_SECONDS=18000` without a code change.
 - **Complete source (relay 0.0.7 / 0.0.8):** each record message also carries `record.json` (full
   body, every media URL, crosspost parent) — fetched from `cdn.discordapp.com` only for cut
   records and crossposts, ≤ 10 per run, no token — and the relay re-checks delivered posts
-  (~5 min / 30 min / 2 h / 6 h / 24 h) in batched `v: 2` update messages: removed or deleted →
+  (~5 min / 30 min / 2 h / 5 h — News-Express round 116 shortened the tail's 6 h / 24 h steps; the
+  app build live today still re-checks through 24 h, and either schedule is safe here because a
+  re-check only ever describes a record the 6 h read window already listed) in batched `v: 2`
+  update messages: removed or deleted →
   not listed, approved → the complete record is re-sent and listed, edited → re-sent record
   (`revision` ≥ 2, `resent` = why) supersedes. Nothing in the fleet below is needed for a
   relay-served target.
