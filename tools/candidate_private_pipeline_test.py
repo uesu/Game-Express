@@ -32,6 +32,8 @@ SOURCES = ("nte", "endfield", "silverpalace")
 ALREADY_TESTED = {"nte": {"252469", "252474"}, "endfield": {"0766", "7011", "1340", "3840"},
                   "silverpalace": {"1", "120"}}
 MAX_MESSAGES = 8
+# Pinned after the no-post preparation: any upstream change holds the test.
+EXPECTED = (("nte", "252471", 1), ("endfield", "3857", 2), ("silverpalace", "7", 1))
 
 
 async def prepare(fetcher, settings):
@@ -161,6 +163,8 @@ async def main(prepare_only):
         if prepare_only:
             print("::notice title=Private pipeline::preparation only; no state or posts", flush=True)
             return
+        if tuple((source, row["id"], len(pages)) for source, row, pages in prepared) != EXPECTED:
+            raise ValueError("prepared selection changed; no posts")
         sent = await send_prepared(session, prepared, webhook)
         print(f"::notice title=Private pipeline complete::confirmed={sent} sources=3 production-state=unchanged", flush=True)
 
