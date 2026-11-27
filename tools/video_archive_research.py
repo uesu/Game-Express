@@ -31,8 +31,10 @@ from gamexpress.http import Fetcher  # noqa: E402
 from gamexpress.sources import endfield, silverpalace  # noqa: E402
 
 MAX_BODY = 2 * 1024 * 1024
-EXTENSION = re.compile(r"\.(?:mp4|m4v|webm|mov|m3u8|mpd|ogv|avi|mkv|flv|wmv)(?=$|[?#&\s\"'<>\\])", re.I)
-MIME = re.compile(r"(?:video/(?:mp4|webm|quicktime|ogg|x-msvideo|x-matroska|x-flv)|"
+EXTENSION = re.compile(
+    r"\.(?:mp4|m4v|webm|mov|m3u8|mpd|ogv|avi|mkv|flv|wmv|mpeg|mpg|m2v|3gp|3g2|"
+    r"m2ts|mts|ts|f4v|f4m|asf|mxf|vob|ism|ismc|cmfv)(?=$|[?#&\s\"'<>\\])", re.I)
+MIME = re.compile(r"(?:video/[a-z0-9.+-]+|"
                   r"application/(?:vnd\.apple\.mpegurl|x-mpegurl|dash\+xml))", re.I)
 YOUTUBE = re.compile(r"(?:youtube(?:-nocookie)?\.com|youtu\.be)", re.I)
 PLAYER = re.compile(r"(?:vimeo\.com|bilibili\.com/video|player\.bilibili\.com|dailymotion\.com|"
@@ -201,6 +203,8 @@ class Tests(unittest.TestCase):
         self.assertEqual(result["mime_hint"], 1)
         self.assertEqual(result["youtube_hint"], 1)
         self.assertEqual(analyze('<img src="photo.mp4.jpg">')["extension_hint"], 0)
+        self.assertEqual(analyze('<script>"https:%2F%2Fexample.org%2Fclip%2E3gp"</script>')["extension_hint"], 1)
+        self.assertEqual(analyze('<object type="video/unknown"></object>')["mime_hint"], 1)
         self.assertIsNone(analyze(None))
 
     def test_detail_matching_and_no_untrusted_targets(self):
