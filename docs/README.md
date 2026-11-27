@@ -44,6 +44,7 @@ are the short overviews. The operational instructions live here:
 |---|---|
 | **[ACCURACY.md](ACCURACY.md)** | how a post becomes a card: detection, extraction, provenance, the code gate |
 | **[SOURCES.md](SOURCES.md)** | every verified endpoint, with why it was chosen or rejected |
+| **[RESEARCH_NEW_GAMES.md](RESEARCH_NEW_GAMES.md)** | the live probe behind the Crimson Witch code source and the NTE / Endfield / Silver Palace verdicts, with the committed evidence |
 | **[BANNER_DATABASE.md](BANNER_DATABASE.md)** | where banner line-ups come from: the wiki readers, the precedence order, how an official notice is read, and how a TBA fills itself in |
 | **[TIMESTAMP-PATTERNS.md](TIMESTAMP-PATTERNS.md)** | the release-rhythm study the speculation and the estimates are calibrated on |
 | **[SECURITY.md](SECURITY.md)** | threat model: untrusted sources, secret handling, workflow permissions |

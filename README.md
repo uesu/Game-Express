@@ -396,9 +396,9 @@ Sources: **[docs/SOURCES.md → Beta kit & revision-diff sources](docs/SOURCES.m
 
 | Game | Status | Schedule sources | Code sources |
 |---|---|---|---|
-| Genshin Impact | ✅ on | HoYoLAB API (gid 2) → c3kay mirror · X `@GenshinImpact` · HoYoPlay launcher · Reddit `u/genshinimpact` backup | HoYoLAB livestream module · official posts · seria + Hum-Bao (both redeem-validated) · Open Gacha Codes · ennead · fandom · PromoGacha · `r/Genshin_Impact` witness |
-| Honkai: Star Rail | ✅ on | HoYoLAB API (gid 6) → c3kay · X `@honkaistarrail` · HoYoPlay · Reddit `u/HonkaiStarRail` backup | same set (`r/HonkaiStarRail` witness) |
-| Zenless Zone Zero | ✅ on | HoYoLAB API (gid 8) → c3kay · X `@ZZZ_EN` · HoYoPlay · Reddit `u/ZZZ_Official` backup | same set (`r/ZZZ_Official` witness) |
+| Genshin Impact | ✅ on | HoYoLAB API (gid 2) → c3kay mirror · X `@GenshinImpact` · HoYoPlay launcher · Reddit `u/genshinimpact` backup | HoYoLAB livestream module · official posts · seria + Hum-Bao (both redeem-validated) · Open Gacha Codes · ennead · fandom · PromoGacha · **Crimson Witch** · `r/Genshin_Impact` witness |
+| Honkai: Star Rail | ✅ on | HoYoLAB API (gid 6) → c3kay · X `@honkaistarrail` · HoYoPlay · Reddit `u/HonkaiStarRail` backup | same set + **Crimson Witch** (`r/HonkaiStarRail` witness) |
+| Zenless Zone Zero | ✅ on | HoYoLAB API (gid 8) → c3kay · X `@ZZZ_EN` · HoYoPlay · Reddit `u/ZZZ_Official` backup | same set + **Crimson Witch** (`r/ZZZ_Official` witness) |
 | Wuthering Waves | ✅ on | X `@Wuthering_Waves` · Kuro official site · Kuro launcher · `r/WutheringWaves` official-flair backup | official X/Reddit posts · wuthering.gg (active/expired) · Open Gacha Codes · fandom · PromoGacha · `r/WutheringWaves` witness |
 | Honkai: Nexus Anima | ✅ on · ⏳ not released yet | HoYoLAB API (gid 9) · X `@HonkaiNA` · Reddit `u/HonkaiNexusAnima` backup | HoYoLAB livestream module (gid 9) · fandom · `r/HonkaiNexusAnima` witness · official X/Reddit |
 | ANANTA (NetEase) | ✅ on · ⏳ releases 2027‑01‑15 | X `@Ananta_EN` · Reddit `u/AnantaOfficial` backup | fandom · `r/AnantaOfficial` witness · official X/Reddit |
@@ -826,6 +826,7 @@ Historical records are preserved in
   [Open Gacha Codes](https://github.com/torikushiii/OpenGachaCodes),
   [Hum-Bao/hoyoverse-codes](https://github.com/Hum-Bao/hoyoverse-codes),
   [PromoGacha](https://github.com/gripcrip-blip/codehub),
+  [Crimson Witch](https://www.crimsonwitch.com/codes/) (per-code rewards and expiry dates),
   [DuolaD/HoYo_Versioncatcher](https://github.com/DuolaD/HoYo_Versioncatcher),
   [TwintailTeam/game-manifests](https://github.com/TwintailTeam/game-manifests) and
   [TomyJan/GenshinImpact-Client-Version](https://github.com/TomyJan/GenshinImpact-Client-Version),

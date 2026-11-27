@@ -1,5 +1,62 @@
 # Changelog — current entries
 
+## 2026-11-27 — Crimson Witch is a code source, and the new-game probe
+
+- **What was asked.** A full investigation, not a patch: is `crimsonwitch.com` a usable code source,
+  is `heartlog/Hoyocodes` already covered, and can **Neverness to Everness**, **Arknights:
+  Endfield** and **Silver Palace** be added for feature 1 (schedule), 2 (codes), 3 (official news)
+  and 4 (pre-load / maintenance / servers live)? Every answer had to rest on live bytes.
+- **Crimson Witch — yes, and now shipped.** The first probe called it "a client-rendered SPA with no
+  codes in the HTML". **That was wrong.** The codes are in the **React Server Components stream**
+  (`self.__next_f.push([1,"…"])`), which is plain text in the response: the decoded chunk carries a
+  structured `initialCodes` array with code, `added`, `expires`, `rewards[{item,qty}]` and
+  `region_locked`. `sources/codes.py` now concatenates the pushed strings, finds that array with a
+  **string-aware bracket matcher** (so a `]` inside a reward name cannot truncate it) and
+  `json.loads` it — no per-field regex, no class names, no browser. Itemised rewards reach the card
+  (`Primogem ×20`, `Mora ×10,000`), an `expires` stamp becomes the usual "Codes expire — redeem
+  soon" marker, region-locked entries are skipped, duplicates/empty codes/non-dict entries dropped,
+  and a page without the payload is `[]` — never a guess.
+- **Trust.** `family("crimsonwitch") == "crimsonwitch"`: its own family, so it can be the *second*
+  independent witness next to `ennead`/`ogc`, `seria`, `hum-bao`, `fandom` or a Reddit listing and
+  never double-counts them. It is **not** a `VALIDATORS` entry — it publishes no redemption
+  validation, so the "verified (validated)" wording stays reserved for seria and Hum-Bao.
+- **Wiring.** `crimsonwitch:Genshin_Impact`, `crimsonwitch:Honkai_Star_Rail` and
+  `crimsonwitch:Zenless_Zone_Zero` sit before the `reddit:` witness of their game; the card's
+  source line reads `Crimson Witch`. Evidence: 5 live GI codes and 2 live ZZZ codes in
+  `tests/fixtures/probes/`, trimmed real payloads as
+  `tests/fixtures/crimsonwitch_{genshin,zzz}_trimmed.html`, and 8 new assertions in
+  `tests/test_crimsonwitch_codes.py` (parse, rewards formatting, expiry before/after, region lock,
+  duplicates, escapes, truncation, fetch URL/tag, family, label, config order).
+- **`heartlog/Hoyocodes` — already covered.** It is a static UI whose bundle calls
+  `api.ennead.cc/mihoyo/…` in the visitor's browser (last commit 2026-09-07), i.e. the same backend
+  the `ennead:` sources read directly, so it can never be an independent witness. No source added;
+  the verdict is recorded in SOURCES.md.
+- **NTE.** Codes are ready to configure (`ogc:nte` is a known game answering `[]`), and feature 3 is
+  **feasible**: `nte.perfectworld.com/en/article/news/index.html` is static and server-rendered,
+  with tabs `gamenews`/`gamebroad`/`gameevent`, article URLs of the shape
+  `/en/article/news/<tab>/YYYYMMDD/<id>.html` and `indexN.html` pagination (a 25 KB article body is
+  committed as evidence). Features 1 and 4 are not verified.
+- **Endfield.** Codes are ready to configure (`ogc:endfield`: 5 live codes with rewards, no expiry).
+  Feature 3 is **blocked**: `/en-us/news` renders titles, dates and covers but empty `href`s, and the
+  CMS call `GET /api/bulletin?lang=…&code=<appCode>` answers `Cannot GET /api/bulletin` (404) on
+  `endfield.gryphline.com` and `web-api.gryphline.com` alike — `appCode` is not in the chunks the
+  probe captured. A schematic `Kitsudock-data` lineup path exists for feature 1.
+- **Silver Palace.** Feature 3 only, and **blocked**: `_payload.json` is a 69-byte placeholder and
+  `__NUXT_DATA__` holds only i18n/site config — the SSR output contains no news entry at all. The
+  page does confirm the 2026-12-14 global launch. Codes/schedule stay out of scope.
+- **The games are not in `config/games.json` yet, deliberately.** That file is the contract every
+  feature is tested against: the smoke suite requires a YouTube channel, X accounts, reveal-ping
+  rows, a benchmark row and official-feed participation for **every** configured game. For three
+  titles — two unlaunched — that data could not be verified here, and a codes-only entry would mean
+  either inventing it or relaxing the guards. Both are worse than waiting; the exact spec lines
+  (which already pass `validate`) and the per-game checklist are in
+  [RESEARCH_NEW_GAMES.md](../RESEARCH_NEW_GAMES.md).
+- **Probe tooling.** The dispatch-only `source-probe` job in `ci.yml` gained `mode=save`, which
+  commits the fetched bytes (plus a `.url.txt`) to `tests/fixtures/probes/` so evidence is
+  reviewable in the PR instead of dying with a log. It is never a merge gate, and its checkout
+  action is pinned to a commit SHA like every other `uses:` in this repository. The offline suite
+  now also runs `tests/test_crimsonwitch_codes.py` in both `ci.yml` and the Python-bump gate.
+
 ## 2026-11-24 — Reddit intake: match News-Express's newest relay work (body media, `429` evidence)
 
 - **What happened.** Game-Express's Reddit and X adapters were ported from the sibling
