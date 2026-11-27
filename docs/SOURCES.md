@@ -459,8 +459,13 @@ the corrected record must be durably checkpointed before resuming. An operator-f
 production-grade recovery procedure remain unfinished. Local bare-Git tests show the gated runner
 can checkpoint separately, a stale writer holds, and a normal state commit can rebase over the
 candidate ledger without changing it. Production sync protects `state/candidate_news.json` from
-creation, modification or deletion; it is not provisioned automatically. This is not GitHub or
-failover validation, and the release gate remains closed.
+creation, modification or deletion; it is not provisioned automatically. A controlled
+[development-branch GitHub probe](https://github.com/uesu/Game-Express/actions/runs/46037384333)
+confirmed real pushes/ref verification, a stale writer hold and two simulated pages in a separate
+throwaway ledger, without Discord or monitor-state writes. Its `restart=pass` annotation means
+resumption between coordinator calls in the same process, **not** a new-process restart; that
+stronger case is only locally tested. The probe ledger was removed after the run. This is not
+production or cross-repository failover validation, and the release gate remains closed.
 
 Silver Palace article 7 exposed a duplicated lead image: the cover and first body image had
 different URLs but were byte-identical 1626×500 JPEGs. Its separate 800×444 `banner_img` is the

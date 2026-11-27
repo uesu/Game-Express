@@ -25,6 +25,8 @@ from gamexpress.models import Item  # noqa: E402
 
 BRANCH = "arena/98b5f4e1-game-express"
 LEDGER = "state/candidate_ledger_probe.json"
+# Run 46037384333 completed. Never repeat this mutating probe automatically.
+PROBE_COMPLETED = True
 
 
 def git(*args):
@@ -36,6 +38,8 @@ def git(*args):
 
 
 async def run():
+    if PROBE_COMPLETED:
+        raise ValueError("development Git probe already completed")
     if (os.environ.get("GITHUB_REPOSITORY") != "uesu/Game-Express"
             or os.environ.get("GITHUB_REF_NAME") != BRANCH
             or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"
@@ -88,7 +92,7 @@ async def run():
         if git("rev-parse", "HEAD") != initial_head or git("status", "--porcelain"):
             raise ValueError("monitor checkout changed")
         print("::notice title=Development GitHub ledger::remote-verified=1 stale-writer-held=1 "
-              "simulated-pages=2 restart=pass checkout-unchanged=1 discord-posts=0", flush=True)
+              "simulated-pages=2 resume=pass checkout-unchanged=1 discord-posts=0", flush=True)
     finally:
         await first.close()
         await stale.close()
