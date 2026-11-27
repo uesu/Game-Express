@@ -1,5 +1,14 @@
 # Changelog — current entries
 
+## 2026-11-27 — Read-only source research (no production behavior changes)
+
+- Documented Crimson Witch's upstream overlap with Ennead, Hoyocodes' use of Ennead,
+  candidate code endpoints and official news/community sources for Endfield, NTE and Silver
+  Palace, including the limits of the observations and remaining integration gates.
+- Added a manual, secret-free, bounded public-source research probe with offline self-tests.
+  This is not a production monitor, an adapter, or a reliability guarantee. Existing games,
+  source votes, Reddit/X scope, cards, webhooks and state are unchanged.
+
 ## 2026-11-24 — Reddit intake: match News-Express's newest relay work (body media, `429` evidence)
 
 - **What happened.** Game-Express's Reddit and X adapters were ported from the sibling

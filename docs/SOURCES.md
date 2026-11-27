@@ -412,6 +412,79 @@ page fetcher, and so were the ennead calendars. The production reachability of t
 - **`api.ennead.cc/mihoyo`** root: codes only (`/codes` for Genshin, Star Rail, ZZZ, Honkai, Themis).
 - `Ertezy/Gacha-hub-info` (= `Kitsudock-data`): already the hub feed (`hub.json`), used since v1.3.0.
 
+## Research: Crimson Witch, Hoyocodes and prospective games (2026-11-27)
+
+**Research only, not an enabled feature or reliability certification.** The production monitor,
+source ranking, voting, targets and state are unchanged. Web-page observations below came from a
+page-fetching service, not this repository's HTTP client or a GitHub Actions runner. A single
+observation cannot prove freshness, uptime, complete pagination, or successful redemption.
+
+- [Crimson Witch](https://www.crimsonwitch.com/codes): its Genshin, Star Rail and ZZZ pages
+  displayed active code/reward sections and links to RSS feeds (`/feeds/genshin/rss.xml`,
+  `/feeds/star%20rail/rss.xml`, `/feeds/zzz/rss.xml`). A page fetch of the Star Rail feed failed;
+  its format and runner reachability remain unverified. The screenshot's Genshin code also
+  appeared on the Genshin page; that is an observation, not proof of how that card was sourced.
+  At [hoyoverse-api revision 85be772](https://github.com/torikushiii/hoyoverse-api/tree/85be77283263da21affa66edf31e040c06c75f74/src/scraper/sources),
+  its `genshin`, `starrail`, and `zenless` collectors each call a shared Crimson Witch scraper.
+  This establishes a possible upstream dependency, not that a specific live Ennead item came from
+  Crimson Witch. Counting a direct copy as an independent witness risks double counting. **No new
+  direct scraper, ranking change, or additional source vote was added.**
+- [Hoyocodes](https://github.com/heartlog/Hoyocodes/tree/9bb1e889d4bfc620afb1e3d290e5f286b913498d)
+  is a frontend that fetches `/mihoyo/{game}/codes` from Ennead, not another independent backend.
+  The existing `ennead:genshin`, `ennead:starrail` and `ennead:zenless` sources already read
+  those same endpoints; `ogc` and `ennead` count as one family. The page fetcher returned
+  active/inactive JSON for all three on 2026-11-27, including the screenshot's Genshin and ZZZ
+  examples. The site itself and the monitor's live execution were not exercised end-to-end here,
+  nor can current uptime or code validity be guaranteed.
+- [Open Gacha Codes](https://github.com/torikushiii/OpenGachaCodes/tree/172cf88a0cc7c2b413291c7bb212e8de3d1104a0)
+  documents `https://api.ennead.cc/codes/endfield` and `/codes/nte`. On 2026-11-27 the page
+  fetcher returned five Endfield rows and an empty NTE array. Empty does not distinguish truly
+  no active codes from missing or stale coverage. The published collector uses Game8 plus
+  Mobalytics for Endfield and Game8 for NTE; they are not independent witnesses from their own
+  downstream aggregator. Endfield and NTE guides describe **in-game** redemption, not a verified
+  prefilled official web redemption URL. Compare [Endfield](https://game8.co/games/Arknights-Endfield/archives/571509)
+  and [NTE](https://game8.co/games/Neverness-to-Everness/archives/593718); expiry claims can
+  conflict or be stale, so do not equate a 200 response with usable live codes.
+- Official news candidates: [Endfield](https://endfield.gryphline.com/en-us/news),
+  [NTE](https://nte.perfectworld.com/en/article/news/index.html), and
+  [Silver Palace](https://silverpalace.elementagames.com/en-us/news). The page fetcher rendered
+  the listings; NTE exposed dated article links and a paginated list, and one article was fetched.
+  The rendered Endfield and Silver Palace listings did not expose article links in that output;
+  their network contracts, pagination, IDs, timestamps, bodies and media are not yet validated
+  with the production fetcher. NTE's list has only three entries per page in this observation;
+  a first-page-only poll can lose articles. A rendered browser page alone is not an adapter.
+- Silver Palace's official news page title reported a **December 14, 2026** global launch; the
+  provided screenshot also shows that date. Launch hour was not established. Treat feature 3 as
+  the requested candidate, not permission to activate the other features automatically.
+- Reddit candidates: [r/Endfield](https://www.reddit.com/r/Endfield/) describes itself as
+  community-run and partnered with Gryphline in the supplied screenshot; partnership does not
+  make every author official. [r/ArknightsEndfield](https://www.reddit.com/r/ArknightsEndfield/)
+  is unofficial; [r/NevernessToEverness](https://www.reddit.com/r/NevernessToEverness/) and
+  [r/SilverPalaceOfficial](https://www.reddit.com/r/SilverPalaceOfficial/) describe themselves as
+  official in the screenshots. Independent moderator/account verification and the shared
+  News-Express Devvit target update are still needed. No subreddit, official-author allowlist,
+  or trust rule was added.
+
+**Before implementation:** establish stable official listing/detail contracts, complete bounded
+pagination, UTC/timezone and media handling, safe bootstrap, outage/partial-response semantics and
+mocked end-to-end card/state tests. For schedule and maintenance, establish official program,
+version, preload and maintenance/server signals independently (including false-positive prevention);
+for codes, validate source families, availability, expiry, corroboration and in-game redemption.
+The supplied production configuration inventory has no dedicated news/code/maintenance webhook
+secrets for these three games and no new game entries in the feature selection variables. The
+schedule mirror is optional; the primary schedule webhook is shared. Do not change secrets or
+production switches until reviewed and configured by the operator.
+
+The manual `Source research probe (manual, read-only)` workflow runs
+`python tools/source_research_probe.py`; `--self-test` is offline. It requests fixed public URLs,
+reports bounded structural counts (not raw content), follows no redirects, uses no secrets, and
+never touches Discord or state. It is a **reconnaissance** tool, not a parser, correctness test,
+continuous monitor, or proof that any source is ready. HTTP failures fail the job; malformed
+shapes and empty lists are printed for human review, not silently accepted as validated data.
+GitHub only registers a new `workflow_dispatch` workflow after the workflow file exists on the
+default branch; after that, select the intended branch when dispatching. A successful dispatch
+is not evidence the probe ran or that a future run will succeed.
+
 ## Evaluated but not integrated (and why)
 
 | Candidate | Verdict |
@@ -420,7 +493,7 @@ page fetcher, and so were the ennead calendars. The production reachability of t
 | parse.bot marketplace APIs (prydwen / icy-veins / genshin.gg / hoyolab) | paid third-party scrapers, not verifiable; not needed for official data |
 | `getGamePackages` (HoYoPlay legacy) | stale for Sophon games (see above) |
 | Hoyotod/code · Hoyotod/redeem | fandom-scraper pattern (we call the MediaWiki API directly) · redeem automation (requires accounts; out of scope) |
-| heartlog/Hoyocodes · promogacha.netlify.app | static sites. PromoGacha's GitHub JSON **is** used |
+| heartlog/Hoyocodes · promogacha.netlify.app | Hoyocodes is an Ennead frontend (same backend already used); PromoGacha's GitHub JSON **is** used |
 | chiraitori/HoYo_Code_Sender_Discord_Bot · Hum-Bao/hoyoverse-codes-backend · retvil/hoyo-code-monitor · lukascortes/gacha-codes-notifier | reference implementations; their sources are covered above (Hum-Bao's **published TXT lists** are used as a validator since v1.1) |
 | MoonShadow1976 WW asset repos | manually maintained, last updated Jan 2026, so too stale for codes |
 | DuolaD/HoYo_Versioncatcher | launcher-data repo; led us to the HoYoPlay launcher endpoints |
