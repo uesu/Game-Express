@@ -41,8 +41,8 @@ MAX_BODY = 60000
 MAX_MESSAGES_PER_RUN = 12
 MAX_ARTICLES_PER_RUN = 10
 # Populated only after a no-post preparation has created and verified all three journals.
-COMMENT_IDS = {}
-PREPARE_COMPLETE = False
+COMMENT_IDS = {"nte": 7229028535, "endfield": 7229028697, "silverpalace": 7229028842}
+PREPARE_COMPLETE = True
 
 
 def gh_api(endpoint, *, method="GET", body=None, paginate=False):
