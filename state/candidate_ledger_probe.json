@@ -1,7 +1,13 @@
 {
   "candidate_news": {
     "silverpalace": {
-      "partial": null,
+      "partial": {
+        "id": "999999",
+        "inflight": false,
+        "messages": [],
+        "pages": 2,
+        "signature": "14882e8b0444394634faff2297002be7b3b0a42b2dace40f363096db484cd0d5"
+      },
       "pending": [
         {
           "date": "2025-01-01",
