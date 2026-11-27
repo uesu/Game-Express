@@ -131,24 +131,27 @@ def guard():
 
 
 def prior_comments():
-    pages = gh_api(f"repos/{REPOSITORY}/issues/{ISSUE}/comments?per_page=100", paginate=True)
-    if not isinstance(pages, list) or len(pages) > 20 or any(not isinstance(page, list) for page in pages):
-        raise ValueError("comment listing invalid")
     found = {source: [] for source in SOURCES}
-    for page in pages:
+    for number in range(1, 21):
+        page = gh_api(f"repos/{REPOSITORY}/issues/{ISSUE}/comments?per_page=100&page={number}")
+        if not isinstance(page, list) or len(page) > 100:
+            raise ValueError("comment listing invalid")
         for comment in page:
             text = comment.get("body", "") if isinstance(comment, dict) else ""
             if isinstance(text, str):
                 for source in SOURCES:
                     if text.startswith(f"<!-- {MARKER}:{source}:"):
                         found[source].append(comment)
-    return found
+        if len(page) < 100:
+            return found
+    raise ValueError("too many comments to safely scan")
 
 
 async def prepare(fetcher, routes):
     if PREPARE_COMPLETE or COMMENT_IDS:
         raise ValueError("private historic test initialization is locked")
     existing = await asyncio.to_thread(prior_comments)
+    print("::notice title=Private historic preparation::existing-journals-checked=1", flush=True)
     if any(existing[source] for source in SOURCES):
         raise ValueError("prior journals exist; inspect before creating anything")
     states = {}
@@ -156,6 +159,7 @@ async def prepare(fetcher, routes):
     for source in SOURCES:
         rows = await delivery.discover(fetcher, source)
         states[source] = delivery.ingest(source, routes[source], None, rows)
+        print(f"::notice title=Private historic snapshot::{source} items={len(states[source]['pending'])}", flush=True)
         encode(source, states[source])  # check bounded size before any journal creation
     for source in SOURCES:
         result = await asyncio.to_thread(gh_api, f"repos/{REPOSITORY}/issues/{ISSUE}/comments", method="POST",
@@ -258,5 +262,6 @@ if __name__ == "__main__":
         raise SystemExit("Specify --prepare or --send explicitly.")
     try:
         asyncio.run(main(sys.argv[1][2:]))
-    except Exception:  # noqa: BLE001 — never expose webhook URLs, token or remote response content
+    except Exception as exc:  # noqa: BLE001 — never expose webhook URLs, token or remote response content
+        print(f"::notice title=Private historic hold::error-type={type(exc).__name__}", flush=True)
         raise SystemExit("Private backfill held; inspect journal and channel before continuing. No automatic retry.") from None
