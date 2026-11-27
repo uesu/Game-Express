@@ -51,11 +51,30 @@ jobs:
           python-version: '3.15.2'
       - name: Install dependencies
         run: python -m pip install -q -r requirements.txt
-      - name: Bounded fixed-URL checks
-        run: python tools/source_research_probe.py --annotations
-      - name: Endfield candidate and old Reddit readers
+      - name: Official Endfield and NTE sources
         if: always()
-        run: python tools/live_candidate_probe.py --annotations
+        run: python tools/source_research_probe.py --group endfield-nte --annotations
+      - name: Official Silver Palace sources
+        if: always()
+        run: python tools/source_research_probe.py --group silver --annotations
+      - name: Code aggregator checks
+        if: always()
+        run: python tools/source_research_probe.py --group codes --annotations
+      - name: Crimson Witch checks
+        if: always()
+        run: python tools/source_research_probe.py --group crimson --annotations
+      - name: Endfield candidate and media preflight
+        if: always()
+        run: python tools/live_candidate_probe.py --group endfield --annotations
+      - name: Old Reddit no-token listings
+        if: always()
+        run: python tools/live_candidate_probe.py --group reddit0 --annotations
+      - name: Redlib mint listings
+        if: always()
+        run: python tools/live_candidate_probe.py --group reddit1 --annotations
+      - name: Redlib naa listings
+        if: always()
+        run: python tools/live_candidate_probe.py --group reddit2 --annotations
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10

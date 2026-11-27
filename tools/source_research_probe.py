@@ -44,6 +44,14 @@ TARGETS = (
 )
 
 
+GROUPS = {
+    "codes": tuple(name for name, _, _ in TARGETS if name.startswith(("ogc-", "ennead-"))),
+    "crimson": tuple(name for name, _, _ in TARGETS if name.startswith("crimson-")),
+    "endfield-nte": tuple(name for name, _, _ in TARGETS if name.startswith(("endfield-", "news-endfield", "news-nte"))),
+    "silver": tuple(name for name, _, _ in TARGETS if name.startswith(("silver-", "news-silver"))),
+}
+
+
 class Page(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -152,11 +160,12 @@ def print_result(message: str, annotations: bool) -> None:
     print(f"::notice title=Source research::{safe}" if annotations else safe)
 
 
-def probe(target: str | None = None, *, require_html: bool = False, annotations: bool = False) -> int:
+def probe(target: str | None = None, *, require_html: bool = False, annotations: bool = False,
+          group: str | None = None) -> int:
     opener = urllib.request.build_opener(NoRedirect())
     failures = 0
     for name, url, kind in TARGETS:
-        if target is not None and name != target:
+        if (target is not None and name != target) or (group is not None and name not in GROUPS[group]):
             continue
         request = urllib.request.Request(url, headers={"User-Agent": "Game-Express-Source-Research/1.0", "Accept": "*/*"})
         try:
@@ -254,12 +263,16 @@ if __name__ == "__main__":
         unittest.main(argv=[sys.argv[0]])
     elif sys.argv[1:] == ["--annotations"]:
         raise SystemExit(probe(annotations=True))
+    elif len(sys.argv) == 4 and sys.argv[1] == "--group" and sys.argv[3] == "--annotations":
+        if sys.argv[2] not in GROUPS:
+            raise SystemExit("Unknown fixed group")
+        raise SystemExit(probe(group=sys.argv[2], annotations=True))
     elif len(sys.argv) in (3, 4) and sys.argv[1] == "--target":
         names = {name for name, _, _ in TARGETS}
         if sys.argv[2] not in names or (len(sys.argv) == 4 and sys.argv[3] != "--require-html"):
             raise SystemExit("Unknown fixed target or option")
         raise SystemExit(probe(sys.argv[2], require_html=len(sys.argv) == 4))
     elif sys.argv[1:]:
-        raise SystemExit("Usage: python tools/source_research_probe.py [--self-test | --annotations | --target NAME [--require-html]]")
+        raise SystemExit("Usage: python tools/source_research_probe.py [--self-test | --annotations | --group NAME --annotations | --target NAME [--require-html]]")
     else:
         raise SystemExit(probe())

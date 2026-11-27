@@ -23,8 +23,27 @@ jobs:
         run: |
           python tools/source_research_probe.py --self-test
           python tools/live_candidate_probe.py --self-test
-      - name: Read-only public source checks
-        run: python tools/source_research_probe.py --annotations
-      - name: Candidate and old Reddit checks
+      - name: Official Endfield and NTE sources
         if: always()
-        run: python tools/live_candidate_probe.py --annotations
+        run: python tools/source_research_probe.py --group endfield-nte --annotations
+      - name: Official Silver Palace sources
+        if: always()
+        run: python tools/source_research_probe.py --group silver --annotations
+      - name: Code aggregator checks
+        if: always()
+        run: python tools/source_research_probe.py --group codes --annotations
+      - name: Crimson Witch checks
+        if: always()
+        run: python tools/source_research_probe.py --group crimson --annotations
+      - name: Endfield candidate and media preflight
+        if: always()
+        run: python tools/live_candidate_probe.py --group endfield --annotations
+      - name: Old Reddit no-token listings
+        if: always()
+        run: python tools/live_candidate_probe.py --group reddit0 --annotations
+      - name: Redlib mint listings
+        if: always()
+        run: python tools/live_candidate_probe.py --group reddit1 --annotations
+      - name: Redlib naa listings
+        if: always()
+        run: python tools/live_candidate_probe.py --group reddit2 --annotations

@@ -21,6 +21,7 @@ import aiohttp  # noqa: E402
 
 from gamexpress.cards import news_payloads, validate_payload  # noqa: E402
 from gamexpress.config import Game, load_settings  # noqa: E402
+from gamexpress.discord import payload_media_urls  # noqa: E402
 from gamexpress.http import Fetcher  # noqa: E402
 from gamexpress.media import news_media_available  # noqa: E402
 from gamexpress.sources import endfield, reddit  # noqa: E402
@@ -55,7 +56,14 @@ class NoRedirectSession:
         return self.session.get(url, **kwargs)
 
 
-async def probe(fetcher, *, annotations: bool = False) -> None:
+async def probe(fetcher, *, annotations: bool = False, group: str = "all") -> None:
+    if group in ("all", "endfield"):
+        await probe_endfield(fetcher, annotations=annotations)
+    if group in ("all", "reddit0", "reddit1", "reddit2"):
+        await probe_reddit(fetcher, annotations=annotations, group=group)
+
+
+async def probe_endfield(fetcher, *, annotations: bool) -> None:
     game = Game(key="endfield", name="Arknights: Endfield", short="Endfield", enabled=False, color=0)
     rows = await endfield.discover_news(fetcher, game, 0)
     show("endfield-list", "unavailable" if rows is None else "ok" if rows else "empty",
@@ -70,11 +78,17 @@ async def probe(fetcher, *, annotations: bool = False) -> None:
                 errors = sum(len(validate_payload(payload)) for payload in payloads)
                 show("endfield-card", "invalid" if errors else "ok", len(payloads), annotations)
                 available = await news_media_available(fetcher, payloads)
-                show("endfield-card-media-preflight", "ok" if available else "rejected", 0, annotations)
+                urls = set().union(*(payload_media_urls(payload) for payload in payloads))
+                show("endfield-card-media-preflight", "ok" if available else "rejected", len(urls), annotations)
             except (TypeError, ValueError, KeyError, AttributeError):
                 show("endfield-card", "invalid", 0, annotations)
+
+
+async def probe_reddit(fetcher, *, annotations: bool, group: str) -> None:
     client = reddit.RedditClient(fetcher, load_settings({}))
     for idx, origin in enumerate(ORIGINS):
+        if group != "all" and group != f"reddit{idx}":
+            continue
         for sub in SUBS:
             rows = await client._fetch_listing_on(origin, "sub", sub)
             status = "unavailable" if rows is None else "ok" if rows else "empty"
@@ -117,7 +131,7 @@ class Tests(unittest.TestCase):
             asyncio.run(probe(FakeFetcher(), annotations=True))
         text = output.getvalue()
         self.assertIn("endfield-list status=ok count=1", text)
-        self.assertIn("endfield-card-media-preflight status=rejected count=0", text)
+        self.assertIn("endfield-card-media-preflight status=rejected count=1", text)
         self.assertIn("reddit-0-Endfield status=unavailable count=0", text)
         self.assertEqual(len(FakeReddit.calls), 12)
         self.assertNotIn("secret", text)
@@ -131,9 +145,9 @@ class Tests(unittest.TestCase):
         self.assertEqual(result[1], {"allow_redirects": False, "timeout": 1})
 
 
-async def main(annotations: bool) -> None:
+async def main(annotations: bool, group: str = "all") -> None:
     async with aiohttp.ClientSession(trust_env=False) as session:
-        await probe(Fetcher(NoRedirectSession(session)), annotations=annotations)
+        await probe(Fetcher(NoRedirectSession(session)), annotations=annotations, group=group)
 
 
 if __name__ == "__main__":
@@ -141,5 +155,9 @@ if __name__ == "__main__":
         unittest.main(argv=[sys.argv[0]])
     elif sys.argv[1:] in ([], ["--annotations"]):
         asyncio.run(main(bool(sys.argv[1:])))
+    elif len(sys.argv) == 4 and sys.argv[1] == "--group" and sys.argv[3] == "--annotations":
+        if sys.argv[2] not in ("endfield", "reddit0", "reddit1", "reddit2"):
+            raise SystemExit("Unknown fixed group")
+        asyncio.run(main(True, sys.argv[2]))
     else:
-        raise SystemExit("Usage: live_candidate_probe.py [--self-test | --annotations]")
+        raise SystemExit("Usage: live_candidate_probe.py [--self-test | --annotations | --group NAME --annotations]")
