@@ -1,13 +1,17 @@
 """Opt-in, conservative candidate news backfill path; disabled unless explicitly configured.
 
-Only single-instance Actions environments are permitted. Each page requires a
-verified same-branch Git checkpoint and a one-shot POST. Unknown outcomes hold.
+Only the explicitly nominated primary GitHub repository and branch may send.
+Standbys never send candidate news automatically. Each page requires a verified
+same-branch Git checkpoint and a one-shot POST. Unknown outcomes hold.
 This path is not activated by adding a game to NEWS_GAMES alone.
 """
 from __future__ import annotations
 
 import asyncio
 import os
+import re
+import subprocess
+from urllib.parse import urlsplit
 
 from . import candidate_news_delivery as delivery
 from .candidate_news_checkpoint import IsolatedGitLedger
@@ -19,6 +23,36 @@ CANDIDATE_NEWS_READY = False
 
 # Backfill is intentionally slow: at most one article / three pages per source per run.
 MAX_PAGES_PER_SOURCE_RUN = 3
+
+
+def _origin_is_authority(root, repository):
+    """Require the checkout's actual origin to be the nominated GitHub repository."""
+    try:
+        result = subprocess.run(["git", "remote", "get-url", "origin"], cwd=root, stdin=subprocess.DEVNULL,
+                                capture_output=True, timeout=10, check=False)
+        url = result.stdout.decode("utf-8").strip()
+        parts = urlsplit(url)
+        return (result.returncode == 0 and parts.scheme == "https" and parts.hostname == "github.com"
+                and not parts.username and not parts.password and parts.port in (None, 443)
+                and not parts.query and not parts.fragment
+                and parts.path.removeprefix("/").removesuffix(".git").lower() == repository.lower())
+    except (OSError, ValueError, UnicodeError, subprocess.SubprocessError):
+        return False
+
+
+def authoritative_branch(settings, root):
+    """Return only an explicitly designated primary Actions branch; no auto-failover."""
+    repository = str(settings.env.get("NEWS_CANDIDATES_AUTHORITY_REPOSITORY", "") or "").strip()
+    branch = str(settings.env.get("NEWS_CANDIDATES_AUTHORITY_BRANCH", "") or "").strip()
+    if (settings.instance_role != "primary" or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository)
+            or not branch or os.environ.get("GITHUB_ACTIONS") != "true"
+            or os.environ.get("GITHUB_EVENT_NAME") not in ("workflow_dispatch", "schedule")
+            or os.environ.get("GITHUB_REPOSITORY", "").lower() != repository.lower()
+            or os.environ.get("GITHUB_REF_NAME", "") != branch
+            or os.environ.get("GITHUB_REF", "") != f"refs/heads/{branch}"
+            or not _origin_is_authority(root, repository)):
+        return None
+    return branch
 
 
 async def run_candidate_news(ctx):
@@ -37,12 +71,9 @@ async def run_candidate_news(ctx):
     if settings.dry_run or settings.test_mode:
         ctx.report.append("Candidate news: live backfill disabled in dry-run/test mode")
         return
-    if settings.instance_role != "primary" or settings.peer_state_url:
-        ctx.warnings.append("Candidate news: single-instance primary only; peer/failover integration is not ready")
-        return
-    branch = os.environ.get("GITHUB_REF_NAME", "")
-    if os.environ.get("GITHUB_ACTIONS") != "true" or not branch:
-        ctx.warnings.append("Candidate news: durable Actions branch checkpoint unavailable; no posts")
+    branch = authoritative_branch(settings, ROOT)
+    if branch is None:
+        ctx.warnings.append("Candidate news: explicit primary repository/branch authority unavailable; no posts")
         return
     ledger = IsolatedGitLedger(ROOT, branch)
     if not await ledger.open():

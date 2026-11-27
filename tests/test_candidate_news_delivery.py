@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 
 from gamexpress import candidate_news_delivery as delivery  # noqa: E402
 from gamexpress import candidate_news_runner as runner  # noqa: E402
-from gamexpress.candidate_news_checkpoint import GitCheckpoint, IsolatedGitLedger  # noqa: E402
+from gamexpress.candidate_news_checkpoint import GitCheckpoint, IsolatedGitLedger, reconcile_checkpointed  # noqa: E402
 from gamexpress.cards import news_payloads  # noqa: E402
 from gamexpress.config import Game, load_settings  # noqa: E402
 from gamexpress.models import Item  # noqa: E402
@@ -193,6 +193,44 @@ class CandidateDeliveryTests(unittest.TestCase):
             self.assertTrue(ledger.poisoned)
             self.assertIsNone(ledger.data)
 
+    def test_reconciliation_is_durably_checkpointed_without_resending(self):
+        branch = "arena/98b5f4e1-game-express"
+        with tempfile.TemporaryDirectory() as tmp:
+            root, remote = Path(tmp) / "work", Path(tmp) / "remote.git"
+            root.mkdir()
+
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=root, capture_output=True, check=True).stdout
+
+            git("init", "--bare", str(remote))
+            git("init", "-b", branch)
+            git("config", "user.name", "Test")
+            git("config", "user.email", "test@example.invalid")
+            queued = delivery.ingest("silverpalace", ROUTE, None, [row("1")])
+            queued["partial"] = {"id": "1", "signature": "b" * 64, "pages": 1, "messages": [], "inflight": True}
+            (root / "state").mkdir()
+            (root / "state/candidate_news.json").write_text(
+                json.dumps({"schema": 1, "candidate_news": {"silverpalace": queued}}), encoding="utf-8")
+            git("add", "state/candidate_news.json")
+            git("commit", "-m", "held page")
+            git("remote", "add", "origin", str(remote))
+            git("push", "origin", f"HEAD:refs/heads/{branch}")
+            ledger = IsolatedGitLedger(root, branch)
+            self.assertTrue(asyncio.run(ledger.open()))
+            try:
+                with self.assertRaises(delivery.DeliveryHold):
+                    asyncio.run(reconcile_checkpointed(ledger, "silverpalace", ROUTE, article_id="1", page=2,
+                                                       signature="b" * 64, resolution="delivered", message_id="101"))
+                self.assertTrue(ledger.data["candidate_news"]["silverpalace"]["partial"]["inflight"])
+                result = asyncio.run(reconcile_checkpointed(ledger, "silverpalace", ROUTE, article_id="1", page=1,
+                                                           signature="b" * 64, resolution="delivered", message_id="101"))
+                self.assertFalse(result["partial"]["inflight"])
+                saved = json.loads(git("--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json"))
+                self.assertEqual(saved["candidate_news"]["silverpalace"], result)
+                self.assertEqual(result["partial"]["messages"], ["101"])
+            finally:
+                asyncio.run(ledger.close())
+
     def test_stale_writer_and_crash_hold_until_reviewed_git_reconciliation(self):
         branch = "arena/98b5f4e1-game-express"
         with tempfile.TemporaryDirectory() as tmp:
@@ -280,7 +318,9 @@ class CandidateDeliveryTests(unittest.TestCase):
 
     def test_opt_in_runner_routes_oldest_and_persists_without_touching_other_news(self):
         settings = load_settings({"ENABLED_FEATURES": "news", "NEWS_GAMES": "silverpalace",
-                                  "NEWS_CANDIDATES_BACKFILL": "1", "DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK})
+                                  "NEWS_CANDIDATES_BACKFILL": "1", "DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK,
+                                  "NEWS_CANDIDATES_AUTHORITY_REPOSITORY": "uesu/Game-Express",
+                                  "NEWS_CANDIDATES_AUTHORITY_BRANCH": "arena/98b5f4e1-game-express"})
         state = SimpleNamespace(data={"news": {"genshin": {"unchanged": True}}})
         ctx = SimpleNamespace(settings=settings, active=True, state=state, now=NOW,
                               fetcher=object(), webhook=SimpleNamespace(session=object()), report=[], warnings=[])
@@ -323,7 +363,10 @@ class CandidateDeliveryTests(unittest.TestCase):
             sent.append(card)
             return SimpleNamespace(ok=True, message_id="101", ambiguous=False)
 
-        with (patch.dict("os.environ", {"GITHUB_ACTIONS": "true", "GITHUB_REF_NAME": "arena/98b5f4e1-game-express"}),
+        with (patch.dict("os.environ", {"GITHUB_ACTIONS": "true", "GITHUB_REF_NAME": "arena/98b5f4e1-game-express",
+                                       "GITHUB_REF": "refs/heads/arena/98b5f4e1-game-express",
+                                       "GITHUB_REPOSITORY": "uesu/Game-Express", "GITHUB_EVENT_NAME": "workflow_dispatch"}),
+              patch.object(runner, "_origin_is_authority", return_value=True),
               patch.object(runner, "CANDIDATE_NEWS_READY", True), patch.object(runner, "IsolatedGitLedger", Ledger),
               patch.object(runner.asyncio, "sleep", sleep), patch.object(delivery, "discover", discover),
               patch.object(delivery, "render_candidate", render), patch.object(delivery, "send_candidate_once", send)):
@@ -358,7 +401,9 @@ class CandidateDeliveryTests(unittest.TestCase):
             git("push", "origin", f"HEAD:refs/heads/{branch}")
             before = git("rev-parse", "HEAD")
             settings = load_settings({"ENABLED_FEATURES": "news", "NEWS_GAMES": "silverpalace",
-                                      "NEWS_CANDIDATES_BACKFILL": "1", "DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK})
+                                      "NEWS_CANDIDATES_BACKFILL": "1", "DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK,
+                                      "NEWS_CANDIDATES_AUTHORITY_REPOSITORY": "uesu/Game-Express",
+                                      "NEWS_CANDIDATES_AUTHORITY_BRANCH": branch})
             ctx = SimpleNamespace(settings=settings, active=True, state=State.load(root / "state/state.json"), now=NOW,
                                   fetcher=None, webhook=SimpleNamespace(session=None), report=[], warnings=[])
             sends = []
@@ -378,8 +423,10 @@ class CandidateDeliveryTests(unittest.TestCase):
             async def sleep(seconds):
                 pass
 
-            with (patch.dict("os.environ", {"GITHUB_ACTIONS": "true", "GITHUB_REF_NAME": branch}),
-                  patch.object(runner, "ROOT", root), patch.object(runner, "CANDIDATE_NEWS_READY", True),
+            with (patch.dict("os.environ", {"GITHUB_ACTIONS": "true", "GITHUB_REF_NAME": branch,
+                                           "GITHUB_REF": f"refs/heads/{branch}", "GITHUB_REPOSITORY": "uesu/Game-Express",
+                                           "GITHUB_EVENT_NAME": "workflow_dispatch"}),
+                  patch.object(runner, "_origin_is_authority", return_value=True), patch.object(runner, "ROOT", root), patch.object(runner, "CANDIDATE_NEWS_READY", True),
                   patch.object(runner.asyncio, "sleep", sleep), patch.object(delivery, "discover", discover),
                   patch.object(delivery, "render_candidate", render), patch.object(delivery, "send_candidate_once", send)):
                 asyncio.run(runner.run_candidate_news(ctx))
@@ -392,6 +439,32 @@ class CandidateDeliveryTests(unittest.TestCase):
             recorded = json.loads(git("--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json"))
             self.assertEqual(recorded["candidate_news"]["silverpalace"]["posted"]["1"]["messages"], ["101"])
             self.assertEqual(recorded["candidate_news"]["silverpalace"]["pending"][0]["id"], "2")
+
+    def test_candidate_authority_restricts_repo_branch_origin_role_and_event(self):
+        branch = "arena/98b5f4e1-game-express"
+        env = {"GITHUB_ACTIONS": "true", "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REPOSITORY": "uesu/Game-Express",
+               "GITHUB_REF_NAME": branch, "GITHUB_REF": f"refs/heads/{branch}"}
+        config = {"NEWS_CANDIDATES_AUTHORITY_REPOSITORY": "uesu/Game-Express", "NEWS_CANDIDATES_AUTHORITY_BRANCH": branch}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "-b", branch], cwd=root, capture_output=True, check=True)
+            subprocess.run(["git", "remote", "add", "origin", "https://github.com/uesu/Game-Express.git"],
+                           cwd=root, capture_output=True, check=True)
+            with patch.dict("os.environ", env, clear=True):
+                self.assertEqual(runner.authoritative_branch(load_settings(config), root), branch)
+                self.assertEqual(runner.authoritative_branch(load_settings({**config, "PEER_STATE_URL": "https://peer.invalid"}), root), branch)
+                self.assertIsNone(runner.authoritative_branch(load_settings({**config, "INSTANCE_ROLE": "standby"}), root))
+                self.assertIsNone(runner.authoritative_branch(load_settings({}), root))
+                for key, value in (("GITHUB_REPOSITORY", "uesu/Other"), ("GITHUB_REF", "refs/tags/" + branch),
+                                   ("GITHUB_EVENT_NAME", "pull_request"), ("GITHUB_REF_NAME", "other")):
+                    with patch.dict("os.environ", {key: value}):
+                        self.assertIsNone(runner.authoritative_branch(load_settings(config), root))
+                subprocess.run(["git", "remote", "set-url", "origin", "https://github.com/uesu/Other.git"],
+                               cwd=root, capture_output=True, check=True)
+                self.assertIsNone(runner.authoritative_branch(load_settings(config), root))
+                subprocess.run(["git", "remote", "set-url", "origin", "https://secret@github.com/uesu/Game-Express.git"],
+                               cwd=root, capture_output=True, check=True)
+                self.assertIsNone(runner.authoritative_branch(load_settings(config), root))
 
     def test_runner_stays_inert_without_explicit_opt_in_and_on_peer_config(self):
         settings = load_settings({"ENABLED_FEATURES": "news", "NEWS_GAMES": "silverpalace",
@@ -408,7 +481,7 @@ class CandidateDeliveryTests(unittest.TestCase):
             self.assertIn("not released", ctx.warnings[-1])
             with patch.object(runner, "CANDIDATE_NEWS_READY", True):
                 asyncio.run(runner.run_candidate_news(ctx))
-            self.assertIn("single-instance", ctx.warnings[-1])
+            self.assertIn("authority unavailable", ctx.warnings[-1])
             self.assertEqual(ctx.state.data, {})
 
     def test_scoped_renderer_calls_correct_reader_preflight_and_fallback(self):

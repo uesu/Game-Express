@@ -437,7 +437,13 @@ non-cancelling Actions job sends at a time. Every unknown delivery or unconfirme
 holds the entire test, and no automatic retry is permitted. Ordering across sources is by UTC
 calendar date; the day-only sources cannot prove within-day chronology. The private test includes
 earlier sample articles intentionally. It does not write production state, and a finite snapshot
-cannot prove that an upstream listing never omitted an item.
+cannot prove that an upstream listing never omitted an item. The attended test stopped on
+[batch 46076148028](https://github.com/uesu/Game-Express/actions/runs/46076148028), which failed
+after confirmed progress. The journals show 62 completed articles (30 NTE, 27 Endfield, 5 Silver),
+205 pending and no page in flight; the next is Silver article 34, a very large survey-results list.
+The job's detailed error could not be retrieved from this environment. Its exact cause remains
+unconfirmed; do not restart blindly or skip ahead. Read-only diagnosis and a full-content-safe
+solution are required before resuming. The supervisor has stopped and no further posts are scheduled.
 
 The owner requests initial production catch-up oldest to newest, recording confirmed delivery.
 The candidate pipeline checks two complete listing walks, adapts details to the existing card
@@ -476,6 +482,15 @@ throwaway ledger, without Discord or monitor-state writes. Its `restart=pass` an
 resumption between coordinator calls in the same process, **not** a new-process restart; that
 stronger case is only locally tested. The probe ledger was removed after the run. This is not
 production or cross-repository failover validation, and the release gate remains closed.
+
+The gated prototype also requires an explicitly nominated `NEWS_CANDIDATES_AUTHORITY_REPOSITORY`
+and `NEWS_CANDIDATES_AUTHORITY_BRANCH`, matching primary role, Actions repository/ref, allowed event,
+and HTTPS origin. This permits a primary with a configured standby, but deliberately never allows
+the standby to send automatically: a repo-local concurrency group cannot coordinate failover.
+These checks reduce accidental dual writers; they do not prove distributed exclusion. A local
+checkpointed reconciliation primitive validates an operator's decision and persists it without
+sending, but no operational UI or independent proof of delivery is supplied. All writers must be
+paused for human review and an uncertain Git checkpoint must be inspected before any retry.
 
 Silver Palace article 7 exposed a duplicated lead image: the cover and first body image had
 different URLs but were byte-identical 1626×500 JPEGs. Its separate 800×444 `banner_img` is the

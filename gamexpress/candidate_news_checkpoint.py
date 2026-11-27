@@ -229,3 +229,24 @@ class IsolatedGitLedger:
 
     async def close(self):
         await asyncio.to_thread(self._close)
+
+
+async def reconcile_checkpointed(ledger, source, route, *, article_id, page, signature, resolution, message_id=None):
+    """Persist a human-reviewed correction; never post or resume automatically.
+
+    Every writer must be paused, and the operator must independently verify the
+    Discord outcome. If the Git outcome is unclear, inspect the authoritative
+    branch before doing anything else. This primitive is not an operator UI.
+    """
+    from .candidate_news_delivery import DeliveryHold, reconcile_inflight
+
+    if ledger.poisoned or not isinstance(ledger.data, dict):
+        raise DeliveryHold("authoritative ledger unavailable")
+    records = ledger.data.get("candidate_news")
+    if not isinstance(records, dict) or source not in records:
+        raise DeliveryHold("candidate record unavailable")
+    corrected = reconcile_inflight(records[source], source, route, article_id=article_id, page=page,
+                                   signature=signature, resolution=resolution, message_id=message_id)
+    if not await ledger.checkpoint(source, corrected):
+        raise DeliveryHold("reconciliation checkpoint not confirmed; inspect the authoritative branch")
+    return corrected
