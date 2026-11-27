@@ -6,6 +6,7 @@ and only after the caller's normal media preflight accepts the derived thumbnail
 """
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from urllib.parse import parse_qs, urlsplit
 
@@ -19,12 +20,20 @@ def fallback_url(item):
             or any(b.get("kind") in ("image", "video") for b in item.article_blocks)):
         return None
     for block in item.article_blocks:
-        if block.get("kind") != "link":
+        kind = block.get("kind")
+        if kind == "link":
+            urls = [block.get("url", "")]
+        elif kind == "text":
+            # News parsers keep ordinary anchors and bare URLs inline as text.
+            # Never extract an ID from arbitrary prose or an unverified domain.
+            urls = re.findall(r"https?://[^\s<>\[\]()]+", block.get("text", ""))
+        else:
             continue
-        watch = _youtube_watch_url(block.get("url", ""))
-        if watch:
-            video_id = parse_qs(urlsplit(watch).query)["v"][0]
-            return f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg"
+        for url in urls:
+            watch = _youtube_watch_url(url.rstrip(".,!?;"))
+            if watch:
+                video_id = parse_qs(urlsplit(watch).query)["v"][0]
+                return f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg"
     return None
 
 

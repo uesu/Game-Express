@@ -84,6 +84,22 @@ class CandidateThumbnailTests(unittest.TestCase):
         self.assertEqual(failed.images, [])
         self.assertEqual(len(f.calls), 4)
 
+    def test_plain_and_markdown_video_links_are_detected_but_not_spoofed(self):
+        for content in ("Watch https://youtu.be/tdZN6H1N3PU.",
+                        "[Trailer](https://www.youtube.com/watch?v=tdZN6H1N3PU)"):
+            a = item()
+            a.article_blocks = [{"kind": "text", "text": content}]
+            with self.subTest(content=content):
+                f = Fetcher()
+                result = asyncio.run(with_verified_fallback(f, a))
+                self.assertTrue(result.images[0].endswith("/tdZN6H1N3PU/maxresdefault.jpg"))
+                self.assertEqual(result.article_blocks, a.article_blocks)
+        for content in ("https://youtube.com.evil.test/watch?v=tdZN6H1N3PU",
+                        "https://www.youtube.com/@channel", "tdZN6H1N3PU"):
+            a = item()
+            a.article_blocks = [{"kind": "text", "text": content}]
+            self.assertIsNone(fallback_url(a))
+
     def test_missing_or_placeholder_maxres_uses_best_verified_fallback(self):
         original = item()
         f = Fetcher(sizes={"maxresdefault.jpg": (120, 90), "sddefault.jpg": (640, 480)})

@@ -419,6 +419,23 @@ source ranking, voting, targets and state are unchanged. Web-page observations b
 page-fetching service, not this repository's HTTP client or a GitHub Actions runner. A single
 observation cannot prove freshness, uptime, complete pagination, or successful redemption.
 
+The attended private expanded-card test [run 46014528959](https://github.com/uesu/Game-Express/actions/runs/46014528959)
+posted 14 test messages without production state. The user subsequently confirmed that the
+shown Endfield GIFs animate and the text format looked good. In the [read-only comparison
+run 46024433163](https://github.com/uesu/Game-Express/actions/runs/46024433163), the same fixed
+Endfield `1340` article was an excerpt in default mode but complete across six expanded pages;
+`3840`, NTE `252469`, and Silver `1`/`120` were not excerpted in either tested mode. These
+are fixed-article observations, not proof for all future articles. The inactive candidate-only
+YouTube fallback verifies maximum-resolution thumbnail dimensions/signature first and falls
+back when unavailable; native images/video remain preferred. It is not wired into production.
+
+The owner requests that initial production news catch-up post existing items oldest to newest
+and record confirmed delivery in state. The inactive planner can queue a complete snapshot by
+displayed day; numeric ID is only a deterministic tie-break for same-day sources, not evidence
+of publication time. Endfield exposes timestamps separately. Production backfill, durable
+per-page checkpointing, failed/ambiguous delivery reconciliation, safe routing, bounded pacing,
+and source registration are still required; no backlog or state change has been performed.
+
 - [Crimson Witch](https://www.crimsonwitch.com/codes): its Genshin, Star Rail and ZZZ pages
   displayed active code/reward sections and links to RSS feeds (`/feeds/genshin/rss.xml`,
   `/feeds/star%20rail/rss.xml`, `/feeds/zzz/rss.xml`). A page fetch of the Star Rail feed failed;

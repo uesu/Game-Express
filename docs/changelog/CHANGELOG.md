@@ -2,6 +2,12 @@
 
 ## 2026-11-27 — Read-only source research (no production behavior changes)
 
+- The inactive candidate YouTube fallback now prefers a verified maximum-resolution thumbnail,
+  then verified smaller variants if unavailable, without overriding native media. An explicit
+  prototype backfill queues the initial day-only snapshot oldest day first; it is not yet wired
+  to production or durable delivery. Private test and default/expanded comparisons are recorded
+  in the source research notes; existing production sources and activation are unchanged.
+
 - Prototype an **unregistered** Endfield official-news reader with bounded all-or-nothing
   pagination, safe IDs and matching details; existing games and routing remain unchanged. Record
   read-only GitHub runner probes, direct image and legacy Reddit fallback results, and official
