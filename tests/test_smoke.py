@@ -914,7 +914,8 @@ def test_every_official_feed_a_game_declares_is_actually_requested():
 
     st = settings()
     live = active_games(GAMES, st)
-    assert [g.key for g in live] == ["genshin", "starrail", "zzz", "wuwa", "hna", "ananta"]
+    assert [g.key for g in live] == ["genshin", "starrail", "zzz", "wuwa", "hna", "ananta",
+                                    "nte", "endfield"]   # silverpalace ships prepared (off)
 
     rec = Rec()
     gids = {g.hoyolab_gid for g in live if g.hoyolab_gid}
@@ -932,7 +933,7 @@ def test_every_official_feed_a_game_declares_is_actually_requested():
     # every account, on the whole fleet — nitter.cf leads it and xitter.cf is still in it
     accounts = [a for g in live for a in g.x_accounts]
     assert accounts == ["GenshinImpact", "honkaistarrail", "ZZZ_EN", "Wuthering_Waves",
-                        "HonkaiNA", "Ananta_EN"]
+                        "HonkaiNA", "Ananta_EN", "NTE_EN", "AKEndfield"]
     rec2 = Rec()
     x = XClient(rec2, st)
 
@@ -957,6 +958,7 @@ def test_every_official_feed_a_game_declares_is_actually_requested():
     assert reddit_subs == [
         "Genshin_Impact", "HonkaiStarRail", "ZZZ_Official",
         "WutheringWaves", "HonkaiNexusAnima", "AnantaOfficial",
+        "NevernessToEverness", "Endfield", "ArknightsEndfield",
     ]
     rec3 = Rec()
     rc = RedditClient(rec3, st)
@@ -984,12 +986,13 @@ def test_prepared_games_switch_on():
     an operator uses to run a subset, and what ANANTA's auto_enable_on date falls back to."""
     from gamexpress.config import active_games
     keys = lambda g, s, now=None: [x.key for x in active_games(g, s, now)]  # noqa: E731
-    assert keys(GAMES, settings(), now=1790000000) == ["genshin", "starrail", "zzz", "wuwa", "hna", "ananta"]
+    assert keys(GAMES, settings(), now=1790000000) == ["genshin", "starrail", "zzz", "wuwa", "hna",
+                                                     "ananta", "nte", "endfield"]
     # a copy with both pre-release games switched back off -> the three switch-on paths still work
     off = dict(GAMES)
     off["hna"] = replace(GAMES["hna"], enabled=False)
     off["ananta"] = replace(GAMES["ananta"], enabled=False)
-    assert keys(off, settings(), now=1790000000) == ["genshin", "starrail", "zzz", "wuwa"]
+    assert keys(off, settings(), now=1790000000) == ["genshin", "starrail", "zzz", "wuwa", "nte", "endfield"]
     assert "hna" in keys(off, settings(ENABLE_GAMES="hna"), now=1790000000)     # 1. ENABLE_GAMES
     jan15 = 1800000000                                                          # 2027-01-15 08:00 UTC
     assert "ananta" in keys(off, settings(), now=jan15) \
@@ -7213,13 +7216,15 @@ def test_news_disabled_passive_missing_destination_make_no_requests_or_state():
 
 
 def test_news_five_destinations_ananta_inactive_wangyue_absent():
+    # NTE joined the default set on 2026-11-27 (its own news archive is a parsed source); ANANTA and
+    # Endfield stay out because no verified news source exists for either.
     s = settings(NEWS_ENABLED=1, **{f"DISCORD_WEBHOOK_NEWS_{key.upper()}": HOOK + key
-                                  for key in ("genshin", "starrail", "hna", "zzz", "wuwa")})
-    assert s.news_games == {"genshin", "starrail", "hna", "zzz", "wuwa"}
-    assert "ananta" not in s.news_games and "wangyue" not in GAMES
+                                  for key in ("genshin", "starrail", "hna", "zzz", "wuwa", "nte")})
+    assert s.news_games == {"genshin", "starrail", "hna", "zzz", "wuwa", "nte"}
+    assert "ananta" not in s.news_games and "endfield" not in s.news_games and "wangyue" not in GAMES
     for key in s.news_games:
         assert s.webhook("news", key) == HOOK + key
-    assert s.webhook("news", "ananta") is None
+    assert s.webhook("news", "ananta") is None and s.webhook("news", "endfield") is None
 
 
 def test_news_hoyolab_discovery_all_tabs_dedup_and_failure():
@@ -7823,7 +7828,7 @@ def test_mature_features_need_no_variable_and_one_switch_turns_them_off():
     assert base.maintenance_games == set()
     assert settings(MAINTENANCE_GAMES="wuwa").maintenance_games == {"wuwa"}
     # News games keep their documented default set.
-    assert base.news_games == {"genshin", "starrail", "zzz", "wuwa", "hna"}
+    assert base.news_games == {"genshin", "starrail", "zzz", "wuwa", "hna", "nte"}
 
 
 def test_news_short_articles_across_all_games_keep_order_and_one_button_row():
@@ -16105,7 +16110,11 @@ def test_final_pre_merge_edge_cases_and_repo_doc_consistency():
         assert f"{len(config.DEFAULT_REDDIT)} entries" in readme_t
         assert f"{len(config.DEFAULT_REDDIT_PROXIES)} proxies" in readme_t
         assert f"{len(config.DEFAULT_REDDIT)} Reddit/Redlib entries" in security_t
-        assert "arknights" not in sources_t.lower()
+        # The original Arknights is still *not* a candidate here (no codes page, no schedule API),
+        # and SOURCES.md once said otherwise. Arknights: Endfield is a different game and IS
+        # monitored since 2026-11-27, so the guard pins the distinction rather than banning the word.
+        _endfield_mentions = sources_t.lower().replace("arknights: endfield", "").replace("r/arknightsendfield", "")
+        assert "arknights" not in _endfield_mentions
         assert "Status: not integrated." not in sources_t
         assert "November 6, 2026" in privacy_t and "November 6, 2026" in terms_t   # nitter rotation #8 revision
         assert "nitter.mizuki.st" in privacy_t
@@ -16197,7 +16206,8 @@ def test_hotfix_monitor_764_765_none_extracts_runner_isolation_ananta_hna_and_st
        `message_id`s, skipped `news` runs, and blank `GITHUB_STEP_SUMMARY`).
     3. Full `ANANTA` + `HNA` parity:
        - `MAINTENANCE_GAMES=all` expands to all 6 games (`genshin`, `starrail`, `zzz`, `wuwa`, `hna`,
-         `ananta`) while `NEWS_GAMES=all` / default remains the 5 news-capable games (`ananta` excluded).
+         `ananta`) while `NEWS_GAMES=all` / default stays the news-capable games (`ananta` and
+         `endfield` excluded: no verified news source; `nte` joined on 2026-11-27).
        - `sample_payloads('maintenance')` generates valid Pre-Load + Maintenance cards for all 6 games
          including `ananta` and `hna`.
        - `http.Fetcher.verify_media` allowlists NetEase / ANANTA official media hosts (`easebar.com`,
@@ -16298,7 +16308,7 @@ def test_hotfix_monitor_764_765_none_extracts_runner_isolation_ananta_hna_and_st
     # --- 2. ANANTA + HNA config routing, sample cards, official Reddit attribution & CDN allowlist ---
     st_all = settings(MAINTENANCE_ENABLED="1", MAINTENANCE_GAMES="all", NEWS_ENABLED="1", NEWS_GAMES="all")
     assert st_all.maintenance_games == {"genshin", "starrail", "zzz", "wuwa", "hna", "ananta"}
-    assert st_all.news_games == {"genshin", "starrail", "zzz", "wuwa", "hna"}
+    assert st_all.news_games == {"genshin", "starrail", "zzz", "wuwa", "hna", "nte"}
 
     maint_samples = cli_main.sample_payloads("maintenance")
     maint_labels = [lbl for _grp, lbl, _p in maint_samples]
@@ -26457,6 +26467,18 @@ def test_reveal_ping_covers_every_game_from_its_oldest_format_to_a_future_one():
          '"Bind your Anima to mine."\nAffiliation: Astral Sanctum\nSeraphina awaits.', "Seraphina"),
         ("ananta", "Esper Manifest | Kaede",
          '"The city never sleeps."\nKaede watches the skyline.\nAffiliation: NTE Division', "Kaede"),
+        # Newest titles (2026-11-27): no reveal corpus exists yet, so these pin the Layer-2
+        # structural detector only — the same `<Series> | <Character>` + dossier shape that will
+        # carry their first reveals, not a claim about how the publisher writes them.
+        ("nte", "Appraiser Dossier | Su Yin",
+         '"The night keeps a longer memory than the day."\nAffiliation: Appraiser Guild\n'
+         "Su Yin waits at the harbour.", "Su Yin"),
+        ("endfield", "Operator File | Chen Qianyu",
+         '"Operations begin at dawn."\nAffiliation: Endfield Industries\n'
+         "Chen Qianyu reports to the command deck.", "Chen Qianyu"),
+        ("silverpalace", "Character Dossier | Bai Lian",
+         '"The palace keeps no secrets from me."\nAffiliation: Silver Palace\n'
+         "Bai Lian arrives before the gates open.", "Bai Lian"),
     ]
     for gk, title, body, expected in rows:
         it = Item("kuro" if gk == "wuwa" else "hoyolab", gk, "era", "https://www.hoyolab.com/article/1",
@@ -26706,6 +26728,22 @@ def test_reveal_ping_bold_dossier_keys_work_for_every_game_and_both_layers():
          [("bold", '"The city never sleeps."'), ("bold", "◆ Affiliation: NTE Division"), img,
           ("text", "Kaede watches the skyline until the last light fails.")],
          "Kaede"),
+        # The three titles added 2026-11-27 pin the marker itself, not a house style: whatever
+        # dossier keys their first reveal uses, the renderer's bold must not hide them.
+        ("nte", "Appraiser Dossier | Su Yin",
+         [("bold", '"The night keeps a longer memory than the day."'),
+          ("bold", "◆ Affiliation: Appraiser Guild"), img,
+          ("text", "Su Yin waits at the harbour until the ferries stop running.")],
+         "Su Yin"),
+        ("endfield", "Operator File | Chen Qianyu",
+         [("bold", '"Operations begin at dawn."'), ("bold", "◆ Affiliation: Endfield Industries"), img,
+          ("text", "Chen Qianyu reports to the command deck before the shift changes.")],
+         "Chen Qianyu"),
+        ("silverpalace", "Character Dossier | Bai Lian",
+         [("bold", '"The palace keeps no secrets from me."'),
+          ("bold", "◆ Affiliation: Silver Palace"), img,
+          ("text", "Bai Lian arrives before the gates open to the morning crowd.")],
+         "Bai Lian"),
     ]
     for game, title, body_rows, expected in rows:
         item = build(game, title, body_rows)
