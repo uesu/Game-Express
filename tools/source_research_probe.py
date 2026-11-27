@@ -6,6 +6,7 @@ written. Run with --self-test for offline tests, or without arguments for live p
 from __future__ import annotations
 
 import json
+import re
 import sys
 import unittest
 import urllib.error
@@ -145,10 +146,12 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def probe() -> int:
+def probe(target: str | None = None, *, require_html: bool = False) -> int:
     opener = urllib.request.build_opener(NoRedirect())
     failures = 0
     for name, url, kind in TARGETS:
+        if target is not None and name != target:
+            continue
         request = urllib.request.Request(url, headers={"User-Agent": "Game-Express-Source-Research/1.0", "Accept": "*/*"})
         try:
             with opener.open(request, timeout=TIMEOUT) as response:
@@ -157,7 +160,10 @@ def probe() -> int:
                     print(f"{name}: response-too-large (>{LIMIT} bytes)")
                     failures += 1
                     continue
-                print(f"{name}: http={response.status} bytes={len(body)} {describe(kind, body)}")
+                description = describe(kind, body)
+                print(f"{name}: http={response.status} bytes={len(body)} {description}")
+                if target and not structurally_valid(kind, description, require_html):
+                    failures += 1
         except urllib.error.HTTPError as exc:
             # Do not follow redirects or print attacker-controlled headers or bodies.
             print(f"{name}: http={exc.code} (redirects not followed)")
@@ -167,6 +173,20 @@ def probe() -> int:
             failures += 1
     print(f"HTTP/request failures={failures}; structural reports require human review; empty is not proof of health.")
     return 1 if failures else 0
+
+
+def structurally_valid(kind: str, description: str, require_html: bool = False) -> bool:
+    """Single-target runner status is meaningful without exposing response content."""
+    if require_html:
+        return "expected-detail-fields=5/5 body-shape=html" in description
+    if kind.endswith("-detail"):
+        return "expected-detail-fields=5/5" in description
+    if kind.endswith("-list"):
+        match = re.match(r"rows=(\d+) valid-id-title-(?:date|time)=(\d+) ", description)
+        return bool(match and int(match[1]) > 0 and match[1] == match[2] and "=invalid" not in description)
+    if kind == "html":
+        return description.startswith("links=") and "news-shaped-links=0" not in description
+    return not description.startswith(("invalid", "unexpected"))
 
 
 class ProbeTests(unittest.TestCase):
@@ -207,6 +227,13 @@ class ProbeTests(unittest.TestCase):
                              b'"title":"x","publish_date":"2026-10-09","cover":"url","content":"body"}}'),
                          "expected-detail-fields=5/5 body-shape=other")
 
+    def test_target_structure_gate(self):
+        self.assertTrue(structurally_valid("endfield-detail", "expected-detail-fields=5/5 body-shape=html", True))
+        self.assertFalse(structurally_valid("endfield-detail", "expected-detail-fields=5/5 body-shape=other", True))
+        self.assertFalse(structurally_valid("silver-list", "unexpected-list-shape"))
+        self.assertFalse(structurally_valid("silver-list", "rows=1 valid-id-title-date=1 total-pages=invalid"))
+        self.assertFalse(structurally_valid("html", "links=3 news-shaped-links=0 scripts=1"))
+
     def test_rss_and_html(self):
         self.assertEqual(describe("rss", b'<rss><channel><item/></channel></rss>'), "rss-items=1 atom-entries=0")
         self.assertEqual(describe("rss", b'<!DOCTYPE x><rss/>'), "xml-dtd-rejected")
@@ -219,7 +246,12 @@ class ProbeTests(unittest.TestCase):
 if __name__ == "__main__":
     if sys.argv[1:] == ["--self-test"]:
         unittest.main(argv=[sys.argv[0]])
+    elif len(sys.argv) in (3, 4) and sys.argv[1] == "--target":
+        names = {name for name, _, _ in TARGETS}
+        if sys.argv[2] not in names or (len(sys.argv) == 4 and sys.argv[3] != "--require-html"):
+            raise SystemExit("Unknown fixed target or option")
+        raise SystemExit(probe(sys.argv[2], require_html=len(sys.argv) == 4))
     elif sys.argv[1:]:
-        raise SystemExit("Usage: python tools/source_research_probe.py [--self-test]")
+        raise SystemExit("Usage: python tools/source_research_probe.py [--self-test | --target NAME [--require-html]]")
     else:
         raise SystemExit(probe())
