@@ -216,7 +216,17 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The only job that may write: `mode=save` stores the fetched bytes under
+    # `tests/fixtures/probes/` on the dispatched ref so a parser can be written against the real
+    # markup and the evidence survives the run (GitHub does not serve this job's log to every
+    # client — reading it back through the API needs a download host that a restricted
+    # environment may not reach). Nothing else is written, and every other job stays read-only.
+    permissions:
+      contents: write
     steps:
+      - name: Check out the dispatched ref
+        uses: actions/checkout@v7
+
       - name: Fetch the candidates and print the evidence
         env:
           URLS: ${{ inputs.urls }}
@@ -242,6 +252,8 @@ jobs:
           [ -n "${URLS:-}" ] || URLS="$DEFAULT_URLS"
           cap="${MAX_BYTES:-6000}"
           case "$cap" in ''|*[!0-9]*) cap=6000 ;; esac
+          out="tests/fixtures/probes"
+          mkdir -p "$out"
           n=0
           while IFS= read -r url; do
             url="$(printf '%s' "$url" | tr -d '\r' | sed 's/[[:space:]]*$//')"
@@ -273,7 +285,24 @@ jobs:
                 echo "  title: $(grep -Eio '<title>[^<]*</title>' "$body" | head -1)"
                 echo "  head: $(head -c 400 "$body" | tr -s '[:space:]' ' ')" ;;
             esac
+            if [ "${MODE:-summary}" = "save" ]; then
+              slug="$(printf '%s' "$url" | sed 's#^https\?://##; s#[^A-Za-z0-9._-]#_#g')"
+              printf '%s' "$url" > "$out/$slug.url.txt"
+              cp "$body" "$out/$slug.body.txt"
+              echo "  saved $out/$slug.body.txt ($bytes bytes, HTTP $code)"
+            fi
             rm -f "$body"
           done <<< "$URLS"
           echo "================================================================"
           echo "probed $n URL(s)"
+          if [ "${MODE:-summary}" = "save" ]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$out"
+            if git diff --cached --quiet; then
+              echo "probe evidence unchanged"
+            else
+              git commit -m "probe: source evidence for ${n} URL(s) [skip ci]"
+              git push
+            fi
+          fi
