@@ -1,5 +1,57 @@
 # Changelog — current entries
 
+## 2026-11-27 — NTE and Endfield are monitored (and a news adapter that is not HoYoLAB or Kuro)
+
+- **What shipped.** Two games joined `config/games.json` and one new feature-3 source was written:
+  **Neverness to Everness** (`nte`, on) and **Arknights: Endfield** (`endfield`, on) are monitored
+  for codes and announcements, and NTE's **official news archive is read by
+  `gamexpress/sources/perfectworld.py`** — the first news adapter here that is neither HoYoLAB nor
+  Kuro. **Silver Palace** ships prepared (`enabled: false`) with the reason in its `note`.
+- **Why the adapter exists.** NTE has no HoYoLAB game id and no Kuro menu, so feature 3 had no
+  source for it and would have reported "no verified source (inactive)" forever. Its site is plain
+  server-rendered HTML, verified 2026-11-27 from a runner with the bytes committed under
+  `tests/fixtures/probes/`.
+- **What the adapter reads.** The list entry is the **`href`** — tab, day and id come from
+  `/en/article/news/<tab>/YYYYMMDD/<id>.html`, so a template restyle cannot renumber anything; the
+  title is the row's `<h2>`; the article gives `h1.articleTitle`, the `div.articleContent` body and
+  `og:image`. Three tabs (`gamenews`/`gamebroad`/`gameevent`), `indexN.html` pagination, at most
+  three pages per tab on the real path.
+- **Three things the adapter deliberately does not trust.** (1) The printed date: the list says
+  `2026-11-23`, the article says `2026.11.23`, neither carries a zone — the **path** is the
+  canonical day. (2) The list's summary line: it repeats the title, so nothing is taken from it.
+  (3) The tab: the same article can be listed twice, so entries are keyed by id. And a page that
+  fails is `None`, never `[]`, so the caller advances no baseline and the next run still sees the
+  article.
+- **Article bodies are extracted with a balanced `<div>` walk**, not a regex: a nested div inside
+  the body would truncate a lazy match, and a greedy one would swallow the footer. The fixture pins
+  both directions.
+- **Codes.** `ogc:nte` is a known game that currently answers `[]` (valid: no live codes) and
+  `ogc:endfield` answers five codes with rewards and no expiry; both are paired with their Reddit
+  listings as witnesses, which never post alone (`CODES_MIN_SOURCES = 2`, one family one vote).
+- **Two guards had to move with reality, not around it.** `NEWS_GAMES` gains a dedicated default
+  (`DEFAULT_NEWS_GAMES`, adding `nte`; `ananta`/`endfield` stay out because no news source exists
+  for either), which also adds a sixth news destination — document `DISCORD_WEBHOOK_NEWS_NTE` or
+  that game's news run reports "missing dedicated webhook" and does nothing. The "SOURCES.md must
+  not mention Arknights" guard now distinguishes the original Arknights (still not a candidate) from
+  Arknights: Endfield (monitored).
+- **Endfield feature 3 is blocked at the publisher, not here**: `/en-us/news` renders titles, dates
+  and covers with **empty `href`s**, and the CMS call behind them (`GET /api/bulletin?…&code=<appCode>`)
+  answers `404 Cannot GET /api/bulletin` on both hosts — `appCode` is in no captured chunk. The
+  run therefore reports "no verified source (inactive)" for it, on purpose.
+- **Silver Palace** stays prepared: its `_payload.json` is a 69-byte placeholder and
+  `__NUXT_DATA__` holds only i18n/site config, so the server output contains no news entry at all.
+  The page does confirm the **2026-12-14** global launch; re-probe after it.
+- **Handle evidence, stated plainly.** X and YouTube handles were found by probing (an existing
+  `publish.twitter.com` oEmbed entry and a YouTube channel page whose title is the game; the
+  obvious alternatives return nothing). Neither is linked from the server-rendered site, so the
+  game notes say to confirm them once in Settings before trusting an X-only card — an unverified
+  handle is a wrong card, and that is worse than a missing one.
+- **Tests.** `tests/test_nte_news.py` (11 tests, plain runner + pytest) pins the list, the path day,
+  the duplicate collapse, the balanced body walk, the never-a-stub contract, the bounded
+  pagination, the `Item` shape and the config wiring; it runs in `ci.yml` and the Python-bump gate.
+  The reveal-ping coverage guards gained the three new titles (structural and bold-marker rows),
+  and the roster assertions for the official-feed inventory moved to eight live games.
+
 ## 2026-11-27 — Probe verdicts: two code sources rejected, and the new-game findings
 
 - **What was asked.** A full investigation, not a patch: is `crimsonwitch.com` a usable code source,
