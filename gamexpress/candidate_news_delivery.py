@@ -300,7 +300,7 @@ async def render_candidate(fetcher, settings, source, row):
     return pages
 
 
-async def send_candidate_once(session, settings, source, payload):
+async def send_candidate_once(session, settings, source, payload, *, files=None):
     """One guarded POST to the dedicated destination; never retries or logs secrets.
 
     Even a non-success response is held for review by the delivery coordinator.
@@ -316,9 +316,35 @@ async def send_candidate_once(session, settings, source, payload):
     parts = urlsplit(target[0])
     url = parts._replace(query="").geturl()
     params = {"wait": "true", "with_components": "true", **dict(parse_qsl(parts.query))}
+    options = {"json": payload}
+    if files is not None:
+        from .discord import payload_media_urls
+        from .news_animation import NAME_RE, UPLOAD_LIMIT, gif_info
+
+        entries = payload.get("attachments")
+        if not isinstance(files, dict) or not isinstance(entries, list) or len(entries) != 1:
+            return SendResult(False, 0, ambiguous=False, error="invalid attachment plan")
+        entry = entries[0]
+        name = entry.get("filename") if isinstance(entry, dict) and entry.get("id") == 0 else None
+        match = NAME_RE.fullmatch(name) if isinstance(name, str) else None
+        data = files.get(name) if match else None
+        if (not match or set(files) != {name} or not isinstance(data, bytes) or len(data) > UPLOAD_LIMIT
+                or hashlib.sha256(data).hexdigest() != match.group(1)
+                or {u for u in payload_media_urls(payload) if u.startswith("attachment://")} != {"attachment://" + name}):
+            return SendResult(False, 0, ambiguous=False, error="invalid attachment content")
+        try:
+            gif_info(data)
+        except ValueError:
+            return SendResult(False, 0, ambiguous=False, error="invalid GIF attachment")
+        form = aiohttp.FormData()
+        form.add_field("payload_json", json.dumps(payload, ensure_ascii=False), content_type="application/json")
+        form.add_field("files[0]", data, filename=name, content_type="image/gif")
+        options = {"data": form}
+    elif payload.get("attachments"):
+        return SendResult(False, 0, ambiguous=False, error="missing attachment content")
     try:
-        async with session.post(url, params=params, json=payload, allow_redirects=False,
-                                timeout=aiohttp.ClientTimeout(total=30)) as response:
+        async with session.post(url, params=params, **options, allow_redirects=False,
+                                timeout=aiohttp.ClientTimeout(total=120 if files is not None else 30)) as response:
             status = response.status
             body = bytearray()
             async for chunk in response.content.iter_chunked(4096):

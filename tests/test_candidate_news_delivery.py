@@ -588,6 +588,53 @@ class CandidateDeliveryTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertFalse(session.calls)
 
+    def test_one_shot_gif_attachment_requires_exact_digest_and_matching_reference(self):
+        import base64
+        import hashlib
+
+        from gamexpress.cards import IS_COMPONENTS_V2, container, text
+
+        data = base64.b64decode("R0lGODlhBAAEAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAABAAEAAAICQABCBxIsCCAgAAh+QQBCgABACwAAAAABAAEAIEAAP8AAAAAAAAAAAAICQABCBxIsCCAgAA7")
+        name = "animation-" + hashlib.sha256(data).hexdigest() + ".gif"
+        page = {"flags": IS_COMPONENTS_V2, "allowed_mentions": {"parse": []},
+                "attachments": [{"id": 0, "filename": name}],
+                "components": [container([text("Official"), {"type": 12, "items": [{"media": {"url": "attachment://" + name}}]}])]}
+
+        class Content:
+            async def iter_chunked(self, size):
+                yield b'{"id":"12345"}'
+
+        class Response:
+            status = 200
+            content = Content()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+        class Session:
+            def __init__(self):
+                self.calls = []
+
+            def post(self, url, **kwargs):
+                self.calls.append(kwargs)
+                return Response()
+
+        settings = load_settings({"DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK})
+        session = Session()
+        result = asyncio.run(delivery.send_candidate_once(session, settings, "silverpalace", page, files={name: data}))
+        self.assertTrue(result.ok)
+        self.assertEqual(len(session.calls), 1)
+        self.assertIn("data", session.calls[0])
+        self.assertNotIn("json", session.calls[0])
+        for files in ({name: data + b"x"}, {}, {"wrong.gif": data}, None):
+            session = Session()
+            result = asyncio.run(delivery.send_candidate_once(session, settings, "silverpalace", page, files=files))
+            self.assertFalse(result.ok)
+            self.assertFalse(session.calls)
+
     def test_dedicated_routing_only_and_no_secret_in_fingerprint(self):
         settings = load_settings({"DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK,
                                   "DISCORD_WEBHOOK_URL": "https://wrong.example/secret"})

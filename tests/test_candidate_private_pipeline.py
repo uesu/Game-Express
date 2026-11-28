@@ -213,6 +213,38 @@ class PrivateHarnessTests(unittest.TestCase):
         self.assertEqual([row["id"] for _, row, _ in chosen], ["252475", "101", "2"])
 
 
+class NewsAnimationPlanTests(unittest.TestCase):
+    def test_split_preserves_all_text_and_media_order(self):
+        from gamexpress.cards import IS_COMPONENTS_V2, container, gallery, text, validate_payload
+        from gamexpress.news_animation import split_pages
+
+        a, b, static = "https://s.elementagames.com/a.jpg", "https://s.elementagames.com/b.jpg", "https://s.elementagames.com/c.jpg"
+        original = [{"flags": IS_COMPONENTS_V2, "allowed_mentions": {"parse": []}, "components": [container([
+            text("Header and first text"), gallery([a]), text("Middle"), gallery([static, b]), text("Footer")])]}]
+        snapshot = copy.deepcopy(original)
+        planned = split_pages(original, {a: "animation-" + "a" * 64 + ".gif", b: "animation-" + "b" * 64 + ".gif"}, max_pages=10)
+        self.assertEqual(original, snapshot)
+        self.assertEqual(len(planned), 2)
+        children = [c for p in planned for box in p["components"] for c in box["components"]]
+        self.assertEqual([c["content"] for c in children if c["type"] == 10], ["Header and first text", "Middle", "Footer"])
+        media = [entry["media"]["url"] for c in children if c["type"] == 12 for entry in c["items"]]
+        self.assertEqual(media, ["attachment://animation-" + "a" * 64 + ".gif", static,
+                                 "attachment://animation-" + "b" * 64 + ".gif"])
+        self.assertTrue(all(len(p["attachments"]) == 1 and not validate_payload(p) for p in planned))
+        with self.assertRaises(ValueError):
+            split_pages(original, {a: "a", b: "b"}, max_pages=1)
+        self.assertIs(split_pages(original, {}, max_pages=1), original)
+
+    def test_allowlist_rejects_spoofed_and_non_https_hosts(self):
+        from gamexpress.news_animation import trusted_url
+
+        self.assertTrue(trusted_url("https://s.elementagames.com/a.jpg"))
+        self.assertTrue(trusted_url("https://upload-os-bbs.hoyolab.com/a.jpg"))
+        for url in ("http://s.elementagames.com/x", "https://s.elementagames.com.evil.test/x",
+                    "https://evil@s.elementagames.com/x", "https://s.elementagames.com:444/x",
+                    "https://s.elementagames.com/x#fragment"):
+            self.assertFalse(trusted_url(url))
+
 class SilverGifProbeTests(unittest.TestCase):
     def test_parser_counts_frames_and_rejects_incomplete_data(self):
         import base64
