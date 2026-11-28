@@ -24,7 +24,7 @@ from gamexpress.http import Fetcher  # noqa: E402
 MARKER = "feature3-nte-format-corrections-v1"
 NOTICE_IDS = frozenset(["265196", "265063", "264938", "264852", "264812", "264665", "264504", "264393", "264250", "264144", "263938", "263816", "263718", "263598", "263505", "263409", "263286", "263221", "263143", "263019", "262911", "262793", "262705", "262601", "262456", "262335", "262255", "262132", "262101", "262038"])
 IDS = NOTICE_IDS | {"262998"}
-COMMENT_ID = 0  # locked only after independently verifying preparation
+COMMENT_ID = 7235741976  # independently verified; preparation permanently locked
 
 
 async def prepare(fetcher, route):
