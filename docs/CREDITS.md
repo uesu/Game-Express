@@ -138,3 +138,13 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 - **[Wuthery/kuro.py](https://github.com/Wuthery/kuro.py)** ([PyPI](https://pypi.org/project/kuro.py/)) — KuroBBS/game-account API wrapper, not an ordered beta feed.
 - **[seriaati/ZenlessAssetScrape](https://github.com/seriaati/ZenlessAssetScrape)** — asset research; its README recommends Hakushin's API. Official [Genshin character pages](https://genshin.hoyoverse.com/en/character/mondstadt) provide published character context, not a beta history contract.
 - **[Discohook documentation](https://docs.discohook.app/)** ([text index](https://docs.discohook.app/llms.txt)) — reference for inspecting and editing Discord payloads; a manual edit succeeding does not establish the cause of an earlier unresolved media response.
+
+### Feature 3 follow-up research
+
+Thanks to the official NTE, GRYPHLINE Endfield and Silver Palace publishers and their CDN/API
+operators for the article text and native media used in the inactive candidate research. Thanks
+also to HoYoLAB and YouTube for the official post and verified thumbnail reference. The
+[SKPORT API documentation community project](https://github.com/AixLnyt/skport-api-docs) helped
+scope research; its account/game APIs are **not** used as an official community-news feed.
+Read-only GitHub Actions probes, aiohttp, pytest and Ruff supported the fidelity checks; see
+[the evidence and limits](SOURCES.md#feature-3-follow-up-bounded-fidelity-audit-and-skport-2026-11-27).

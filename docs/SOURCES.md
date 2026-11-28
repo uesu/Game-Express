@@ -1370,3 +1370,32 @@ cannot serve immutable historical revision diffs, and multi-hundred-MB raw git d
 verified client curves, property IDs, markup grammars (`<Term:...>`, `<highlight>`, `{RUBY_*}`),
 and enum tables are baked directly into `gamexpress/beta.py` with **zero extra HTTP requests**.
 
+
+### Feature 3 follow-up: bounded fidelity audit and SKPORT (2026-11-27)
+
+In [read-only audit 46119240484](https://github.com/uesu/Game-Express/actions/runs/46119240484),
+the observed NTE and Silver Palace listings contained 103 and 21 articles respectively; every
+body parsed, and all 118 distinct body-media URLs responded to bounded signature inspection.
+No NTE body media in that snapshot was GIF-signature data. Twelve Silver URLs had GIF signatures
+although their path ended in `.jpg`, including all 9 body images in Silver article 93 and all 3
+in article 99. We retain the publisher URL and rely on media bytes/MIME, not extension; this
+is not a guarantee about future media or Discord rendering. The NTE 262101 and 262255 samples
+preserved 660 and 521 masked UIDs in source order with separators; 262998 put its Important Notes
+heading and first note on the same page. A later read-only audit checked all 30 observed account
+notices. These checks do not establish upstream completeness.
+
+The public [SKPORT Endfield community](https://www.skport.com/game/endfield) mixes user posts
+with SKPORT promotional material. The inspected public page/static script did not establish an
+accessible, documented community feed with reliable official-publisher authorship. The community
+[SKPORT API documentation](https://github.com/AixLnyt/skport-api-docs) describes game/account and
+wiki APIs, not a verified official-post feed. No SKPORT adapter, login, account token collection,
+or official-source assumption is added. An enhancement would first need an authorized public
+feed, durable post IDs, official-author verification, pagination/completeness checks and terms
+review; community posts would need a separately labelled opt-in source.
+
+The official [ZZZ Sunbringer EP HoYoLAB post](https://www.hoyolab.com/article/47586861) contains
+a YouTube embed represented in structured content as a video but no native article image/video.
+[Read-only audit 46119433799](https://github.com/uesu/Game-Express/actions/runs/46119433799)
+verified the fallback thumbnail without posting. This fallback is allowed for official HoYoLAB and
+Kuro articles as well as the three inactive candidates, only when no native image/video (or
+unavailable-native-video marker) is present; actual thumbnail bytes and dimensions are checked.
