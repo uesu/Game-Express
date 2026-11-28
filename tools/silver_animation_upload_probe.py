@@ -30,7 +30,7 @@ from gamexpress.http import Fetcher  # noqa: E402
 from gamexpress.sources import silverpalace  # noqa: E402
 
 MARKER = "feature3-silver-animation-upload-probe-v1"
-COMMENT_ID = 0  # lock only after verified preparation
+COMMENT_ID = 7236050623  # independently verified, preparation permanently locked
 IDS = {"93", "99"}
 SOURCE_LIMIT = 24 * 1024 * 1024
 UPLOAD_LIMIT = 8 * 1024 * 1024
