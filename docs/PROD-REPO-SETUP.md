@@ -19,21 +19,24 @@ sibling project's workflow. PR acceptance does not authorize a merge or producti
 ## The family model
 
 The named repositories hold development code, tests and documentation. Production runs in the
-separate repositories listed above.
+separate repositories listed above. For Game-Express, `8mqzv4k2n7c` is the sole live instance
+for Features 1–4 and holds the posting records; Feature 5 is off. The development repository is
+not a standby, and no standby is needed for this installation.
 
 What that means in practice:
 
 | | development repo | production repo |
 |---|---|---|
 | name | `Game-Express` — development; visibility is your choice | separate opaque name, public standard hosted runners |
-| posts to Discord | never (`ENABLED_FEATURES=none` + no webhooks) | yes, every 5 minutes |
-| holds | code, tests, `docs/`, `README.md`, CI, Dependabot, this guide | the package, three config files, state, one workflow |
+| posts to Discord | development only; not the live or standby instance | yes, on the chosen schedule (currently 10 minutes) |
+| holds | code, tests, `docs/`, `README.md`, CI, Dependabot, this guide | runtime, config, authoritative posting state, operational workflows and synced offline tests |
 | Markdown in it | the whole manual | **none required** — see §1 |
 | pull requests | all of them | none; it only receives syncs |
 
-So treat anything below that mentions `docs/`, `README.md` or `tests/` as **development-repo
-only**. The production repo is deliberately documentation-free: it is not read by people, it is
-executed by a runner.
+The production repository is deliberately documentation-free: `docs/` and project Markdown
+manuals stay in development. Automated sync also copies offline tests and non-Markdown test
+fixtures for production CI; these are test data, not operational documentation. Production's
+`variables and secrets.txt` is an inventory of names, not a place to store credential values.
 
 ---
 
@@ -117,19 +120,23 @@ Create a fresh repository and upload these paths; a fork/clone relationship is n
 
 ```
 gamexpress/                      the whole package, including sources/ (no fixed file count)
-  __init__.py  __main__.py  benchmark.py  cards.py  codeposter.py  config.py  discord.py
+  __init__.py  __main__.py  benchmark.py  cards.py  codeposter.py  config.py
+  candidate_news_checkpoint.py  candidate_news_delivery.py  candidate_news_recovery.py
+  candidate_news_runner.py  day_news_candidate.py  discord.py  news_animation.py
   http.py  maintenance.py  media.py  models.py  news_timestamps.py  preview_html.py
   runner.py  samples.py  schedule.py  state.py  textutil.py  timeparse.py
   sources/__init__.py  banner_search.py  bannerfeed.py  calendarfeed.py  codes.py
-          countdown.py  gachawiki.py  hoyolab.py  kuro.py  launcher.py  newspage.py
-          reddit.py  twitter.py
+          countdown.py  endfield.py  gachawiki.py  hoyolab.py  kuro.py  launcher.py  newspage.py
+          candidate_thumbnail.py  nte_candidate.py
+          reddit.py  silverpalace.py  twitter.py
 config/games.json                game definitions, X accounts, code sources
 config/overrides.json            manual corrections
 config/program_announcements.json  discovered tweet ids — the workflow commits to this
 state/.gitkeep
 state/state.json                 what has been posted (see §4 — copy it, do not start empty)
 requirements.txt
-.github/workflows/monitor.yml    the only workflow prod needs
+.github/workflows/monitor.yml    monitor
+.github/workflows/candidate_news_recovery.yml  attended, no-post candidate recovery
 .gitignore
 ```
 
@@ -145,10 +152,10 @@ else updates it. If you sync from dev regularly the pin rides along with `monito
 can skip this — but if dev goes quiet for a few months, prod keeps running an ageing
 interpreter with no one telling it.
 
-**It is safe to run in a documentation-free repo.** The script writes to exactly five
-filenames — `ci.yml`, `monitor.yml`, `python_version_bump.yml`, `sync_prod.yml`, `ruff.toml` —
-and skips every one it cannot find, so in a
-prod repo it rewrites `monitor.yml` and nothing else. It reads the current pin from whichever
+**It is safe to run in a documentation-free repo.** The script can update only `ci.yml`, `monitor.yml`, `python_version_bump.yml`, `sync_prod.yml`,
+`candidate_news_recovery.yml` and `ruff.toml`; it skips files that are absent. In an automated
+sync, applicable production workflows and `ruff.toml` are included; the dev-only sync workflow
+is not. It reads the current pin from whichever
 workflow is present. **It never opens a Markdown file for writing**, so there is no README and
 no `docs/` for it to invent or corrupt; the PR body it composes is written to the runner's temp
 directory, not into the repo. The set of files staged in the PR is whatever the script reports
@@ -219,8 +226,8 @@ cp -r --parents \
   /tmp/prod/
 
 find /tmp/prod -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
-find /tmp/prod -type f | wc -l     # expect 47 (45 runtime + 2 policy files)
-                                  # 49 if you also copied the two python-bump files
+find /tmp/prod -type f | wc -l     # expect 57 (55 runtime + 2 policy files)
+                                  # 59 if you also copied the two python-bump files
 ```
 
 **Don't trust that number on its own — verify the package instead.** The count goes stale the
@@ -471,11 +478,12 @@ I'd use the Discord invite.
 `raw.githubusercontent.com/...` unauthenticated. If you ever want dev as a standby, both
 instance repos have to be public.
 
-**No CI in prod.** Nothing validates a bad edit there. Treat prod as deploy-only: never hand-edit
-it, always change dev → green CI → sync.
+**Production CI is not a substitute for review.** The synced CI can run for code changes, but
+production is deploy-only: make code changes in dev, verify the gates and sync rather than
+hand-editing runtime files in production.
 
-**The state commit is `[skip ci]`** and `ci.yml` isn't in prod anyway, so the auto-commits
-cost nothing.
+**The state commit is `[skip ci]`**; the synced production CI is not intended to run for these
+state-only auto-commits.
 
 **`concurrency: cancel-in-progress: false`** must stay false — a run can sit between "posted to
 Discord" and "state committed", and cancelling there allows a re-post.
@@ -490,21 +498,102 @@ and `config/program_announcements.json`. So sync code **into** prod, never the r
 ### Option A — Automated GitHub Actions sync (`.github/workflows/sync_prod.yml`, recommended)
 
 Every push to `main` (and any manual **Actions → Sync to Production (8mqzv4k2n7c) → Run workflow**
-dispatch) automatically validates the full offline test suite and runs `.github/scripts/sync_prod.py`
+dispatch) automatically validates the listed offline pre-sync checks and runs `.github/scripts/sync_prod.py`
 to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, `config/games.json`,
-`config/overrides.json`, `.github/workflows/{ci,monitor,python_version_bump}.yml`,
+`config/overrides.json`, `.github/workflows/{ci,monitor,python_version_bump,candidate_news_recovery}.yml`,
 `.github/dependabot.yml`, `.github/zizmor.yml`, `.gitignore`, `requirements.txt`, `ruff.toml`,
 `state/.gitkeep`) to `uesu/8mqzv4k2n7c`:
 
-- **Live state is untouchable:** `state/state.json` is never created, overwritten, staged, or deleted.
+- **Live state and inventory are protected:** `state/state.json`, the candidate ledger
+  `state/candidate_news.json`, and production's `variables and secrets.txt` are never created,
+  overwritten, staged, or deleted by sync. The
+  candidate ledger is not provisioned automatically; do not create or reset it during research.
+  Attended first-install initialization and recovery have not yet been validated in production.
+  Candidate delivery requires explicit configuration and a route-bound ledger. The attended
+  recovery workflow is copied by sync but is manual-only;
+  it requires matching primary authority, the dedicated destination and explicit operator review. Candidate checkpoint commits include a per-write random nonce;
+  local competing-writer tests and a local monitor-state rebase test pass, but they do not prove
+  real cross-repository failover or actual production recovery. The sync preflight runs the candidate
+  offline test files. A local production-shaped tree passed the synced CI test commands without
+  copying dev-only research tools; those research tests run in development CI only. The exact
+  production variables and secrets cannot be inferred from a public repository view; check their
+  presence privately without sharing values.
+- **Attended first-install initialization:** after release and explicit approval of historical
+  backfill, configure the three distinct dedicated webhook secrets and primary authority variables
+  listed in [CONFIGURATION](CONFIGURATION.md). Pause all writers/schedulers everywhere. In the
+  manual `Candidate news recovery (attended)` workflow on the authority branch, select `initialize`,
+  confirm writers are paused, and type `FIRST_INSTALL_BACKFILL` only if these destinations have
+  never used candidate news anywhere and the available history is approved for posting. `source`
+  is ignored for initialization. The workflow checks distinct routes, an up-to-date full Git
+  history and that no ledger appears in fetched history; it checkpoints empty records bound to
+  the three distinct route fingerprints and sends nothing. Distinct webhook fingerprints do not
+  prove different Discord channels: independently verify the destination of each secret before
+  initializing. Both primary and standby hold before discovery if a source record is missing or
+  its route no longer matches. This is not a way to restore a lost ledger: force-pushed/unavailable history and other
+  repositories cannot be detected. If there is any uncertainty, stop and investigate; if the push
+  outcome is unclear, inspect the authoritative remote before any retry. No live production
+  initialization has been performed at the time of writing.
+- **Single-production activation order:** On `uesu/8mqzv4k2n7c`, first verify the three
+  intended Discord channels are distinct and that no previous candidate posts in them need
+  deduplication. If unsure, stop; an empty ledger cannot reconstruct old posts. In cron-job.org,
+  pause the Game-Express production job and wait for any active/queued monitor runs to finish.
+  In production GitHub Settings → Secrets and variables → Actions, add the three dedicated
+  candidate webhook **secrets** and the two authority **variables** listed in
+  [CONFIGURATION](CONFIGURATION.md); leave `NEWS_CANDIDATES_BACKFILL` unset. Never paste a
+  webhook URL into chat, a variable, a workflow input, or a repository file. In production
+  Actions → `Candidate news recovery (attended)` → Run workflow, choose branch `main`, mode
+  `initialize`, check `writers_paused`, enter `FIRST_INSTALL_BACKFILL` and run it once. `source`
+  is ignored in this mode. If it fails or the result is uncertain, inspect the authoritative
+  ledger before any retry. After a successful initialization, run the no-send `preview` for each
+  source while still paused and inspect holds. Then append `nte,endfield,silverpalace` to the
+  existing `NEWS_GAMES` variable (preserve existing keys), and set `NEWS_CANDIDATES_BACKFILL=1`
+  **last**. Resume the same cron job; do not add another scheduler. Watch the next production
+  Actions summaries and the three Discord channels. Backfill is oldest-first per source, at most
+  one article and three pages per source per run; same-day order for day-only feeds is a
+  deterministic ID tie-break, not proven publication order. On an ambiguous hold, pause the
+  scheduler and use the attended recovery procedure; do not reset the ledger or blindly retry.
+  First production initialization, previews, recovery and real-source delivery are unvalidated
+  until actually run; installing code or secrets alone does not prove them.
+- **No-send live-source preview:** after approved initialization, pause all schedulers/writers,
+  select `preview` and a source in the same attended workflow, and attest that writers are paused.
+  It checks the bound destination and existing ledger, fetches a fresh bounded official listing,
+  renders the next queued article including GIF planning, and reports counts/IDs only. It makes no
+  Discord request and no ledger checkpoint. An in-flight page, changed partial payload, future day,
+  route mismatch, unavailable media or failed Git verification holds. Preview does not prove
+  Discord acceptance, rendering or upstream completeness. It shares the monitor concurrency group
+  and may take up to 15 minutes; pausing avoids delaying or replacing scheduled runs. The preview
+  must not be confused with posting history.
+- **Experimental candidate standby:** the shared-ledger path described in
+  [CONFIGURATION](CONFIGURATION.md) is opt-in and not needed for the current single-repository
+  installation. If separately approved, it must use
+  the same authoritative branch, same dedicated destinations and a narrowly scoped credential;
+  only attended first-install initialization establishes source routes. Existing peer-heartbeat logic decides
+  whether a standby is active, and an unavailable peer leaves it passive. A stale checkout,
+  changed route, failed/uncertain Git operation or held page stops that source. Cross-repository
+  Actions and real production failover have not been validated. Do not activate it as part of
+  initialization. Disable or pause **all** writers before reconciliation; never reset/copy a
+  ledger to manufacture failover, and never force-push over authoritative state.
+- **Attended candidate recovery (not automatic failover):** the manual-only `Candidate news
+  recovery (attended)` workflow can inspect a validated existing ledger without sending. Before
+  using `resolve`, pause every scheduler and writer in every repository and independently inspect
+  the exact Discord destination. Supply the inspected article ID, page and payload signature;
+  choose `delivered` only with its actual message ID, or `absent` only when non-delivery is
+  established—not when the outcome is unknown. Both operator attestations are required. The
+  workflow shares the monitor concurrency group within this repository but cannot verify that
+  outside writers are paused, and it never posts or resumes the scheduler. If the checkpoint
+  outcome is unclear, inspect the authoritative branch before any retry. This workflow does not
+  change a destination or resume the scheduler. Its real production use
+  and cross-repository operations remain unvalidated.
 - **Program announcement seeds are union-merged:** `config/program_announcements.json` preserves any
   tweet IDs discovered live by the production monitor while adding/updating entries from dev.
 - **Dev-only files stay in dev:** `docs/`, `README.md`, `AGENTS.md`, `PRIVACY_POLICY.md`,
   `TERMS_OF_SERVICE.md`, `.env.example`, `previews/`, `archive/`, and `.github/workflows/sync_prod.yml`
   are never copied to production.
-- **Zero collision with 5-minute monitor runs:** `cancel-in-progress: false` queues concurrent syncs,
-  and if a 5-minute monitor state commit lands mid-push, `sync_prod.py` fetches the fresh remote tip,
-  resets to `FETCH_HEAD`, and re-applies the sync on top of the updated `state/state.json`.
+- **Concurrent monitor commits:** `cancel-in-progress: false` serializes active sync jobs in
+  the development repository, although GitHub may replace an older pending job. If a monitor
+  commit lands mid-push, `sync_prod.py` fetches the fresh remote tip, resets to `FETCH_HEAD`, and
+  reapplies the sync with bounded retries. This is not a cross-repository lock or a guarantee
+  against an ultimately failed push.
 - **One-time credential check:** `sync_prod.yml` uses `secrets.PROD_SYNC_PAT` if set, or falls back to
   `secrets.BUMP_PAT`. Make sure that token has **Contents: Read and write** and **Workflows: Read and
   write** access to `uesu/8mqzv4k2n7c` (or override the target repository name via the `PROD_REPO`

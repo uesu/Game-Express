@@ -26,9 +26,10 @@ off-by-default features can also post full official news articles for five suppo
 (with optional Discord `<t:…>` timestamps and expanded multi-page rendering) and live
 **Pre-Load Started** / **Maintenance Started** / **Servers Live** alerts per game.
 
-It runs entirely on **GitHub Actions** (free and unlimited on public repos), triggered every
-5 minutes by **[cron-job.org](https://cron-job.org)**. There is nothing to deploy: merging to
-`main` **is** the deploy.
+It runs on **GitHub Actions**, triggered by **[cron-job.org](https://cron-job.org)** at an
+operator-selected interval (currently 10 minutes). Changes are developed in `uesu/Game-Express`
+and synced to the single live repository, `uesu/8mqzv4k2n7c`; merging to development `main`
+starts the production sync, but a successful sync must still be verified.
 
 > Same architecture and lessons as **[News-Express](https://github.com/uesu/News-Express)**:
 > fallback chains for every source, dedup state committed to the repo, a queued (never
@@ -242,7 +243,7 @@ and **[offline/live-check distinction](docs/TESTING.md#official-news-offline-cov
 
 Three independent milestone alerts per version — **`Pre-Load Started`**,
 **`Maintenance Started`** and **`Servers Live`** — for explicitly enabled games, using the
-existing 5-minute scheduler and dedicated per-game webhooks (`DISCORD_WEBHOOK_MAINTENANCE_<GAME>`).
+existing operator-selected scheduler and dedicated per-game webhooks (`DISCORD_WEBHOOK_MAINTENANCE_<GAME>`).
 Works standalone or alongside schedule, codes and news without modifying existing cards.
 
 ```
@@ -509,8 +510,8 @@ Use the offline news checks in the testing guide; do not reset state to force a 
 
 ### 6 · Go live with cron-job.org
 
-Create one cron-job.org job per instance repo that calls the `workflow_dispatch` API every
-5 minutes, using a GitHub **classic token** with the `repo` scope. Step by step:
+Create one cron-job.org job per live instance repo that calls the `workflow_dispatch` API at
+the chosen interval (currently 10 minutes), using a GitHub **classic token** with the `repo` scope. Step by step:
 **[docs/SCHEDULER.md](docs/SCHEDULER.md)**. GitHub's own `schedule:` is disabled in
 `monitor.yml`; do not enable both schedulers. For a move: pause the old cron job, let its
 in-flight run finish and push state, copy the freshest `state/state.json` and
@@ -729,19 +730,23 @@ relay message either way. See [SOURCES.md §Reddit intake](docs/SOURCES.md#reddi
 - Every run, each instance imports the other's posted keys. The standby stays passive while the
   primary's heartbeat is fresh, and starts posting automatically when it goes stale.
 - The standby never fails over faster than 2.5× the primary's heartbeat interval, and never when
-  the peer state can't be read — so a misconfiguration cannot cause double posts.
+  the peer state can't be read. This reduces risk but is not a distributed lock or a guarantee
+  against duplicate posts after crashes or misconfiguration.
 - When alpha comes back it imports bravo's posts and edits bravo's cards (same webhook).
 
 **One repo or several.** One repo can be the code home and production at once: CI tests every PR,
 and merging deploys it. You can also follow the News-Express convention of a development repo
 plus instance repos (alpha / bravo) — see [docs/PROD-REPO-SETUP.md](docs/PROD-REPO-SETUP.md).
-Only a development copy that must never post gets `ENABLED_FEATURES=none`; a manual `test` run
+In the current installation, `uesu/Game-Express` is the development source and
+`uesu/8mqzv4k2n7c` is the live instance holding its posting records; the development repository is
+not a standby. Only a development copy that must never post gets `ENABLED_FEATURES=none`; a manual `test` run
 still works there. **Never set it on the repo that posts.**
 
 **Scheduler.** GitHub's native `schedule:` is disabled (commented out) in `monitor.yml`, exactly
 like News-Express, because two schedulers on one repo race each other. cron-job.org calls the
-`workflow_dispatch` API every 5 minutes; the concurrency queue plus the fresh branch checkout
-make an overlapping trigger safe. **[docs/SCHEDULER.md](docs/SCHEDULER.md)**.
+`workflow_dispatch` API at the operator-selected interval, currently 10 minutes. The repo-local
+concurrency group prevents simultaneous active monitor jobs, but a newer pending run can replace
+an older one and crashes can still leave an ambiguous post. **[docs/SCHEDULER.md](docs/SCHEDULER.md)**.
 
 ---
 

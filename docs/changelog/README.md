@@ -1,6 +1,24 @@
 # Changelog
 
-Latest: [Reddit intake: match News-Express's newest relay work (body media, `429` evidence)](CHANGELOG.md#2026-11-24--reddit-intake-match-news-expresss-newest-relay-work-body-media-429-evidence).
+Latest: [Opt-in candidate news release preparation](CHANGELOG.md#2026-11-27--opt-in-candidate-news-release-preparation).
+
+Previous: [Single production repository clarification](CHANGELOG.md#2026-11-27--single-production-repository-clarification).
+
+Previous: [Experimental shared-ledger candidate standby](CHANGELOG.md#2026-11-27--experimental-shared-ledger-candidate-standby).
+
+Previous: [Private integrated runner test](CHANGELOG.md#2026-11-27--private-integrated-runner-test).
+
+Earlier: [Guarded candidate ledger initialization](CHANGELOG.md#2026-11-27--guarded-candidate-ledger-initialization).
+
+Earlier: [Attended candidate recovery and integrated test](CHANGELOG.md#2026-11-27--attended-candidate-recovery-and-integrated-test).
+
+Earlier: [Candidate news checkpoint race hardening](CHANGELOG.md#2026-11-27--candidate-news-checkpoint-race-hardening).
+
+Previous: [Feature 3 animated media follow-up](CHANGELOG.md#2026-11-27--feature-3-animated-media-follow-up).
+
+Previous: [Read-only source research (no production behavior changes)](CHANGELOG.md#2026-11-27--read-only-source-research-no-production-behavior-changes).
+
+Previous: [Reddit intake: match News-Express's newest relay work (body media, `429` evidence)](CHANGELOG.md#2026-11-24--reddit-intake-match-news-expresss-newest-relay-work-body-media-429-evidence).
 
 Previous: [Fix: the Python-doc guard must survive the production repo (it reddened the monitor)](CHANGELOG.md#2026-11-23--fix-the-python-doc-guard-must-survive-the-production-repo-it-reddened-the-monitor).
 

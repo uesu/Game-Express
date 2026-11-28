@@ -43,6 +43,16 @@ scripts or re-host their images — cards link to the URLs those databases publi
 
 ### News, schedules, codes and fallback sources
 
+Research candidates, not new monitor integrations: [Crimson Witch](https://www.crimsonwitch.com/codes)
+(code tracker; also a published upstream of the Ennead HoYo collector),
+[heartlog/Hoyocodes](https://github.com/heartlog/Hoyocodes) (Ennead-powered frontend), and the
+[Endfield](https://endfield.gryphline.com/en-us/news), [NTE](https://nte.perfectworld.com/en/article/news/index.html)
+and [Silver Palace](https://silverpalace.elementagames.com/en-us/news) official news sites.
+See [source research](SOURCES.md#research-crimson-witch-hoyocodes-and-prospective-games-2026-11-27)
+for evidence and unresolved integration questions. Thanks to [jino9492/subculture-calendar](https://github.com/jino9492/subculture-calendar)
+for documenting the Endfield CMS host and app code, and [logreus-cloud/genshinflex](https://github.com/logreus-cloud/genshinflex/issues/53)
+for documenting Silver Palace news endpoints.
+
 - [seriaati/hoyo-codes](https://github.com/seriaati/hoyo-codes) and [hoyo-update-notifier](https://github.com/seriaati/hoyo-update-notifier) ([hun.seria.moe](https://hun.seria.moe/)) — the verified code API, the Sophon/launcher endpoints, and the `getGlobalApplicationMaintenance` maintenance gate with its headers and `game_biz` values behind feature 4's *Servers Live* card
 - [yeci226/ZZZ](https://github.com/yeci226/ZZZ) — an independent production reader of the same maintenance gate (`src/utilities/news/sources.ts`), used to cross-check the response shape (`application_maintenance: object | null`) and the Star Rail gateway host
 - [TheLovinator1/wutheringwaves](https://github.com/TheLovinator1/wutheringwaves) — a GitHub Atom mirror of the Wuthering Waves news list, read only as a fallback for WuWa banner notices. The repository declares no license (checked 2026-10-09).
@@ -66,7 +76,7 @@ scripts or re-host their images — cards link to the URLs those databases publi
 
 ## Tools and contributors
 
-- [aiohttp](https://github.com/aio-libs/aiohttp), [feedparser](https://github.com/kurtmckee/feedparser), [python-dotenv](https://github.com/theskumar/python-dotenv) — the entire runtime dependency list
+- [aiohttp](https://github.com/aio-libs/aiohttp), [feedparser](https://github.com/kurtmckee/feedparser), [python-dotenv](https://github.com/theskumar/python-dotenv) and [imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg) / [FFmpeg](https://ffmpeg.org/) — runtime dependencies; FFmpeg is used for bounded conversion of oversized mislabelled animated GIFs
 - [astral-sh/uv](https://github.com/astral-sh/uv), [ruff](https://github.com/astral-sh/ruff), [pytest](https://github.com/pytest-dev/pytest) and [PyYAML](https://github.com/yaml/pyyaml) (installs, linting and offline/workflow verification), [zizmor](https://github.com/zizmorcore/zizmor), [rhysd/actionlint](https://github.com/rhysd/actionlint) and [reviewdog/action-actionlint](https://github.com/reviewdog/action-actionlint) (workflow auditing), [pypa/gh-action-pip-audit](https://github.com/pypa/gh-action-pip-audit) (CVE checks), [peter-evans/create-pull-request](https://github.com/peter-evans/create-pull-request)
 - Discord's [Components V2](https://discord.com/developers/docs/components/reference), [Discohook](https://discohook.app) (payload inspection), and [cron-job.org](https://cron-job.org/) (the external scheduler)
 
@@ -128,3 +138,13 @@ https://hsr.gachabase.net/ · https://www.huroka.com/ · https://hsr.yatta.top/e
 - **[Wuthery/kuro.py](https://github.com/Wuthery/kuro.py)** ([PyPI](https://pypi.org/project/kuro.py/)) — KuroBBS/game-account API wrapper, not an ordered beta feed.
 - **[seriaati/ZenlessAssetScrape](https://github.com/seriaati/ZenlessAssetScrape)** — asset research; its README recommends Hakushin's API. Official [Genshin character pages](https://genshin.hoyoverse.com/en/character/mondstadt) provide published character context, not a beta history contract.
 - **[Discohook documentation](https://docs.discohook.app/)** ([text index](https://docs.discohook.app/llms.txt)) — reference for inspecting and editing Discord payloads; a manual edit succeeding does not establish the cause of an earlier unresolved media response.
+
+### Feature 3 follow-up research
+
+Thanks to the official NTE, GRYPHLINE Endfield and Silver Palace publishers and their CDN/API
+operators for the article text and native media used in the inactive candidate research. Thanks
+also to HoYoLAB and YouTube for the official post and verified thumbnail reference. The
+[SKPORT API documentation community project](https://github.com/AixLnyt/skport-api-docs) helped
+scope research; its account/game APIs are **not** used as an official community-news feed.
+Read-only GitHub Actions probes, aiohttp, pytest and Ruff supported the fidelity checks; see
+[the evidence and limits](SOURCES.md#feature-3-follow-up-bounded-fidelity-audit-and-skport-2026-11-27).

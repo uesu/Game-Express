@@ -1,5 +1,153 @@
 # Changelog — current entries
 
+## 2026-11-27 — Opt-in candidate news release preparation
+
+- Opened the candidate release switch while retaining explicit backfill opt-in, an authority and
+  dedicated routes, attended route binding and per-page write-ahead checkpoints. This does not
+  initialize production, alter its settings, or by itself send a backlog. A production deployment
+  still requires the operator to verify first-install channel history and follow the activation order.
+- Use a candidate-only 120-page article limit, matching the completed private historical test;
+  the existing 12-page default otherwise holds known long articles and blocks catch-up. Existing
+  news page limits remain unchanged; character, media and per-run safety bounds still apply.
+- [A no-Discord-post release probe](https://github.com/uesu/Game-Express/actions/runs/46138723143)
+  exercised the real enabled runner, live discovery/rendering and synthetic sends with a local
+  bare-Git ledger for all three sources. It verified remote intent before four fake page sends;
+  Silver article 34 rendered at 32 pages. It does not prove production GitHub or Discord delivery.
+- Real production initialization, recovery and real-source delivery remain unvalidated until
+  performed; optional separate-repository standby remains experimental and is not needed.
+
+## 2026-11-27 — Single production repository clarification
+
+- Added a no-network, multi-process crash test using the integrated candidate runner and a local
+  bare-Git remote. A process exits during a synthetic send, a fresh process holds on the persisted
+  intent, an independently invoked reviewed synthetic resolution is checkpointed, and a further
+  restart finalizes without a second send. This is not a Discord or production recovery test.
+
+- Clarified that Game-Express is the development source and `uesu/8mqzv4k2n7c` is the sole
+  live Game-Express instance for Features 1–4, with Feature 5 off. Its posting records remain
+  authoritative; no standby or scheduler change is required. The chosen interval is 10 minutes.
+- Added explicit sync protection for the production variables/secrets inventory. Renamed the
+  Markdown-format beta test fixture to a text extension without changing its content, keeping
+  production CI coverage while leaving project manuals in development. Smoke tests cover inventory
+  and both state files, including staging safeguards. No production sync or settings were changed.
+- Feature 3 remains hard-gated; production initialization, recovery and live-source delivery have
+  not been validated, and historical backfill requires separate approval.
+
+## 2026-11-27 — Experimental shared-ledger candidate standby
+
+- Added a gated, explicitly opted-in standby path using the primary's authoritative Git branch
+  and per-page intent checkpoints, not a copied ledger. It requires the existing heartbeat to
+  activate the standby, exact repository/ref identities, a current standby checkout and a
+  narrowly scoped cross-repository credential. Attended first-install initialization binds all
+  three route fingerprints before discovery; neither primary nor standby silently creates or
+  rebinds a missing source record.
+- Local bare-Git tests cover primary/standby races, ambiguous primary outcomes, reviewed
+  recovery and repeat holds. A no-send GitHub simulation used a real read-only second-repository
+  checkout and authority-branch checkpoints with simulated standby identity and heartbeat; it is
+  not a separately triggered standby job. Production failover remains unvalidated; force-pushes,
+  independent ledgers and noncooperative writers are not fenced.
+  Candidate delivery remains hard-gated and no production configuration was changed.
+- Added a paused-writer, no-Discord-post preview that validates a bound route and ledger, fetches
+  a live source and plans the next article without checkpointing. It reports counts, not a visual
+  Discord preview, and does not prove Discord acceptance. A no-send development GitHub run
+  completed that preview for all three live official sources with synthetic destination routes.
+
+## 2026-11-27 — Private integrated runner test
+
+- With user approval, sent one explicitly synthetic, private test message through the real
+  candidate runner, renderer, GIF planner and Discord multipart sender. The synthetic source
+  used a local bare-Git ledger and a test-only release override; the one-use development lock is
+  permanently claimed. The user confirmed that the synthetic GIF animates and supplied screenshots
+  of both frames. This is not a production or cross-repository failover test. The candidate release
+  gate remains closed.
+- A separate development-only GitHub simulation covered remote intent checkpoints, an ambiguous
+  hold across runner invocations, a simulated reviewed absent resolution and a monitor-style
+  state rebase, without Discord requests. The runner invocations were in one Python process.
+
+## 2026-11-27 — Guarded candidate ledger initialization
+
+- Added attended initialization of an empty candidate ledger with a full-history check, unique
+  dedicated destinations, primary authority and explicit first-install/backfill and paused-writer
+  confirmation. It never posts, cannot prove discarded/external history and must not restore lost
+  state. A development-only GitHub probe exercised the real initializer against a synthetic ledger,
+  with no Discord posts. Checkout credentials are not persisted; the Git token is scoped to the
+  final operation, with the same setup verified by a second synthetic GitHub probe. Candidates
+  remain gated; no production initialization has been performed.
+- Documented the exact future secret and variable names, including the candidate game selection
+  and its historical-backfill semantics. Do not activate these settings until release review.
+
+## 2026-11-27 — Attended candidate recovery and integrated test
+
+- Added a manual-only recovery workflow and operator procedure: inspect validates the existing
+  ledger and route without posting; a reviewed resolution requires explicit attestations, exact
+  held article/page/signature and a durable checkpoint. It cannot verify a user's Discord evidence
+  or pause other repositories and must never automatically resume a held send. The candidate
+  delivery gate remains closed pending production provisioning and real recovery validation.
+- An offline integrated test exercises the actual candidate runner, renderer, GIF planner,
+  multipart sender and isolated Git ledger with a fake Discord transport. A separate development
+  GitHub run checkpointed and reopened a synthetic reviewed resolution without posting. Updated the scheduler
+  guide to describe the operator-selected interval rather than prescribing five minutes.
+
+## 2026-11-27 — Candidate news checkpoint race hardening
+
+- Checkpoint commits now carry unique nonces. Local fixed-clock competing Git writers with the
+  same parent and state cannot accidentally create the same commit and both believe they won.
+  Offline races also exercise competing delivery coordinators; the production-sync preflight
+  now runs the candidate source, delivery and animation regression files. Development-only
+  private tool tests no longer run in a production checkout that lacks those tools. GIF conversion
+  avoids upscaling sources narrower than the chosen output width. Candidate delivery remains hard-gated: the production ledger, live crash recovery and failover still need review.
+
+## 2026-11-27 — Feature 3 animated media follow-up
+
+- For official news, identify GIF-signature media with misleading MIME or file extensions and
+  prepare correctly labelled Discord attachments in source order. Use the original bytes when
+  they fit; larger animations are converted under bounded size, frame and timing limits. Ordinary
+  static images and correctly labelled GIFs retain their previous path. The planner applies to
+  HoYoLAB, Kuro and all three gated candidate sources; the latter remain disabled in production.
+- Discord upload requests for these files stop on ambiguous outcomes. Existing-news updates to a
+  message containing an uploaded GIF are held for manual review, as are unsupported or oversized
+  animations; reveal pings on such messages are suppressed for attachment pagination safety.
+  Full Silver 93/99 private article playback was user-confirmed. The follow-up packs multiple GIFs
+  per original page where limits permit. New private tests sent 93 in three messages and 99 in
+  one; the user confirmed that the packed layout looks good and the GIFs play.
+  Release, checkpoint persistence and failover are not yet validated.
+
+## 2026-11-27 — Read-only source research (no production behavior changes)
+
+- Prepared candidate news source adapters, queue, full-article rendering and a fail-closed
+  coordinator. An experimental monitor path remains behind a hard-coded release gate: no
+  candidate source is enabled or can post through it. Local tests exercise same-branch Git
+  checkpoints, a one-shot sender, bounded paging and mock runner wiring; production persistence,
+  failure/reconciliation and cross-instance safety are not yet validated. No backlog was sent.
+- A bounded private test confirmed four messages across three new articles, including a two-page
+  resume using an isolated local Git ledger. It did not touch production state. Added fail-closed
+  reconciliation primitives and local stale-writer/crash tests; production recovery is still gated.
+  The gated path now uses a detached-worktree ledger, isolated from monitor state, and prod sync
+  protects it. A development-branch GitHub probe passed with simulated sends and a throwaway
+  ledger; production provisioning and cross-repository/failover operation remain unverified.
+- Started a user-authorized full private-channel historical test, with isolated comment journals,
+  one-shot bounded batches, keyed message-ID hashes and stop-on-ambiguity. The production release
+  gate remains closed; the private run is not a production backlog or a completeness guarantee.
+- Corrected candidate Silver Palace duplicate lead artwork only when a bounded official-host byte
+  comparison proves the cover equals the first body image. Other media remain unchanged; the
+  corrected article 7 card was tested once privately and the test was locked against reruns.
+- Candidate YouTube fallback prefers verified maximum-resolution thumbnails without overriding
+  native media. Private card tests and read-only source observations are recorded in the source
+  research notes; same-day publication order remains unproven for day-only feeds.
+- Prototyped unregistered Endfield, NTE and Silver Palace readers with checked listing scans,
+  detail validation and candidate-only routing. Existing game news behavior is unchanged.
+
+- Documented Crimson Witch's upstream overlap with Ennead, Hoyocodes' use of Ennead,
+  candidate code endpoints and official news/community sources for Endfield, NTE and Silver
+  Palace, including the limits of the observations and remaining integration gates.
+- Added a manual, secret-free, bounded public-source research probe with offline self-tests.
+  Follow-up research found the Endfield CMS host and app code; the probe covers two listing
+  pages and one detail endpoint for each of Endfield and Silver Palace, and documents sticky
+  and out-of-order items plus day-only timestamps. Initial observations came from a page-fetching
+  service; the later runner observations and prototype are described above. The research probe
+  is not a production monitor or reliability guarantee. Existing games,
+  source votes, Reddit/X scope, cards, webhooks and state are unchanged.
+
 ## 2026-11-24 — Reddit intake: match News-Express's newest relay work (body media, `429` evidence)
 
 - **What happened.** Game-Express's Reddit and X adapters were ported from the sibling
@@ -575,7 +723,8 @@
 - **Why.** The policy must name every third-party host the monitor sends requests to; the docs
   index should start with its introduction.
 - **Not changed.** The documented cron-job.org interval (every 5 minutes) is the recommendation;
-  the operator's live instance dispatches every 10 minutes — both are supported, nothing to fix.
+  the operator's live instance dispatched every 10 minutes. **Superseded:** the interval is the
+  operator's choice; there is no current five-minute recommendation.
 
 ## 2026-11-06 — X: nitter rotation #8 — the teapawt family leads, mizuki.st joins, meowing/miningtcup demoted
 
@@ -1979,7 +2128,8 @@ documentation accuracy sweep**
   run across GI/HSR/ZZZ/HNA) and that every enabled game's X account is probed across the nitter
   fleet, `nitter.cf` first — including the two new accounts `@HonkaiNA` and
   `@Ananta_EN`. Dropping a sort or a gid now fails CI instead of quietly missing announcements.
-- **The recommended poll interval is now 5 minutes, not 10** — halving the average time-to-post
+- **Historical note (recommendation superseded):** a five-minute interval was previously suggested,
+  not required — halving the average time-to-post
   with no code change. `docs/SCHEDULER.md` gains a measured *How fast can it poll?* section: runs
   take 19–36 s (≈8 % of a 5-minute slot), overlap is impossible by construction, GitHub is free
   for public repos, and the real limit is politeness toward volunteer-run upstreams. 3 minutes is

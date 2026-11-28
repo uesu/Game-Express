@@ -177,13 +177,13 @@ If the title link or the picture is wrong:
 
 ## 5. Healthy-system checklist (check weekly, or when in doubt)
 
-- [ ] cron-job.org **History**: `204` every 5 minutes (per instance).
-- [ ] **Actions**: green *Game-Express Monitor* runs every 5 minutes. Red = open it; the summary
+- [ ] cron-job.org **History**: `204` at the chosen interval (currently 10 minutes).
+- [ ] **Actions**: green *Game-Express Monitor* runs at the chosen interval. Red = open it; the summary
       says why.
 - [ ] **alpha commits a heartbeat** (`auto: update state`) at least once an hour
       (`HEARTBEAT_MINUTES=60`).
-- [ ] **Codes appear within ~10 minutes** of a livestream (official codes skip the 2-source
-      rule).
+- [ ] **Codes appear promptly** after a livestream; delays can include the chosen interval,
+      propagation and source failures (official codes skip the 2-source rule).
 - [ ] **Schedule cards appear** after an official *Special Program / Broadcast* post, and are
       **edited silently** once the maintenance notice arrives: pre-install, start, end and
       compensation fill in with no second ping.

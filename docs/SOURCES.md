@@ -412,6 +412,344 @@ page fetcher, and so were the ennead calendars. The production reachability of t
 - **`api.ennead.cc/mihoyo`** root: codes only (`/codes` for Genshin, Star Rail, ZZZ, Honkai, Themis).
 - `Ertezy/Gacha-hub-info` (= `Kitsudock-data`): already the hub feed (`hub.json`), used since v1.3.0.
 
+## Research: Crimson Witch, Hoyocodes and prospective games (2026-11-27)
+
+**Research only, not an enabled feature or reliability certification.** This introduction
+covers the original research; the NTE, Endfield and Silver Palace news adapters subsequently
+became opt-in candidate delivery paths, requiring separate production setup. Web-page observations
+below came from a page-fetching service, not this repository's HTTP client or a GitHub Actions
+runner. A single observation cannot prove freshness, uptime, complete pagination, or redemption.
+
+The attended private expanded-card test [run 46014528959](https://github.com/uesu/Game-Express/actions/runs/46014528959)
+posted 14 test messages without production state. The user subsequently confirmed that the
+shown Endfield GIFs animate and the text format looked good. In the [read-only comparison
+run 46024433163](https://github.com/uesu/Game-Express/actions/runs/46024433163), the same fixed
+Endfield `1340` article was an excerpt in default mode but complete across six expanded pages;
+`3840`, NTE `252469`, and Silver `1`/`120` were not excerpted in either tested mode. These
+are fixed-article observations, not proof for all future articles. The candidate-only YouTube
+fallback verifies maximum-resolution thumbnail dimensions/signature first and falls back when
+unavailable; native images/video remain preferred.
+
+The user separately authorized a full **private-channel** historic test. A fixed read-only snapshot
+observed 103 NTE, 143 Endfield and 21 Silver Palace articles. Test-only JSON journals in three
+[PR comments](https://github.com/uesu/Game-Express/pull/174) persist the queue and page intents;
+they contain no webhook, token or raw Discord message ID (IDs are keyed hashes). Only one
+non-cancelling Actions job sends at a time. Every unknown delivery or unconfirmed journal update
+holds the entire test, and no automatic retry is permitted. Ordering across sources is by UTC
+calendar date; the day-only sources cannot prove within-day chronology. The private test includes
+earlier sample articles intentionally. It does not write production state, and a finite snapshot
+cannot prove that an upstream listing never omitted an item. The attended test stopped on
+[batch 46076148028](https://github.com/uesu/Game-Express/actions/runs/46076148028); the user-provided
+log confirmed the batch sent 11 pages before a `DeliveryHold`. The journals showed 62 completed
+articles with no page in flight. Read-only [diagnostic 46088726143](https://github.com/uesu/Game-Express/actions/runs/46088726143)
+identified the next article, Silver 34, as a 112,270-character body containing a very long
+ideographic-comma-separated token. The renderer now safely splits such plain lists at their commas,
+without dropping characters, and still holds unknown unsplittable tokens or formatting. In the
+private test only, the page cap was raised to a bounded 120. [Diagnostic 46088975034](https://github.com/uesu/Game-Express/actions/runs/46088975034)
+confirmed full rendering across 32 pages and media preflight; 4,260 separators survived rendering.
+The journaled private queue was resumed, paced and oldest-first. It later stopped at
+[batch 46090849744](https://github.com/uesu/Game-Express/actions/runs/46090849744) before Endfield
+4494: the source had an unmatched literal `]` that prevented safe pagination. The Endfield adapter
+escapes unmatched brackets without changing balanced links; [diagnostic 46091136496](https://github.com/uesu/Game-Express/actions/runs/46091136496)
+rendered the whole article in four pages and preflighted its media. Another hold preceded NTE 261919,
+whose official CDN path contained an unencoded space. Only official NTE CDN path spaces are now
+percent-encoded, without relaxing generic URL validation; [diagnostic 46091741693](https://github.com/uesu/Game-Express/actions/runs/46091741693)
+confirmed render and media preflight.
+
+The private historic test subsequently **completed**: the journals confirmed 103/103 NTE,
+143/143 Endfield and 21/21 Silver Palace articles, with no pending or partial articles. The last
+batch was [46096334852](https://github.com/uesu/Game-Express/actions/runs/46096334852). The
+separate Taygedo correction is not included in those counts. Day-only timestamps still cannot
+establish exact same-day publication order, and the snapshot does not prove upstream completeness.
+This private test is not evidence of production delivery or failover readiness.
+
+NTE article 252478 contained literal double tildes, which Discord interpreted as a strikethrough
+across paragraphs. NTE parsing now escapes literal tildes in prose while preserving actual HTML
+strike markup and URLs; unrelated sources retain their previous behavior. The user-authorized
+[correction 46088897298](https://github.com/uesu/Game-Express/actions/runs/46088897298) sent one
+corrected card, with an independent durable journal and no change to production state.
+
+The owner requests initial production catch-up oldest to newest, recording confirmed delivery.
+The candidate pipeline checks two complete listing walks, adapts details to the existing card
+renderer, uses exact dedicated webhook routes, and queues every observed ID oldest first. Numeric
+ID is only a deterministic same-day tie-break, not evidence of publication time. Two matching scans
+reduce but cannot eliminate source pagination races.
+
+The opt-in monitor path uses a separate detached-worktree Git ledger to checkpoint write-ahead
+intent and confirmed IDs via same-branch push/ref checks,
+uses one-shot Discord POSTs, limits a source to one article / three pages per run, and requires full
+expanded output (holding rather than sending a safety-limit excerpt). Local mocked runner and bare
+Git tests do not establish production correctness. The detached-ledger checkpoint uses a random
+per-commit nonce so identical simultaneous writers cannot produce the same Git commit ID. Local
+fixed-clock bare-Git races now verify that one of two competing identical checkpoints wins and that
+only one of two competing delivery coordinators sends. A separate local test rebases the monitor
+state commit over the ledger. A further development-only GitHub Actions simulation (detailed below) exercises a monitor-style
+rebase and reviewed recovery. Production persistence, real ambiguous outcomes and
+cross-repository failover have not yet been validated. A single-repo
+Actions concurrency group is not a distributed lock. No backlog or production state change has
+been performed. Existing game news routing and behavior remain unchanged. A later [no-Discord release probe](https://github.com/uesu/Game-Express/actions/runs/46138723143)
+ran the enabled candidate runner with real listings and article rendering for all three sources,
+using a local bare-Git ledger and synthetic sends. It confirmed four fake page sends had remote
+intent checkpoints and rendered the known long Silver article 34 at 32 pages. This does not
+validate production GitHub or Discord delivery.
+
+A [private candidate pipeline test](https://github.com/uesu/Game-Express/actions/runs/46033400200)
+used three previously untested articles (NTE 252471, Endfield 3857, Silver Palace 7). Four
+messages were confirmed; the two-page Endfield article resumed from an isolated local bare-Git
+JSON ledger after page one. The pinned test is now locked against reruns. This is real Discord
+but **not** a real GitHub remote or production/failover test. The separate earlier NTE 252469
+max-resolution test was not repeated. Automated reconciliation tests now hold ambiguous pages and
+verify a human-reviewed resolution against the exact article, page, route and payload signature.
+An `absent` decision requires independently established non-delivery, not merely an unknown outcome;
+the corrected record must be durably checkpointed before resuming. The attended recovery workflow
+is implemented but production recovery remains unvalidated. Local bare-Git tests show the runner can checkpoint separately, a stale writer holds,
+and a normal state commit can rebase over the candidate ledger without changing it. A further
+offline integrated test exercises the real candidate runner, article renderer, GIF planner,
+multipart sender and isolated Git ledger together, with a fake Discord transport and synthetic
+media. A later [user-approved private synthetic test](https://github.com/uesu/Game-Express/actions/runs/46129689828)
+ran the real candidate runner, renderer, GIF planner and multipart sender against Discord, with
+synthetic listing/detail/media, a test-only in-process release override and a local bare-Git ledger.
+Exactly one message with one two-frame GIF was confirmed, including local pre-send and post-send
+checkpoints; a separate development-branch one-use lock prevents replay. No production webhook or
+state was used, and no private Discord message ID was committed to the public repository. The
+user confirmed that the synthetic GIF animates and supplied screenshots of its two frames. This is not a production GitHub
+checkpoint, live-source, recovery or cross-repository failover test. A separate
+[development-branch GitHub probe](https://github.com/uesu/Game-Express/actions/runs/46128111745)
+checkpointed a synthetic reviewed `absent` resolution to a temporary ledger, reopened it after
+fetching the updated branch and rejected a stale repeat; no Discord request or production state
+was involved. The temporary ledger was subsequently removed. A separate [synthetic GitHub runner
+simulation](https://github.com/uesu/Game-Express/actions/runs/46130253910) used the actual runner,
+renderer, GIF planner and development GitHub ledger, with a fake Discord transport: ambiguous
+response held, a later runner invocation held without retry, a simulated reviewed absent decision
+checkpointed, and a subsequent simulated confirmation was followed by a monitor-style commit/rebase.
+The run annotation says `restart=held`, but it was a new runner invocation **in the same Python
+process**, not a process restart. Temporary state files were removed and no Discord POST occurred.
+Neither probe validates the full recovery workflow, real delivery evidence or production failover.
+The attended workflow also offers a paused-writer, no-send preview of the next candidate's real
+listing/render/GIF plan against the existing bound ledger; it does not checkpoint, post, or prove
+Discord acceptance. A [development GitHub preview](https://github.com/uesu/Game-Express/actions/runs/46132264773)
+completed real listing, rendering and GIF planning for all three sources using a synthetic bound
+ledger and fake destination URLs; no Discord post or checkpoint occurred, and the fixture was
+removed. Production preview and recovery have not been run. Production sync now runs the candidate offline regression
+files before applying changes and protects `state/candidate_news.json` from
+creation, modification or deletion; it is not provisioned automatically. An attended, no-post
+first-install initializer checks for previously tracked ledger history, pins three distinct route
+fingerprints in otherwise empty source records, and requires explicit first-install/backfill and
+writer-pause attestations; it cannot detect force-pushed or external
+history and has not been validated in production. A [newer no-send GitHub probe](https://github.com/uesu/Game-Express/actions/runs/46131973530)
+verified route-bound initialization and repeat refusal with synthetic routes on the development
+branch; its temporary ledger was removed. A [development-only GitHub Actions
+probe](https://github.com/uesu/Game-Express/actions/runs/46128928271) exercised the actual
+initialization entry point and remote push with synthetic webhook URLs and a temporary, non-production
+ledger path; it reopened the branch and rejected a repeat without sending. A [second synthetic
+probe](https://github.com/uesu/Game-Express/actions/runs/46129190239) verified the same Git push
+with checkout credential persistence disabled and the token scoped to the final operation. Both
+fixtures were removed. A controlled
+[development-branch GitHub probe](https://github.com/uesu/Game-Express/actions/runs/46037384333)
+confirmed real pushes/ref verification, a stale writer hold and two simulated pages in a separate
+throwaway ledger, without Discord or monitor-state writes. Its `restart=pass` annotation means
+resumption between coordinator calls in the same process, **not** a new-process restart; that
+stronger case is only locally tested. The probe ledger was removed after the run. This is not
+production or cross-repository failover validation.
+
+The opt-in delivery path also requires an explicitly nominated `NEWS_CANDIDATES_AUTHORITY_REPOSITORY`
+and `NEWS_CANDIDATES_AUTHORITY_BRANCH`, matching primary role, Actions repository/ref, allowed event,
+and HTTPS origin. An opt-in experimental standby now checks out the same authoritative branch
+with a separately scoped Git credential after the existing heartbeat marks it active. Each source route must
+already be bound by attended first-install initialization; both writers use the same ledger and per-page Git
+intent checkpoints. Offline tests cover a primary/standby race and reviewed recovery against a shared bare-Git remote.
+A [no-send GitHub simulation](https://github.com/uesu/Game-Express/actions/runs/46131615180)
+used a read-only checkout of a second public repository, real authenticated GitHub checkpoints in
+a temporary development-branch ledger, synthetic data and a fake Discord sender. It simulated the
+standby Actions identity and active heartbeat inside the process; the credential came from the
+authority job, not an independently configured standby. Earlier runs 46131430195 and 46131498312
+held before writes because the credential-format check was too narrow; the subsequent fix accepts
+bounded printable credentials without putting them in a URL or Git argv. The fixture was removed.
+Real standby-issued credentials, separately triggered jobs and production failover remain unvalidated. A repo-local concurrency group is not a distributed lock; force-pushes, independent
+ledgers, noncooperating writers and incorrect human reconciliation remain outside this protection. A local
+checkpointed reconciliation primitive validates an operator's decision and persists it without
+sending. A manual-only attended recovery workflow now exposes inspect and guarded resolve, but
+cannot independently prove delivery or pause cross-repository writers; production recovery is not
+yet validated. All writers must be
+paused for human review and an uncertain Git checkpoint must be inspected before any retry.
+
+Silver Palace article 7 exposed a duplicated lead image: the cover and first body image had
+different URLs but were byte-identical 1626×500 JPEGs. Its separate 800×444 `banner_img` is the
+listing artwork, not the missing article image ([read-only comparison](https://github.com/uesu/Game-Express/actions/runs/46036322461)).
+The candidate renderer now compares complete, bounded official-host image responses and drops only
+a cover proven byte-identical to the first body image, retaining body order. On comparison failure
+or distinct content it keeps both; this is not perceptual deduplication. The corrected
+[private card](https://github.com/uesu/Game-Express/actions/runs/46036854435) sent exactly once
+with one body image and unchanged production state; the test is locked against reruns.
+
+- [Crimson Witch](https://www.crimsonwitch.com/codes): its Genshin, Star Rail and ZZZ pages
+  displayed active code/reward sections and links to RSS feeds (`/feeds/genshin/rss.xml`,
+  `/feeds/star%20rail/rss.xml`, `/feeds/zzz/rss.xml`). A page fetch of the Star Rail feed failed;
+  its format and runner reachability remain unverified. The screenshot's Genshin code also
+  appeared on the Genshin page; that is an observation, not proof of how that card was sourced.
+  At [hoyoverse-api revision 85be772](https://github.com/torikushiii/hoyoverse-api/tree/85be77283263da21affa66edf31e040c06c75f74/src/scraper/sources),
+  its `genshin`, `starrail`, and `zenless` collectors each call a shared Crimson Witch scraper.
+  This establishes a possible upstream dependency, not that a specific live Ennead item came from
+  Crimson Witch. Counting a direct copy as an independent witness risks double counting. **No new
+  direct scraper, ranking change, or additional source vote was added.**
+- [Hoyocodes](https://github.com/heartlog/Hoyocodes/tree/9bb1e889d4bfc620afb1e3d290e5f286b913498d)
+  is a frontend that fetches `/mihoyo/{game}/codes` from Ennead, not another independent backend.
+  The existing `ennead:genshin`, `ennead:starrail` and `ennead:zenless` sources already read
+  those same endpoints; `ogc` and `ennead` count as one family. The page fetcher returned
+  active/inactive JSON for all three on 2026-11-27, including the screenshot's Genshin and ZZZ
+  examples. The site itself and the monitor's live execution were not exercised end-to-end here,
+  nor can current uptime or code validity be guaranteed.
+- [Open Gacha Codes](https://github.com/torikushiii/OpenGachaCodes/tree/172cf88a0cc7c2b413291c7bb212e8de3d1104a0)
+  documents `https://api.ennead.cc/codes/endfield` and `/codes/nte`. On 2026-11-27 the page
+  fetcher returned five Endfield rows and an empty NTE array. Empty does not distinguish truly
+  no active codes from missing or stale coverage. The published collector uses Game8 plus
+  Mobalytics for Endfield and Game8 for NTE; they are not independent witnesses from their own
+  downstream aggregator. Endfield and NTE guides describe **in-game** redemption, not a verified
+  prefilled official web redemption URL. Compare [Endfield](https://game8.co/games/Arknights-Endfield/archives/571509)
+  and [NTE](https://game8.co/games/Neverness-to-Everness/archives/593718); expiry claims can
+  conflict or be stale, so do not equate a 200 response with usable live codes.
+- Official news candidates: [Endfield](https://endfield.gryphline.com/en-us/news),
+  [NTE](https://nte.perfectworld.com/en/article/news/index.html), and
+  [Silver Palace](https://silverpalace.elementagames.com/en-us/news). The page fetcher rendered
+  the listings; NTE exposed dated article links and a paginated list, and one article was fetched.
+  The rendered Endfield and Silver Palace listings did not expose article links in that output.
+  NTE's list had only three entries per page in this observation; a first-page-only poll can lose
+  articles. Two NTE list pages also passed fixed-URL HTML structure checks on
+  [runner 45961114831](https://github.com/uesu/Game-Express/actions/runs/45961114831).
+  An inactive `nte_candidate.py` parses displayed calendar days rather than URL creation dates,
+  validates canonical article paths and bodies, and compares two bounded complete listing walks.
+  It is not a registered production source or proof of an atomic upstream snapshot. The capture
+  and screenshot show article `265053` displayed as 2026-11-20 although its path has 20261113;
+  no publication hour or timezone should be inferred from either value. User screenshots and
+  the supplied `nte.txt` contain three article HTML documents: the 2024-08-30 trailer has a
+  YouTube iframe, the 2026-11-09 maintenance notes have one body image, and the 2026-05-26
+  special-program recap has ten body images. Those counts are structural, not Discord playback
+  proof. The bounded development-only media inventory scans candidate article bodies without
+  fetching embedded media, following redirects, writing fixtures or printing content; it is
+  exploratory and does not enable a production reader.
+- **Endfield CMS discovery:** [jino9492/subculture-calendar](https://github.com/jino9492/subculture-calendar)
+  documents the official `web-news.gryphline.com/api/bulletin` endpoint and
+  `code=arknights_endfield_official`. A separate page-fetching service returned `code: 0` from
+  [English page 1](https://web-news.gryphline.com/api/bulletin?lang=en-us&code=arknights_endfield_official&page=1&pageSize=20)
+  and [page 2](https://web-news.gryphline.com/api/bulletin?lang=en-us&code=arknights_endfield_official&page=2&pageSize=20)
+  on 2026-11-27. Page 1 had 20 rows, `current: 1`, `pageSize: 20`, `total: 143`, with `cid`,
+  `tab`, `displayTime`, `cover` and `brief`. Its sticky rows precede newer non-sticky rows, so
+  **never stop pagination simply at the first old row**. Detail requests for
+  [7011](https://web-news.gryphline.com/api/bulletin/7011?lang=en-us&code=arknights_endfield_official)
+  and [0740](https://web-news.gryphline.com/api/bulletin/0740?lang=en-us&code=arknights_endfield_official)
+  returned corresponding article data; `cid` is a string and leading zeroes must be preserved.
+  This corrects the earlier assessment that the CMS host and app code were unknown. It is
+  **not** evidence of production Fetcher or GitHub-runner reachability, complete pagination,
+  safe media rendering, fidelity of the article body, or an implemented news adapter. The
+  read-only research probe includes listing pages and detail URLs. On GitHub-hosted runner
+  [45961114831](https://github.com/uesu/Game-Express/actions/runs/45961114831), fixed-URL
+  structural checks for two list pages and two details passed; a separate
+  [run 45961382489](https://github.com/uesu/Game-Express/actions/runs/45961382489) successfully
+  exercised a complete bounded listing and detail 0740 through the production `Fetcher` and
+  the unregistered prototype `sources/endfield.py`. The latter run's required CI test failed
+  on the production-manifest file count, subsequently corrected; the candidate step itself passed.
+  Log downloads were unavailable here, so no raw response fixtures were captured. A single run
+  does not establish uptime, publication completeness, article/media fidelity, bootstrap or
+  operational readiness. The prototype fails closed on pagination drift, duplicate IDs, invalid
+  shapes or a greater than 20-page listing. It is not selected by `run_news` and no game is enabled.
+- **Maintenance candidates:** Endfield's [pre-download and update notice](https://endfield.gryphline.com/en-us/news/3835)
+  states that pre-download is available, plus Asia and Americas/Europe maintenance windows with
+  explicit UTC offsets. Its version is given by name, not a numeric version. NTE's official
+  [1.5 patch notes](https://nte.perfectworld.com/en/article/news/gamenews/20261109/264948.html)
+  state a scheduled 06:00–11:00 (UTC+8) maintenance and note it may finish early or late.
+  Scheduled end is not evidence servers actually opened; parsing, version identity, source
+  ingestion and false-positive tests are still needed before feature 4 is safe to activate.
+  [NTE's launch pre-download notice](https://nte.perfectworld.com/en/article/news/gamenews/20260424/261919.html)
+  states it is live but describes the initial release, not proof of recurring update pre-downloads.
+- **Silver Palace news API:** [logreus-cloud/genshinflex #53](https://github.com/logreus-cloud/genshinflex/issues/53)
+  documents `server/index.php/home/news_list` and `news_detail` on the official site. The separate
+  page-fetching service returned `code: 0` for [English page 1](https://silverpalace.elementagames.com/server/index.php/home/news_list?lang=en-us&page=1),
+  [page 2](https://silverpalace.elementagames.com/server/index.php/home/news_list?lang=en-us&page=2),
+  and [detail id 120](https://silverpalace.elementagames.com/server/index.php/home/news_detail?lang=en-us&id=120).
+  Page 1 returned three rows and `total_page: 7`; page 2 was not strictly date-sorted. The
+  observed `publish_date` is day-only: converting it to midnight then using the existing
+  timestamp floor risks silently skipping same-day additions. Determine timezone, publication
+  precision and an ID-aware safe baseline before implementing. Body markup/media fidelity and
+  safe delivery remain unverified. Fixed-URL runner structural checks
+  passed for two pages and one detail in [run 45961114831](https://github.com/uesu/Game-Express/actions/runs/45961114831);
+  this confirms neither ongoing availability nor completeness, nor the timestamp semantics.
+  `sources/silverpalace.py` is an **unregistered listing and detail prototype**. It makes two bounded
+  complete walks, validates IDs and calendar dates without inventing a publication instant, and
+  rejects drift, ambiguous empty pages and duplicate IDs. Matching walks reduce some races but
+  do not prove an atomic upstream snapshot. The detail experiment checks matching ID, title and
+  day, requires the observed exact cover host, and passes content to the existing block parser;
+  The user's browser screenshot shows the official article route `en-us/newsDetail?id=120`
+  alongside detail 120; the prototype now constructs that fixed-host route from the validated ID.
+  One example does not prove all links. It does not verify body fidelity, validate embedded media
+  or redirects, post to Discord, or integrate with the runner. In [run 45983530944](https://github.com/uesu/Game-Express/actions/runs/45983530944),
+  the production Fetcher completed two walks (21 rows) and parsed matching detail 120 (one
+  block); that is a single structural observation, not article fidelity or delivery proof.
+  An independent, unregistered
+  `day_news_candidate.py` tests a possible ID-based silent baseline and retry queue without
+  converting date-only values into timestamps. It queues newly observed IDs even when their
+  displayed dates are old, retains pending items if they disappear, fails closed at a fixed ID
+  cap or on route/state mismatch, and needs a complete valid source snapshot. This explicitly
+  favors not silently dropping backdated arrivals over avoiding historical backfills. It has no
+  webhook, state-persistence or multi-message partial-delivery integration, and cannot resolve
+  webhook-accepted/state-save-failed ambiguity. The eventual operational policy and tests must
+  be reviewed before activation; unchanged timestamp-floor behavior remains in use elsewhere.
+- [Elementa's official press release](https://www.elementagames.com/en-us/newsDetail/?id=14)
+  states that Silver Palace launches globally **December 14, 2026 (UTC+8)**, matching the
+  screenshot. Launch hour was not established. Treat feature 3 as the requested candidate,
+  not permission to activate the other features automatically.
+- Reddit candidates: [r/Endfield](https://www.reddit.com/r/Endfield/) describes itself as
+  community-run and partnered with Gryphline in the supplied screenshot; partnership does not
+  make every author official. [r/ArknightsEndfield](https://www.reddit.com/r/ArknightsEndfield/)
+  is unofficial; [r/NevernessToEverness](https://www.reddit.com/r/NevernessToEverness/) and
+  [r/SilverPalaceOfficial](https://www.reddit.com/r/SilverPalaceOfficial/) describe themselves as
+  official in the screenshots. Independent account verification is still needed; these labels
+  do not make every poster official. [News-Express #160](https://github.com/uesu/News-Express/pull/160)
+  added four Game-Express communities to Devvit defaults, and [#161](https://github.com/uesu/News-Express/pull/161)
+  split the 19 defaults across `subreddits` and `subredditsAdditional`. Supplied screenshots show
+  Devvit v0.0.14 uploaded and installed in r/GamingExpressRelay, both settings accepted, polls
+  reporting 19 subs and zero failed fetches, and Discord intake records for NevernessToEverness,
+  Endfield, ArknightsEndfield and SilverPalaceOfficial. These are examples of relay delivery,
+  not evidence of Game-Express consuming those records or continual per-target health. Merged defaults
+  and aggregate polling alone do not prove every target is healthy. The optional
+  `INTAKE_QUIET_TARGETS=1` infers coverage by kind, not by each target. No subreddit,
+  official-author allowlist, or trust rule was added to Game-Express.
+
+**Before implementation:** establish stable official listing/detail contracts, complete bounded
+pagination, UTC/timezone and media handling, safe bootstrap, outage/partial-response semantics and
+mocked end-to-end card/state tests. For schedule and maintenance, establish official program,
+version, preload and maintenance/server signals independently (including false-positive prevention);
+for codes, validate source families, availability, expiry, corroboration and in-game redemption.
+The supplied production configuration inventory has no dedicated news/code/maintenance webhook
+secrets for these three games and no new game entries in the feature selection variables. The
+schedule mirror is optional; the primary schedule webhook is shared. Do not change secrets or
+production switches until reviewed and configured by the operator.
+
+The manual `Source research probe (manual, read-only)` workflow runs fixed target groups from
+`tools/source_research_probe.py` and `tools/live_candidate_probe.py`; `--self-test` is offline.
+They request fixed public URLs, report bounded structural counts (not raw content), follow no
+redirects, use no secrets, and never touch Discord or state. The limited Reddit fleet and Endfield
+prototype run through existing reader code; they are not representative of authenticated or
+redirect-following production traffic. It is a **reconnaissance** tool, not a parser, correctness test,
+continuous monitor, or proof that any source is ready. HTTP failures fail the job; malformed
+shapes and empty lists are printed for human review, not silently accepted as validated data.
+The workflow was registered by probe-only [PR #172](https://github.com/uesu/Game-Express/pull/172)
+and dispatched on main in [run 45972342468](https://github.com/uesu/Game-Express/actions/runs/45972342468).
+The run's official source groups succeeded, but the job failed on three Crimson Witch RSS 404s.
+The draft branch no longer runs that unrelated, unintegrated group in its standard workflow; the
+old failures remain valid observations, and the explicit diagnostic is still available in the
+probe script. The main workflow retains the old step until the draft is reviewed and merged.
+Removing this unrelated check does not make other sources healthy: candidate probe statuses such as
+`unavailable`, `empty` and `rejected` are informational and do not themselves fail the job.
+Select the intended branch when dispatching. A successful dispatch is not evidence the probe ran
+or that a future run will succeed. In
+[runner 45964838716](https://github.com/uesu/Game-Express/actions/runs/45964838716) three fixed
+observed image URLs, one per game, returned HTTP 200 with recognized image signatures, but the
+Endfield prototype's actual rendered payload failed existing production media preflight. A later
+user screenshot shows all three fixed image links rendered when manually pasted into Discord; that
+is not a bot/webhook payload test, video test, redirect-safety guarantee or proof that Endfield's
+existing production preflight accepts its CDN. Required CI passed; the temporary research job failed because three Crimson
+Witch RSS endpoints returned 404, and its separate steps continued to completion.
+
 ## Evaluated but not integrated (and why)
 
 | Candidate | Verdict |
@@ -420,7 +758,7 @@ page fetcher, and so were the ennead calendars. The production reachability of t
 | parse.bot marketplace APIs (prydwen / icy-veins / genshin.gg / hoyolab) | paid third-party scrapers, not verifiable; not needed for official data |
 | `getGamePackages` (HoYoPlay legacy) | stale for Sophon games (see above) |
 | Hoyotod/code · Hoyotod/redeem | fandom-scraper pattern (we call the MediaWiki API directly) · redeem automation (requires accounts; out of scope) |
-| heartlog/Hoyocodes · promogacha.netlify.app | static sites. PromoGacha's GitHub JSON **is** used |
+| heartlog/Hoyocodes · promogacha.netlify.app | Hoyocodes is an Ennead frontend (same backend already used); PromoGacha's GitHub JSON **is** used |
 | chiraitori/HoYo_Code_Sender_Discord_Bot · Hum-Bao/hoyoverse-codes-backend · retvil/hoyo-code-monitor · lukascortes/gacha-codes-notifier | reference implementations; their sources are covered above (Hum-Bao's **published TXT lists** are used as a validator since v1.1) |
 | MoonShadow1976 WW asset repos | manually maintained, last updated Jan 2026, so too stale for codes |
 | DuolaD/HoYo_Versioncatcher | launcher-data repo; led us to the HoYoPlay launcher endpoints |
@@ -1090,3 +1428,71 @@ cannot serve immutable historical revision diffs, and multi-hundred-MB raw git d
 verified client curves, property IDs, markup grammars (`<Term:...>`, `<highlight>`, `{RUBY_*}`),
 and enum tables are baked directly into `gamexpress/beta.py` with **zero extra HTTP requests**.
 
+
+### Feature 3 follow-up: bounded fidelity audit and SKPORT (2026-11-27)
+
+In [read-only audit 46119240484](https://github.com/uesu/Game-Express/actions/runs/46119240484),
+the observed NTE and Silver Palace listings contained 103 and 21 articles respectively; every
+body parsed, and all 118 distinct body-media URLs responded to bounded signature inspection.
+No NTE body media in that snapshot was GIF-signature data. Twelve Silver URLs had GIF signatures
+although their path ended in `.jpg`, including all 9 body images in Silver article 93 and all 3
+in article 99. This signature check alone was not evidence of Discord rendering or playback;
+see the animation investigation below. The NTE 262101 and 262255 samples
+preserved 660 and 521 masked UIDs in source order with separators; 262998 put its Important Notes
+heading and first note on the same page. A later read-only audit checked all 30 observed account
+notices. These checks do not establish upstream completeness.
+
+The public [SKPORT Endfield community](https://www.skport.com/game/endfield) mixes user posts
+with SKPORT promotional material. The inspected public page/static script did not establish an
+accessible, documented community feed with reliable official-publisher authorship. The community
+[SKPORT API documentation](https://github.com/AixLnyt/skport-api-docs) describes game/account and
+wiki APIs, not a verified official-post feed. No SKPORT adapter, login, account token collection,
+or official-source assumption is added. An enhancement would first need an authorized public
+feed, durable post IDs, official-author verification, pagination/completeness checks and terms
+review; community posts would need a separately labelled opt-in source.
+
+The official [ZZZ Sunbringer EP HoYoLAB post](https://www.hoyolab.com/article/47586861) contains
+a YouTube embed represented in structured content as a video but no native article image/video.
+[Read-only audit 46119433799](https://github.com/uesu/Game-Express/actions/runs/46119433799)
+verified the fallback thumbnail without posting. This fallback is allowed for official HoYoLAB and
+Kuro articles as well as the three inactive candidates, only when no native image/video (or
+unavailable-native-video marker) is present; actual thumbnail bytes and dimensions are checked.
+
+#### Silver Palace Discord animation investigation
+
+The prior byte-signature audit established source GIF data, **not Discord playback**. The user
+confirmed the direct CDN URLs appeared static in Discord despite animating on the official site.
+A subsequent [header probe](https://github.com/uesu/Game-Express/actions/runs/46121800531) showed
+GIF-signature media served with `Content-Type: image/jpeg`; this mismatch is a plausible cause,
+not proof of Discord's internal behavior. Observed samples are about 8–20 MB, so uploading each
+unchanged may exceed a destination's upload limit. Two private Components V2 attachment experiments
+were posted: article 99's original bytes as `image/gif` (105 frames, 960×540), and a size-reduced
+article 93 GIF (75 frames, 480×270, 8 fps). The user confirmed that **both samples animate in
+Discord**. Complete article tests [93](https://github.com/uesu/Game-Express/actions/runs/46123162621)
+(9 pages, 9 animated attachments) and [99](https://github.com/uesu/Game-Express/actions/runs/46123402984)
+(3 pages, 3 animated attachments) were sent privately. The user confirmed the animations play,
+but requested fewer message/container breaks.
+
+The shared Feature 3 planner on this branch detects GIF signatures with misleading MIME or a non-GIF
+path for HoYoLAB/Kuro and the three opt-in candidates. Properly labelled `.gif` sources and
+ordinary images retain their existing delivery path. Mislabelled animations are downloaded from
+allowlisted official hosts without redirects and uploaded with GIF filenames and MIME. Original bytes
+are used when they fit; larger files are downscaled/re-encoded with pinned
+[imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg) / [FFmpeg](https://ffmpeg.org/), so
+some quality/frame rate is necessarily lost. The updated planner packs multiple attachments into the
+original page when possible, with at most 10 files and 24 MiB of file bytes per message (reserving
+room under the documented 25 MiB message-request cap), then splits in source order if necessary.
+An oversized input narrower than the target is not enlarged; 640/480 pixels are maximum target
+widths for the two conversion attempts. The multi-file layout was sent privately in independent tests: [93](https://github.com/uesu/Game-Express/actions/runs/46125080681)
+uses 3 messages with 4, 4 and 1 GIFs, and [99](https://github.com/uesu/Game-Express/actions/runs/46125244022)
+uses one message with 3 GIFs. The user confirmed that the packed layout looks good and the GIFs play.
+Source bytes, dimensions, frame count, total work, encoded size, duration and page count are bounded.
+An unsupported/oversized/unavailable animation is held rather than silently posted as a still.
+Attachment filenames contain content hashes so partial-delivery signatures change if bytes change.
+
+Limits remain: real production delivery and recovery have not yet been validated, and experimental
+standby failover is not production-validated. For existing news, post-delivery edits of
+articles with uploaded GIFs are held for manual review rather than risking removal of attachments;
+reveal pings on these articles are omitted for pagination safety. Other animated formats, redirects
+on the full GIF download, very large files and channels with stricter upload limits are not guaranteed.
+No finite sample proves upstream completeness or every Discord client's playback behavior.

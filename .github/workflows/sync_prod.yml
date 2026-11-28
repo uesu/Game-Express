@@ -5,13 +5,13 @@ name: Sync to Production (8mqzv4k2n7c)
 #
 # Safety guarantees:
 #   1. Runs the full offline test + validation gate BEFORE touching the production repo.
-#   2. Never touches `state/state.json` in the production repo.
+#   2. Protects both production state files and its variables/secrets inventory from sync.
 #   3. Union-merges `config/program_announcements.json` so live-discovered tweet IDs in
 #      production are preserved alongside new entries from dev.
 #   4. Never copies dev-only documentation (`docs/`, `README.md`, `AGENTS.md`, etc.) or
 #      this `sync_prod.yml` workflow into the production repository.
-#   5. Uses `cancel-in-progress: false` and fetch+reset retry so concurrent 5-minute
-#      monitor state commits on production never collide with a sync push.
+#   5. Uses `cancel-in-progress: false` for active sync jobs and bounded fetch+reset retries
+#      when production monitor commits race a sync push; this is not a cross-repository lock.
 #
 # Credentials:
 #   Uses `secrets.PROD_SYNC_PAT` if set, otherwise falls back to `secrets.BUMP_PAT`.
@@ -88,6 +88,13 @@ jobs:
           python tests/test_beta_sources.py
           python tests/test_feature5_gate_media.py
           python tests/test_gachawiki_placeholder.py
+          python tests/test_endfield_candidate.py
+          python tests/test_silverpalace_candidate.py
+          python tests/test_day_news_candidate.py
+          python tests/test_nte_candidate.py
+          python tests/test_candidate_thumbnail.py
+          python tests/test_candidate_news_delivery.py
+          python tests/test_candidate_private_pipeline.py
 
       - name: Pre-sync gate — card preview renders
         run: python -m gamexpress preview --out /tmp/previews > /dev/null

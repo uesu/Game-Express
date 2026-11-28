@@ -1,13 +1,20 @@
-name: Source research probe (manual, read-only)
+name: Source research and private card test (manual)
 
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Research scope
+        type: choice
+        options: [all, endfield-card, feature3-prepare, feature3-post, video-research, video-followup, feature3-expanded-prepare, feature3-expanded-post, nte-thumbnail-post, candidate-pipeline, candidate-private-prepare, candidate-private-post, silver-image-research, silver-dedup-private, candidate-historic-prepare, candidate-historic-send, feature3-hold-diagnostic, nte-taygedo-correction, feature3-fidelity-audit, skport-public-research, hoyo-thumbnail-audit, nte-account-audit, nte-corrections-prepare, nte-corrections-send, silver-rechecks-prepare, silver-rechecks-send, zzz-example-prepare, zzz-example-send, silver-media-headers, silver-upload-prepare, silver-upload-test, silver-full-animation-prepare, silver-full-animation-send, silver-packed-animation-prepare, silver-packed-animation-send]
+        default: all
 
 permissions:
   contents: read
 
 jobs:
   probe:
+    if: ${{ inputs.scope == 'all' }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -17,8 +24,12 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.15.2'
-      - name: Offline self-tests
-        run: python tools/source_research_probe.py --self-test
+      - name: Install reader dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline probe checks
+        run: |
+          python tools/source_research_probe.py --self-test
+          python tools/live_candidate_probe.py --self-test
       - name: Official Endfield and NTE sources
         if: always()
         run: python tools/source_research_probe.py --group endfield-nte --annotations
@@ -31,6 +42,704 @@ jobs:
       - name: Code aggregator checks
         if: always()
         run: python tools/source_research_probe.py --group codes --annotations
-      - name: Crimson Witch checks
+      - name: NTE candidate listing pages
         if: always()
-        run: python tools/source_research_probe.py --group crimson --annotations
+        run: python tools/live_candidate_probe.py --group nte --annotations
+      - name: Silver Palace candidate complete listing
+        if: always()
+        run: python tools/live_candidate_probe.py --group silver --annotations
+      - name: Endfield candidate and media preflight
+        if: always()
+        run: python tools/live_candidate_probe.py --group endfield --annotations
+      - name: Old Reddit no-token listings
+        if: always()
+        run: python tools/live_candidate_probe.py --group reddit0 --annotations
+      - name: Redlib mint listings
+        if: always()
+        run: python tools/live_candidate_probe.py --group reddit1 --annotations
+      - name: Redlib naa listings
+        if: always()
+        run: python tools/live_candidate_probe.py --group reddit2 --annotations
+      - name: Limited old Reddit fallback fleet
+        if: always()
+        run: python tools/live_candidate_probe.py --group redditfleet --annotations
+
+  archive:
+    if: ${{ inputs.scope == 'all' }}
+    name: Bounded historical listing research
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install reader dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline archive checks
+        run: python tools/archive_research_probe.py --self-test
+      - name: Walk observed candidate listing archives
+        run: python tools/archive_research_probe.py
+
+  nte-media:
+    if: ${{ inputs.scope == 'all' }}
+    name: NTE article media inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install reader dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline media inventory checks
+        run: python tools/nte_media_research.py --self-test
+      - name: Read NTE article bodies for media structure
+        run: python tools/nte_media_research.py
+
+  endfield-media:
+    if: ${{ inputs.scope == 'all' }}
+    name: Endfield article media inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install reader dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline media inventory checks
+        run: python tools/endfield_media_research.py --self-test
+      - name: Read Endfield article bodies for media structure
+        run: python tools/endfield_media_research.py
+
+  endfield-card:
+    if: ${{ inputs.scope == 'all' || inputs.scope == 'endfield-card' }}
+    name: Endfield reader and card comparison
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install reader dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline reader card checks
+        run: python tools/endfield_card_research.py --self-test
+      - name: Compare four fixed official article cards
+        run: python tools/endfield_card_research.py
+
+  feature3-prepare:
+    if: ${{ inputs.scope == 'feature3-prepare' }}
+    name: Prepare private Feature 3 cards (no posting)
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline guards
+        run: python tools/feature3_webhook_test.py --self-test
+      - name: Prepare fixed official cards without posting
+        run: python tools/feature3_webhook_test.py --prepare-only
+
+  feature3-post:
+    if: ${{ inputs.scope == 'feature3-post' }}
+    name: Send Feature 3 cards to private test webhook
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline guards
+        run: python tools/feature3_webhook_test.py --self-test
+      - name: Send fixed cards to the private test webhook
+        env:
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/feature3_webhook_test.py
+
+  video-research:
+    if: ${{ inputs.scope == 'video-research' }}
+    name: Static official video archive search (${{ matrix.game }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        game: [nte, endfield, silver]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install reader dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline video search checks
+        run: python tools/video_archive_research.py --self-test
+      - name: Search every listed official article body
+        env:
+          AUDIT_GAME: ${{ matrix.game }}
+        run: python tools/video_archive_research.py "$AUDIT_GAME"
+
+  video-followup:
+    if: ${{ inputs.scope == 'video-followup' }}
+    name: Check NTE video marker hints
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install reader dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline video search checks
+        run: python tools/video_archive_research.py --self-test
+      - name: Check two fixed flagged articles
+        run: python tools/video_archive_research.py --nte-hint-check
+
+  feature3-expanded-prepare:
+    if: ${{ inputs.scope == 'feature3-expanded-prepare' }}
+    name: Prepare expanded Feature 3 cards (no posting)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline expanded card checks
+        run: python tools/feature3_expanded_test.py --self-test
+      - name: Prepare full fixed articles without posting
+        env:
+          NEWS_EXPAND_FULL: '1'
+        run: python tools/feature3_expanded_test.py --prepare-only
+
+  feature3-expanded-post:
+    if: ${{ inputs.scope == 'feature3-expanded-post' }}
+    name: Send expanded Feature 3 cards to private test webhook
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline expanded card checks
+        run: python tools/feature3_expanded_test.py --self-test
+      - name: Send full fixed articles to dedicated private webhook
+        env:
+          NEWS_EXPAND_FULL: '1'
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/feature3_expanded_test.py
+
+  nte-thumbnail-post:
+    if: ${{ inputs.scope == 'nte-thumbnail-post' }}
+    name: Send one NTE max-resolution thumbnail card privately
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline fixed-card checks
+        run: python tools/nte_thumbnail_test.py --self-test
+      - name: Prepare the fixed card without posting
+        run: python tools/nte_thumbnail_test.py --prepare-only
+      - name: Post one fixed card to the dedicated private webhook
+        env:
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/nte_thumbnail_test.py
+
+  candidate-pipeline:
+    if: ${{ inputs.scope == 'candidate-pipeline' }}
+    name: Check candidate discovery and card pipeline without posting
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Offline candidate delivery checks
+        run: |
+          python tests/test_candidate_news_delivery.py
+          python tests/test_nte_candidate.py
+          python tests/test_endfield_candidate.py
+          python tests/test_silverpalace_candidate.py
+      - name: Check fixed official sources and cards (no state or posting)
+        run: python tools/candidate_pipeline_probe.py
+
+  candidate-private-pipeline:
+    if: ${{ inputs.scope == 'candidate-private-prepare' || inputs.scope == 'candidate-private-post' }}
+    name: Candidate pipeline private test (isolated ledger)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: candidate-private-pipeline
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Prepare bounded new cards (no posts)
+        if: ${{ inputs.scope == 'candidate-private-prepare' }}
+        run: python tools/candidate_private_pipeline_test.py --prepare-only
+      - name: Send bounded new cards to private webhook, no retry
+        if: ${{ inputs.scope == 'candidate-private-post' }}
+        env:
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/candidate_private_pipeline_test.py
+
+  silver-image-research:
+    if: ${{ inputs.scope == 'silver-image-research' }}
+    name: Compare Silver Palace article images (read-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install read-only research dependencies
+        run: python -m pip install -q aiohttp pillow
+      - name: Compare fixed public media without posting
+        run: python tools/silver_image_research.py
+
+  silver-dedup-private:
+    if: ${{ inputs.scope == 'silver-dedup-private' }}
+    name: Send corrected Silver Palace article privately
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: candidate-private-pipeline
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Send one corrected article, no retry
+        env:
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/silver_dedup_test.py
+
+  candidate-historic-private:
+    if: ${{ github.repository == 'uesu/Game-Express' && github.ref_name == 'arena/98b5f4e1-game-express' && (inputs.scope == 'candidate-historic-prepare' || inputs.scope == 'candidate-historic-send') }}
+    name: Private Feature 3 historical test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: candidate-private-pipeline
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install dependencies
+        run: python -m pip install -q -r requirements.txt
+      - name: Prepare historic snapshot journals (no Discord posts)
+        if: ${{ inputs.scope == 'candidate-historic-prepare' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/candidate_private_backfill.py --prepare
+      - name: Send a bounded batch to the private channel (no automatic retry)
+        if: ${{ inputs.scope == 'candidate-historic-send' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/candidate_private_backfill.py --send
+
+  feature3-hold-diagnostic:
+    if: ${{ inputs.scope == 'feature3-hold-diagnostic' }}
+    name: Diagnose held historic article without posting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - run: python -m pip install -q -r requirements.txt
+      - run: python tools/feature3_hold_diagnostic.py
+
+  nte-taygedo-correction:
+    if: ${{ github.repository == 'uesu/Game-Express' && github.ref_name == 'arena/98b5f4e1-game-express' && inputs.scope == 'nte-taygedo-correction' }}
+    name: Correct one private NTE test card
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: candidate-private-pipeline
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - run: python -m pip install -q -r requirements.txt
+      - name: Repost the corrected card once, with a separate journal
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/nte_taygedo_correction.py
+
+  feature3-fidelity-audit:
+    if: ${{ inputs.scope == 'feature3-fidelity-audit' }}
+    name: Audit official article fidelity without posting
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - run: python -m pip install -q -r requirements.txt
+      - run: python tools/feature3_fidelity_audit.py
+
+  skport-public-research:
+    if: ${{ inputs.scope == 'skport-public-research' }}
+    name: Inspect SKPORT public pages without credentials
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - run: python -m pip install -q -r requirements.txt
+      - run: python tools/skport_public_research.py
+
+  hoyo-thumbnail-audit:
+    if: ${{ inputs.scope == 'hoyo-thumbnail-audit' }}
+    name: Check official HoYoLAB thumbnail without posting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - run: python -m pip install -q -r requirements.txt
+      - run: python tools/feature3_fidelity_audit.py --hoyo-only
+
+  nte-account-audit:
+    if: ${{ inputs.scope == 'nte-account-audit' }}
+    name: Audit NTE account notice tables without posting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - run: python -m pip install -q -r requirements.txt
+      - run: python tools/nte_account_notice_audit.py
+
+  nte-corrections:
+    if: ${{ github.repository == 'uesu/Game-Express' && github.ref_name == 'arena/98b5f4e1-game-express' && (inputs.scope == 'nte-corrections-prepare' || inputs.scope == 'nte-corrections-send') }}
+    name: Private NTE formatting corrections
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: candidate-private-pipeline
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - run: python -m pip install -q -r requirements.txt
+      - name: Prepare correction journal without posting
+        if: ${{ inputs.scope == 'nte-corrections-prepare' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/feature3_corrections.py --prepare
+      - name: Send one bounded private correction batch
+        if: ${{ inputs.scope == 'nte-corrections-send' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/feature3_corrections.py --send
+
+  silver-rechecks:
+    if: ${{ github.repository == 'uesu/Game-Express' && github.ref_name == 'arena/98b5f4e1-game-express' && (inputs.scope == 'silver-rechecks-prepare' || inputs.scope == 'silver-rechecks-send') }}
+    name: Private Silver animation rechecks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: candidate-private-pipeline
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - run: python -m pip install -q -r requirements.txt
+      - name: Prepare separate journal without posting
+        if: ${{ inputs.scope == 'silver-rechecks-prepare' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/silver_animation_corrections.py --prepare
+      - name: Repost verified Silver examples privately
+        if: ${{ inputs.scope == 'silver-rechecks-send' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/silver_animation_corrections.py --send
+
+  zzz-private-example:
+    if: ${{ github.repository == 'uesu/Game-Express' && github.ref_name == 'arena/98b5f4e1-game-express' && (inputs.scope == 'zzz-example-prepare' || inputs.scope == 'zzz-example-send') }}
+    name: Private official ZZZ thumbnail example
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: candidate-private-pipeline
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - run: python -m pip install -q -r requirements.txt
+      - name: Prepare separate journal without posting
+        if: ${{ inputs.scope == 'zzz-example-prepare' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/zzz_sunbringer_private.py --prepare
+      - name: Post one verified official example privately
+        if: ${{ inputs.scope == 'zzz-example-send' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/zzz_sunbringer_private.py --send
+
+  silver-media-headers:
+    if: ${{ inputs.scope == 'silver-media-headers' }}
+    name: Inspect Silver media headers without posting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - run: python -m pip install -q -r requirements.txt
+      - run: python tools/silver_media_headers_probe.py
+
+  silver-upload-probe:
+    if: ${{ github.repository == 'uesu/Game-Express' && github.ref_name == 'arena/98b5f4e1-game-express' && (inputs.scope == 'silver-upload-prepare' || inputs.scope == 'silver-upload-test') }}
+    name: Private Silver GIF attachment experiment
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: candidate-private-pipeline
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - run: python -m pip install -q -r requirements.txt
+      - name: Prepare separate journal without sending
+        if: ${{ inputs.scope == 'silver-upload-prepare' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/silver_animation_upload_probe.py --prepare
+      - name: Install pinned research-only FFmpeg binary
+        if: ${{ inputs.scope == 'silver-upload-test' }}
+        run: python -m pip install -q imageio-ffmpeg==0.8.2
+      - name: Send one labeled animation sample
+        if: ${{ inputs.scope == 'silver-upload-test' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/silver_animation_upload_probe.py --send
+
+  silver-full-animation:
+    if: ${{ github.repository == 'uesu/Game-Express' && github.ref_name == 'arena/98b5f4e1-game-express' && (inputs.scope == 'silver-full-animation-prepare' || inputs.scope == 'silver-full-animation-send') }}
+    name: Private complete Silver animated articles
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: candidate-private-pipeline
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - run: python -m pip install -q -r requirements.txt
+      - name: Prepare independent journal without sending
+        if: ${{ inputs.scope == 'silver-full-animation-prepare' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/silver_full_animation_test.py --prepare
+      - name: Install pinned FFmpeg for private conversion
+        if: ${{ inputs.scope == 'silver-full-animation-send' }}
+        run: python -m pip install -q imageio-ffmpeg==0.8.2
+      - name: Send one complete article with animated attachments
+        if: ${{ inputs.scope == 'silver-full-animation-send' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/silver_full_animation_test.py --send
+
+  silver-packed-animation:
+    if: ${{ github.repository == 'uesu/Game-Express' && github.ref_name == 'arena/98b5f4e1-game-express' && (inputs.scope == 'silver-packed-animation-prepare' || inputs.scope == 'silver-packed-animation-send') }}
+    name: Private packed Silver animated articles
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: candidate-private-pipeline
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - run: python -m pip install -q -r requirements.txt
+      - name: Prepare new independent journal without sending
+        if: ${{ inputs.scope == 'silver-packed-animation-prepare' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/silver_packed_animation_test.py --prepare
+      - name: Send one packed complete article
+        if: ${{ inputs.scope == 'silver-packed-animation-send' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/silver_packed_animation_test.py --send

@@ -322,12 +322,72 @@ Use repository **secrets**, never variables, for the five destinations:
 | `DISCORD_WEBHOOK_NEWS_ZZZ` | `zzz-news` |
 | `DISCORD_WEBHOOK_NEWS_WUWA` | `wuwa-news` |
 
+**NTE, Arknights: Endfield and Silver Palace are opt-in news sources.** Setting up the routes,
+authority and attended ledger does not itself send anything; adding the `NEWS_CANDIDATES_BACKFILL=1`
+variable can start the available historical backlog on the next scheduled live run. Configure these
+in the **production** repository (Settings → Secrets and variables → Actions); never paste secret
+values in chat or commit them:
+
+| Type | Name | Value / purpose |
+|---|---|---|
+| Secret | `DISCORD_WEBHOOK_NEWS_NTE` | Dedicated NTE news webhook URL |
+| Secret | `DISCORD_WEBHOOK_NEWS_ENDFIELD` | Dedicated Endfield news webhook URL |
+| Secret | `DISCORD_WEBHOOK_NEWS_SILVERPALACE` | Dedicated Silver Palace news webhook URL |
+| Variable | `NEWS_CANDIDATES_AUTHORITY_REPOSITORY` | `uesu/8mqzv4k2n7c`, the sole primary repository |
+| Variable | `NEWS_CANDIDATES_AUTHORITY_BRANCH` | Its authoritative branch, currently `main` |
+| Variable | `NEWS_GAMES` | Preserve all desired existing game keys and add `nte,endfield,silverpalace`; the default excludes candidates |
+| Variable | `NEWS_CANDIDATES_BACKFILL` | `1` only after release and historical-backfill approval; otherwise leave unset |
+
+For example, if all five default existing sources should remain selected, the full `NEWS_GAMES`
+value is `genshin,starrail,zzz,wuwa,hna,nte,endfield,silverpalace`. If you already use a custom
+selection, append the three candidate keys rather than replacing your selection with that example.
+The default active instance role is `primary`. A separate standby remains disabled unless the
+experimental shared-ledger failover below is explicitly configured. Adding candidate keys does not
+change schedule, codes, maintenance or Reddit.
+An empty, deliberately provisioned candidate ledger binds each source to its dedicated route;
+the first complete snapshot then queues **available history**, not a silent baseline. A missing
+record or changed route is held before discovery, even on the first run. The attended initialization and no-send live-source preview are described in
+[production setup](PROD-REPO-SETUP.md); actual production setup and recovery remain unvalidated.
+Verify that the three live channels are distinct and do not already contain deliveries from an
+untracked candidate instance. Do not initialize or activate if prior delivery history is uncertain.
+Candidate processing is limited to one article and three pages per source per run, independently
+of the existing-news rules above. A candidate article may have up to 120 pages in total (subject
+to the shared character and media bounds); the existing-news `NEWS_EXPAND_MAX_PAGES` setting does
+not lower this candidate-only bound. Articles exceeding a safety bound are held, not excerpted.
+
+**Experimental candidate standby (not yet production-validated):** no standby settings are
+needed for a single primary. When separately approved for failover, configure these on the standby
+repository, not on the primary. Do not enable this experimental path for the current single-repo installation:
+
+| Type | Name | Value / purpose |
+|---|---|---|
+| Variable | `INSTANCE_ROLE` | `standby`; the existing peer-heartbeat mechanism must mark it active |
+| Variable | `NEWS_CANDIDATES_STANDBY_ENABLED` | `1` to opt in; unset disables candidate standby |
+| Variable | `NEWS_CANDIDATES_STANDBY_REPOSITORY` | Exact `owner/repository` of this standby Actions checkout |
+| Variable | `NEWS_CANDIDATES_STANDBY_BRANCH` | Exact branch on which this standby workflow runs |
+| Variable | `NEWS_CANDIDATES_AUTHORITY_REPOSITORY` / `NEWS_CANDIDATES_AUTHORITY_BRANCH` | The same sole primary authority and branch as above |
+| Secret | `NEWS_CANDIDATES_LEDGER_TOKEN` | A separate least-privilege GitHub credential with Contents read/write on that authority repository; never paste its value in chat |
+
+The standby also needs the same dedicated news destinations, candidate selection, and backfill
+opt-in as the primary; don't configure them for live operation before approval. It checks out the
+single authoritative ledger with the credential in a scoped Git environment, not a URL or file.
+Both primary and standby require the route recorded by attended initialization. Stale or missing
+checkouts, missing credentials, route mismatches, uncertain pushes, and ambiguous sends hold. The
+shared branch and verified intent checkpoints fence *cooperating* writers; GitHub Actions
+concurrency alone does not coordinate repositories, and force-pushes, independent ledgers,
+noncooperating writers and operator mistakes are not protected. Recovery still requires pausing
+all writers. `PEER_STATE_URL` must be reachable for the existing standby heartbeat check; this
+prototype has not been validated with separately triggered standby Actions jobs or in production.
+A no-send test used a real second-repository checkout but simulated the Actions identity and
+heartbeat; it is not a production failover test.
+
 Existing short game aliases also work. No `DISCORD_WEBHOOK_NEWS`, catch-all,
 `FORCE_WEBHOOK`, or mirror fallback is used for news. A missing destination skips
 source requests and baseline creation for that game; a changed destination is
 held for operator review, not silently reposted. The existing workflow already
-imports repository variables/secrets via its JSON blobs: no workflow edit,
-scheduler change, new token, dependency or state file is required.
+imports repository variables/secrets via its JSON blobs for the existing sources. Unlike those
+existing sources, the opt-in candidates require their separate ledger and attended setup described
+above.
 
 Official news delivery is strictly independent of schedule extraction, schedule
 mirrors (`DISCORD_WEBHOOK_SCHEDULE_MIRROR_<GAME>`), redemption codes, and started
@@ -611,7 +671,7 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
 
 - **Independent milestones & separate state:** posts `Pre-Load Started`,
   `Maintenance Started` and `Servers Live` independently per `(game, version)` on the existing
-  5-minute poll cycle. `state["maintenance"][game]` tracks `preload`, `maintenance` and `live`
+  operator-selected poll cycle. `state["maintenance"][game]` tracks `preload`, `maintenance` and `live`
   separately from `schedule`, `codes` and `news`, and merges across fail-over peers.
 - **Servers Live — signals and guards (`live`):** three signals, no clock. (1) The publisher's
   completion notice or tweet (`schedule.MAINT_COMPLETE_RE`: *update maintenance has been
@@ -670,7 +730,7 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
   - *Time window:* strictly `0 <= now - posted_at <= LATE_MEDIA_EDIT_WINDOW_S` (`6 * 3600 = 21,600 s` / `6 h` from `posted_at`); polls after `6 h` perform `0` health checks, `0` candidate lookups, and `0` `PATCH` edits.
   - *Failed-edit limit (`MAX_LATE_MEDIA_ATTEMPTS = 3`):* counts only failed `ctx.webhook.edit(...)` calls (`not res.ok`), tracked in `entry["edit_attempts"]`; read-only checks do not increment it, and reaching `3` stops further checks/edits for that milestone.
   - *Counter reset:* only a succeeding `ctx.webhook.edit(...)` (`res.ok is True`) resets `entry["edit_attempts"] = 0` and commits the staged state.
-  - *Check cadence:* evaluated at most once per scheduled `maintenance.run(ctx)` execution (existing 5-minute poll schedule — no in-run loops), memoized per run (`verified_cache`) so each distinct URL is checked at most once per poll (`0` HTTP checks on already-expired `auth_key=` timestamps), and skipping `hoyoplay_basic_info` completely when `cur_tier == 1` is healthy and no authoritative timestamp upgrade applies.
+  - *Check cadence:* evaluated at most once per scheduled `maintenance.run(ctx)` execution (operator-selected poll schedule — no in-run loops), memoized per run (`verified_cache`) so each distinct URL is checked at most once per poll (`0` HTTP checks on already-expired `auth_key=` timestamps), and skipping `hoyoplay_basic_info` completely when `cur_tier == 1` is healthy and no authoritative timestamp upgrade applies.
   - *Separate succeeded-edit cap (`MAX_LATE_EDITS = 6`):* tracked monotonically in `entry["edit_count"]` (never reset), capping total succeeded silent `PATCH` edits per posted milestone across upgrades, renewals, and fallbacks.
 
 ## Beta kit & revision-diff cards (feature 5 — explicit opt-in; default off)
