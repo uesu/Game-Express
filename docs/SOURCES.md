@@ -476,18 +476,19 @@ ID is only a deterministic same-day tie-break, not evidence of publication time.
 reduce but cannot eliminate source pagination races.
 
 The opt-in monitor path uses a separate detached-worktree Git ledger to checkpoint write-ahead
-intent and confirmed IDs via same-branch push/ref checks,
-uses one-shot Discord POSTs, limits a source to one article / three pages per run, and requires full
-expanded output (holding rather than sending a safety-limit excerpt). Local mocked runner and bare
-Git tests do not establish production correctness. The detached-ledger checkpoint uses a random
+intent and confirmed IDs via same-branch push/ref checks, uses one-shot Discord POSTs, drains
+checked snapshots in fair source rounds under a shared best-effort time budget, and requires full
+expanded output (holding rather than sending a safety-limit excerpt). Individual articles retain
+an absolute 120-page safety bound. Local mocked runner and bare Git tests alone do not establish
+production correctness. The detached-ledger checkpoint uses a random
 per-commit nonce so identical simultaneous writers cannot produce the same Git commit ID. Local
 fixed-clock bare-Git races now verify that one of two competing identical checkpoints wins and that
 only one of two competing delivery coordinators sends. A separate local test rebases the monitor
 state commit over the ledger. A further development-only GitHub Actions simulation (detailed below) exercises a monitor-style
-rebase and reviewed recovery. Production persistence, real ambiguous outcomes and
-cross-repository failover have not yet been validated. A single-repo
-Actions concurrency group is not a distributed lock. No backlog or production state change has
-been performed. Existing game news routing and behavior remain unchanged. A later [no-Discord release probe](https://github.com/uesu/Game-Express/actions/runs/46138723143)
+rebase and reviewed recovery. Production initialization, a 267-article catch-up and a caught-up
+normal monitor succeeded, but real ambiguous outcomes and cross-repository failover remain
+unvalidated. A single-repo Actions concurrency group is not a distributed lock. Existing game news
+routing and behavior remain unchanged. A later [no-Discord release probe](https://github.com/uesu/Game-Express/actions/runs/46138723143)
 ran the enabled candidate runner with real listings and article rendering for all three sources,
 using a local bare-Git ledger and synthetic sends. It confirmed four fake page sends had remote
 intent checkpoints and rendered the known long Silver article 34 at 32 pages. This does not

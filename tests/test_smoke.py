@@ -25154,6 +25154,8 @@ def test_live_persistence_summary_reports_observed_outcomes():
         bindir.mkdir()
         git = bindir / 'git'
         git.write_text('#!/bin/sh\ncase "$1 $2" in\n'
+                       '  "add state/state.json") [ "$MODE" != state_add_failed ] && exit 0; exit 1 ;;\n'
+                       '  "add -f") [ "$MODE" != seed_add_failed ] && exit 0; exit 1 ;;\n'
                        '  "diff --cached") [ "$MODE" = unchanged ] && exit 0; exit 1 ;;\n'
                        '  "push origin") [ "$MODE" != failed ] && exit 0; exit 1 ;;\n'
                        '  *) exit 0 ;;\nesac\n')
@@ -25166,7 +25168,9 @@ def test_live_persistence_summary_reports_observed_outcomes():
                'GITHUB_OUTPUT': str(output), 'GITHUB_STEP_SUMMARY': str(report), 'GITHUB_REF_NAME': 'main'}
         cases = [('unchanged', 0, 'unchanged', 'no staged changes observed'),
                  ('pushed', 0, 'pushed', 'committed and pushed'),
-                 ('failed', 1, '', 'failed — inspect')]
+                 ('failed', 1, '', 'failed — inspect'),
+                 ('state_add_failed', 1, '', 'failed — inspect'),
+                 ('seed_add_failed', 1, 'pushed_seed_staging_failed', 'state pushed; program announcement staging failed')]
         for mode, exit_code, expected_output, expected_text in cases:
             output.write_text('')
             report.write_text('')

@@ -47,6 +47,9 @@ class Ctx:
     errors: list[str] = field(default_factory=list)
     active: bool = True
     elapsed: float = 0.0
+    # Best-effort guard before starting each candidate Discord page. This leaves
+    # room inside the 15-minute workflow for checkpoints and state persistence.
+    candidate_deadline: float | None = None
     estimates: dict = field(default_factory=dict)   # game key -> countdown-site estimate
     media: dict = field(default_factory=dict)       # game key -> version -> program announcement
     banners: dict = field(default_factory=dict)     # game key -> list of 5★ rate-up banners
@@ -344,7 +347,7 @@ async def run_once(settings: Settings, games_all: dict[str, Game] | None = None,
         ctx = Ctx(settings=settings, games=games, state=state, fetcher=fetcher,
                   webhook=WebhookClient(session, dry_run=settings.dry_run), x=XClient(fetcher, settings),
                   code_sources=CodeSources(fetcher, reddit=reddit), overrides=overrides,
-                  now=int(time.time()), reddit=reddit)
+                  now=int(time.time()), reddit=reddit, candidate_deadline=started + 600)
         ephemeral = settings.dry_run or settings.test_mode
         features: set[str] = set()
         try:

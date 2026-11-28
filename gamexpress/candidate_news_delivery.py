@@ -174,7 +174,8 @@ def reconcile_inflight(state, source, route, *, article_id, page, signature, res
     return _validate(corrected, source, route)
 
 
-async def deliver_oldest(state, source, route, *, as_of, checkpoint, render, send, max_pages=120):
+async def deliver_oldest(state, source, route, *, as_of, checkpoint, render, send, max_pages=120,
+                         can_start_page=None):
     """Deliver at most one article, persisting intent BEFORE each one-shot POST.
 
     A restart with `inflight` is held for human reconciliation. A payload signature
@@ -220,6 +221,10 @@ async def deliver_oldest(state, source, route, *, as_of, checkpoint, render, sen
         await persist()
     start = len(partial["messages"])
     for payload in payloads[start:start + max_pages]:
+        # Do not begin another page intent if the best-effort time budget has
+        # expired. The queued article and non-inflight partial are already durable.
+        if can_start_page is not None and not can_start_page():
+            return state
         partial["inflight"] = True
         await persist()
         try:
@@ -232,9 +237,20 @@ async def deliver_oldest(state, source, route, *, as_of, checkpoint, render, sen
             raise DeliveryHold("POST not confirmed; inspect before resuming")
         partial["messages"].append(mid)
         partial["inflight"] = False
+        if len(partial["messages"]) == len(payloads):
+            # The final acknowledged page and completed article are one atomic Git
+            # checkpoint. If its outcome is uncertain, the remote must be inspected:
+            # it may contain either the prior in-flight hold or the completed article.
+            state["posted"][row["id"]] = {"messages": list(partial["messages"]), "signature": signature}
+            state["pending"].pop(0)
+            state["partial"] = None
+            await persist()
+            return state
         await persist()
     if len(partial["messages"]) < len(payloads):
         return state
+    # A reviewed reconciliation may have confirmed the last page without completing
+    # the article; finish it without any further Discord POST.
     state["posted"][row["id"]] = {"messages": list(partial["messages"]), "signature": signature}
     state["pending"].pop(0)
     state["partial"] = None

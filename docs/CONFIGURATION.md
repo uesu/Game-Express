@@ -347,13 +347,16 @@ change schedule, codes, maintenance or Reddit.
 An empty, deliberately provisioned candidate ledger binds each source to its dedicated route;
 the first complete snapshot then queues **available history**, not a silent baseline. A missing
 record or changed route is held before discovery, even on the first run. The attended initialization and no-send live-source preview are described in
-[production setup](PROD-REPO-SETUP.md); actual production setup and recovery remain unvalidated.
+[production setup](PROD-REPO-SETUP.md). The current production ledger is already initialized;
+never initialize it again. A production catch-up and a caught-up live monitor have succeeded,
+while real ambiguous-page recovery has not been exercised there.
 Verify that the three live channels are distinct and do not already contain deliveries from an
 untracked candidate instance. Do not initialize or activate if prior delivery history is uncertain.
-Candidate processing is limited to one article and three pages per source per run, independently
-of the existing-news rules above. A candidate article may have up to 120 pages in total (subject
-to the shared character and media bounds); the existing-news `NEWS_EXPAND_MAX_PAGES` setting does
-not lower this candidate-only bound. Articles exceeding a safety bound are held, not excerpted.
+Normal candidate monitoring drains each checked snapshot in fair source rounds, until a shared
+best-effort ten-minute run budget or a hold. Pages already acknowledged are durable; a source with
+an uncertain result is not retried blindly. A candidate article may have up to 120 pages in total
+(subject to the shared character and media bounds); the existing-news `NEWS_EXPAND_MAX_PAGES`
+setting does not lower this candidate-only bound. Articles exceeding a safety bound are held, not excerpted.
 
 **Experimental candidate standby (not yet production-validated):** no standby settings are
 needed for a single primary. When separately approved for failover, configure these on the standby
