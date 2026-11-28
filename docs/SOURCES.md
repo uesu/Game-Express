@@ -1399,3 +1399,18 @@ a YouTube embed represented in structured content as a video but no native artic
 verified the fallback thumbnail without posting. This fallback is allowed for official HoYoLAB and
 Kuro articles as well as the three inactive candidates, only when no native image/video (or
 unavailable-native-video marker) is present; actual thumbnail bytes and dimensions are checked.
+
+#### Silver Palace Discord animation investigation
+
+The prior byte-signature audit established source GIF data, **not Discord playback**. The user
+confirmed the direct CDN URLs appeared static in Discord despite animating on the official site.
+A subsequent [header probe](https://github.com/uesu/Game-Express/actions/runs/46121800531) showed
+GIF-signature media served with `Content-Type: image/jpeg`; this mismatch is a plausible cause,
+not proof of Discord's internal behavior. Observed samples are about 8–20 MB, so uploading each
+unchanged may exceed a destination's upload limit. Two private Components V2 attachment experiments
+were posted for visual evaluation: article 99's original bytes as `image/gif` (105 frames,
+960×540), and a size-reduced article 93 GIF (75 frames, 480×270, 8 fps). Discord accepted the
+99 attachment and reported `image/gif` for its gallery item. Acceptance and frame count do not
+prove the Discord client animates it; user verification is pending. The temporary research-only
+FFmpeg executable is supplied by `imageio-ffmpeg` and is not a production dependency or conversion
+pipeline. No production media or delivery behavior has been changed for this experiment.

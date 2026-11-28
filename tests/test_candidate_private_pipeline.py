@@ -213,5 +213,24 @@ class PrivateHarnessTests(unittest.TestCase):
         self.assertEqual([row["id"] for _, row, _ in chosen], ["252475", "101", "2"])
 
 
+class SilverGifProbeTests(unittest.TestCase):
+    def test_parser_counts_frames_and_rejects_incomplete_data(self):
+        import base64
+
+        from silver_animation_upload_probe import gif_info
+
+        raw = base64.b64decode(
+            "R0lGODlhBAAEAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAABAAEAAAICQABCBxIsCCAgAAh+QQBCgABACwAAAAABAAEAIEAAP8AAAAAAAAAAAAICQABCBxIsCCAgAA7"
+        )
+        self.assertEqual(gif_info(raw), (4, 4, 2))
+        for invalid in (b"", b"GIF89a", raw[:-1], raw + b"extra", b"JPEG" + raw):
+            with self.assertRaises(ValueError):
+                gif_info(invalid)
+        altered = bytearray(raw)
+        altered[6:8] = (1921).to_bytes(2, "little")
+        with self.assertRaises(ValueError):
+            gif_info(bytes(altered))
+
+
 if __name__ == "__main__":
     unittest.main()
