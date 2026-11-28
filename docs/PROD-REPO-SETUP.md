@@ -579,7 +579,13 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   An individual article remains bounded to 120 pages. Slow rendering, network calls, or a hard
   workflow timeout can exceed the budget; an interrupted POST still requires attended review.
   A held source is not retried in the same run, and later source failures cannot be silently treated
-  as successful. Production initialization, previews, catch-up and a caught-up normal monitor
+  as successful. Each candidate summary reports the checked snapshot size (`discovered`), IDs not
+  already queued or recorded (`new`), article delivery calls (`attempted`), articles whose completed
+  state was confirmed in this run (`completed`), the last observed queue (`pending-observed`), the
+  total recorded articles and the status. `unknown` is not zero: inspection failed or did not run.
+  A held or uncertain push requires inspection of the remote ledger and possibly Discord; the
+  observed queue is not proof it was persisted. These counts do not apply legacy news's 48-hour
+  eligibility rule. Production initialization, previews, catch-up and a caught-up normal monitor
   have succeeded; ongoing delivery of a genuinely new production article after those runs has not
   been observed yet.
 - **No-send live-source preview:** after approved initialization, pause all schedulers/writers,

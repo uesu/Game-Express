@@ -1004,8 +1004,8 @@ def cmd_benchmark(args) -> int:
             )
             live_digests = json.loads(live_proc.stdout)
             main_live_code_equal = (
-                _canon_sha256(default_short) == live_digests["short"]
-                and _canon_sha256(default_medium) == live_digests["medium"]
+                _canon_sha256(_without_support_note(default_short)) == live_digests["short"]
+                and _canon_sha256(_without_support_note(default_medium)) == live_digests["medium"]
             )
             assert main_live_code_equal
     main_comparison_mode = (

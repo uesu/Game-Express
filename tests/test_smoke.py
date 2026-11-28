@@ -12469,9 +12469,9 @@ def test_correction_6_ambiguous_post_no_replay_and_state_durability():
 
 def test_final_acceptance_baseline_parity_shared_callers_and_template():
     """Verify:
-    1) Actual pre-PR `main` (`1e071d82eba82baa0a2977f33d6f8180d3677aaf`) payload & request parity
-       across real HoYoLAB fixtures, all 5 games x 3 pagination regimes, and production baselines
-       (cryptographic SHA-256 digests + live `git archive` cross-check when `1e071d8` is present).
+    1) Pinned payloads across real HoYoLAB fixtures, all 5 games x 3 pagination regimes,
+       and production baselines, including the explicitly re-pinned layout changes below.
+       If `1e071d8` is present, separately verify its historical fixture digest.
     2) Preserved pre-PR baseline retry & `SendResult` behavior (`stop_on_ambiguous=False` default)
        for all existing shared callers:
        - `schedule.run` (primary `POST`, mirror `POST`, `404`-recovery repost `POST`, `PATCH` edits)
@@ -12500,7 +12500,7 @@ def test_final_acceptance_baseline_parity_shared_callers_and_template():
         raw = json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         return hashlib.sha256(raw).hexdigest()
 
-    # Exact canonical JSON SHA-256 digests generated directly by `main` (`1e071d82eba82baa0a2977f33d6f8180d3677aaf`).
+    # Canonical JSON SHA-256 pins, with the intended deltas described below.
     # `fit1`/`fit2`/`prod` digests are pre-PR main (1e071d8) byte-identical: ordinary articles and
     # the captured production cards did not change. The two real `zzz` Signal Search fixtures DID
     # change on 2026-11-18 and are re-pinned below: both were delivered as two containers
@@ -12619,8 +12619,10 @@ def test_final_acceptance_baseline_parity_shared_callers_and_template():
     assert _canon_sha256(_strip_support_note(cards.news_payloads(GAMES["zzz"], zzz_436))) == MAIN_1E071D8_SHA256["prod:zzz_436"][1]
     assert _canon_sha256(_strip_support_note(cards.news_payloads(GAMES["zzz"], zzz_444))) == MAIN_1E071D8_SHA256["prod:zzz_444"][1]
 
-    # When `main` (`1e071d82eba82baa0a2977f33d6f8180d3677aaf`) is reachable in `.git`, also execute
-    # `main`'s actual `gamexpress/cards.py` in a child interpreter to cross-verify digests directly.
+    # If the historical commit is available, also pin its actual output independently.
+    # This fixture's current pinned output (checked above with the supporter note removed)
+    # is not byte-identical to the older renderer, so do not compare the two digests as
+    # though they were. A shallow Actions checkout cannot execute this additional probe.
     base_rev = "1e071d82eba82baa0a2977f33d6f8180d3677aaf"
     if subprocess.run(["git", "cat-file", "-e", f"{base_rev}^{{commit}}"], capture_output=True).returncode == 0:
         with tempfile.TemporaryDirectory() as git_tmp:
@@ -12649,7 +12651,7 @@ def test_final_acceptance_baseline_parity_shared_callers_and_template():
                 ],
                 text=True,
             ).strip()
-            assert live_check == MAIN_1E071D8_SHA256["fixture:hoyolab_zzz_46863847_full.json"][1]
+            assert live_check == "8245162cd633f95510ee9d2b6b7b0c1c07801d1247445432ec968ff1aebfb14d"
 
     # --- Shared `WebhookClient` caller end-to-end verification across `schedule`, `codes`, and CLI ---
     class _WireResp:
