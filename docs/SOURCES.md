@@ -447,8 +447,19 @@ without dropping characters, and still holds unknown unsplittable tokens or form
 private test only, the page cap was raised to a bounded 120. [Diagnostic 46088975034](https://github.com/uesu/Game-Express/actions/runs/46088975034)
 confirmed full rendering across 32 pages and media preflight; 4,260 separators survived rendering.
 The journaled private queue was resumed, paced and oldest-first. It later stopped at
-[batch 46090849744](https://github.com/uesu/Game-Express/actions/runs/46090849744); after that run,
-the journals confirmed 107 articles with no in-flight page, and Endfield 4494 was next.
+[batch 46090849744](https://github.com/uesu/Game-Express/actions/runs/46090849744) before Endfield
+4494: the source had an unmatched literal `]` that prevented safe pagination. The Endfield adapter
+escapes unmatched brackets without changing balanced links; [diagnostic 46091136496](https://github.com/uesu/Game-Express/actions/runs/46091136496)
+rendered the whole article in four pages and preflighted its media. Another hold preceded NTE 261919,
+whose official CDN path contained an unencoded space. Only official NTE CDN path spaces are now
+percent-encoded, without relaxing generic URL validation; [diagnostic 46091741693](https://github.com/uesu/Game-Express/actions/runs/46091741693)
+confirmed render and media preflight.
+
+The private historic test subsequently **completed**: the journals confirmed 103/103 NTE,
+143/143 Endfield and 21/21 Silver Palace articles, with no pending or partial articles. The last
+batch was [46096334852](https://github.com/uesu/Game-Express/actions/runs/46096334852). The
+separate Taygedo correction is not included in those counts. Day-only timestamps still cannot
+establish exact same-day publication order, and the snapshot does not prove upstream completeness.
 Production remains gated and the private test is not evidence of complete production/failover readiness.
 
 NTE article 252478 contained literal double tildes, which Discord interpreted as a strikethrough
