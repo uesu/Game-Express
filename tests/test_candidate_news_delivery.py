@@ -868,6 +868,13 @@ class CandidateDeliveryTests(unittest.TestCase):
                     asyncio.run(catchup.run_from_environment())
                 self.assertEqual(len(sends), 7)  # a new attempt holds before any send
 
+    def test_attended_catchup_bundled_animation_preflight(self):
+        import imageio_ffmpeg
+        result = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-version"], capture_output=True,
+                                stdin=subprocess.DEVNULL, timeout=15, check=False)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(b"ffmpeg version", result.stdout.lower())
+
     def test_attended_catchup_workflow_is_manual_locked_and_explicitly_live(self):
         import yaml
         wf = ROOT / ".github" / "workflows"
