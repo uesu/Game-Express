@@ -69,6 +69,16 @@ async def run():
                 value = block.get("text", "").strip()
                 result = _split_expanded_text(value, 3500)
                 if result is None:
+                    stack = []
+                    for position, char in enumerate(value):
+                        if char == "[" and (position == 0 or value[position - 1] != "\\"):
+                            stack.append(position)
+                        elif char == "]" and (position == 0 or value[position - 1] != "\\"):
+                            if stack:
+                                stack.pop()
+                            else:
+                                context = "".join(x if x.isalnum() or x in " []" else " " for x in value[max(0, position - 45):position + 45])
+                                print(f"::notice title=Endfield unmatched bracket::context={context}", flush=True)
                     print(f"::notice title=Endfield hold block::index={i} length={len(value)} "
                           f"bold-markers={value.count('**')} brackets-open={value.count('[')} "
                           f"brackets-close={value.count(']')} backticks={value.count('`')} "
