@@ -12,7 +12,7 @@
   animations; reveal pings on such messages are suppressed for attachment pagination safety.
   Full Silver 93/99 private article playback was user-confirmed. The follow-up packs multiple GIFs
   per original page where limits permit. New private tests sent 93 in three messages and 99 in
-  one; user visual review of that packed layout and playback is pending.
+  one; the user confirmed that the packed layout looks good and the GIFs play.
   Release, checkpoint persistence and failover are not yet validated.
 
 ## 2026-11-27 — Read-only source research (no production behavior changes)
