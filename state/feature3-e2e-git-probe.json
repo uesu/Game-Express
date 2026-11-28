@@ -1,1 +1,19 @@
-{"schema":1,"candidate_news":{}}
+{
+  "candidate_news": {
+    "silverpalace": {
+      "partial": null,
+      "pending": [
+        {
+          "date": "2000-01-01",
+          "id": "987654321",
+          "title": "Synthetic GitHub runner probe"
+        }
+      ],
+      "posted": {},
+      "route": "2c837ccd2b24fa61",
+      "source": "silverpalace",
+      "version": 1
+    }
+  },
+  "schema": 1
+}
