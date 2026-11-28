@@ -9,6 +9,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -173,6 +174,132 @@ class CandidateDeliveryTests(unittest.TestCase):
                 asyncio.run(first.close())
                 asyncio.run(stale.close())
             self.assertEqual(git(seed, "worktree", "list", "--porcelain").count(b"worktree "), 1)
+
+    def test_simultaneous_identical_git_checkpoints_cannot_both_win(self):
+        branch = "arena/98b5f4e1-game-express"
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            remote, seed = base / "remote.git", base / "seed"
+            seed.mkdir()
+
+            def git(cwd, *args):
+                return subprocess.run(["git", *args], cwd=cwd, capture_output=True, check=True).stdout
+
+            git(seed, "init", "--bare", str(remote))
+            git(seed, "init", "-b", branch)
+            git(seed, "config", "user.name", "Test")
+            git(seed, "config", "user.email", "test@example.invalid")
+            (seed / "state").mkdir()
+            (seed / "state/candidate_news.json").write_text('{"schema":1,"candidate_news":{}}\n', encoding="utf-8")
+            git(seed, "add", "state")
+            git(seed, "commit", "-m", "initial")
+            git(seed, "remote", "add", "origin", str(remote))
+            git(seed, "push", "origin", "HEAD:refs/heads/" + branch)
+            other = base / "other"
+            git(base, "clone", "-b", branch, str(remote), str(other))
+            first, second = IsolatedGitLedger(seed, branch), IsolatedGitLedger(other, branch)
+            self.assertTrue(asyncio.run(first.open()))
+            self.assertTrue(asyncio.run(second.open()))
+            barrier = threading.Barrier(2, timeout=20)
+            for ledger in (first, second):
+                original = ledger._git
+
+                def coordinated(root, *args, _original=original):
+                    if args and args[0] == "push":
+                        barrier.wait()
+                    return _original(root, *args)
+
+                ledger._git = coordinated
+            queued = delivery.ingest("silverpalace", ROUTE, None, [row("1")])
+
+            async def compete():
+                return await asyncio.gather(first.checkpoint("silverpalace", queued),
+                                            second.checkpoint("silverpalace", queued))
+
+            # A fixed clock reproduces the dangerous identical-tree, identical-parent,
+            # identical-author/timestamp case: independent checkpoints need unique IDs.
+            try:
+                with patch.dict("os.environ", {"GIT_AUTHOR_DATE": "2026-01-01T00:00:00+0000",
+                                               "GIT_COMMITTER_DATE": "2026-01-01T00:00:00+0000"}):
+                    results = asyncio.run(compete())
+                self.assertEqual(sorted(results), [False, True])
+                self.assertNotEqual(first._head(first.worktree), second._head(second.worktree))
+                self.assertEqual(sum(ledger.poisoned for ledger in (first, second)), 1)
+                saved = json.loads(git(seed, "--git-dir", str(remote), "show",
+                                       f"refs/heads/{branch}:state/candidate_news.json"))
+                self.assertEqual(saved["candidate_news"]["silverpalace"], queued)
+            finally:
+                asyncio.run(first.close())
+                asyncio.run(second.close())
+
+    def test_competing_delivery_coordinators_only_one_posts(self):
+        branch = "arena/98b5f4e1-game-express"
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            remote, seed = base / "remote.git", base / "seed"
+            seed.mkdir()
+
+            def git(cwd, *args):
+                return subprocess.run(["git", *args], cwd=cwd, capture_output=True, check=True).stdout
+
+            git(seed, "init", "--bare", str(remote))
+            git(seed, "init", "-b", branch)
+            git(seed, "config", "user.name", "Test")
+            git(seed, "config", "user.email", "test@example.invalid")
+            queued = delivery.ingest("silverpalace", ROUTE, None, [row("1")])
+            (seed / "state").mkdir()
+            (seed / "state/candidate_news.json").write_text(
+                json.dumps({"schema": 1, "candidate_news": {"silverpalace": queued}}), encoding="utf-8")
+            git(seed, "add", "state")
+            git(seed, "commit", "-m", "initial")
+            git(seed, "remote", "add", "origin", str(remote))
+            git(seed, "push", "origin", "HEAD:refs/heads/" + branch)
+            other = base / "other"
+            git(base, "clone", "-b", branch, str(remote), str(other))
+            ledgers = [IsolatedGitLedger(seed, branch), IsolatedGitLedger(other, branch)]
+            for ledger in ledgers:
+                self.assertTrue(asyncio.run(ledger.open()))
+            barrier = threading.Barrier(2, timeout=20)
+            for ledger in ledgers:
+                original = ledger._git
+                paused = [False]
+
+                def coordinated(root, *args, _original=original, _paused=paused):
+                    if args and args[0] == "push" and not _paused[0]:
+                        _paused[0] = True
+                        barrier.wait()
+                    return _original(root, *args)
+
+                ledger._git = coordinated
+            sends = []
+
+            async def render(candidate):
+                return [payload(candidate["id"])]
+
+            async def send(card):
+                sends.append(card)
+                return SimpleNamespace(ok=True, ambiguous=False, message_id="101")
+
+            async def compete():
+                async def run_one(ledger):
+                    async def checkpoint(state):
+                        return await ledger.checkpoint("silverpalace", state)
+                    return await delivery.deliver_oldest(queued, "silverpalace", ROUTE, as_of=NOW,
+                                                        checkpoint=checkpoint, render=render, send=send)
+                return await asyncio.gather(*(run_one(ledger) for ledger in ledgers), return_exceptions=True)
+
+            try:
+                with patch.dict("os.environ", {"GIT_AUTHOR_DATE": "2026-01-01T00:00:00+0000",
+                                               "GIT_COMMITTER_DATE": "2026-01-01T00:00:00+0000"}):
+                    results = asyncio.run(compete())
+                self.assertEqual(len(sends), 1)
+                self.assertEqual(sum(isinstance(x, delivery.DeliveryHold) for x in results), 1)
+                saved = json.loads(git(seed, "--git-dir", str(remote), "show",
+                                       f"refs/heads/{branch}:state/candidate_news.json"))
+                self.assertEqual(saved["candidate_news"]["silverpalace"]["posted"]["1"]["messages"], ["101"])
+            finally:
+                for ledger in ledgers:
+                    asyncio.run(ledger.close())
 
     def test_isolated_ledger_requires_existing_tracked_valid_file(self):
         branch = "arena/98b5f4e1-game-express"

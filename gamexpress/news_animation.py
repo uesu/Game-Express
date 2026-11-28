@@ -136,7 +136,7 @@ def convert_gif(raw):
         for size, fps in ((640, 10), (480, 8)):
             args = [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "2",
                     "-i", str(src), "-filter_complex",
-                    f"fps={fps},scale={size}:-2:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a",
+                    f"fps={fps},scale='min({size},iw)':-2:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a",
                     "-loop", str(original_loop if original_loop is not None else -1),
                     "-fs", str(UPLOAD_LIMIT + 1024 * 1024), "-y", str(dst)]
             result = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,

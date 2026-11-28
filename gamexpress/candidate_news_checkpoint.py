@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import secrets
 import subprocess
 from pathlib import Path
 
@@ -81,7 +82,7 @@ class GitCheckpoint:
             if staged.stdout:
                 commit = self._git("-c", "user.name=github-actions[bot]",
                                    "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
-                                   "commit", "-m", "auto: checkpoint candidate news [skip ci]")
+                                   "commit", "-m", f"auto: checkpoint candidate news {secrets.token_hex(16)} [skip ci]")
                 if commit.returncode != 0:
                     return False
                 pushed = self._git("push", "origin", f"HEAD:refs/heads/{self.branch}")
@@ -190,9 +191,12 @@ class IsolatedGitLedger:
             if staged.returncode or set(filter(None, staged.stdout.split(b"\0"))) - {self.LEDGER.encode()}:
                 return False
             if staged.stdout:
+                # Identical concurrent writers can otherwise create the same commit
+                # (same parent/tree/author/second), causing both pushes to succeed.
+                # A unique commit makes the branch update a meaningful CAS fence.
                 commit = self._git(self.worktree, "-c", "user.name=github-actions[bot]",
                                    "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
-                                   "commit", "-m", "auto: checkpoint candidate news [skip ci]")
+                                   "commit", "-m", f"auto: checkpoint candidate news {secrets.token_hex(16)} [skip ci]")
                 if commit.returncode:
                     return False
                 if self._git(self.worktree, "push", "origin", f"HEAD:refs/heads/{self.branch}").returncode:

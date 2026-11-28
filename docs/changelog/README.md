@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Feature 3 animated media follow-up](CHANGELOG.md#2026-11-27--feature-3-animated-media-follow-up).
+Latest: [Candidate news checkpoint race hardening](CHANGELOG.md#2026-11-27--candidate-news-checkpoint-race-hardening).
+
+Previous: [Feature 3 animated media follow-up](CHANGELOG.md#2026-11-27--feature-3-animated-media-follow-up).
 
 Previous: [Read-only source research (no production behavior changes)](CHANGELOG.md#2026-11-27--read-only-source-research-no-production-behavior-changes).
 

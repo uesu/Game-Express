@@ -480,9 +480,13 @@ prototype uses a separate detached-worktree Git ledger to checkpoint write-ahead
 confirmed IDs via same-branch push/ref checks,
 uses one-shot Discord POSTs, limits a source to one article / three pages per run, and requires full
 expanded output (holding rather than sending a safety-limit excerpt). Local mocked runner and bare
-Git tests do not establish production correctness. End-of-job persistence/rebase interactions,
-ambiguous Git/Discord outcomes, concurrent workflows and cross-repository failover still require
-validation and an operational reconciliation procedure before removing the gate. A single-repo
+Git tests do not establish production correctness. The detached-ledger checkpoint uses a random
+per-commit nonce so identical simultaneous writers cannot produce the same Git commit ID. Local
+fixed-clock bare-Git races now verify that one of two competing identical checkpoints wins and that
+only one of two competing delivery coordinators sends. A separate local test rebases the monitor
+state commit over the ledger. GitHub Actions end-of-job persistence, ambiguous Git/Discord outcomes,
+concurrent production workflows and cross-repository failover still require validation and an
+operational reconciliation procedure before removing the gate. A single-repo
 Actions concurrency group is not a distributed lock. No backlog or production state change has
 been performed. Existing game news routing and behavior remain unchanged.
 
@@ -497,7 +501,8 @@ An `absent` decision requires independently established non-delivery, not merely
 the corrected record must be durably checkpointed before resuming. An operator-facing workflow and
 production-grade recovery procedure remain unfinished. Local bare-Git tests show the gated runner
 can checkpoint separately, a stale writer holds, and a normal state commit can rebase over the
-candidate ledger without changing it. Production sync protects `state/candidate_news.json` from
+candidate ledger without changing it. Production sync now runs the candidate offline regression
+files before applying changes and protects `state/candidate_news.json` from
 creation, modification or deletion; it is not provisioned automatically. A controlled
 [development-branch GitHub probe](https://github.com/uesu/Game-Express/actions/runs/46037384333)
 confirmed real pushes/ref verification, a stale writer hold and two simulated pages in a separate
@@ -1424,7 +1429,8 @@ are used when they fit; larger files are downscaled/re-encoded with pinned
 some quality/frame rate is necessarily lost. The updated planner packs multiple attachments into the
 original page when possible, with at most 10 files and 24 MiB of file bytes per message (reserving
 room under the documented 25 MiB message-request cap), then splits in source order if necessary.
-The multi-file layout was sent privately in independent tests: [93](https://github.com/uesu/Game-Express/actions/runs/46125080681)
+An oversized input narrower than the target is not enlarged; 640/480 pixels are maximum target
+widths for the two conversion attempts. The multi-file layout was sent privately in independent tests: [93](https://github.com/uesu/Game-Express/actions/runs/46125080681)
 uses 3 messages with 4, 4 and 1 GIFs, and [99](https://github.com/uesu/Game-Express/actions/runs/46125244022)
 uses one message with 3 GIFs. The user confirmed that the packed layout looks good and the GIFs play.
 Source bytes, dimensions, frame count, total work, encoded size, duration and page count are bounded.

@@ -1,5 +1,14 @@
 # Changelog — current entries
 
+## 2026-11-27 — Candidate news checkpoint race hardening
+
+- Checkpoint commits now carry unique nonces. Local fixed-clock competing Git writers with the
+  same parent and state cannot accidentally create the same commit and both believe they won.
+  Offline races also exercise competing delivery coordinators; the production-sync preflight
+  now runs the candidate source, delivery and animation regression files. Development-only
+  private tool tests no longer run in a production checkout that lacks those tools. GIF conversion
+  avoids upscaling sources narrower than the chosen output width. Candidate delivery remains hard-gated: the production ledger, live crash recovery and failover still need review.
+
 ## 2026-11-27 — Feature 3 animated media follow-up
 
 - For official news, identify GIF-signature media with misleading MIME or file extensions and

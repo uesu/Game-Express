@@ -492,7 +492,7 @@ and `config/program_announcements.json`. So sync code **into** prod, never the r
 ### Option A — Automated GitHub Actions sync (`.github/workflows/sync_prod.yml`, recommended)
 
 Every push to `main` (and any manual **Actions → Sync to Production (8mqzv4k2n7c) → Run workflow**
-dispatch) automatically validates the full offline test suite and runs `.github/scripts/sync_prod.py`
+dispatch) automatically validates the listed offline pre-sync checks and runs `.github/scripts/sync_prod.py`
 to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, `config/games.json`,
 `config/overrides.json`, `.github/workflows/{ci,monitor,python_version_bump}.yml`,
 `.github/dependabot.yml`, `.github/zizmor.yml`, `.gitignore`, `requirements.txt`, `ruff.toml`,
@@ -502,7 +502,13 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   `state/candidate_news.json` are never created, overwritten, staged, or deleted by sync. The
   candidate ledger is not provisioned automatically; do not create or reset it during research.
   Its production provisioning, recovery and failover process remain unverified and candidate
-  delivery is hard-gated off.
+  delivery is hard-gated off. Candidate checkpoint commits include a per-write random nonce;
+  local competing-writer tests and a local monitor-state rebase test pass, but they do not prove
+  cross-repository failover or actual production recovery. The sync preflight runs the candidate
+  offline test files. A local production-shaped tree passed the synced CI test commands without
+  copying dev-only research tools; those research tests run in development CI only. The exact
+  production variables and secrets cannot be inferred from a public repository view; check their
+  presence privately without sharing values.
 - **Program announcement seeds are union-merged:** `config/program_announcements.json` preserves any
   tweet IDs discovered live by the production monitor while adding/updating entries from dev.
 - **Dev-only files stay in dev:** `docs/`, `README.md`, `AGENTS.md`, `PRIVACY_POLICY.md`,

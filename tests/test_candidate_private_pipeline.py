@@ -315,6 +315,28 @@ class NewsAnimationPlanTests(unittest.TestCase):
         self.assertEqual(urls, ["attachment://" + names[0], good])
         self.assertEqual(pages[0]["components"][0]["components"][0]["items"][0]["media"]["url"], bad)
 
+    def test_conversion_never_upscales_small_source(self):
+        import subprocess
+        import tempfile
+
+        import imageio_ffmpeg
+
+        from gamexpress.news_animation import convert_gif, gif_info
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "source.gif"
+            subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                            "-i", "testsrc2=size=320x180:rate=20:duration=1", "-loop", "0", "-y", str(path)],
+                           check=True, timeout=30, capture_output=True)
+            raw = path.read_bytes()
+            with patch("gamexpress.news_animation.UPLOAD_LIMIT", int(len(raw) * 0.9)):
+                result = convert_gif(raw)
+            width, height, frames, duration, loop = gif_info(result, with_duration=True, with_loop=True)
+            self.assertEqual((width, height), (320, 180))
+            self.assertGreater(frames, 1)
+            self.assertEqual((duration, loop), (100, 0))
+            self.assertLess(len(result), len(raw))
+
     def test_allowlist_rejects_spoofed_and_non_https_hosts(self):
         from gamexpress.news_animation import trusted_url
 

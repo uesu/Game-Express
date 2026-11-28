@@ -88,6 +88,13 @@ jobs:
           python tests/test_beta_sources.py
           python tests/test_feature5_gate_media.py
           python tests/test_gachawiki_placeholder.py
+          python tests/test_endfield_candidate.py
+          python tests/test_silverpalace_candidate.py
+          python tests/test_day_news_candidate.py
+          python tests/test_nte_candidate.py
+          python tests/test_candidate_thumbnail.py
+          python tests/test_candidate_news_delivery.py
+          python tests/test_candidate_private_pipeline.py
 
       - name: Pre-sync gate — card preview renders
         run: python -m gamexpress preview --out /tmp/previews > /dev/null

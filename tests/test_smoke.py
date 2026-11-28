@@ -1390,6 +1390,13 @@ def test_ci_and_the_python_bump_gate_run_every_offline_test_file():
         assert f"python tests/{name}" in ci_runs, f"ci.yml's test job does not run tests/{name}"
         assert f"python tests/{name}" in gate["run"], f"the python-bump gate does not run tests/{name}"
     assert ".github/scripts" in ci_runs and ".github/scripts" in gate["run"]   # compileall covers the bump script too
+    # The synced production repository intentionally does not contain dev-only tools.
+    steps = ci["jobs"]["test"]["steps"]
+    private_step = next(s for s in steps if "python tests/test_candidate_private_pipeline.py" in str(s.get("run", "")))
+    assert private_step.get("if") == "github.repository == 'uesu/Game-Express'"
+    for step in steps:
+        if "python tools/" in str(step.get("run", "")):
+            assert step.get("if") == "github.repository == 'uesu/Game-Express'"
 
 
 def test_every_action_is_pinned_to_a_commit_sha_with_a_readable_version_comment():
@@ -17950,6 +17957,10 @@ def test_prod_sync_workflow_and_tree_synchronizer_preserve_live_state_and_merge_
         assert "persist-credentials: false" in wf_text
         assert "python .github/scripts/sync_prod.py" in wf_text
         assert "python tests/test_smoke.py" in wf_text
+        for name in ("test_endfield_candidate.py", "test_silverpalace_candidate.py", "test_day_news_candidate.py",
+                     "test_nte_candidate.py", "test_candidate_thumbnail.py", "test_candidate_news_delivery.py",
+                     "test_candidate_private_pipeline.py"):
+            assert "python tests/" + name in wf_text
         assert "secrets.PROD_SYNC_PAT || secrets.BUMP_PAT" in wf_text
 
 
