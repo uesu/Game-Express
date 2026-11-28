@@ -1,8 +1,10 @@
 # Changelog
 
-Latest: [Guarded candidate ledger initialization](CHANGELOG.md#2026-11-27--guarded-candidate-ledger-initialization).
+Latest: [Private integrated runner test](CHANGELOG.md#2026-11-27--private-integrated-runner-test).
 
-Previous: [Attended candidate recovery and integrated test](CHANGELOG.md#2026-11-27--attended-candidate-recovery-and-integrated-test).
+Previous: [Guarded candidate ledger initialization](CHANGELOG.md#2026-11-27--guarded-candidate-ledger-initialization).
+
+Earlier: [Attended candidate recovery and integrated test](CHANGELOG.md#2026-11-27--attended-candidate-recovery-and-integrated-test).
 
 Earlier: [Candidate news checkpoint race hardening](CHANGELOG.md#2026-11-27--candidate-news-checkpoint-race-hardening).
 

@@ -1,5 +1,14 @@
 # Changelog — current entries
 
+## 2026-11-27 — Private integrated runner test
+
+- With user approval, sent one explicitly synthetic, private test message through the real
+  candidate runner, renderer, GIF planner and Discord multipart sender. The synthetic source
+  used a local bare-Git ledger and a test-only release override; the one-use development lock is
+  permanently claimed. This is not a production or cross-repository failover test, and playback
+  of this synthetic GIF has not yet been confirmed by the user. The candidate release gate remains
+  closed.
+
 ## 2026-11-27 — Guarded candidate ledger initialization
 
 - Added attended initialization of an empty candidate ledger with a full-history check, unique
