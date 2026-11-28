@@ -839,6 +839,7 @@ def _smart_fit_news(
     page_payload,
     max_pages: int,
     reserve: int = 0,
+    keep_nte_headings: bool = False,
 ) -> tuple[list[dict] | None, str]:
     """Fit the WHOLE article into at most `max_pages` messages, or explain why it cannot be.
 
@@ -865,7 +866,8 @@ def _smart_fit_news(
             return None, content_notice
         page_units.extend(text(piece) for piece in pieces)
 
-    page_units = _keep_headings_with_following_text(page_units)
+    if keep_nte_headings:
+        page_units = _keep_headings_with_following_text(page_units)
     if not any(unit["type"] == 10 for unit in page_units):
         return None, limit_notice
 
@@ -1110,7 +1112,8 @@ def news_payloads(
                     splittable = False
                     break
                 page_units.extend(text(piece) for piece in pieces)
-            page_units = _keep_headings_with_following_text(page_units)
+            if item.source == "nte" and item.game == "nte":
+                page_units = _keep_headings_with_following_text(page_units)
             if not splittable:
                 excerpt_notice = (
                     "**Excerpt — this article contains content that exceeds single-message limits.** "
@@ -1168,7 +1171,8 @@ def news_payloads(
             else:
                 page_units.extend(text(piece) for piece in pieces)
 
-        page_units = _keep_headings_with_following_text(page_units)
+        if item.source == "nte" and item.game == "nte":
+            page_units = _keep_headings_with_following_text(page_units)
         pages, current = [], page_prefix(1)
         have_body = False
         for unit in page_units:
@@ -1202,6 +1206,7 @@ def news_payloads(
             units, page_prefix=page_prefix, page_payload=page_payload,
             max_pages=max(1, NEWS_DEFAULT_MAX_PAGES),
             reserve=text_length(news_controls(buttons)),
+            keep_nte_headings=item.source == "nte" and item.game == "nte",
         )
         if pages:
             return pages
@@ -1215,6 +1220,7 @@ def news_payloads(
             units, page_prefix=page_prefix, page_payload=page_payload,
             max_pages=max(1, NEWS_DEFAULT_MAX_PAGES),
             reserve=text_length(news_controls(buttons)),
+            keep_nte_headings=item.source == "nte" and item.game == "nte",
         )
         if pages:
             return pages
