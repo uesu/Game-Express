@@ -102,7 +102,7 @@ async def main():
               patch.object(delivery, "render_candidate_animated", render),
               patch.object(delivery, "send_candidate_once", fake_send)):
             import re
-            token_ok = bool(re.fullmatch(r"[A-Za-z0-9_-]{20,512}", settings.env["NEWS_CANDIDATES_LEDGER_TOKEN"]))
+            token_ok = bool(re.fullmatch(r"[!-~]{20,2048}", settings.env["NEWS_CANDIDATES_LEDGER_TOKEN"]))
             origin_ok = runner._origin_is_authority(standby_root, STANDBY)
             checkout_ok = runner._checkout_is_current(standby_root, "main")
             valid = runner.standby_authority(settings, standby_root) is not None

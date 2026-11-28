@@ -98,7 +98,7 @@ def standby_authority(settings, root):
             or not _valid_repository(repository) or not _valid_repository(standby_repo)
             or repository.lower() == standby_repo.lower() or not branch or not standby_branch
             or len(branch) > 240 or len(standby_branch) > 240
-            or not re.fullmatch(r"[A-Za-z0-9_-]{20,512}", token)
+            or not re.fullmatch(r"[!-~]{20,2048}", token)
             or os.environ.get("GITHUB_ACTIONS") != "true"
             or os.environ.get("GITHUB_EVENT_NAME") not in ("workflow_dispatch", "schedule")
             or os.environ.get("GITHUB_REPOSITORY", "").lower() != standby_repo.lower()
