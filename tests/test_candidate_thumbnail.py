@@ -1,4 +1,4 @@
-"""Offline tests for the inactive candidates' optional YouTube cover fallback."""
+"""Offline tests for the official-news YouTube cover fallback."""
 from __future__ import annotations
 
 import asyncio
@@ -55,13 +55,18 @@ class CandidateThumbnailTests(unittest.TestCase):
         self.assertIn("https://www.youtube.com/watch?v=tdZN6H1N3PU", texts)
         self.assertTrue(any(c["type"] == 12 and c["items"][0]["media"]["url"] == url for c in children))
 
-    def test_existing_media_legacy_sources_and_bad_links_never_guess(self):
+    def test_existing_media_unofficial_sources_and_bad_links_never_guess(self):
         variants = []
         for source in ("hoyolab", "kuro", "nte"):
             a = item(source)
-            if source == "nte":
-                a.images = ["https://example.org/existing.jpg"]
+            a.images = ["https://example.org/existing.jpg"]
             variants.append(a)
+        a = item("hoyolab")
+        a.official = False
+        variants.append(a)
+        a = item("hoyolab")
+        a.article_blocks.append({"kind": "text", "text": "[Native video unavailable — open the original article.]"})
+        variants.append(a)
         for kind in ("image", "video"):
             a = item()
             a.article_blocks.append({"kind": kind, "url": "https://example.org/source"})
@@ -83,6 +88,14 @@ class CandidateThumbnailTests(unittest.TestCase):
         self.assertIs(asyncio.run(with_verified_fallback(f, failed)), failed)
         self.assertEqual(failed.images, [])
         self.assertEqual(len(f.calls), 4)
+
+    def test_official_hoyolab_and_kuro_without_native_media_get_verified_thumbnail(self):
+        for source, game in (("hoyolab", "zzz"), ("kuro", "wuwa")):
+            a = item(source)
+            a.game = game
+            result = asyncio.run(with_verified_fallback(Fetcher(), a))
+            self.assertEqual(result.images, ["https://i.ytimg.com/vi/tdZN6H1N3PU/maxresdefault.jpg"])
+            self.assertEqual(result.article_blocks, a.article_blocks)
 
     def test_plain_and_markdown_video_links_are_detected_but_not_spoofed(self):
         for content in ("Watch https://youtu.be/tdZN6H1N3PU.",

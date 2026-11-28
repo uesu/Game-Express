@@ -494,6 +494,9 @@ async def run_news(ctx: Ctx) -> None:
         art = await src.news_article(ctx.fetcher, gm, cand)
         if art is None:
             raise ValueError("full article unavailable/mismatched")
+        from .sources.candidate_thumbnail import with_verified_fallback
+
+        art = await with_verified_fallback(ctx.fetcher, art)
         pls = news_payloads(
             gm,
             art,
@@ -515,7 +518,7 @@ async def run_news(ctx: Ctx) -> None:
             fresh = await src.news_article(ctx.fetcher, gm, cand)
             if fresh is None or fresh.title != art.title:
                 raise ValueError("media unavailable; fresh official article mismatched")
-            art = fresh
+            art = await with_verified_fallback(ctx.fetcher, fresh)
             pls = news_payloads(
                 gm,
                 art,

@@ -85,6 +85,19 @@ class NteCandidateTests(unittest.TestCase):
             self.assertIsNone(asyncio.run(nte_candidate.news_article(fetcher, game, {**row, "url": url})))
             self.assertFalse(fetcher.calls)
 
+    def test_table_cells_keep_distinct_masked_ids_and_rows(self):
+        html = ('<div class="articleContent"><p>Accounts:</p><table>'
+                '<tr><td><p>2009****9731</p></td><td><span>2005****4351</span></td></tr>'
+                '<tr><td>2003****7685</td><td>2009****4596</td><td>2012****5282</td></tr>'
+                '</table><p>After</p></div>')
+        result = nte_candidate._body(html)
+        text = result[0]["text"]
+        self.assertIn(r"2009\*\*\*\*9731, 2005\*\*\*\*4351", text)
+        self.assertIn(r"2003\*\*\*\*7685, 2009\*\*\*\*4596, 2012\*\*\*\*5282", text)
+        self.assertIn("After", text)
+        bad = '<div class="articleContent"><table><tr><td><img src="https://example.test/a.jpg"></td></tr></table></div>'
+        self.assertIsNone(nte_candidate._body(bad))
+
     def test_official_media_path_spaces_are_encoded_without_relaxing_url_validation(self):
         url = "https://ntevmg.perfectworld.com/webops/nte/art EN%20name.jpg"
         html = f'<div class="articleContent"><img src="{url}"></div>'

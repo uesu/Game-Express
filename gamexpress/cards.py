@@ -805,6 +805,33 @@ def _split_expanded_text(content: str, max_chars: int) -> list[str] | None:
 
 
 
+def _keep_headings_with_following_text(units: list[dict]) -> list[dict]:
+    """Keep a short trailing bold heading with its next text paragraph when safe.
+
+    This conservative layout hint never joins across media and never changes
+    article characters. Long or complex paragraphs retain the existing fitter.
+    """
+    result: list[dict] = []
+    i = 0
+    while i < len(units):
+        unit = units[i]
+        if unit.get("type") == 10 and i + 1 < len(units) and units[i + 1].get("type") == 10:
+            value = unit["content"]
+            match = re.search(r"(?:^|\n\n)(\*\*[^\n*]{1,120}\*\*)(?:\n\n)?$", value)
+            if match:
+                split = match.start(1)
+                heading, following = value[split:], units[i + 1]["content"]
+                if len(heading + following) <= MAX_TEXT_TOTAL - 512:
+                    if value[:split]:
+                        result.append(text(value[:split]))
+                    result.append(text(heading + following))
+                    i += 2
+                    continue
+        result.append(unit)
+        i += 1
+    return result
+
+
 def _smart_fit_news(
     units: list[dict],
     *,
@@ -838,6 +865,7 @@ def _smart_fit_news(
             return None, content_notice
         page_units.extend(text(piece) for piece in pieces)
 
+    page_units = _keep_headings_with_following_text(page_units)
     if not any(unit["type"] == 10 for unit in page_units):
         return None, limit_notice
 
@@ -1082,6 +1110,7 @@ def news_payloads(
                     splittable = False
                     break
                 page_units.extend(text(piece) for piece in pieces)
+            page_units = _keep_headings_with_following_text(page_units)
             if not splittable:
                 excerpt_notice = (
                     "**Excerpt — this article contains content that exceeds single-message limits.** "
@@ -1139,6 +1168,7 @@ def news_payloads(
             else:
                 page_units.extend(text(piece) for piece in pieces)
 
+        page_units = _keep_headings_with_following_text(page_units)
         pages, current = [], page_prefix(1)
         have_body = False
         for unit in page_units:

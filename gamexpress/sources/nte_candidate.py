@@ -313,7 +313,7 @@ def _body(html):
         parser.close()
         if parser.found != 1 or parser.closed != 1 or parser.depth:
             return None
-        blocks = news_blocks("".join(parser.parts), escape_literal_tildes=True)
+        blocks = news_blocks("".join(parser.parts), escape_literal_tildes=True, join_table_cells=True)
         for block in blocks:
             if block.get("kind") in ("image", "video"):
                 block["url"] = _encode_official_media_spaces(block.get("url"))

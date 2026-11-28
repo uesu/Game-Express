@@ -1,7 +1,6 @@
-"""Optional verified YouTube-cover fallback for the inactive candidate sources.
+"""Verified YouTube-cover fallback for official news without native media.
 
-This is not a live-source registration. Existing HoYoLAB/Kuro renderers are not
-changed. A YouTube image is used only when no source image or native video exists,
+A YouTube image is used only when no source image or native video exists,
 and only after the caller's normal media preflight accepts the derived thumbnail.
 """
 from __future__ import annotations
@@ -16,8 +15,11 @@ CANDIDATES = frozenset(("nte", "endfield", "silverpalace"))
 
 
 def fallback_url(item):
-    if (item.source not in CANDIDATES or item.game != item.source or item.images
-            or any(b.get("kind") in ("image", "video") for b in item.article_blocks)):
+    trusted_source = (item.source in CANDIDATES and item.game == item.source) or item.source in {"hoyolab", "kuro"}
+    if (not trusted_source or not item.official or item.images
+            or any(b.get("kind") in ("image", "video")
+                   or "[Native video unavailable — open the original article.]" in b.get("text", "")
+                   for b in item.article_blocks)):
         return None
     for block in item.article_blocks:
         kind = block.get("kind")

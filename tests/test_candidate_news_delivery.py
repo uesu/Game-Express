@@ -813,3 +813,25 @@ class CandidateDeliveryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_heading_moves_with_following_paragraph_without_losing_text():
+    from gamexpress.cards import _keep_headings_with_following_text, news_payloads, text, validate_payload
+    from gamexpress.config import Game
+    from gamexpress.models import Item
+
+    fragments = [text("Before\n\n**Important Notes**\n\n"), text("1. Only one work link.\n\n"), text("After")]
+    joined = _keep_headings_with_following_text(fragments)
+    assert "".join(x["content"] for x in joined) == "".join(x["content"] for x in fragments)
+    assert joined[1]["content"] == "**Important Notes**\n\n1. Only one work link.\n\n"
+    body = "x" * 3650 + "\n\n**Important Notes**\n\n1. Only one work link may be submitted. " + "word " * 45
+    game = Game(key="nte", name="NTE", short="NTE", enabled=False, color=0)
+    item = Item(source="nte", game="nte", id="1", url="https://example.com/a", title="Test", text="",
+                published_ts=0, article_blocks=[{"kind": "text", "text": body}])
+    pages = news_payloads(game, item, expand_full=True)
+    assert len(pages) == 2 and all(not validate_payload(page) for page in pages)
+    texts = ["\n".join(c.get("content", "") for box in page["components"] for c in box["components"])
+             for page in pages]
+    assert "**Important Notes**" not in texts[0]
+    assert "**Important Notes**\n\n1. Only one work link" in texts[1]
+    assert all("Excerpt —" not in part for part in texts)
