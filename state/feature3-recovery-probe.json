@@ -1,25 +1,25 @@
 {
-  "schema": 1,
   "candidate_news": {
     "silverpalace": {
-      "version": 1,
-      "source": "silverpalace",
-      "route": "aaaaaaaaaaaaaaaa",
+      "partial": {
+        "id": "987654321",
+        "inflight": false,
+        "messages": [],
+        "pages": 1,
+        "signature": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
       "pending": [
         {
+          "date": "2000-01-01",
           "id": "987654321",
-          "title": "Synthetic recovery probe (not an article)",
-          "date": "2000-01-01"
+          "title": "Synthetic recovery probe (not an article)"
         }
       ],
       "posted": {},
-      "partial": {
-        "id": "987654321",
-        "signature": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "pages": 1,
-        "messages": [],
-        "inflight": true
-      }
+      "route": "aaaaaaaaaaaaaaaa",
+      "source": "silverpalace",
+      "version": 1
     }
-  }
+  },
+  "schema": 1
 }
