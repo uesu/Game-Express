@@ -1,23 +1,16 @@
 {
   "candidate_news": {
     "silverpalace": {
-      "partial": {
-        "id": "987654321",
-        "inflight": false,
-        "messages": [
-          "101"
-        ],
-        "pages": 1,
-        "signature": "eac68aed6a3a2637035789911848ec36635a6d7c992b445d8ba4bcc8a3917dfe"
-      },
-      "pending": [
-        {
-          "date": "2000-01-01",
-          "id": "987654321",
-          "title": "Synthetic standby probe"
+      "partial": null,
+      "pending": [],
+      "posted": {
+        "987654321": {
+          "messages": [
+            "101"
+          ],
+          "signature": "eac68aed6a3a2637035789911848ec36635a6d7c992b445d8ba4bcc8a3917dfe"
         }
-      ],
-      "posted": {},
+      },
       "route": "2c837ccd2b24fa61",
       "source": "silverpalace",
       "version": 1
