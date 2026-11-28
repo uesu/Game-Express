@@ -56,7 +56,8 @@ Last updated **2026-10-25**.
 ## 1. What this repository is
 
 A **GitHub-Actions-only** monitor. No server, no daemon, no Discord bot, no container.
-`.github/workflows/monitor.yml` is dispatched by cron-job.org every 5 minutes; one run fetches
+`.github/workflows/monitor.yml` is dispatched by cron-job.org at the operator-selected interval
+(currently 10 minutes); one run fetches
 official sources, decides whether anything is new, posts **Discord Components V2** cards through
 **webhooks**, commits its state, and exits. A run takes ~25 s end to end (~5–6 s of that is the
 Python).

@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Experimental shared-ledger candidate standby](CHANGELOG.md#2026-11-27--experimental-shared-ledger-candidate-standby).
+Latest: [Single production repository clarification](CHANGELOG.md#2026-11-27--single-production-repository-clarification).
+
+Previous: [Experimental shared-ledger candidate standby](CHANGELOG.md#2026-11-27--experimental-shared-ledger-candidate-standby).
 
 Previous: [Private integrated runner test](CHANGELOG.md#2026-11-27--private-integrated-runner-test).
 

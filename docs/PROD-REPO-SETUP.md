@@ -19,21 +19,24 @@ sibling project's workflow. PR acceptance does not authorize a merge or producti
 ## The family model
 
 The named repositories hold development code, tests and documentation. Production runs in the
-separate repositories listed above.
+separate repositories listed above. For Game-Express, `8mqzv4k2n7c` is the sole live instance
+for Features 1–4 and holds the posting records; Feature 5 is off. The development repository is
+not a standby, and no standby is needed for this installation.
 
 What that means in practice:
 
 | | development repo | production repo |
 |---|---|---|
 | name | `Game-Express` — development; visibility is your choice | separate opaque name, public standard hosted runners |
-| posts to Discord | never (`ENABLED_FEATURES=none` + no webhooks) | yes, every 5 minutes |
-| holds | code, tests, `docs/`, `README.md`, CI, Dependabot, this guide | the package, three config files, state, one workflow |
+| posts to Discord | development only; not the live or standby instance | yes, on the chosen schedule (currently 10 minutes) |
+| holds | code, tests, `docs/`, `README.md`, CI, Dependabot, this guide | runtime, config, authoritative posting state, operational workflows and synced offline tests |
 | Markdown in it | the whole manual | **none required** — see §1 |
 | pull requests | all of them | none; it only receives syncs |
 
-So treat anything below that mentions `docs/`, `README.md` or `tests/` as **development-repo
-only**. The production repo is deliberately documentation-free: it is not read by people, it is
-executed by a runner.
+The production repository is deliberately documentation-free: `docs/` and project Markdown
+manuals stay in development. Automated sync also copies offline tests and non-Markdown test
+fixtures for production CI; these are test data, not operational documentation. Production's
+`variables and secrets.txt` is an inventory of names, not a place to store credential values.
 
 ---
 
@@ -475,11 +478,12 @@ I'd use the Discord invite.
 `raw.githubusercontent.com/...` unauthenticated. If you ever want dev as a standby, both
 instance repos have to be public.
 
-**No CI in prod.** Nothing validates a bad edit there. Treat prod as deploy-only: never hand-edit
-it, always change dev → green CI → sync.
+**Production CI is not a substitute for review.** The synced CI can run for code changes, but
+production is deploy-only: make code changes in dev, verify the gates and sync rather than
+hand-editing runtime files in production.
 
-**The state commit is `[skip ci]`** and `ci.yml` isn't in prod anyway, so the auto-commits
-cost nothing.
+**The state commit is `[skip ci]`**; the synced production CI is not intended to run for these
+state-only auto-commits.
 
 **`concurrency: cancel-in-progress: false`** must stay false — a run can sit between "posted to
 Discord" and "state committed", and cancelling there allows a re-post.
@@ -500,8 +504,9 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
 `.github/dependabot.yml`, `.github/zizmor.yml`, `.gitignore`, `requirements.txt`, `ruff.toml`,
 `state/.gitkeep`) to `uesu/8mqzv4k2n7c`:
 
-- **Live state is untouchable:** `state/state.json` and the gated candidate ledger
-  `state/candidate_news.json` are never created, overwritten, staged, or deleted by sync. The
+- **Live state and inventory are protected:** `state/state.json`, the gated candidate ledger
+  `state/candidate_news.json`, and production's `variables and secrets.txt` are never created,
+  overwritten, staged, or deleted by sync. The
   candidate ledger is not provisioned automatically; do not create or reset it during research.
   Attended first-install initialization is implemented but not validated in production. Candidate
   delivery is hard-gated off. The attended recovery workflow is copied by sync but is manual-only;
@@ -561,9 +566,11 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
 - **Dev-only files stay in dev:** `docs/`, `README.md`, `AGENTS.md`, `PRIVACY_POLICY.md`,
   `TERMS_OF_SERVICE.md`, `.env.example`, `previews/`, `archive/`, and `.github/workflows/sync_prod.yml`
   are never copied to production.
-- **Zero collision with 5-minute monitor runs:** `cancel-in-progress: false` queues concurrent syncs,
-  and if a 5-minute monitor state commit lands mid-push, `sync_prod.py` fetches the fresh remote tip,
-  resets to `FETCH_HEAD`, and re-applies the sync on top of the updated `state/state.json`.
+- **Concurrent monitor commits:** `cancel-in-progress: false` serializes active sync jobs in
+  the development repository, although GitHub may replace an older pending job. If a monitor
+  commit lands mid-push, `sync_prod.py` fetches the fresh remote tip, resets to `FETCH_HEAD`, and
+  reapplies the sync with bounded retries. This is not a cross-repository lock or a guarantee
+  against an ultimately failed push.
 - **One-time credential check:** `sync_prod.yml` uses `secrets.PROD_SYNC_PAT` if set, or falls back to
   `secrets.BUMP_PAT`. Make sure that token has **Contents: Read and write** and **Workflows: Read and
   write** access to `uesu/8mqzv4k2n7c` (or override the target repository name via the `PROD_REPO`

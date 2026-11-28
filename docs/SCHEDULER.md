@@ -103,9 +103,9 @@ The raw state URL looks like this:
 - **bravo takes over** once alpha's heartbeat is older than `FAILOVER_AFTER_MINUTES`.
   - This happens if alpha's cron job is paused, its token expired, or its Actions are down.
   - bravo never takes over if it can't read alpha's state, so a typo can't cause double posts.
-- The offset means the two repos never hit the same upstream in the same second, and during a
-  fail-over the standby keeps the same chosen rhythm. Candidate news is a separate gated
-  prototype and does **not** automatically fail over to a standby.
+- The offset reduces simultaneous upstream requests, and during a fail-over the standby keeps
+  the same chosen rhythm. Candidate news is a separate gated prototype; its experimental
+  shared-ledger standby requires explicit setup and has not been validated in production.
 
 ---
 
@@ -118,8 +118,9 @@ The raw state URL looks like this:
     `hoyolab: 9 ok / 0 fail`.
 - **Commits**: `auto: update state [skip ci]` appears only when something changed, plus a
   heartbeat about once an hour on alpha. Most runs commit nothing.
-- **The first live run is a silent seed.** It records the current announcements and all existing
-  codes without posting. After that, only new things are posted.
+- **Existing schedule and code paths seed on their first live run.** Candidate news is different:
+  its gated, attended first installation queues available history when backfill is approved. Do
+  not initialize or enable it without release review and an explicit backfill plan.
 
 ---
 

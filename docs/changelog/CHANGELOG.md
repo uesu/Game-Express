@@ -1,5 +1,17 @@
 # Changelog — current entries
 
+## 2026-11-27 — Single production repository clarification
+
+- Clarified that Game-Express is the development source and `uesu/8mqzv4k2n7c` is the sole
+  live Game-Express instance for Features 1–4, with Feature 5 off. Its posting records remain
+  authoritative; no standby or scheduler change is required. The chosen interval is 10 minutes.
+- Added explicit sync protection for the production variables/secrets inventory. Renamed the
+  Markdown-format beta test fixture to a text extension without changing its content, keeping
+  production CI coverage while leaving project manuals in development. Smoke tests cover inventory
+  and both state files, including staging safeguards. No production sync or settings were changed.
+- Feature 3 remains hard-gated; production initialization, recovery and live-source delivery have
+  not been validated, and historical backfill requires separate approval.
+
 ## 2026-11-27 — Experimental shared-ledger candidate standby
 
 - Added a gated, explicitly opted-in standby path using the primary's authoritative Git branch
@@ -690,7 +702,8 @@
 - **Why.** The policy must name every third-party host the monitor sends requests to; the docs
   index should start with its introduction.
 - **Not changed.** The documented cron-job.org interval (every 5 minutes) is the recommendation;
-  the operator's live instance dispatches every 10 minutes — both are supported, nothing to fix.
+  the operator's live instance dispatched every 10 minutes. **Superseded:** the interval is the
+  operator's choice; there is no current five-minute recommendation.
 
 ## 2026-11-06 — X: nitter rotation #8 — the teapawt family leads, mizuki.st joins, meowing/miningtcup demoted
 
@@ -2094,7 +2107,8 @@ documentation accuracy sweep**
   run across GI/HSR/ZZZ/HNA) and that every enabled game's X account is probed across the nitter
   fleet, `nitter.cf` first — including the two new accounts `@HonkaiNA` and
   `@Ananta_EN`. Dropping a sort or a gid now fails CI instead of quietly missing announcements.
-- **The recommended poll interval is now 5 minutes, not 10** — halving the average time-to-post
+- **Historical note (recommendation superseded):** a five-minute interval was previously suggested,
+  not required — halving the average time-to-post
   with no code change. `docs/SCHEDULER.md` gains a measured *How fast can it poll?* section: runs
   take 19–36 s (≈8 % of a 5-minute slot), overlap is impossible by construction, GitHub is free
   for public repos, and the real limit is politeness toward volunteer-run upstreams. 3 minutes is

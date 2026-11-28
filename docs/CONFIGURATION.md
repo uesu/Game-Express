@@ -667,7 +667,7 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
 
 - **Independent milestones & separate state:** posts `Pre-Load Started`,
   `Maintenance Started` and `Servers Live` independently per `(game, version)` on the existing
-  5-minute poll cycle. `state["maintenance"][game]` tracks `preload`, `maintenance` and `live`
+  operator-selected poll cycle. `state["maintenance"][game]` tracks `preload`, `maintenance` and `live`
   separately from `schedule`, `codes` and `news`, and merges across fail-over peers.
 - **Servers Live — signals and guards (`live`):** three signals, no clock. (1) The publisher's
   completion notice or tweet (`schedule.MAINT_COMPLETE_RE`: *update maintenance has been
@@ -726,7 +726,7 @@ Behavior and safety invariants (`gamexpress/maintenance.py`):
   - *Time window:* strictly `0 <= now - posted_at <= LATE_MEDIA_EDIT_WINDOW_S` (`6 * 3600 = 21,600 s` / `6 h` from `posted_at`); polls after `6 h` perform `0` health checks, `0` candidate lookups, and `0` `PATCH` edits.
   - *Failed-edit limit (`MAX_LATE_MEDIA_ATTEMPTS = 3`):* counts only failed `ctx.webhook.edit(...)` calls (`not res.ok`), tracked in `entry["edit_attempts"]`; read-only checks do not increment it, and reaching `3` stops further checks/edits for that milestone.
   - *Counter reset:* only a succeeding `ctx.webhook.edit(...)` (`res.ok is True`) resets `entry["edit_attempts"] = 0` and commits the staged state.
-  - *Check cadence:* evaluated at most once per scheduled `maintenance.run(ctx)` execution (existing 5-minute poll schedule — no in-run loops), memoized per run (`verified_cache`) so each distinct URL is checked at most once per poll (`0` HTTP checks on already-expired `auth_key=` timestamps), and skipping `hoyoplay_basic_info` completely when `cur_tier == 1` is healthy and no authoritative timestamp upgrade applies.
+  - *Check cadence:* evaluated at most once per scheduled `maintenance.run(ctx)` execution (operator-selected poll schedule — no in-run loops), memoized per run (`verified_cache`) so each distinct URL is checked at most once per poll (`0` HTTP checks on already-expired `auth_key=` timestamps), and skipping `hoyoplay_basic_info` completely when `cur_tier == 1` is healthy and no authoritative timestamp upgrade applies.
   - *Separate succeeded-edit cap (`MAX_LATE_EDITS = 6`):* tracked monotonically in `entry["edit_count"]` (never reset), capping total succeeded silent `PATCH` edits per posted milestone across upgrades, renewals, and fallbacks.
 
 ## Beta kit & revision-diff cards (feature 5 — explicit opt-in; default off)
