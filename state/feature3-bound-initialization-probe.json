@@ -1,0 +1,29 @@
+{
+  "candidate_news": {
+    "endfield": {
+      "partial": null,
+      "pending": [],
+      "posted": {},
+      "route": "dacfce6e5e24b28a",
+      "source": "endfield",
+      "version": 1
+    },
+    "nte": {
+      "partial": null,
+      "pending": [],
+      "posted": {},
+      "route": "2c837ccd2b24fa61",
+      "source": "nte",
+      "version": 1
+    },
+    "silverpalace": {
+      "partial": null,
+      "pending": [],
+      "posted": {},
+      "route": "9ab11eafcee88fd1",
+      "source": "silverpalace",
+      "version": 1
+    }
+  },
+  "schema": 1
+}
