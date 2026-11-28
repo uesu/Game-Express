@@ -15,7 +15,7 @@ from gamexpress import candidate_news_delivery as delivery  # noqa: E402
 from gamexpress.cards import _split_expanded_text, news_payloads  # noqa: E402
 from gamexpress.config import load_settings  # noqa: E402
 from gamexpress.http import Fetcher  # noqa: E402
-from gamexpress.sources import endfield, silverpalace  # noqa: E402
+from gamexpress.sources import endfield, nte_candidate, silverpalace  # noqa: E402
 
 ROW = {"date": "2026-01-16", "id": "34", "title": "[Monotype] Beta Test  Survey Event Qualification Results Announcement"}
 
@@ -98,6 +98,25 @@ async def run():
                 print(f"::notice title=Endfield hold diagnostic::result=hold reason={reason}", flush=True)
             else:
                 print(f"::notice title=Endfield hold diagnostic::result=renderable pages={len(result)}", flush=True)
+
+        nte_row = {"date": "2026-04-26", "id": "261919", "title": "NTE Pre-Download Now Live",
+                   "url": "https://nte.perfectworld.com/en/article/news/gamenews/20260424/261919.html"}
+        item = await nte_candidate.news_article(fetcher, delivery.candidate_game("nte"), nte_row)
+        if item is None:
+            print("::notice title=NTE hold diagnostic::detail=unavailable-or-mismatch", flush=True)
+        else:
+            urls = [b.get("url", "") for b in item.article_blocks if b.get("kind") != "text"]
+            print(f"::notice title=NTE hold diagnostic::media-blocks={len(urls)} "
+                  f"media-with-space={sum(' ' in u for u in urls)}", flush=True)
+            try:
+                result = await delivery.render_candidate(fetcher, load_settings({"NEWS_EXPAND_MAX_PAGES": "120"}), "nte", nte_row)
+            except ValueError as exc:
+                allowed = {"full article exceeds rendering safety limits", "article media preflight or payload validation failed",
+                           "official article unavailable or mismatched", "grouped article payload invalid", "unsupported article media URL"}
+                reason = str(exc) if str(exc) in allowed else "other value error"
+                print(f"::notice title=NTE hold diagnostic::result=hold reason={reason}", flush=True)
+            else:
+                print(f"::notice title=NTE hold diagnostic::result=renderable pages={len(result)}", flush=True)
 
 
 if __name__ == "__main__":
