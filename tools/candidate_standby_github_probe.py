@@ -53,6 +53,7 @@ def guard():
 
 async def main():
     guard()
+    print("::notice title=Standby probe::stage=context-ok", flush=True)
     settings = load_settings({"INSTANCE_ROLE": "standby", "NEWS_CANDIDATES_STANDBY_ENABLED": "1",
         "NEWS_CANDIDATES_AUTHORITY_REPOSITORY": AUTHORITY, "NEWS_CANDIDATES_AUTHORITY_BRANCH": BRANCH,
         "NEWS_CANDIDATES_STANDBY_REPOSITORY": STANDBY, "NEWS_CANDIDATES_STANDBY_BRANCH": "main",
@@ -62,6 +63,7 @@ async def main():
     initial = delivery.ingest(SOURCE, route, None, [{"id": ARTICLE, "title": "Synthetic standby probe", "date": "2000-01-01"}])
     if json.loads(git(ROOT, "show", f"HEAD:{LEDGER}")) != {"schema": 1, "candidate_news": {SOURCE: initial}}:
         raise ValueError("probe already used or unexpected fixture")
+    print("::notice title=Standby probe::stage=fixture-ok", flush=True)
     game = Game(key=SOURCE, name="Silver Palace", short="Silver", enabled=False, color=0)
     item = Item(source=SOURCE, game=SOURCE, id=ARTICLE, title="Synthetic standby probe",
                 url=f"https://silverpalace.elementagames.com/en-us/newsDetail?id={ARTICLE}", text="",
@@ -88,6 +90,7 @@ async def main():
         standby_root = Path(tmp) / "standby"
         git(Path(tmp), "clone", "--quiet", "--depth=1", "--branch", "main",
             "https://github.com/uesu/News-Express.git", str(standby_root))
+        print("::notice title=Standby probe::stage=standby-clone-ok", flush=True)
         before = git(standby_root, "rev-parse", "HEAD")
         IsolatedGitLedger.LEDGER = LEDGER
         fake_context = {"GITHUB_REPOSITORY": STANDBY, "GITHUB_REF_NAME": "main", "GITHUB_REF": "refs/heads/main"}
@@ -98,10 +101,21 @@ async def main():
               patch.object(runner, "CANDIDATE_NEWS_READY", True), patch.object(delivery, "discover", discover),
               patch.object(delivery, "render_candidate_animated", render),
               patch.object(delivery, "send_candidate_once", fake_send)):
+            valid = runner.standby_authority(settings, standby_root) is not None
+            print(f"::notice title=Standby probe::authority-check={valid}", flush=True)
             first = context()
             await runner.run_candidate_news(first)
+            if first.warnings:
+                safe = first.warnings[0]
+                allowed = ("Candidate news: explicit primary repository/branch authority unavailable; no posts",
+                           "Candidate news: shared authority checkout unavailable; no posts",
+                           "Candidate news: authoritative ledger unavailable or stale; no posts",
+                           "silverpalace news: primary route not yet bound; standby held",
+                           "silverpalace news: held (DeliveryHold); inspect before retry")
+                print(f"::notice title=Standby probe::first-warning={allowed.index(safe) if safe in allowed else 'other'}", flush=True)
             second = context()
             await runner.run_candidate_news(second)
+            print(f"::notice title=Standby probe::simulated-sends={len(sends)} second-warning={bool(second.warnings)}", flush=True)
             if first.warnings or second.warnings or len(sends) != 1:
                 raise ValueError("standby simulation held or repeated")
         if git(standby_root, "rev-parse", "HEAD") != before or git(standby_root, "status", "--porcelain"):
