@@ -715,6 +715,20 @@ with one body image and unchanged production state; the test is locked against r
   `INTAKE_QUIET_TARGETS=1` infers coverage by kind, not by each target. No subreddit,
   official-author allowlist, or trust rule was added to Game-Express.
 
+  **Current relay versus Game-Express scope:** the newer Devvit defaults include
+  `NevernessToEverness`, `Endfield` and `SilverPalaceOfficial`; the owner's screenshots show
+  example records for all three arriving in the shared Discord intake channel. The maintained
+  News-Express Twitter V3 code includes `NTE_GL`, `AKEndfield` and `SilverPalace_EN`; its Reddit
+  V3 defaults include the three *leak* targets separately. Repository code does not prove live
+  secrets or Devvit settings, and an intake record is not proof of delivery to an output channel.
+  Game-Express's current game configuration still lacks NTE and Endfield as active schedule/code/
+  maintenance games, so it does not yet target their Reddit or X feeds for those features; Silver
+  Palace remains website news only. A new offline reader regression checks synthetic versions of
+  the three relay record shapes and generic X account handling without registering any game,
+  allowing no community post to become official merely by arriving in the relay. Those mocked
+  checks are not source verification or live delivery. The existing reader is relay-first but
+  retains its fallback chain when a listing cannot be served; this audit does not change or disable it.
+
 **Before implementation:** establish stable official listing/detail contracts, complete bounded
 pagination, UTC/timezone and media handling, safe bootstrap, outage/partial-response semantics and
 mocked end-to-end card/state tests. For schedule and maintenance, establish official program,

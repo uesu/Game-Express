@@ -22,10 +22,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from gamexpress import http  # noqa: E402
-from gamexpress.config import Settings, load_games, load_settings  # noqa: E402
+from gamexpress.config import Game, Settings, load_games, load_settings  # noqa: E402
 from gamexpress.http import Fetcher, SourceHealth  # noqa: E402
 from gamexpress.sources import reddit_intake as ri  # noqa: E402
 from gamexpress.sources.reddit import RedditClient, _is_official_subreddit_post  # noqa: E402
+from gamexpress.sources.twitter import XClient  # noqa: E402
 
 NOW = 1_793_583_400.0  # 2026-11-02 00:16:40Z, right after the screenshots
 
@@ -423,6 +424,60 @@ def _att(msg: dict, pid: str) -> dict:
     msg["attachments"] = [{"id": "9", "filename": "record.json", "url": _CDN.format(pid),
                            "content_type": "application/json"}]
     return msg
+
+
+def test_three_candidate_subreddits_are_parseable_but_not_automatically_official():
+    """Synthetic records based on the shown relay shapes; no production routes or posts."""
+    names = ["NevernessToEverness", "Endfield", "SilverPalaceOfficial"]
+    records = [
+        _rec(id="1nte001", sub=names[0], permalink=f"/r/{names[0]}/comments/1nte001/video/",
+             url="https://v.redd.it/examplevid", media=["https://v.redd.it/examplevid/CMAF_1080.mp4"],
+             author="community_user", flair="Discussion", body="Fan discussion", full=True),
+        _rec(id="1end001", sub=names[1], permalink=f"/r/{names[1]}/comments/1end001/discussion/",
+             url="https://i.redd.it/example.png", media=["https://i.redd.it/example.png"],
+             author="community_user", flair="Discussion", body="Partial body", bodyTruncated=True, full=True),
+        _rec(id="1sil001", sub=names[2], permalink=f"/r/{names[2]}/comments/1sil001/question/",
+             url="https://i.redd.it/example.jpg", media=["https://i.redd.it/example.jpg"],
+             author="community_user", flair="Guides & Tips", body="", full=True),
+    ]
+    messages = _msgs(records, [40, 50, 60])
+    _att(messages[1], "1end001")
+    full = dict(records[1], body="Complete synthetic body", bodyTruncated=False)
+    fetcher = _Fetcher(messages, files={_CDN.format("1end001"): full})
+    client = RedditClient(fetcher, _settings())  # type: ignore[arg-type]
+    client.intake.now = NOW
+    for sub, expected in zip(names, records):
+        entries = _run(client.subreddit(sub))
+        assert entries and [entry["id"] for entry in entries] == [expected["id"]]
+        assert entries[0]["subreddit"] == sub and entries[0]["relay_complete"] is True
+        game = Game(key="example", name="Example", short="EX", enabled=False, color=0, subreddits=[sub])
+        assert not _is_official_subreddit_post(game, entries[0]), "a community post is not an official announcement"
+    assert _run(client.subreddit(names[1]))[0]["text"] == "Complete synthetic body"
+    assert len(fetcher.cdn_calls) == 1
+    assert len(fetcher.calls) == 1 and "discord.com" in fetcher.calls[0][0]
+    assert not {"nte", "endfield", "silverpalace"} & set(load_games()), "no game is activated by this test"
+
+
+def test_candidate_x_account_shapes_work_in_isolated_non_live_test():
+    """Generic X client can use the named accounts; this does not enable any game."""
+    for key, account in (("nte", "NTE_GL"), ("endfield", "AKEndfield"), ("silverpalace", "SilverPalace_EN")):
+        game = Game(key=key, name="Synthetic game", short="EX", enabled=False, color=0, x_accounts=[account])
+        client = XClient(None, load_settings({}))  # type: ignore[arg-type]
+        calls = []
+
+        async def timeline(name, *, _calls=calls):
+            _calls.append(name)
+            return [{"id": "100", "text": "Synthetic update", "ts": 1000, "images": [], "links": []}]
+
+        async def tweet(tweet_id, name, *, _account=account):
+            assert tweet_id == "100" and name == _account
+            return None
+
+        client.timeline, client.tweet = timeline, tweet
+        items = _run(client.items(game, lambda text: "update" in text, since_ts=500))
+        assert calls == [account] and len(items) == 1 and items[0].game == key
+        assert items[0].url == f"https://x.com/{account}/status/100"
+    assert not {"nte", "endfield", "silverpalace"} & set(load_games())
 
 
 def test_relay_007_updates_attachments_and_edits():
