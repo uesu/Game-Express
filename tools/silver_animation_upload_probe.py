@@ -93,11 +93,13 @@ async def fetch_gif(session, url):
 
 
 def transcode(raw):
+    import imageio_ffmpeg  # research-only pinned dependency, not a runtime dependency
+
     with tempfile.TemporaryDirectory() as tmp:
         src, dst = Path(tmp) / "source.gif", Path(tmp) / "animated.gif"
         src.write_bytes(raw)
         for size, fps in ((640, 10), (480, 8)):
-            args = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "2",
+            args = [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "2",
                     "-i", str(src), "-filter_complex",
                     f"fps={fps},scale={size}:-2:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a",
                     "-loop", "0", "-y", str(dst)]
