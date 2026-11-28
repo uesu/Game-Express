@@ -36,9 +36,16 @@ async def run():
             pages = news_payloads(game, item, expand_full=True, max_pages=max_pages, max_chars=max_chars, max_media=120)
             excerpt = any("**Excerpt — this article " in str(c.get("content", ""))
                           for p in pages for box in p.get("components", []) for c in box.get("components", []))
-            print(f"::notice title=Historic hold diagnostic::profile={label} pages={len(pages)} excerpt={int(excerpt)}", flush=True)
+            rendered = "".join(c.get("content", "") for p in pages for box in p.get("components", [])
+                               for c in box.get("components", []) if c.get("type") == 10)
+            expected_separators = sum(x.count("、") for x in body)
+            rendered_separators = rendered.count("、")
+            print(f"::notice title=Historic hold diagnostic::profile={label} pages={len(pages)} excerpt={int(excerpt)} "
+                  f"source-separators={expected_separators} rendered-separators={rendered_separators}", flush=True)
+            if label == "bounded-large" and (excerpt or expected_separators != rendered_separators):
+                raise ValueError("large article was not fully rendered")
         try:
-            await delivery.render_candidate(fetcher, load_settings({}), "silverpalace", ROW)
+            await delivery.render_candidate(fetcher, load_settings({"NEWS_EXPAND_MAX_PAGES": "120"}), "silverpalace", ROW)
         except delivery.DeliveryHold as exc:
             allowed = {"full article exceeds rendering safety limits", "article media preflight or payload validation failed",
                        "article unavailable or mismatched", "official article unavailable or mismatched", "grouped article payload invalid"}
