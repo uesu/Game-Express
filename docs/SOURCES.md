@@ -521,13 +521,18 @@ response held, a later runner invocation held without retry, a simulated reviewe
 checkpointed, and a subsequent simulated confirmation was followed by a monitor-style commit/rebase.
 The run annotation says `restart=held`, but it was a new runner invocation **in the same Python
 process**, not a process restart. Temporary state files were removed and no Discord POST occurred.
-Neither probe validates the full recovery workflow, real delivery evidence or production failover. Production sync now runs the candidate offline regression
+Neither probe validates the full recovery workflow, real delivery evidence or production failover.
+The attended workflow also offers a paused-writer, no-send preview of the next candidate's real
+listing/render/GIF plan against the existing bound ledger; it does not checkpoint, post, or prove
+Discord acceptance. Production preview and recovery have not been run. Production sync now runs the candidate offline regression
 files before applying changes and protects `state/candidate_news.json` from
 creation, modification or deletion; it is not provisioned automatically. An attended, no-post
 first-install initializer checks for previously tracked ledger history, pins three distinct route
 fingerprints in otherwise empty source records, and requires explicit first-install/backfill and
 writer-pause attestations; it cannot detect force-pushed or external
-history and has not been validated in production. A [development-only GitHub Actions
+history and has not been validated in production. A [newer no-send GitHub probe](https://github.com/uesu/Game-Express/actions/runs/46131973530)
+verified route-bound initialization and repeat refusal with synthetic routes on the development
+branch; its temporary ledger was removed. A [development-only GitHub Actions
 probe](https://github.com/uesu/Game-Express/actions/runs/46128928271) exercised the actual
 initialization entry point and remote push with synthetic webhook URLs and a temporary, non-production
 ledger path; it reopened the branch and rejected a repeat without sending. A [second synthetic

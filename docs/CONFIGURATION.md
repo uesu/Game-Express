@@ -345,8 +345,8 @@ experimental shared-ledger failover below is explicitly configured; it is still 
 gate. Adding candidate keys does not change schedule, codes, maintenance or Reddit.
 An empty, deliberately provisioned candidate ledger binds each source to its dedicated route;
 the first complete snapshot then queues **available history**, not a silent baseline. A missing
-record or changed route is held before discovery, even on the first run. The attended initialization path is described in
-[production setup](PROD-REPO-SETUP.md); it and actual production recovery remain unvalidated.
+record or changed route is held before discovery, even on the first run. The attended initialization and no-send live-source preview are described in
+[production setup](PROD-REPO-SETUP.md); actual production setup and recovery remain unvalidated.
 Do not initialize or activate production until release review and the backfill plan are complete.
 Candidate processing is limited to one article and three pages per source per run, independently
 of the existing-news rules above.

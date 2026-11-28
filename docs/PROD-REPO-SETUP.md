@@ -525,6 +525,15 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   repositories cannot be detected. If there is any uncertainty, stop and investigate; if the push
   outcome is unclear, inspect the authoritative remote before any retry. The hard release gate
   remains closed. No live production initialization has been performed.
+- **No-send live-source preview:** after approved initialization, pause all schedulers/writers,
+  select `preview` and a source in the same attended workflow, and attest that writers are paused.
+  It checks the bound destination and existing ledger, fetches a fresh bounded official listing,
+  renders the next queued article including GIF planning, and reports counts/IDs only. It makes no
+  Discord request and no ledger checkpoint. An in-flight page, changed partial payload, future day,
+  route mismatch, unavailable media or failed Git verification holds. Preview does not prove
+  Discord acceptance, rendering or upstream completeness. It shares the monitor concurrency group
+  and may take up to 15 minutes; pausing avoids delaying or replacing scheduled runs. The release
+  gate stays closed and the operation must not be confused with posting history.
 - **Experimental candidate standby:** the shared-ledger path described in
   [CONFIGURATION](CONFIGURATION.md) is opt-in and remains behind the release gate. It must use
   the same authoritative branch, same dedicated destinations and a narrowly scoped credential;

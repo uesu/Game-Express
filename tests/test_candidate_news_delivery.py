@@ -548,6 +548,79 @@ class CandidateDeliveryTests(unittest.TestCase):
             finally:
                 asyncio.run(ledger.close())
 
+    def test_preview_reads_renders_and_holds_without_checkpoint_or_send(self):
+        import hashlib
+
+        initial = empty_record("silverpalace", ROUTE)
+        data = {"schema": 1, "candidate_news": {"silverpalace": initial}}
+        ledger = SimpleNamespace(data=data, poisoned=False)
+        original = copy.deepcopy(data)
+        settings = load_settings({})
+        calls = []
+        async def discover(fetcher, source):
+            calls.append("discover")
+            return [row("2"), row("1")]
+        async def render(fetcher, conf, source, candidate):
+            calls.append("render")
+            self.assertEqual(candidate["id"], "1")
+            return [payload("1"), payload("1")], {"animation.gif": b"synthetic"}
+        with (patch.object(delivery, "discover", discover), patch.object(delivery, "render_candidate_animated", render)):
+            result = asyncio.run(recovery.preview_record(ledger, settings, "silverpalace", ROUTE, None, as_of=NOW))
+            self.assertEqual(result, {"source": "silverpalace", "pending": 2, "posted": 0, "sends": 0,
+                "checkpoints": 0, "article_id": "1", "pages": 2, "confirmed_pages": 0,
+                "pages_next_run_limit": 2, "gif_attachments": 1})
+            self.assertEqual(data, original)
+            self.assertEqual(calls, ["discover", "render"])
+            pages = [payload("1"), payload("1")]
+            signature = hashlib.sha256(json.dumps(pages, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+            partial = delivery.ingest("silverpalace", ROUTE, initial, [row("1")])
+            partial["partial"] = {"id": "1", "signature": signature, "pages": 2, "messages": ["101"], "inflight": False}
+            ledger.data = {"candidate_news": {"silverpalace": partial}}
+            result = asyncio.run(recovery.preview_record(ledger, settings, "silverpalace", ROUTE, None, as_of=NOW))
+            self.assertEqual(result["confirmed_pages"], 1)
+            self.assertEqual(result["pages_next_run_limit"], 1)
+            partial["partial"]["signature"] = "f" * 64
+            with self.assertRaises(delivery.DeliveryHold):
+                asyncio.run(recovery.preview_record(ledger, settings, "silverpalace", ROUTE, None, as_of=NOW))
+            partial["partial"]["inflight"] = True
+            with patch.object(delivery, "discover", side_effect=AssertionError("held page must not fetch")), self.assertRaises(delivery.DeliveryHold):
+                asyncio.run(recovery.preview_record(ledger, settings, "silverpalace", ROUTE, None, as_of=NOW))
+            with patch.object(delivery, "discover", side_effect=AssertionError("route mismatch must not fetch")), self.assertRaises(delivery.DeliveryHold):
+                asyncio.run(recovery.preview_record(ledger, settings, "silverpalace", "b" * 16, None, as_of=NOW))
+            ledger.data = {"candidate_news": {"silverpalace": initial}}
+            async def future(fetcher, source):
+                return [row("1", "2099-01-01")]
+            with patch.object(delivery, "discover", future), patch.object(delivery, "render_candidate_animated", side_effect=AssertionError("future must not render")), self.assertRaises(delivery.DeliveryHold):
+                asyncio.run(recovery.preview_record(ledger, settings, "silverpalace", ROUTE, None, as_of=NOW))
+
+    def test_preview_environment_uses_validated_authority_without_send(self):
+        class FakeLedger:
+            def __init__(self, root, branch):
+                self.closed = False
+            async def open(self):
+                return True
+            async def close(self):
+                self.closed = True
+        ledger = FakeLedger(None, None)
+        settings = SimpleNamespace(http_timeout=1)
+        async def preview(actual, conf, source, route, fetcher, *, as_of):
+            self.assertIs(actual, ledger)
+            self.assertEqual((source, route), ("silverpalace", ROUTE))
+            return {"sends": 0, "checkpoints": 0}
+        env = {"RECOVERY_MODE": "preview", "RECOVERY_SOURCE": "silverpalace", "RECOVERY_WRITERS_PAUSED": "true"}
+        out = io.StringIO()
+        with (patch.dict("os.environ", env, clear=True), patch.object(recovery, "load_settings", return_value=settings),
+              patch.object(recovery, "authoritative_branch", return_value="main"),
+              patch.object(recovery, "destination", return_value=(HOOK, ROUTE)),
+              patch.object(recovery, "IsolatedGitLedger", return_value=ledger),
+              patch.object(recovery, "preview_record", preview), contextlib.redirect_stdout(out)):
+            asyncio.run(recovery.run_from_environment())
+            with patch.dict("os.environ", {"RECOVERY_WRITERS_PAUSED": "false"}), self.assertRaises(delivery.DeliveryHold):
+                asyncio.run(recovery.run_from_environment())
+        self.assertEqual(json.loads(out.getvalue()), {"sends": 0, "checkpoints": 0})
+        self.assertNotIn(HOOK, out.getvalue())
+        self.assertTrue(ledger.closed)
+
     def test_recovery_environment_requires_authority_and_never_exposes_route(self):
         state = delivery.ingest("silverpalace", ROUTE, None, [row("1")])
         state["partial"] = {"id": "1", "signature": "b" * 64, "pages": 1, "messages": [], "inflight": True}

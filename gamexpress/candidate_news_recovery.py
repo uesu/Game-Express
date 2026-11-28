@@ -8,12 +8,16 @@ operation requires inspecting the remote before attempting another correction.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
+import time
+from datetime import UTC, datetime
 
+from . import candidate_news_delivery as delivery
 from .candidate_news_checkpoint import IsolatedGitLedger, reconcile_checkpointed
 from .candidate_news_delivery import SOURCES, DeliveryHold, _validate, destination
-from .candidate_news_runner import authoritative_branch
+from .candidate_news_runner import MAX_PAGES_PER_SOURCE_RUN, authoritative_branch
 from .config import ROOT, load_settings
 
 
@@ -47,12 +51,44 @@ async def reviewed_resolution(ledger, source, route, *, article_id, page, signat
                                         signature=signature, resolution=resolution, message_id=message_id)
 
 
+async def preview_record(ledger, settings, source, route, fetcher, *, as_of):
+    """Read a live snapshot and render the next candidate without checkpointing or posting."""
+    summary = inspect_record(ledger, source, route)
+    if summary.get("inflight"):
+        raise DeliveryHold("held page requires reviewed reconciliation before preview")
+    if type(as_of) is not int or not 0 < as_of <= 253402300799:
+        raise DeliveryHold("invalid observation time")
+    prior = ledger.data["candidate_news"][source]
+    rows = await delivery.discover(fetcher, source)
+    state = delivery.ingest(source, route, prior, rows)
+    result = {"source": source, "pending": len(state["pending"]), "posted": len(state["posted"]),
+              "sends": 0, "checkpoints": 0}
+    if not state["pending"]:
+        return result
+    row = state["pending"][0]
+    today = datetime.fromtimestamp(as_of, UTC).date().isoformat()
+    if (source == "endfield" and row["ts"] > as_of) or (source != "endfield" and row["date"] > today):
+        raise DeliveryHold("future-dated article held")
+    pages, files = await delivery.render_candidate_animated(fetcher, settings, source, row)
+    if not pages:
+        raise DeliveryHold("no preview pages")
+    signature = hashlib.sha256(json.dumps(pages, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    partial = state["partial"]
+    if partial and (partial["signature"] != signature or partial["pages"] != len(pages)):
+        raise DeliveryHold("partial article changed; reconciliation required")
+    confirmed = len(partial["messages"]) if partial else 0
+    result.update({"article_id": row["id"], "pages": len(pages), "confirmed_pages": confirmed,
+                   "pages_next_run_limit": min(MAX_PAGES_PER_SOURCE_RUN, len(pages) - confirmed),
+                   "gif_attachments": len(files)})
+    return result
+
+
 async def run_from_environment():
     """Run only on the explicitly configured primary Actions repository and branch."""
     settings = load_settings()
     source = os.environ.get("RECOVERY_SOURCE", "")
     mode = os.environ.get("RECOVERY_MODE", "")
-    if mode not in ("inspect", "resolve", "initialize") or (mode != "initialize" and source not in SOURCES):
+    if mode not in ("inspect", "preview", "resolve", "initialize") or (mode != "initialize" and source not in SOURCES):
         raise DeliveryHold("invalid recovery request")
     branch = authoritative_branch(settings, ROOT)
     if branch is None:
@@ -79,6 +115,18 @@ async def run_from_environment():
     try:
         if mode == "inspect":
             print(json.dumps(inspect_record(ledger, source, route), sort_keys=True))
+            return
+        if mode == "preview":
+            if os.environ.get("RECOVERY_WRITERS_PAUSED") != "true":
+                raise DeliveryHold("writer-pause attestation required")
+            import aiohttp
+
+            from .http import BOT_UA, Fetcher
+
+            async with aiohttp.ClientSession(headers={"User-Agent": BOT_UA}) as session:
+                fetcher = Fetcher(session, timeout=settings.http_timeout)
+                result = await preview_record(ledger, settings, source, route, fetcher, as_of=int(time.time()))
+            print(json.dumps(result, sort_keys=True))
             return
         page_text = os.environ.get("RECOVERY_PAGE", "")
         if not page_text.isascii() or not page_text.isdecimal() or len(page_text) > 3:

@@ -14,6 +14,9 @@
   not a separately triggered standby job. Production failover remains unvalidated; force-pushes,
   independent ledgers and noncooperative writers are not fenced.
   Candidate delivery remains hard-gated and no production configuration was changed.
+- Added a paused-writer, no-Discord-post preview that validates a bound route and ledger, fetches
+  a live source and plans the next article without checkpointing. It reports counts, not a visual
+  Discord preview, and does not prove Discord acceptance.
 
 ## 2026-11-27 — Private integrated runner test
 
