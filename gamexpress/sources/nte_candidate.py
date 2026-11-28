@@ -9,6 +9,7 @@ import asyncio
 import re
 from datetime import date
 from html.parser import HTMLParser
+from urllib.parse import urlsplit
 
 from ..models import Item
 from ..textutil import news_blocks
@@ -287,6 +288,22 @@ class _Body(HTMLParser):
             self.parts.append(f"&#{name};")
 
 
+def _encode_official_media_spaces(url):
+    """Encode literal spaces only in an official NTE CDN path; leave other URLs unchanged."""
+    if not isinstance(url, str) or " " not in url or any(ord(ch) < 32 or ord(ch) == 127 for ch in url):
+        return url
+    try:
+        parts = urlsplit(url)
+        if (parts.scheme != "https" or parts.hostname != "ntevmg.perfectworld.com"
+                or parts.username or parts.password or parts.port not in (None, 443)
+                or " " in parts.netloc or any(ch.isspace() for ch in parts.query + parts.fragment)
+                or any(ch.isspace() and ch != " " for ch in parts.path)):
+            return url
+        return parts._replace(path=parts.path.replace(" ", "%20")).geturl()
+    except ValueError:
+        return url
+
+
 def _body(html):
     if not isinstance(html, str) or not html or len(html) > 2 * 1024 * 1024:
         return None
@@ -297,6 +314,9 @@ def _body(html):
         if parser.found != 1 or parser.closed != 1 or parser.depth:
             return None
         blocks = news_blocks("".join(parser.parts), escape_literal_tildes=True)
+        for block in blocks:
+            if block.get("kind") in ("image", "video"):
+                block["url"] = _encode_official_media_spaces(block.get("url"))
     except (ValueError, TypeError, AttributeError, RecursionError):
         return None
     return blocks or None

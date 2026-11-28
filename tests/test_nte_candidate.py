@@ -85,6 +85,15 @@ class NteCandidateTests(unittest.TestCase):
             self.assertIsNone(asyncio.run(nte_candidate.news_article(fetcher, game, {**row, "url": url})))
             self.assertFalse(fetcher.calls)
 
+    def test_official_media_path_spaces_are_encoded_without_relaxing_url_validation(self):
+        url = "https://ntevmg.perfectworld.com/webops/nte/art EN%20name.jpg"
+        html = f'<div class="articleContent"><img src="{url}"></div>'
+        self.assertEqual(nte_candidate._body(html)[0]["url"], url.replace("art EN", "art%20EN"))
+        for bad in ("https://evil.test/art EN.jpg", "https://ntevmg.perfectworld.com.evil.test/art EN.jpg",
+                    "https://user@ntevmg.perfectworld.com/art EN.jpg", "https://ntevmg.perfectworld.com/art EN.jpg?q=bad value",
+                    "https://ntevmg.perfectworld.com/art\n EN.jpg"):
+            self.assertEqual(nte_candidate._encode_official_media_spaces(bad), bad)
+
     def test_literal_tildes_do_not_strike_through_article_and_real_strike_is_kept(self):
         html = ('<div class="articleContent"><p>Taygedo~~taygedo!</p><p>Text in between</p>'
                 '<p>Taygedo~~taygedo!</p><p><del>obsolete</del> '
