@@ -12,7 +12,7 @@ import aiohttp  # noqa: E402
 from live_candidate_probe import NoRedirectSession  # noqa: E402
 
 from gamexpress import candidate_news_delivery as delivery  # noqa: E402
-from gamexpress.cards import news_payloads  # noqa: E402
+from gamexpress.cards import _split_expanded_text, news_payloads  # noqa: E402
 from gamexpress.config import load_settings  # noqa: E402
 from gamexpress.http import Fetcher  # noqa: E402
 from gamexpress.sources import endfield, silverpalace  # noqa: E402
@@ -63,6 +63,22 @@ async def run():
             text_chars = sum(len(b.get("text", "")) for b in end_item.article_blocks if b.get("kind") == "text")
             media = sum(b.get("kind") != "text" for b in end_item.article_blocks)
             print(f"::notice title=Endfield hold diagnostic::detail=available text-chars={text_chars} media-blocks={media}", flush=True)
+            for i, block in enumerate(end_item.article_blocks):
+                if block.get("kind") != "text":
+                    continue
+                value = block.get("text", "").strip()
+                result = _split_expanded_text(value, 3500)
+                if result is None:
+                    print(f"::notice title=Endfield hold block::index={i} length={len(value)} "
+                          f"bold-markers={value.count('**')} brackets-open={value.count('[')} "
+                          f"brackets-close={value.count(']')} backticks={value.count('`')} "
+                          f"longest-token={max((len(x) for x in value.split()), default=0)}", flush=True)
+            preview = news_payloads(delivery.candidate_game("endfield"), end_item, expand_full=True, max_pages=120)
+            excerpt = next((c.get("content", "") for p in preview for box in p["components"]
+                            for c in box.get("components", []) if "**Excerpt — this article " in c.get("content", "")), "")
+            if excerpt:
+                kind = "single-message" if "single-message" in excerpt else "safety-limit"
+                print(f"::notice title=Endfield hold diagnostic::excerpt-kind={kind}", flush=True)
             try:
                 result = await delivery.render_candidate(fetcher, load_settings({"NEWS_EXPAND_MAX_PAGES": "120"}), "endfield", end_row)
             except delivery.DeliveryHold as exc:
