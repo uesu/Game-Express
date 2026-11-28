@@ -1,4 +1,4 @@
-"""Experimental Silver Palace listing snapshot, not registered with the monitor.
+"""Silver Palace listing snapshot for the opt-in candidate monitor.
 
 Publication dates are day-only; this reader intentionally returns no timestamp and
 cannot be plugged into the timestamp-floor news runner. Two identical walks reduce

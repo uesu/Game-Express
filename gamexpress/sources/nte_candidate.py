@@ -1,7 +1,6 @@
-"""Unregistered parser for one observed NTE English news listing page.
+"""NTE English news reader for the opt-in candidate monitor.
 
-The bounded double-walk and detail reader remain unregistered with the monitor.
-Identical walks reduce, but cannot rule out, upstream pagination races.
+Identical bounded double-walks reduce, but cannot rule out, upstream pagination races.
 """
 from __future__ import annotations
 

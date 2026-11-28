@@ -487,7 +487,11 @@ state commit over the ledger. A further development-only GitHub Actions simulati
 rebase and reviewed recovery. Production persistence, real ambiguous outcomes and
 cross-repository failover have not yet been validated. A single-repo
 Actions concurrency group is not a distributed lock. No backlog or production state change has
-been performed. Existing game news routing and behavior remain unchanged.
+been performed. Existing game news routing and behavior remain unchanged. A later [no-Discord release probe](https://github.com/uesu/Game-Express/actions/runs/46138723143)
+ran the enabled candidate runner with real listings and article rendering for all three sources,
+using a local bare-Git ledger and synthetic sends. It confirmed four fake page sends had remote
+intent checkpoints and rendered the known long Silver article 34 at 32 pages. This does not
+validate production GitHub or Discord delivery.
 
 A [private candidate pipeline test](https://github.com/uesu/Game-Express/actions/runs/46033400200)
 used three previously untested articles (NTE 252471, Endfield 3857, Silver Palace 7). Four

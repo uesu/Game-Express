@@ -1,4 +1,4 @@
-"""Experimental Endfield official-news reader. Not registered with the monitor.
+"""Endfield official-news reader for the opt-in candidate monitor.
 
 A bounded, all-or-nothing walk is intentional: sticky articles make date-based early
 termination unsafe, and partial pages must never be treated as a complete baseline.

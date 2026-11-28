@@ -102,8 +102,8 @@ class IsolatedGitLedger:
 
     It never modifies the monitor checkout/index/HEAD; failed or ambiguous pushes
     poison the instance. A pre-existing, tracked ledger is mandatory: silently
-    recreating a lost ledger could replay an entire backlog. This prototype is
-    deliberately NOT wired to the released monitor.
+    recreating a lost ledger could replay an entire backlog. The candidate monitor
+    uses this isolated ledger; the older GitCheckpoint class above is not used there.
     """
 
     LEDGER = "state/candidate_news.json"

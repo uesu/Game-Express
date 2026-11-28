@@ -9,6 +9,10 @@
 - Use a candidate-only 120-page article limit, matching the completed private historical test;
   the existing 12-page default otherwise holds known long articles and blocks catch-up. Existing
   news page limits remain unchanged; character, media and per-run safety bounds still apply.
+- [A no-Discord-post release probe](https://github.com/uesu/Game-Express/actions/runs/46138723143)
+  exercised the real enabled runner, live discovery/rendering and synthetic sends with a local
+  bare-Git ledger for all three sources. It verified remote intent before four fake page sends;
+  Silver article 34 rendered at 32 pages. It does not prove production GitHub or Discord delivery.
 - Real production initialization, recovery and real-source delivery remain unvalidated until
   performed; optional separate-repository standby remains experimental and is not needed.
 
