@@ -23,6 +23,18 @@ def page(number, rows, total):
     return {"code": 0, "data": {"current": number, "pageSize": 20, "total": total, "list": rows}}
 
 
+def test_unmatched_source_brackets_are_literal_but_links_remain_valid():
+    from gamexpress.cards import _split_expanded_text
+    from gamexpress.sources.endfield import _escape_unmatched_brackets
+
+    source = "[A](https://example.test/) then Details] and [unfinished"
+    escaped = _escape_unmatched_brackets(source)
+    assert escaped == r"[A](https://example.test/) then Details\] and \[unfinished"
+    assert _escape_unmatched_brackets(escaped) == escaped
+    assert _escape_unmatched_brackets(r"\[literal\] [ok]") == r"\[literal\] [ok]"
+    assert _split_expanded_text(("normal paragraph\n\n" * 300) + escaped, 3500) is not None
+
+
 class Fetcher:
     def __init__(self, pages, detail=None):
         self.pages, self.detail, self.calls = pages, detail, []

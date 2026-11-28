@@ -67,6 +67,29 @@ async def discover_news(fetcher, game, since: int) -> list[dict] | None:
                   key=lambda row: (row["ts"], row["id"]))
 
 
+def _escape_unmatched_brackets(value: str) -> str:
+    """Treat unmatched publisher brackets as literal text, preserving real links.
+
+    Apply only to Endfield text blocks, after HTML has been converted to Discord
+    Markdown. Do not invent or delete source characters; an escape is invisible
+    when Discord displays it. Balanced bracket pairs are left unchanged.
+    """
+    stack, unmatched = [], set()
+    backslashes = 0
+    for index, char in enumerate(value):
+        escaped = backslashes % 2 == 1
+        if char == "[" and not escaped:
+            stack.append(index)
+        elif char == "]" and not escaped:
+            if stack:
+                stack.pop()
+            else:
+                unmatched.add(index)
+        backslashes = backslashes + 1 if char == "\\" else 0
+    unmatched.update(stack)
+    return "".join(("\\" if index in unmatched else "") + char for index, char in enumerate(value))
+
+
 async def news_article(fetcher, game, row: dict) -> Item | None:
     """Read and validate the matching detail, never substitute the list preview."""
     cid = row.get("id")
@@ -88,6 +111,9 @@ async def news_article(fetcher, game, row: dict) -> Item | None:
         return None
     if not blocks:
         return None
+    for block in blocks:
+        if block.get("kind") == "text":
+            block["text"] = _escape_unmatched_brackets(block.get("text", ""))
     cover = data.get("cover")
     return Item(source="endfield", game=game.key, id=cid, url=ARTICLE.format(cid), title=title.strip(),
                 text="", published_ts=row["ts"], article_blocks=blocks,
