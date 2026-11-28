@@ -3,8 +3,10 @@
     "silverpalace": {
       "partial": {
         "id": "987654321",
-        "inflight": true,
-        "messages": [],
+        "inflight": false,
+        "messages": [
+          "101"
+        ],
         "pages": 1,
         "signature": "eac68aed6a3a2637035789911848ec36635a6d7c992b445d8ba4bcc8a3917dfe"
       },
