@@ -1151,6 +1151,8 @@ asyncio.run(main())
         self.assertFalse(result["pending"])
         self.assertEqual(state.data["news"], {"genshin": {"unchanged": True}})
         self.assertFalse(ctx.warnings)
+        self.assertEqual(ctx.report, ["📰 Silver Palace news: discovered=2, new=2, attempted=2, completed=2, "
+                                      "pending-observed=0, recorded=2, status=caught-up"])
 
     def test_normal_runner_finishes_more_than_three_pages_and_honours_deadline(self):
         settings = load_settings({"NEWS_GAMES": "silverpalace", "NEWS_CANDIDATES_BACKFILL": "1",
@@ -1201,6 +1203,8 @@ asyncio.run(main())
             self.assertEqual(len(ledgers), before + 1)
             self.assertEqual(render_calls, ["1"])
             self.assertTrue(any("time budget" in warning for warning in ctx.warnings))
+            self.assertIn("discovered=unknown, new=unknown, attempted=0, completed=0", ctx.report[0])
+            self.assertIn("status=time-budget", ctx.report[0])
 
     def test_normal_runner_uses_fair_rounds_and_never_retries_a_held_source(self):
         hooks = {"endfield": HOOK,
@@ -1253,6 +1257,62 @@ asyncio.run(main())
         self.assertTrue(any("endfield news: held" in warning for warning in ctx.warnings))
         self.assertEqual([r["id"] for r in ledgers[-1].data["candidate_news"]["endfield"]["pending"]], ["2"])
         self.assertFalse(ledgers[-1].data["candidate_news"]["silverpalace"]["pending"])
+        self.assertIn("📰 Endfield news: discovered=2, new=2, attempted=2, completed=1, "
+                      "pending-observed=1, recorded=1, status=held", ctx.report)
+        self.assertIn("📰 Silver Palace news: discovered=2, new=2, attempted=2, completed=2, "
+                      "pending-observed=0, recorded=2, status=caught-up", ctx.report)
+
+    def test_caught_up_summary_counts_snapshot_not_lifetime_as_new(self):
+        settings = load_settings({"NEWS_GAMES": "silverpalace", "NEWS_CANDIDATES_BACKFILL": "1",
+                                  "DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK})
+        route = delivery.destination(settings, "silverpalace")[1]
+        record = empty_record("silverpalace", route)
+        record["posted"]["1"] = {"messages": ["101"], "signature": "a" * 64}
+        ctx = SimpleNamespace(settings=settings, active=True, now=NOW, fetcher=None,
+                              webhook=SimpleNamespace(session=None), report=[], warnings=[])
+
+        class Ledger:
+            def __init__(self, *args):
+                self.data = {"candidate_news": {"silverpalace": record}}
+                self.poisoned = False
+            async def open(self): return True
+            async def close(self): pass
+            async def checkpoint(self, *args): raise AssertionError("caught up needs no checkpoint")
+
+        async def discover(*args): return [row("1")]
+        async def unexpected(*args, **kwargs): raise AssertionError("caught up must not deliver")
+
+        with (patch.object(runner, "authoritative_branch", return_value="test"),
+              patch.object(runner, "IsolatedGitLedger", Ledger), patch.object(delivery, "discover", discover),
+              patch.object(delivery, "deliver_oldest", unexpected)):
+            asyncio.run(runner.run_candidate_news(ctx))
+        self.assertEqual(ctx.report, ["📰 Silver Palace news: discovered=1, new=0, attempted=0, completed=0, "
+                                      "pending-observed=0, recorded=1, status=caught-up"])
+        self.assertFalse(ctx.warnings)
+
+    def test_failed_discovery_reports_unknown_not_zero_and_holds(self):
+        settings = load_settings({"NEWS_GAMES": "silverpalace", "NEWS_CANDIDATES_BACKFILL": "1",
+                                  "DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK})
+        route = delivery.destination(settings, "silverpalace")[1]
+        ctx = SimpleNamespace(settings=settings, active=True, now=NOW, fetcher=None,
+                              webhook=SimpleNamespace(session=None), report=[], warnings=[])
+
+        class Ledger:
+            def __init__(self, *args):
+                self.data = {"candidate_news": {"silverpalace": empty_record("silverpalace", route)}}
+                self.poisoned = False
+            async def open(self): return True
+            async def close(self): pass
+
+        async def discover(*args): raise RuntimeError(HOOK)
+
+        with (patch.object(runner, "authoritative_branch", return_value="test"),
+              patch.object(runner, "IsolatedGitLedger", Ledger), patch.object(delivery, "discover", discover)):
+            asyncio.run(runner.run_candidate_news(ctx))
+        self.assertEqual(ctx.report, ["📰 Silver Palace news: discovered=unknown, new=unknown, attempted=0, "
+                                      "completed=0, pending-observed=unknown, recorded=unknown, status=held"])
+        self.assertTrue(ctx.warnings)
+        self.assertNotIn(HOOK, " ".join(ctx.report + ctx.warnings))
 
     def test_runner_holds_a_pending_source_that_makes_no_progress(self):
         settings = load_settings({"NEWS_GAMES": "silverpalace", "NEWS_CANDIDATES_BACKFILL": "1",

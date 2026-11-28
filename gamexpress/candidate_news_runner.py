@@ -213,6 +213,12 @@ async def run_candidate_news(ctx):
             await standby_checkout.close()
         ctx.warnings.append("Candidate news: authoritative ledger unavailable or stale; no posts")
         return
+    # Per-run counts, not lifetime delivery counts. Unknown stays unknown if a
+    # route, ledger or snapshot cannot be checked. Candidate eligibility rules
+    # differ from legacy news, so do not label these as legacy eligible counts.
+    metrics = {source: {"discovered": None, "new": None, "attempted": 0,
+                        "completed": 0, "pending": None, "recorded": None,
+                        "status": "not-checked"} for source in selected}
     try:
         deadline = getattr(ctx, "candidate_deadline", None)
 
@@ -231,15 +237,18 @@ async def run_candidate_news(ctx):
             stop = False
             for source in active:
                 if ledger.poisoned:
+                    metrics[source]["status"] = "held"
                     ctx.warnings.append("Candidate news: checkpoint failed; remaining sources held")
                     stop = True
                     break
                 if not has_time():
+                    metrics[source]["status"] = "time-budget"
                     ctx.warnings.append("Candidate news: time budget reached; remaining sources continue on a later run")
                     stop = True
                     break
                 target = delivery.destination(settings, source)
                 if target is None:
+                    metrics[source]["status"] = "held"
                     ctx.warnings.append(f"{source} news: dedicated destination missing or invalid; no discovery or posts")
                     continue
                 _, fingerprint = target
@@ -247,14 +256,22 @@ async def run_candidate_news(ctx):
                     # Read each record from the separately checkpointed authoritative ledger.
                     prior = ledger.data["candidate_news"].get(source)
                     if prior is None:
+                        metrics[source]["status"] = "held"
                         ctx.warnings.append(f"{source} news: initialized route missing; source held")
                         continue
                     delivery._validate(prior, source, fingerprint)
                     if source not in snapshots:
                         snapshots[source] = await delivery.discover(ctx.fetcher, source)
                     state = delivery.ingest(source, fingerprint, prior, snapshots[source])
+                    stat = metrics[source]
+                    if stat["discovered"] is None:
+                        known = set(prior["posted"]) | {row["id"] for row in prior["pending"]}
+                        stat["discovered"] = len(snapshots[source])
+                        stat["new"] = sum(row["id"] not in known for row in snapshots[source])
+                    stat["pending"] = len(state["pending"])
+                    stat["recorded"] = len(state["posted"])
                     if not state["pending"]:
-                        ctx.report.append(f"{source} news: caught up ({len(state['posted'])} recorded)")
+                        stat["status"] = "caught-up"
                         continue
 
                     animation_assets = {}
@@ -279,22 +296,28 @@ async def run_candidate_news(ctx):
 
                     before = (len(state["posted"]),
                               len(state["partial"]["messages"]) if state["partial"] else 0)
+                    stat["attempted"] += 1
                     state = await delivery.deliver_oldest(state, source, fingerprint, as_of=ctx.now,
                                                           checkpoint=checkpoint, render=render, send=send,
                                                           max_pages=MAX_PAGES_PER_SOURCE_RUN, can_start_page=has_time)
                     pages = len(state["partial"]["messages"]) if state["partial"] else 0
-                    ctx.report.append(f"{source} news: queued={len(state['pending'])} recorded={len(state['posted'])} "
-                                      f"partial-pages={pages}")
+                    stat["completed"] += len(state["posted"]) - before[0]
+                    stat["pending"] = len(state["pending"])
+                    stat["recorded"] = len(state["posted"])
+                    stat["status"] = "pending" if state["pending"] else "caught-up"
                     if not has_time():
+                        stat["status"] = "time-budget" if state["pending"] else "caught-up"
                         ctx.warnings.append("Candidate news: time budget reached; remaining sources continue on a later run")
                         stop = True
                         break
                     if state["pending"]:
                         if (len(state["posted"]), pages) == before:
+                            stat["status"] = "held"
                             ctx.warnings.append(f"{source} news: no delivery progress; source held for inspection")
                         else:
                             pending_again.append(source)
                 except Exception as exc:  # noqa: BLE001 — hold this source without affecting unrelated news
+                    metrics[source]["status"] = "held"
                     # Never interpolate exceptions: HTTP clients can include secret URLs.
                     ctx.warnings.append(f"{source} news: held ({type(exc).__name__}); inspect before retry")
             rounds += 1
@@ -302,6 +325,19 @@ async def run_candidate_news(ctx):
                 break
             active = pending_again
     finally:
+        # This is observational only: never mutate or checkpoint a ledger for a
+        # summary. On a hold, pending is the last observed queue, not proof of a
+        # successful checkpoint, and an unknown push must still be inspected.
+        names = {"nte": "NTE", "endfield": "Endfield", "silverpalace": "Silver Palace"}
+        for source, stat in metrics.items():
+            def shown(value):
+                return "unknown" if value is None else str(value)
+            ctx.report.append(
+                f"📰 {names[source]} news: discovered={shown(stat['discovered'])}, new={shown(stat['new'])}, "
+                f"attempted={stat['attempted']}, completed={stat['completed']}, "
+                f"pending-observed={shown(stat['pending'])}, recorded={shown(stat['recorded'])}, "
+                f"status={stat['status']}"
+            )
         try:
             await ledger.close()
         finally:
