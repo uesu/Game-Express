@@ -101,8 +101,12 @@ async def main():
               patch.object(runner, "CANDIDATE_NEWS_READY", True), patch.object(delivery, "discover", discover),
               patch.object(delivery, "render_candidate_animated", render),
               patch.object(delivery, "send_candidate_once", fake_send)):
+            import re
+            token_ok = bool(re.fullmatch(r"[A-Za-z0-9_-]{20,512}", settings.env["NEWS_CANDIDATES_LEDGER_TOKEN"]))
+            origin_ok = runner._origin_is_authority(standby_root, STANDBY)
+            checkout_ok = runner._checkout_is_current(standby_root, "main")
             valid = runner.standby_authority(settings, standby_root) is not None
-            print(f"::notice title=Standby probe::authority-check={valid}", flush=True)
+            print(f"::notice title=Standby probe::authority-check={valid} token-format={token_ok} origin={origin_ok} current={checkout_ok}", flush=True)
             first = context()
             await runner.run_candidate_news(first)
             if first.warnings:
