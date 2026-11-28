@@ -8,7 +8,8 @@
   or pause other repositories and must never automatically resume a held send. The candidate
   delivery gate remains closed pending production provisioning and real recovery validation.
 - An offline integrated test exercises the actual candidate runner, renderer, GIF planner,
-  multipart sender and isolated Git ledger with a fake Discord transport. Updated the scheduler
+  multipart sender and isolated Git ledger with a fake Discord transport. A separate development
+  GitHub run checkpointed and reopened a synthetic reviewed resolution without posting. Updated the scheduler
   guide to describe the operator-selected interval rather than prescribing five minutes.
 
 ## 2026-11-27 — Candidate news checkpoint race hardening

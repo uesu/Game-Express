@@ -133,7 +133,7 @@ state/.gitkeep
 state/state.json                 what has been posted (see §4 — copy it, do not start empty)
 requirements.txt
 .github/workflows/monitor.yml    monitor
-# candidate_news_recovery.yml is included by automated sync; see recovery notes below
+.github/workflows/candidate_news_recovery.yml  attended, no-post candidate recovery
 .gitignore
 ```
 
@@ -149,10 +149,10 @@ else updates it. If you sync from dev regularly the pin rides along with `monito
 can skip this — but if dev goes quiet for a few months, prod keeps running an ageing
 interpreter with no one telling it.
 
-**It is safe to run in a documentation-free repo.** The script writes to exactly five
-filenames — `ci.yml`, `monitor.yml`, `python_version_bump.yml`, `sync_prod.yml`, `ruff.toml` —
-and skips every one it cannot find, so in a
-prod repo it rewrites `monitor.yml` and nothing else. It reads the current pin from whichever
+**It is safe to run in a documentation-free repo.** The script can update only `ci.yml`, `monitor.yml`, `python_version_bump.yml`, `sync_prod.yml`,
+`candidate_news_recovery.yml` and `ruff.toml`; it skips files that are absent. In an automated
+sync, applicable production workflows and `ruff.toml` are included; the dev-only sync workflow
+is not. It reads the current pin from whichever
 workflow is present. **It never opens a Markdown file for writing**, so there is no README and
 no `docs/` for it to invent or corrupt; the PR body it composes is written to the runner's temp
 directory, not into the repo. The set of files staged in the PR is whatever the script reports

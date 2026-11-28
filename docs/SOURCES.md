@@ -503,7 +503,12 @@ is implemented but production-grade recovery remains unvalidated. Local bare-Git
 and a normal state commit can rebase over the candidate ledger without changing it. A further
 offline integrated test exercises the real candidate runner, article renderer, GIF planner,
 multipart sender and isolated Git ledger together, with a fake Discord transport and synthetic
-media. It does not test that runner against live Discord or a production GitHub remote. Production sync now runs the candidate offline regression
+media. It does not test that runner against live Discord or a production GitHub remote. A separate
+[development-branch GitHub probe](https://github.com/uesu/Game-Express/actions/runs/46128111745)
+checkpointed a synthetic reviewed `absent` resolution to a temporary ledger, reopened it after
+fetching the updated branch and rejected a stale repeat; no Discord request or production state
+was involved. The temporary ledger was subsequently removed. This does not validate the full
+recovery workflow or real delivery evidence in production. Production sync now runs the candidate offline regression
 files before applying changes and protects `state/candidate_news.json` from
 creation, modification or deletion; it is not provisioned automatically. A controlled
 [development-branch GitHub probe](https://github.com/uesu/Game-Express/actions/runs/46037384333)

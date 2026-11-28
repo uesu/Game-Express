@@ -10,7 +10,7 @@ Safety guarantees:
   3. Dev-only exclusion: `docs/`, `README.md`, `AGENTS.md`, `PRIVACY_POLICY.md`,
      `TERMS_OF_SERVICE.md`, `.env.example`, `previews/`, `archive/`, and
      `.github/workflows/sync_prod.yml` are never copied into the production repository.
-  4. Concurrent monitor commit resilience: if the 5-minute production monitor pushes a state
+  4. Concurrent monitor commit resilience: if the production monitor pushes a state
      commit while a sync is in flight, the push retry fetches the new remote tip, resets to
      `FETCH_HEAD`, and re-applies the deterministic tree sync on top of the fresh state.
   5. Workflow-scope fallback: if `.github/workflows/*` changed and the configured token lacks
