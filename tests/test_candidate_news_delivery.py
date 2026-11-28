@@ -6,6 +6,7 @@ import contextlib
 import copy
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -746,6 +747,113 @@ class CandidateDeliveryTests(unittest.TestCase):
             self.assertEqual(result["posted"]["1"]["messages"], ["101"])
             persisted = json.loads(git(base, "--git-dir", str(remote), "show", f"refs/heads/{branch}:state/state.json"))
             self.assertEqual(persisted["candidate_news"]["silverpalace"], result)
+
+    def test_crashed_process_holds_after_restart_and_reviewed_resolution(self):
+        """A fresh process sees a durable intent after a simulated crash; no network POSTs."""
+        branch = "arena/98b5f4e1-game-express"
+        script = r"""
+import asyncio, os, sys
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+from gamexpress import candidate_news_delivery as delivery, candidate_news_recovery as recovery, candidate_news_runner as runner
+from gamexpress.candidate_news_checkpoint import IsolatedGitLedger
+from gamexpress.cards import news_payloads
+from gamexpress.config import Game, load_settings
+from gamexpress.models import Item
+root, branch, marker, mode = Path(sys.argv[2]), sys.argv[3], Path(sys.argv[4]), sys.argv[5]
+hook = "https://discord.com/api/webhooks/123456789012345678/example_token_123456789"
+settings = load_settings({"ENABLED_FEATURES": "news", "NEWS_GAMES": "silverpalace",
+    "NEWS_CANDIDATES_BACKFILL": "1", "DISCORD_WEBHOOK_NEWS_SILVERPALACE": hook})
+route = delivery.destination(settings, "silverpalace")[1]
+row = {"id": "1", "title": "Official 1", "date": "2026-11-27"}
+async def discover(fetcher, source): return [row]
+async def render(fetcher, settings, source, candidate):
+    game = Game(key="silverpalace", name="Silver Palace", short="Silver", enabled=False, color=0)
+    item = Item(source="silverpalace", game="silverpalace", id="1", title="Official 1",
+                url="https://silverpalace.elementagames.com/en-us/newsDetail?id=1", text="",
+                published_ts=0, article_blocks=[{"kind": "text", "text": "Hello"}])
+    return news_payloads(game, item), {}
+async def send(*args, **kwargs):
+    with marker.open("a") as handle:
+        handle.write("synthetic send called\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os._exit(71 if mode == "crash" else 72)
+async def no_sleep(_): pass
+async def main():
+    if mode == "review":
+        ledger = IsolatedGitLedger(root, branch)
+        assert await ledger.open()
+        try:
+            inspected = recovery.inspect_record(ledger, "silverpalace", route)
+            assert inspected["inflight"] and inspected["held_page"] == 1
+            await recovery.reviewed_resolution(ledger, "silverpalace", route,
+                article_id="1", page=1, signature=inspected["signature"], resolution="delivered",
+                message_id="101", writers_paused=True, evidence_verified=True)
+        finally:
+            await ledger.close()
+        return
+    ctx = SimpleNamespace(settings=settings, active=True, now=1795824000, fetcher=object(),
+                          webhook=SimpleNamespace(session=object()), report=[], warnings=[])
+    with (patch.object(runner, "ROOT", root), patch.object(runner, "CANDIDATE_NEWS_READY", True),
+          patch.object(runner, "authoritative_branch", return_value=branch),
+          patch.object(delivery, "discover", discover), patch.object(delivery, "render_candidate_animated", render),
+          patch.object(delivery, "send_candidate_once", send), patch.object(runner.asyncio, "sleep", no_sleep)):
+        await runner.run_candidate_news(ctx)
+    if mode == "restart":
+        assert any("held (DeliveryHold)" in warning for warning in ctx.warnings), ctx.warnings
+    elif mode == "finish":
+        assert not ctx.warnings, ctx.warnings
+    else:
+        raise AssertionError("crash sender was not called")
+asyncio.run(main())
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            remote, seed, marker = base / "remote.git", base / "seed", base / "synthetic-sends.txt"
+            seed.mkdir()
+
+            def git(cwd, *args):
+                return subprocess.run(["git", *args], cwd=cwd, capture_output=True, check=True).stdout
+
+            git(seed, "init", "--bare", str(remote))
+            git(seed, "init", "-b", branch)
+            git(seed, "config", "user.name", "Test")
+            git(seed, "config", "user.email", "test@example.invalid")
+            (seed / "state").mkdir()
+            settings = load_settings({"DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK})
+            route = delivery.destination(settings, "silverpalace")[1]
+            (seed / "state/candidate_news.json").write_text(json.dumps({"schema": 1, "candidate_news": {
+                "silverpalace": empty_record("silverpalace", route)}}), encoding="utf-8")
+            git(seed, "add", "state")
+            git(seed, "commit", "-m", "initial synthetic ledger")
+            git(seed, "remote", "add", "origin", str(remote))
+            git(seed, "push", "origin", f"HEAD:refs/heads/{branch}")
+
+            def run(mode, checkout):
+                result = subprocess.run([sys.executable, "-c", script, str(ROOT), str(checkout), branch,
+                                         str(marker), mode], capture_output=True, text=True, timeout=60,
+                                        env={**os.environ, "TMPDIR": str(base)})
+                return result
+
+            result = run("crash", seed)
+            self.assertEqual(result.returncode, 71, result.stdout + result.stderr)
+            held_blob = git(base, "--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json")
+            held = json.loads(held_blob)["candidate_news"]["silverpalace"]
+            self.assertTrue(held["partial"]["inflight"])
+            self.assertEqual(marker.read_text(), "synthetic send called\n")
+            for mode in ("restart", "review", "finish"):
+                checkout = base / mode
+                git(base, "clone", "-b", branch, str(remote), str(checkout))
+                result = run(mode, checkout)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(marker.read_text(), "synthetic send called\n")
+            final_blob = git(base, "--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json")
+            final = json.loads(final_blob)["candidate_news"]["silverpalace"]
+            self.assertEqual(final["posted"]["1"]["messages"], ["101"])
+            self.assertIsNone(final["partial"])
 
     def test_validation_accepts_only_opted_in_candidate_news_and_checks_dedicated_route(self):
         from gamexpress.__main__ import cmd_validate

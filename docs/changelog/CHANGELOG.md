@@ -2,6 +2,11 @@
 
 ## 2026-11-27 — Single production repository clarification
 
+- Added a no-network, multi-process crash test using the integrated candidate runner and a local
+  bare-Git remote. A process exits during a synthetic send, a fresh process holds on the persisted
+  intent, an independently invoked reviewed synthetic resolution is checkpointed, and a further
+  restart finalizes without a second send. This is not a Discord or production recovery test.
+
 - Clarified that Game-Express is the development source and `uesu/8mqzv4k2n7c` is the sole
   live Game-Express instance for Features 1–4, with Feature 5 off. Its posting records remain
   authoritative; no standby or scheduler change is required. The chosen interval is 10 minutes.
