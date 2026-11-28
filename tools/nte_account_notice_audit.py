@@ -24,6 +24,8 @@ async def main():
         if not rows:
             raise ValueError("NTE listing unavailable")
         matches = [r for r in rows if "account action notice" in r["title"].lower()]
+        print(f"::notice title=NTE account notice inventory::listed={len(rows)} matching-notices={len(matches)} "
+              f"article-ids={','.join(r['id'] for r in matches)}", flush=True)
         for row in matches:
             raw = await fetcher.get_text(row["url"], source="nte-table-audit", retries=1, allow_redirects=False)
             blocks = _body(raw)
