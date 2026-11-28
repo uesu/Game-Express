@@ -8,6 +8,9 @@
   permanently claimed. The user confirmed that the synthetic GIF animates and supplied screenshots
   of both frames. This is not a production or cross-repository failover test. The candidate release
   gate remains closed.
+- A separate development-only GitHub simulation covered remote intent checkpoints, an ambiguous
+  hold across runner invocations, a simulated reviewed absent resolution and a monitor-style
+  state rebase, without Discord requests. The runner invocations were in one Python process.
 
 ## 2026-11-27 — Guarded candidate ledger initialization
 

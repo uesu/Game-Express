@@ -484,9 +484,9 @@ Git tests do not establish production correctness. The detached-ledger checkpoin
 per-commit nonce so identical simultaneous writers cannot produce the same Git commit ID. Local
 fixed-clock bare-Git races now verify that one of two competing identical checkpoints wins and that
 only one of two competing delivery coordinators sends. A separate local test rebases the monitor
-state commit over the ledger. GitHub Actions end-of-job persistence, ambiguous Git/Discord outcomes,
-concurrent production workflows and cross-repository failover still require validation and an
-operational reconciliation procedure before removing the gate. A single-repo
+state commit over the ledger. A further development-only GitHub Actions simulation (detailed below) exercises a monitor-style
+rebase and reviewed recovery, but production persistence, real ambiguous outcomes and
+cross-repository failover still require validation before removing the gate. A single-repo
 Actions concurrency group is not a distributed lock. No backlog or production state change has
 been performed. Existing game news routing and behavior remain unchanged.
 
@@ -514,8 +514,14 @@ checkpoint, live-source, recovery or cross-repository failover test. A separate
 [development-branch GitHub probe](https://github.com/uesu/Game-Express/actions/runs/46128111745)
 checkpointed a synthetic reviewed `absent` resolution to a temporary ledger, reopened it after
 fetching the updated branch and rejected a stale repeat; no Discord request or production state
-was involved. The temporary ledger was subsequently removed. This does not validate the full
-recovery workflow or real delivery evidence in production. Production sync now runs the candidate offline regression
+was involved. The temporary ledger was subsequently removed. A separate [synthetic GitHub runner
+simulation](https://github.com/uesu/Game-Express/actions/runs/46130253910) used the actual runner,
+renderer, GIF planner and development GitHub ledger, with a fake Discord transport: ambiguous
+response held, a later runner invocation held without retry, a simulated reviewed absent decision
+checkpointed, and a subsequent simulated confirmation was followed by a monitor-style commit/rebase.
+The run annotation says `restart=held`, but it was a new runner invocation **in the same Python
+process**, not a process restart. Temporary state files were removed and no Discord POST occurred.
+Neither probe validates the full recovery workflow, real delivery evidence or production failover. Production sync now runs the candidate offline regression
 files before applying changes and protects `state/candidate_news.json` from
 creation, modification or deletion; it is not provisioned automatically. An attended, no-post
 first-install initializer checks for previously tracked ledger history and requires explicit
