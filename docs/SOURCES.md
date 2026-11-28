@@ -438,12 +438,24 @@ holds the entire test, and no automatic retry is permitted. Ordering across sour
 calendar date; the day-only sources cannot prove within-day chronology. The private test includes
 earlier sample articles intentionally. It does not write production state, and a finite snapshot
 cannot prove that an upstream listing never omitted an item. The attended test stopped on
-[batch 46076148028](https://github.com/uesu/Game-Express/actions/runs/46076148028), which failed
-after confirmed progress. The journals show 62 completed articles (30 NTE, 27 Endfield, 5 Silver),
-205 pending and no page in flight; the next is Silver article 34, a very large survey-results list.
-The job's detailed error could not be retrieved from this environment. Its exact cause remains
-unconfirmed; do not restart blindly or skip ahead. Read-only diagnosis and a full-content-safe
-solution are required before resuming. The supervisor has stopped and no further posts are scheduled.
+[batch 46076148028](https://github.com/uesu/Game-Express/actions/runs/46076148028); the user-provided
+log confirmed the batch sent 11 pages before a `DeliveryHold`. The journals showed 62 completed
+articles with no page in flight. Read-only [diagnostic 46088726143](https://github.com/uesu/Game-Express/actions/runs/46088726143)
+identified the next article, Silver 34, as a 112,270-character body containing a very long
+ideographic-comma-separated token. The renderer now safely splits such plain lists at their commas,
+without dropping characters, and still holds unknown unsplittable tokens or formatting. In the
+private test only, the page cap was raised to a bounded 120. [Diagnostic 46088975034](https://github.com/uesu/Game-Express/actions/runs/46088975034)
+confirmed full rendering across 32 pages and media preflight; 4,260 separators survived rendering.
+The journaled private queue was resumed, paced and oldest-first. It later stopped at
+[batch 46090849744](https://github.com/uesu/Game-Express/actions/runs/46090849744); after that run,
+the journals confirmed 107 articles with no in-flight page, and Endfield 4494 was next.
+Production remains gated and the private test is not evidence of complete production/failover readiness.
+
+NTE article 252478 contained literal double tildes, which Discord interpreted as a strikethrough
+across paragraphs. NTE parsing now escapes literal tildes in prose while preserving actual HTML
+strike markup and URLs; unrelated sources retain their previous behavior. The user-authorized
+[correction 46088897298](https://github.com/uesu/Game-Express/actions/runs/46088897298) sent one
+corrected card, with an independent durable journal and no change to production state.
 
 The owner requests initial production catch-up oldest to newest, recording confirmed delivery.
 The candidate pipeline checks two complete listing walks, adapts details to the existing card

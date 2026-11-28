@@ -15,7 +15,7 @@ from gamexpress import candidate_news_delivery as delivery  # noqa: E402
 from gamexpress.cards import news_payloads  # noqa: E402
 from gamexpress.config import load_settings  # noqa: E402
 from gamexpress.http import Fetcher  # noqa: E402
-from gamexpress.sources import silverpalace  # noqa: E402
+from gamexpress.sources import endfield, silverpalace  # noqa: E402
 
 ROW = {"date": "2026-01-16", "id": "34", "title": "[Monotype] Beta Test  Survey Event Qualification Results Announcement"}
 
@@ -53,6 +53,25 @@ async def run():
             print(f"::notice title=Historic hold diagnostic::result=hold reason={reason}", flush=True)
         else:
             print("::notice title=Historic hold diagnostic::result=renderable", flush=True)
+
+        end_row = {"id": "4494", "title": "Arknights: Endfield [At the Wake of Spring] Core Chapter Version DEV Comm",
+                   "ts": 1776049200}
+        end_item = await endfield.news_article(fetcher, delivery.candidate_game("endfield"), end_row)
+        if end_item is None:
+            print("::notice title=Endfield hold diagnostic::detail=unavailable-or-mismatch", flush=True)
+        else:
+            text_chars = sum(len(b.get("text", "")) for b in end_item.article_blocks if b.get("kind") == "text")
+            media = sum(b.get("kind") != "text" for b in end_item.article_blocks)
+            print(f"::notice title=Endfield hold diagnostic::detail=available text-chars={text_chars} media-blocks={media}", flush=True)
+            try:
+                result = await delivery.render_candidate(fetcher, load_settings({"NEWS_EXPAND_MAX_PAGES": "120"}), "endfield", end_row)
+            except delivery.DeliveryHold as exc:
+                allowed = {"full article exceeds rendering safety limits", "article media preflight or payload validation failed",
+                           "official article unavailable or mismatched", "grouped article payload invalid"}
+                reason = str(exc) if str(exc) in allowed else "other delivery hold"
+                print(f"::notice title=Endfield hold diagnostic::result=hold reason={reason}", flush=True)
+            else:
+                print(f"::notice title=Endfield hold diagnostic::result=renderable pages={len(result)}", flush=True)
 
 
 if __name__ == "__main__":
