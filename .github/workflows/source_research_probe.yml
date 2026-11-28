@@ -6,7 +6,7 @@ on:
       scope:
         description: Research scope
         type: choice
-        options: [all, endfield-card, feature3-prepare, feature3-post, video-research, video-followup, feature3-expanded-prepare, feature3-expanded-post, nte-thumbnail-post, candidate-pipeline, candidate-private-prepare, candidate-private-post, silver-image-research, silver-dedup-private, candidate-historic-prepare, candidate-historic-send, feature3-hold-diagnostic, nte-taygedo-correction, feature3-fidelity-audit, skport-public-research]
+        options: [all, endfield-card, feature3-prepare, feature3-post, video-research, video-followup, feature3-expanded-prepare, feature3-expanded-post, nte-thumbnail-post, candidate-pipeline, candidate-private-prepare, candidate-private-post, silver-image-research, silver-dedup-private, candidate-historic-prepare, candidate-historic-send, feature3-hold-diagnostic, nte-taygedo-correction, feature3-fidelity-audit, skport-public-research, hoyo-thumbnail-audit]
         default: all
 
 permissions:
@@ -488,3 +488,20 @@ jobs:
           python-version: '3.15.2'
       - run: python -m pip install -q -r requirements.txt
       - run: python tools/skport_public_research.py
+
+  hoyo-thumbnail-audit:
+    if: ${{ inputs.scope == 'hoyo-thumbnail-audit' }}
+    name: Check official HoYoLAB thumbnail without posting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - run: python -m pip install -q -r requirements.txt
+      - run: python tools/feature3_fidelity_audit.py --hoyo-only

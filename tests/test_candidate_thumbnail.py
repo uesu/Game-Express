@@ -89,6 +89,17 @@ class CandidateThumbnailTests(unittest.TestCase):
         self.assertEqual(failed.images, [])
         self.assertEqual(len(f.calls), 4)
 
+    def test_structured_youtube_video_is_a_link_not_native_video(self):
+        a = item("hoyolab")
+        a.game = "zzz"
+        a.article_blocks[1]["kind"] = "video"
+        f = Fetcher()
+        self.assertIsNot(asyncio.run(with_verified_fallback(f, a)), a)
+        a.article_blocks.append({"kind": "video", "url": "https://cdn.example.org/native.mp4"})
+        f = Fetcher()
+        self.assertIs(asyncio.run(with_verified_fallback(f, a)), a)
+        self.assertFalse(f.calls)
+
     def test_official_hoyolab_and_kuro_without_native_media_get_verified_thumbnail(self):
         for source, game in (("hoyolab", "zzz"), ("kuro", "wuwa")):
             a = item(source)

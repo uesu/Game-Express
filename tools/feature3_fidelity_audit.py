@@ -14,6 +14,7 @@ import aiohttp  # noqa: E402
 from live_candidate_probe import NoRedirectSession  # noqa: E402
 
 from gamexpress import candidate_news_delivery as delivery  # noqa: E402
+from gamexpress.cards import _youtube_watch_url  # noqa: E402
 from gamexpress.config import load_settings  # noqa: E402
 from gamexpress.http import Fetcher  # noqa: E402
 from gamexpress.sources import hoyolab, nte_candidate, silverpalace  # noqa: E402
@@ -104,7 +105,9 @@ async def hoyo_sample(fetcher):
     if not item:
         raise ValueError("HoYoLAB detail mismatch")
     improved = await with_verified_fallback(fetcher, item)
-    native = bool(item.images or any(x.get("kind") in ("image", "video") for x in item.article_blocks))
+    native = bool(item.images or any(x.get("kind") == "image" or
+                                     (x.get("kind") == "video" and not _youtube_watch_url(x.get("url", "")))
+                                     for x in item.article_blocks))
     print(f"::notice title=HoYoLAB thumbnail sample::native={int(native)} fallback={int(improved is not item)} "
           "posted=0", flush=True)
 
@@ -112,8 +115,11 @@ async def hoyo_sample(fetcher):
 async def main():
     async with aiohttp.ClientSession(trust_env=False) as session:
         fetcher = Fetcher(NoRedirectSession(session))
-        await inspect_source(fetcher, "nte")
-        await inspect_source(fetcher, "silverpalace")
+        if sys.argv[1:] != ["--hoyo-only"]:
+            if sys.argv[1:]:
+                raise ValueError("invalid audit mode")
+            await inspect_source(fetcher, "nte")
+            await inspect_source(fetcher, "silverpalace")
         await hoyo_sample(fetcher)
 
 

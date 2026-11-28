@@ -17,13 +17,14 @@ CANDIDATES = frozenset(("nte", "endfield", "silverpalace"))
 def fallback_url(item):
     trusted_source = (item.source in CANDIDATES and item.game == item.source) or item.source in {"hoyolab", "kuro"}
     if (not trusted_source or not item.official or item.images
-            or any(b.get("kind") in ("image", "video")
+            or any(b.get("kind") == "image"
+                   or (b.get("kind") == "video" and not _youtube_watch_url(b.get("url", "")))
                    or "[Native video unavailable — open the original article.]" in b.get("text", "")
                    for b in item.article_blocks)):
         return None
     for block in item.article_blocks:
         kind = block.get("kind")
-        if kind == "link":
+        if kind in ("link", "video"):
             urls = [block.get("url", "")]
         elif kind == "text":
             # News parsers keep ordinary anchors and bare URLs inline as text.
