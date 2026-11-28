@@ -22,7 +22,7 @@ from gamexpress.sources.candidate_thumbnail import with_verified_fallback  # noq
 from gamexpress.state import stable_hash  # noqa: E402
 
 MARKER = "feature3-zzz-sunbringer-example-v1"
-COMMENT_ID = 0  # prepare, independently verify and lock before sending
+COMMENT_ID = 7235899602  # independently verified; preparation permanently locked
 ARTICLE = "47586861"
 
 
