@@ -28196,3 +28196,42 @@ def test_probe_finds_changed_items_by_detail_and_counts_unreadable_sides():
         SimpleNamespace(fetcher=Fetcher()), "zzz", targets,
         "3.4.1+19997538", "3.4.2+20049556", done, 400))
     assert skipped["total"] == 2 and skipped["checked"] == 2
+
+
+def test_official_news_runner_verified_youtube_cover_and_native_suppression():
+    from unittest.mock import AsyncMock, Mock, patch
+
+    from gamexpress.models import Item
+    from gamexpress.runner import run_news
+    from gamexpress.sources import hoyolab, kuro
+
+    hook = "https://discord.com/api/webhooks/100000000000000099/g_tok"
+    video = "https://www.youtube.com/embed/tdZN6H1N3PU"
+    thumbnail = "https://i.ytimg.com/vi/tdZN6H1N3PU/maxresdefault.jpg"
+    for gk, source, source_name in (("zzz", hoyolab, "hoyolab"), ("wuwa", kuro, "kuro")):
+        for native in (False, True):
+            blocks = [{"kind": "text", "text": "Official news"}, {"kind": "video", "url": video}]
+            if native:
+                blocks.append({"kind": "image", "url": "https://example.org/native.jpg"})
+            article = Item(source_name, gk, "p1", "https://example.org/1", "Official news", "",
+                           1793160008, article_blocks=blocks, official=True)
+            with tempfile.TemporaryDirectory() as tmp:
+                ctx = make_ctx(Path(tmp) / "state.json", NEWS_ENABLED="1", NEWS_GAMES=gk,
+                               **{f"DISCORD_WEBHOOK_NEWS_{gk.upper()}": hook})
+                ctx.now = 1793160000
+                with patch.object(source, "discover_news", return_value=[]):
+                    asyncio.run(run_news(ctx))
+                ctx.now = 1793160030
+                ctx.fetcher = Mock(media_dimensions=AsyncMock(return_value=(1280, 720)),
+                                   verify_media=AsyncMock(return_value=True))
+                with (patch.object(source, "discover_news", return_value=[{"id": "p1", "ts": 1793160008}]),
+                      patch.object(source, "news_article", return_value=article),
+                      patch.object(ctx.fetcher, "media_dimensions", return_value=(1280, 720)) as dimensions,
+                      patch.object(ctx.fetcher, "verify_media", return_value=True),
+                      patch("gamexpress.media.news_media_available", return_value=True)):
+                    asyncio.run(run_news(ctx))
+                posts = [p["payload"] for p in ctx.webhook.sent if p["method"] == "POST"]
+            assert posts, ctx.warnings
+            assert (thumbnail in json.dumps(posts)) is (not native)
+            assert dimensions.call_count == (0 if native else 1)
+            assert article.images == []
