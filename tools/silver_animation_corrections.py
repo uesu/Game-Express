@@ -19,7 +19,7 @@ from gamexpress.http import Fetcher  # noqa: E402
 
 MARKER = "feature3-silver-animation-rechecks-v1"
 IDS = {"93", "99"}
-COMMENT_ID = 0  # prepare first, independently verify, then lock the ID
+COMMENT_ID = 7235875858  # independently verified; preparation permanently locked
 
 
 async def prepare(fetcher, route):
