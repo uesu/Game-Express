@@ -170,6 +170,67 @@ class IsolatedGitLedger:
         except (OSError, ValueError, TypeError, subprocess.SubprocessError):
             return False
 
+    def _initialize_empty(self):
+        """Create only a never-before-tracked empty ledger, without touching the checkout.
+
+        The caller must require explicit first-install and writer-pause attestations.
+        History checks cannot see discarded/force-pushed history or external copies.
+        A failed push may have succeeded remotely and must be inspected, not retried.
+        """
+        import tempfile
+
+        try:
+            if self.poisoned or self.worktree is not None or not isinstance(self.branch, str) or not self.branch:
+                return False
+            current = self._git(self.root, "symbolic-ref", "--quiet", "--short", "HEAD")
+            shallow = self._git(self.root, "rev-parse", "--is-shallow-repository")
+            if (current.returncode or current.stdout.strip() != self.branch.encode()
+                    or self._git(self.root, "check-ref-format", "--branch", self.branch).returncode
+                    or shallow.returncode or shallow.stdout.strip() != b"false"):
+                return False
+            head = self._head(self.root)
+            if not head or self._remote() != head:
+                return False
+            directory = self._git(self.root, "ls-tree", "HEAD", "--", "state")
+            existing = self._git(self.root, "ls-tree", "HEAD", "--", self.LEDGER)
+            history = self._git(self.root, "log", "--all", "--format=%H", "--", self.LEDGER)
+            if (directory.returncode or not directory.stdout.startswith(b"040000 tree ")
+                    or existing.returncode or existing.stdout or history.returncode or history.stdout):
+                return False
+            self._temp = tempfile.TemporaryDirectory(prefix="candidate-ledger-init-")
+            self.worktree = Path(self._temp.name) / "worktree"
+            if self._git(self.root, "worktree", "add", "--detach", "--quiet", str(self.worktree), "HEAD").returncode:
+                return False
+            state_dir = self.worktree / "state"
+            path = self.worktree / self.LEDGER
+            if state_dir.is_symlink() or not state_dir.is_dir() or path.exists() or path.is_symlink():
+                return False
+            path.write_text('{"schema": 1, "candidate_news": {}}\n', encoding="utf-8")
+            if self._git(self.worktree, "add", "--", self.LEDGER).returncode:
+                return False
+            staged = self._git(self.worktree, "diff", "--cached", "--name-only", "-z")
+            if staged.returncode or staged.stdout != self.LEDGER.encode() + b"\0":
+                return False
+            commit = self._git(self.worktree, "-c", "user.name=github-actions[bot]",
+                               "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
+                               "commit", "-m", f"auto: initialize candidate ledger {secrets.token_hex(16)} [skip ci]")
+            if commit.returncode or self._git(self.worktree, "push", "origin", f"HEAD:refs/heads/{self.branch}").returncode:
+                return False
+            new_head = self._head(self.worktree)
+            if not new_head or self._remote() != new_head:
+                return False
+            self.data = {"schema": 1, "candidate_news": {}}
+            return True
+        except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+            return False
+
+    async def initialize_empty(self):
+        ok = await asyncio.to_thread(self._initialize_empty)
+        if not ok:
+            self.poisoned = True
+        await asyncio.to_thread(self._close)
+        return ok
+
     def _save(self, source, snapshot):
         try:
             if self.poisoned or self.worktree is None or self.data is None or source not in SOURCES:

@@ -510,7 +510,10 @@ fetching the updated branch and rejected a stale repeat; no Discord request or p
 was involved. The temporary ledger was subsequently removed. This does not validate the full
 recovery workflow or real delivery evidence in production. Production sync now runs the candidate offline regression
 files before applying changes and protects `state/candidate_news.json` from
-creation, modification or deletion; it is not provisioned automatically. A controlled
+creation, modification or deletion; it is not provisioned automatically. An attended, no-post
+first-install initializer checks for previously tracked ledger history and requires explicit
+first-install/backfill and writer-pause attestations; it cannot detect force-pushed or external
+history and has not been validated in production. A controlled
 [development-branch GitHub probe](https://github.com/uesu/Game-Express/actions/runs/46037384333)
 confirmed real pushes/ref verification, a stale writer hold and two simulated pages in a separate
 throwaway ledger, without Discord or monitor-state writes. Its `restart=pass` annotation means

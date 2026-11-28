@@ -1,8 +1,10 @@
 # Changelog
 
-Latest: [Attended candidate recovery and integrated test](CHANGELOG.md#2026-11-27--attended-candidate-recovery-and-integrated-test).
+Latest: [Guarded candidate ledger initialization](CHANGELOG.md#2026-11-27--guarded-candidate-ledger-initialization).
 
-Previous: [Candidate news checkpoint race hardening](CHANGELOG.md#2026-11-27--candidate-news-checkpoint-race-hardening).
+Previous: [Attended candidate recovery and integrated test](CHANGELOG.md#2026-11-27--attended-candidate-recovery-and-integrated-test).
+
+Earlier: [Candidate news checkpoint race hardening](CHANGELOG.md#2026-11-27--candidate-news-checkpoint-race-hardening).
 
 Previous: [Feature 3 animated media follow-up](CHANGELOG.md#2026-11-27--feature-3-animated-media-follow-up).
 

@@ -323,22 +323,39 @@ Use repository **secrets**, never variables, for the five destinations:
 | `DISCORD_WEBHOOK_NEWS_WUWA` | `wuwa-news` |
 
 **Three candidate sources are not released yet.** NTE, Arknights: Endfield and Silver Palace
-remain behind a hard-coded gate; merely creating their secrets or adding their game keys does
-not enable delivery. The prepared dedicated secret names are `DISCORD_WEBHOOK_NEWS_NTE`,
-`DISCORD_WEBHOOK_NEWS_ENDFIELD` and `DISCORD_WEBHOOK_NEWS_SILVERPALACE`. Never put their values in
-chat or a repository file. The gated prototype additionally expects `NEWS_CANDIDATES_BACKFILL=1`,
-`NEWS_CANDIDATES_AUTHORITY_REPOSITORY` and `NEWS_CANDIDATES_AUTHORITY_BRANCH` to identify one
-primary writer, plus a deliberately provisioned durable ledger. Do **not** activate or initialize
-these on production until release review and the backfill plan are complete. A standby cannot
-send candidate news automatically. Candidate processing is limited to one article and three pages
-per source per run, independently of the existing-news rules above.
+remain behind a hard-coded gate. Creating secrets or variables does not enable them. When the
+release and backfill plan have been approved, configure these in the **production** repository
+(Settings → Secrets and variables → Actions); values must never be pasted in chat or committed:
+
+| Type | Name | Value / purpose |
+|---|---|---|
+| Secret | `DISCORD_WEBHOOK_NEWS_NTE` | Dedicated NTE news webhook URL |
+| Secret | `DISCORD_WEBHOOK_NEWS_ENDFIELD` | Dedicated Endfield news webhook URL |
+| Secret | `DISCORD_WEBHOOK_NEWS_SILVERPALACE` | Dedicated Silver Palace news webhook URL |
+| Variable | `NEWS_CANDIDATES_AUTHORITY_REPOSITORY` | `uesu/8mqzv4k2n7c`, the sole primary repository |
+| Variable | `NEWS_CANDIDATES_AUTHORITY_BRANCH` | Its authoritative branch, currently `main` |
+| Variable | `NEWS_GAMES` | Preserve all desired existing game keys and add `nte,endfield,silverpalace`; the default excludes candidates |
+| Variable | `NEWS_CANDIDATES_BACKFILL` | `1` only after release and historical-backfill approval; otherwise leave unset |
+
+For example, if all five default existing sources should remain selected, the full `NEWS_GAMES`
+value is `genshin,starrail,zzz,wuwa,hna,nte,endfield,silverpalace`. If you already use a custom
+selection, append the three candidate keys rather than replacing your selection with that example.
+The active instance role must be `primary` (the default); a standby cannot send candidate news
+automatically. Adding candidate keys does not change schedule, codes, maintenance or Reddit.
+An empty, deliberately provisioned candidate ledger causes the first complete snapshot to queue
+**available history**, not a silent baseline. The attended initialization path is described in
+[production setup](PROD-REPO-SETUP.md); it and actual production recovery remain unvalidated.
+Do not initialize or activate production until release review and the backfill plan are complete.
+Candidate processing is limited to one article and three pages per source per run, independently
+of the existing-news rules above.
 
 Existing short game aliases also work. No `DISCORD_WEBHOOK_NEWS`, catch-all,
 `FORCE_WEBHOOK`, or mirror fallback is used for news. A missing destination skips
 source requests and baseline creation for that game; a changed destination is
 held for operator review, not silently reposted. The existing workflow already
-imports repository variables/secrets via its JSON blobs: no workflow edit,
-scheduler change, new token, dependency or state file is required.
+imports repository variables/secrets via its JSON blobs for the existing sources. Unlike those
+existing sources, the gated candidates require their separate ledger and attended setup described
+above.
 
 Official news delivery is strictly independent of schedule extraction, schedule
 mirrors (`DISCORD_WEBHOOK_SCHEDULE_MIRROR_<GAME>`), redemption codes, and started

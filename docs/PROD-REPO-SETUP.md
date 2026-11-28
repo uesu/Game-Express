@@ -503,7 +503,7 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
 - **Live state is untouchable:** `state/state.json` and the gated candidate ledger
   `state/candidate_news.json` are never created, overwritten, staged, or deleted by sync. The
   candidate ledger is not provisioned automatically; do not create or reset it during research.
-  Its production provisioning, recovery and failover process remain unverified and candidate
+  Attended first-install initialization is implemented but not validated in production. Candidate
   delivery is hard-gated off. The attended recovery workflow is copied by sync but is manual-only;
   it requires matching primary authority, the dedicated destination and explicit operator review. Candidate checkpoint commits include a per-write random nonce;
   local competing-writer tests and a local monitor-state rebase test pass, but they do not prove
@@ -512,6 +512,18 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   copying dev-only research tools; those research tests run in development CI only. The exact
   production variables and secrets cannot be inferred from a public repository view; check their
   presence privately without sharing values.
+- **Attended first-install initialization:** after release and explicit approval of historical
+  backfill, configure the three distinct dedicated webhook secrets and primary authority variables
+  listed in [CONFIGURATION](CONFIGURATION.md). Pause all writers/schedulers everywhere. In the
+  manual `Candidate news recovery (attended)` workflow on the authority branch, select `initialize`,
+  confirm writers are paused, and type `FIRST_INSTALL_BACKFILL` only if these destinations have
+  never used candidate news anywhere and the available history is approved for posting. `source`
+  is ignored for initialization. The workflow checks distinct routes, an up-to-date full Git
+  history and that no ledger appears in fetched history; it checkpoints an empty ledger and sends
+  nothing. This is not a way to restore a lost ledger: force-pushed/unavailable history and other
+  repositories cannot be detected. If there is any uncertainty, stop and investigate; if the push
+  outcome is unclear, inspect the authoritative remote before any retry. The hard release gate
+  remains closed. No live production initialization has been performed.
 - **Attended candidate recovery (not automatic failover):** the manual-only `Candidate news
   recovery (attended)` workflow can inspect a validated existing ledger without sending. Before
   using `resolve`, pause every scheduler and writer in every repository and independently inspect
@@ -521,7 +533,7 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   workflow shares the monitor concurrency group within this repository but cannot verify that
   outside writers are paused, and it never posts or resumes the scheduler. If the checkpoint
   outcome is unclear, inspect the authoritative branch before any retry. This workflow does not
-  initialize a ledger, change destination, or unblock the release gate. Its real production use
+  change destination or unblock the release gate. Its real production use
   and cross-repository operations remain unvalidated.
 - **Program announcement seeds are union-merged:** `config/program_announcements.json` preserves any
   tweet IDs discovered live by the production monitor while adding/updating entries from dev.

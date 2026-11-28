@@ -124,6 +124,155 @@ class CandidateDeliveryTests(unittest.TestCase):
             self.assertFalse(asyncio.run(checkpoint(posted)))  # never commit unrelated staged files
             self.assertEqual(git("diff", "--cached", "--name-only").stdout.strip(), b"unrelated.txt")
 
+    def test_initialize_ledger_is_first_install_only_and_does_not_touch_checkout(self):
+        branch = "arena/98b5f4e1-game-express"
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            remote, seed = base / "remote.git", base / "seed"
+            seed.mkdir()
+
+            def git(cwd, *args):
+                return subprocess.run(["git", *args], cwd=cwd, capture_output=True, check=True).stdout
+
+            git(seed, "init", "--bare", str(remote))
+            git(seed, "init", "-b", branch)
+            git(seed, "config", "user.name", "Test")
+            git(seed, "config", "user.email", "test@example.invalid")
+            (seed / "state").mkdir()
+            (seed / "state/state.json").write_text('{"live":"untouched"}\n', encoding="utf-8")
+            git(seed, "add", "state")
+            git(seed, "commit", "-m", "seed")
+            git(seed, "remote", "add", "origin", str(remote))
+            git(seed, "push", "origin", f"HEAD:refs/heads/{branch}")
+            stale = base / "stale"
+            git(base, "clone", "-b", branch, str(remote), str(stale))
+            head = git(seed, "rev-parse", "HEAD")
+            (seed / "local-uncommitted.txt").write_text("preserved", encoding="utf-8")
+            self.assertTrue(asyncio.run(IsolatedGitLedger(seed, branch).initialize_empty()))
+            self.assertEqual(git(seed, "rev-parse", "HEAD"), head)
+            self.assertFalse((seed / "state/candidate_news.json").exists())
+            self.assertEqual((seed / "state/state.json").read_text(), '{"live":"untouched"}\n')
+            blob = git(seed, "--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json")
+            self.assertEqual(json.loads(blob), {"schema": 1, "candidate_news": {}})
+            writer = IsolatedGitLedger(stale, branch)
+            self.assertFalse(asyncio.run(writer.initialize_empty()))
+            self.assertTrue(writer.poisoned)
+            git(seed, "pull", "--ff-only", "origin", branch)
+            self.assertFalse(asyncio.run(IsolatedGitLedger(seed, branch).initialize_empty()))
+            git(seed, "rm", "state/candidate_news.json")
+            git(seed, "commit", "-m", "simulate missing ledger")
+            git(seed, "push", "origin", f"HEAD:refs/heads/{branch}")
+            self.assertFalse(asyncio.run(IsolatedGitLedger(seed, branch).initialize_empty()))
+            self.assertEqual(git(seed, "worktree", "list", "--porcelain").count(b"worktree "), 1)
+            self.assertEqual((seed / "local-uncommitted.txt").read_text(), "preserved")
+
+    def test_simultaneous_initializers_have_one_winner_and_shallow_checkout_holds(self):
+        branch = "arena/98b5f4e1-game-express"
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            remote, seed = base / "remote.git", base / "seed"
+            seed.mkdir()
+
+            def git(cwd, *args):
+                return subprocess.run(["git", *args], cwd=cwd, capture_output=True, check=True).stdout
+
+            git(seed, "init", "--bare", str(remote))
+            git(seed, "init", "-b", branch)
+            git(seed, "config", "user.name", "Test")
+            git(seed, "config", "user.email", "test@example.invalid")
+            (seed / "state").mkdir()
+            (seed / "state/state.json").write_text('{}\n', encoding="utf-8")
+            git(seed, "add", "state")
+            git(seed, "commit", "-m", "seed")
+            git(seed, "remote", "add", "origin", str(remote))
+            git(seed, "push", "origin", f"HEAD:refs/heads/{branch}")
+            a, b, shallow = base / "a", base / "b", base / "shallow"
+            git(base, "clone", "-b", branch, str(remote), str(a))
+            git(base, "clone", "-b", branch, str(remote), str(b))
+            git(base, "clone", "--depth=1", "-b", branch, remote.as_uri(), str(shallow))
+            self.assertFalse(asyncio.run(IsolatedGitLedger(shallow, branch).initialize_empty()))
+
+            async def initialize_both():
+                return await asyncio.gather(IsolatedGitLedger(a, branch).initialize_empty(),
+                                            IsolatedGitLedger(b, branch).initialize_empty())
+
+            results = asyncio.run(initialize_both())
+            self.assertEqual(sorted(results), [False, True])
+            blob = git(seed, "--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json")
+            self.assertEqual(json.loads(blob), {"schema": 1, "candidate_news": {}})
+
+    def test_uncertain_initialization_push_holds_and_cannot_reinitialize(self):
+        branch = "arena/98b5f4e1-game-express"
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            remote, seed = base / "remote.git", base / "seed"
+            seed.mkdir()
+
+            def git(cwd, *args):
+                return subprocess.run(["git", *args], cwd=cwd, capture_output=True, check=True).stdout
+
+            git(seed, "init", "--bare", str(remote))
+            git(seed, "init", "-b", branch)
+            git(seed, "config", "user.name", "Test")
+            git(seed, "config", "user.email", "test@example.invalid")
+            (seed / "state").mkdir()
+            (seed / "state/state.json").write_text('{}\n', encoding="utf-8")
+            git(seed, "add", "state")
+            git(seed, "commit", "-m", "seed")
+            git(seed, "remote", "add", "origin", str(remote))
+            git(seed, "push", "origin", f"HEAD:refs/heads/{branch}")
+            ledger = IsolatedGitLedger(seed, branch)
+            original_git = ledger._git
+
+            def uncertain_push(cwd, *args):
+                result = original_git(cwd, *args)
+                if args and args[0] == "push" and result.returncode == 0:
+                    return subprocess.CompletedProcess(result.args, 1, b"", b"ambiguous")
+                return result
+
+            with patch.object(ledger, "_git", side_effect=uncertain_push):
+                self.assertFalse(asyncio.run(ledger.initialize_empty()))
+            self.assertTrue(ledger.poisoned)
+            self.assertFalse(asyncio.run(ledger.initialize_empty()))
+            blob = git(seed, "--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json")
+            self.assertEqual(json.loads(blob), {"schema": 1, "candidate_news": {}})
+            git(seed, "pull", "--ff-only", "origin", branch)
+            self.assertFalse(asyncio.run(IsolatedGitLedger(seed, branch).initialize_empty()))
+
+    def test_initialize_requires_explicit_attestations_and_distinct_destinations(self):
+        class FakeLedger:
+            calls = 0
+
+            def __init__(self, root, branch):
+                pass
+
+            async def initialize_empty(self):
+                FakeLedger.calls += 1
+                return True
+
+        env = {"RECOVERY_MODE": "initialize", "RECOVERY_WRITERS_PAUSED": "true",
+               "RECOVERY_INIT_CONFIRM": "FIRST_INSTALL_BACKFILL"}
+        destinations = {"nte": (HOOK, "a" * 16), "endfield": (HOOK, "b" * 16),
+                        "silverpalace": (HOOK, "c" * 16)}
+        out = io.StringIO()
+        with (patch.dict("os.environ", env, clear=True), patch.object(recovery, "load_settings", return_value=object()),
+              patch.object(recovery, "authoritative_branch", return_value="main"),
+              patch.object(recovery, "destination", side_effect=lambda settings, source: destinations[source]),
+              patch.object(recovery, "IsolatedGitLedger", FakeLedger), contextlib.redirect_stdout(out)):
+            asyncio.run(recovery.run_from_environment())
+            self.assertEqual(FakeLedger.calls, 1)
+            self.assertNotIn(HOOK, out.getvalue())
+            for key in ("RECOVERY_WRITERS_PAUSED", "RECOVERY_INIT_CONFIRM"):
+                with patch.dict("os.environ", {key: "false"}), self.assertRaises(delivery.DeliveryHold):
+                    asyncio.run(recovery.run_from_environment())
+            destinations["nte"] = destinations["endfield"]
+            with self.assertRaises(delivery.DeliveryHold):
+                asyncio.run(recovery.run_from_environment())
+            destinations["nte"] = None
+            with self.assertRaises(delivery.DeliveryHold):
+                asyncio.run(recovery.run_from_environment())
+            self.assertEqual(FakeLedger.calls, 1)
+
     def test_isolated_ledger_holds_stale_writer_and_leaves_monitor_checkout_alone(self):
         branch = "arena/98b5f4e1-game-express"
         with tempfile.TemporaryDirectory() as tmp:
@@ -431,6 +580,9 @@ class CandidateDeliveryTests(unittest.TestCase):
         monitor = yaml.safe_load((wf / "monitor.yml").read_text())
         recovery_wf = yaml.safe_load(recovery_path.read_text())
         self.assertEqual(recovery_wf["concurrency"], monitor["concurrency"])
+        # GitHub workflow_dispatch accepts at most ten top-level inputs.
+        self.assertLessEqual(len(recovery_wf[True]["workflow_dispatch"]["inputs"]), 10)
+        self.assertEqual(recovery_wf["jobs"]["recovery"]["steps"][0]["with"]["fetch-depth"], 0)
         self.assertFalse(recovery_wf["concurrency"]["cancel-in-progress"])
         steps = recovery_wf["jobs"]["recovery"]["steps"]
         commands = "\n".join(str(step.get("run", "")) for step in steps)

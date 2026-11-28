@@ -52,14 +52,27 @@ async def run_from_environment():
     settings = load_settings()
     source = os.environ.get("RECOVERY_SOURCE", "")
     mode = os.environ.get("RECOVERY_MODE", "")
-    if source not in SOURCES or mode not in ("inspect", "resolve"):
+    if mode not in ("inspect", "resolve", "initialize") or (mode != "initialize" and source not in SOURCES):
         raise DeliveryHold("invalid recovery request")
     branch = authoritative_branch(settings, ROOT)
-    target = destination(settings, source)
-    if branch is None or target is None:
-        raise DeliveryHold("authority or dedicated destination unavailable")
-    route = target[1]
+    if branch is None:
+        raise DeliveryHold("authority unavailable")
     ledger = IsolatedGitLedger(ROOT, branch)
+    if mode == "initialize":
+        if (os.environ.get("RECOVERY_WRITERS_PAUSED") != "true"
+                or os.environ.get("RECOVERY_INIT_CONFIRM") != "FIRST_INSTALL_BACKFILL"):
+            raise DeliveryHold("first-install attestations required")
+        targets = [destination(settings, candidate) for candidate in sorted(SOURCES)]
+        if any(target is None for target in targets) or len({target[1] for target in targets}) != len(SOURCES):
+            raise DeliveryHold("distinct dedicated destinations required")
+        if not await ledger.initialize_empty():
+            raise DeliveryHold("ledger initialization not confirmed")
+        print("Empty ledger checkpointed. No discovery or Discord messages sent; release gate remains closed.")
+        return
+    target = destination(settings, source)
+    if target is None:
+        raise DeliveryHold("dedicated destination unavailable")
+    route = target[1]
     if not await ledger.open():
         raise DeliveryHold("authoritative ledger unavailable")
     try:
