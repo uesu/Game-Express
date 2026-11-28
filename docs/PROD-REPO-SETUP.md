@@ -121,7 +121,7 @@ Create a fresh repository and upload these paths; a fork/clone relationship is n
 ```
 gamexpress/                      the whole package, including sources/ (no fixed file count)
   __init__.py  __main__.py  benchmark.py  cards.py  codeposter.py  config.py
-  candidate_news_checkpoint.py  candidate_news_delivery.py  candidate_news_recovery.py
+  candidate_news_catchup.py  candidate_news_checkpoint.py  candidate_news_delivery.py  candidate_news_recovery.py
   candidate_news_runner.py  day_news_candidate.py  discord.py  news_animation.py
   http.py  maintenance.py  media.py  models.py  news_timestamps.py  preview_html.py
   runner.py  samples.py  schedule.py  state.py  textutil.py  timeparse.py
@@ -137,6 +137,7 @@ state/state.json                 what has been posted (see §4 — copy it, do n
 requirements.txt
 .github/workflows/monitor.yml    monitor
 .github/workflows/candidate_news_recovery.yml  attended, no-post candidate recovery
+.github/workflows/candidate_news_catchup.yml   attended candidate catch-up (sends live)
 .gitignore
 ```
 
@@ -153,7 +154,7 @@ can skip this — but if dev goes quiet for a few months, prod keeps running an 
 interpreter with no one telling it.
 
 **It is safe to run in a documentation-free repo.** The script can update only `ci.yml`, `monitor.yml`, `python_version_bump.yml`, `sync_prod.yml`,
-`candidate_news_recovery.yml` and `ruff.toml`; it skips files that are absent. In an automated
+`candidate_news_recovery.yml`, `candidate_news_catchup.yml` and `ruff.toml`; it skips files that are absent. In an automated
 sync, applicable production workflows and `ruff.toml` are included; the dev-only sync workflow
 is not. It reads the current pin from whichever
 workflow is present. **It never opens a Markdown file for writing**, so there is no README and
@@ -226,8 +227,8 @@ cp -r --parents \
   /tmp/prod/
 
 find /tmp/prod -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
-find /tmp/prod -type f | wc -l     # expect 57 (55 runtime + 2 policy files)
-                                  # 59 if you also copied the two python-bump files
+find /tmp/prod -type f | wc -l     # expect 58 (56 runtime + 2 policy files)
+                                  # 60 if you also copied the two python-bump files
 ```
 
 **Don't trust that number on its own — verify the package instead.** The count goes stale the
@@ -500,13 +501,14 @@ and `config/program_announcements.json`. So sync code **into** prod, never the r
 Every push to `main` (and any manual **Actions → Sync to Production (8mqzv4k2n7c) → Run workflow**
 dispatch) automatically validates the listed offline pre-sync checks and runs `.github/scripts/sync_prod.py`
 to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, `config/games.json`,
-`config/overrides.json`, `.github/workflows/{ci,monitor,python_version_bump,candidate_news_recovery}.yml`,
+`config/overrides.json`, `.github/workflows/{ci,monitor,python_version_bump,candidate_news_recovery,candidate_news_catchup}.yml`,
 `.github/dependabot.yml`, `.github/zizmor.yml`, `.gitignore`, `requirements.txt`, `ruff.toml`,
 `state/.gitkeep`) to `uesu/8mqzv4k2n7c`:
 
 - **Live state and inventory are protected:** `state/state.json`, the candidate ledger
-  `state/candidate_news.json`, and production's `variables and secrets.txt` are never created,
-  overwritten, staged, or deleted by sync. The
+  `state/candidate_news.json`, and production's inventory/log files (`variables and secrets.txt`,
+  `variables and secrets for game express.txt`, `variables and secrets for news express.txt`,
+  `news express twitter and reddit.txt`) are never created, overwritten, staged, or deleted by sync. The
   candidate ledger is not provisioned automatically; do not create or reset it during research.
   Attended first-install initialization and recovery have not yet been validated in production.
   Candidate delivery requires explicit configuration and a route-bound ledger. The attended
@@ -547,13 +549,22 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   ledger before any retry. After a successful initialization, run the no-send `preview` for each
   source while still paused and inspect holds. Then append `nte,endfield,silverpalace` to the
   existing `NEWS_GAMES` variable (preserve existing keys), and set `NEWS_CANDIDATES_BACKFILL=1`
-  **last**. Resume the same cron job; do not add another scheduler. Watch the next production
-  Actions summaries and the three Discord channels. Backfill is oldest-first per source, at most
-  one article and three pages per source per run; same-day order for day-only feeds is a
-  deterministic ID tie-break, not proven publication order. On an ambiguous hold, pause the
-  scheduler and use the attended recovery procedure; do not reset the ledger or blindly retry.
-  First production initialization, previews, recovery and real-source delivery are unvalidated
-  until actually run; installing code or secrets alone does not prove them.
+  **last**. Keep all writers paused. To catch up continuously, run `Candidate news catch-up
+  (attended live)` on the authority branch, check `writers_paused`, and type
+  `START_CANDIDATE_BACKFILL`. This sends real messages. It cycles through all three sources,
+  delivering up to one article (three pages maximum) per source per cycle with paced requests,
+  until all three authoritative records have no pending or partial article. It checks every route
+  and held page before sending, checkpoints before and after each POST, and stops on any warning,
+  ambiguous outcome, no progress, or a five-hour internal time budget. GitHub's job timeout is
+  six hours; an interrupted POST can leave an in-flight hold requiring independent review. Check
+  the job summary, ledger, and channels; do not blindly retry. A successful run means the checked
+  source snapshots were drained, not that no newer article can appear afterward or that upstream
+  provided every historic post. Backfill is oldest-first **per source**; same-day order for
+  day-only feeds is a deterministic ID tie-break, not proven publication order. Once all three
+  are complete, resume the same cron job; no additional scheduler is needed. Normal monitoring
+  still sends at most one article and three pages per source per run. First production
+  initialization, previews, catch-up, recovery and real-source delivery are unvalidated until
+  actually run; installing code or secrets alone does not prove them.
 - **No-send live-source preview:** after approved initialization, pause all schedulers/writers,
   select `preview` and a source in the same attended workflow, and attest that writers are paused.
   It checks the bound destination and existing ledger, fetches a fresh bounded official listing,
