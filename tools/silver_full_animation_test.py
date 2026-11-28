@@ -23,7 +23,7 @@ from gamexpress import news_animation  # noqa: E402
 from gamexpress.http import Fetcher  # noqa: E402
 
 MARKER = "feature3-silver-full-animated-v1"
-COMMENT_ID = 0  # prepare first, independently verify, lock before sending
+COMMENT_ID = 7236210751  # independently verified; preparation permanently locked
 IDS = {"93", "99"}
 
 
