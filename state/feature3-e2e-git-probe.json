@@ -1,7 +1,13 @@
 {
   "candidate_news": {
     "silverpalace": {
-      "partial": null,
+      "partial": {
+        "id": "987654321",
+        "inflight": false,
+        "messages": [],
+        "pages": 1,
+        "signature": "385ab593146018460c5fb3d4f5d55ca9a8b764a5a25f4f2ba8edf9a5808e1004"
+      },
       "pending": [
         {
           "date": "2000-01-01",
