@@ -507,7 +507,7 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   delivery is hard-gated off. The attended recovery workflow is copied by sync but is manual-only;
   it requires matching primary authority, the dedicated destination and explicit operator review. Candidate checkpoint commits include a per-write random nonce;
   local competing-writer tests and a local monitor-state rebase test pass, but they do not prove
-  cross-repository failover or actual production recovery. The sync preflight runs the candidate
+  real cross-repository failover or actual production recovery. The sync preflight runs the candidate
   offline test files. A local production-shaped tree passed the synced CI test commands without
   copying dev-only research tools; those research tests run in development CI only. The exact
   production variables and secrets cannot be inferred from a public repository view; check their
@@ -524,6 +524,15 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   repositories cannot be detected. If there is any uncertainty, stop and investigate; if the push
   outcome is unclear, inspect the authoritative remote before any retry. The hard release gate
   remains closed. No live production initialization has been performed.
+- **Experimental candidate standby:** the shared-ledger path described in
+  [CONFIGURATION](CONFIGURATION.md) is opt-in and remains behind the release gate. It must use
+  the same authoritative branch, same dedicated destinations and a narrowly scoped credential;
+  only the primary may establish a new source's route. Existing peer-heartbeat logic decides
+  whether a standby is active, and an unavailable peer leaves it passive. A stale checkout,
+  changed route, failed/uncertain Git operation or held page stops that source. Cross-repository
+  Actions and real production failover have not been validated. Do not activate it as part of
+  initialization. Disable or pause **all** writers before reconciliation; never reset/copy a
+  ledger to manufacture failover, and never force-push over authoritative state.
 - **Attended candidate recovery (not automatic failover):** the manual-only `Candidate news
   recovery (attended)` workflow can inspect a validated existing ledger without sending. Before
   using `resolve`, pause every scheduler and writer in every repository and independently inspect

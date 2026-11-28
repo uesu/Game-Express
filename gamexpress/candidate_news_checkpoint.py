@@ -108,9 +108,10 @@ class IsolatedGitLedger:
 
     LEDGER = "state/candidate_news.json"
 
-    def __init__(self, root: Path, branch: str):
+    def __init__(self, root: Path, branch: str, *, git_env=None):
         self.root = root.resolve()
         self.branch = branch
+        self.git_env = git_env
         self.worktree = None
         self._temp = None
         self.data = None
@@ -118,7 +119,7 @@ class IsolatedGitLedger:
 
     def _git(self, root, *args):
         return subprocess.run(["git", *args], cwd=root, stdin=subprocess.DEVNULL,
-                              capture_output=True, timeout=30, check=False)
+                              capture_output=True, timeout=30, check=False, env=self.git_env)
 
     def _remote(self):
         result = self._git(self.root, "ls-remote", "--heads", "origin", f"refs/heads/{self.branch}")

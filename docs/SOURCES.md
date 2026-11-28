@@ -542,9 +542,13 @@ production or cross-repository failover validation, and the release gate remains
 
 The gated prototype also requires an explicitly nominated `NEWS_CANDIDATES_AUTHORITY_REPOSITORY`
 and `NEWS_CANDIDATES_AUTHORITY_BRANCH`, matching primary role, Actions repository/ref, allowed event,
-and HTTPS origin. This permits a primary with a configured standby, but deliberately never allows
-the standby to send automatically: a repo-local concurrency group cannot coordinate failover.
-These checks reduce accidental dual writers; they do not prove distributed exclusion. A local
+and HTTPS origin. An opt-in experimental standby now checks out the same authoritative branch
+with a separately scoped Git credential after the existing heartbeat marks it active. A source must
+already have its route bound by the primary; both writers use the same ledger and per-page Git
+intent checkpoints. Offline tests cover a primary/standby race and reviewed recovery against a
+shared bare-Git remote, but they do not validate real cross-repository authentication or production
+failover. A repo-local concurrency group is not a distributed lock; force-pushes, independent
+ledgers, noncooperating writers and incorrect human reconciliation remain outside this protection. A local
 checkpointed reconciliation primitive validates an operator's decision and persists it without
 sending. A manual-only attended recovery workflow now exposes inspect and guarded resolve, but
 cannot independently prove delivery or pause cross-repository writers; production recovery is not

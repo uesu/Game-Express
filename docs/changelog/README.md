@@ -1,8 +1,10 @@
 # Changelog
 
-Latest: [Private integrated runner test](CHANGELOG.md#2026-11-27--private-integrated-runner-test).
+Latest: [Experimental shared-ledger candidate standby](CHANGELOG.md#2026-11-27--experimental-shared-ledger-candidate-standby).
 
-Previous: [Guarded candidate ledger initialization](CHANGELOG.md#2026-11-27--guarded-candidate-ledger-initialization).
+Previous: [Private integrated runner test](CHANGELOG.md#2026-11-27--private-integrated-runner-test).
+
+Earlier: [Guarded candidate ledger initialization](CHANGELOG.md#2026-11-27--guarded-candidate-ledger-initialization).
 
 Earlier: [Attended candidate recovery and integrated test](CHANGELOG.md#2026-11-27--attended-candidate-recovery-and-integrated-test).
 

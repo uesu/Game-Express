@@ -340,14 +340,39 @@ release and backfill plan have been approved, configure these in the **productio
 For example, if all five default existing sources should remain selected, the full `NEWS_GAMES`
 value is `genshin,starrail,zzz,wuwa,hna,nte,endfield,silverpalace`. If you already use a custom
 selection, append the three candidate keys rather than replacing your selection with that example.
-The active instance role must be `primary` (the default); a standby cannot send candidate news
-automatically. Adding candidate keys does not change schedule, codes, maintenance or Reddit.
+The default active instance role is `primary`. A separate standby remains disabled unless the
+experimental shared-ledger failover below is explicitly configured; it is still behind the release
+gate. Adding candidate keys does not change schedule, codes, maintenance or Reddit.
 An empty, deliberately provisioned candidate ledger causes the first complete snapshot to queue
 **available history**, not a silent baseline. The attended initialization path is described in
 [production setup](PROD-REPO-SETUP.md); it and actual production recovery remain unvalidated.
 Do not initialize or activate production until release review and the backfill plan are complete.
 Candidate processing is limited to one article and three pages per source per run, independently
 of the existing-news rules above.
+
+**Experimental candidate standby (not yet production-validated):** no standby settings are
+needed for a single primary. When separately approved for failover, configure these on the standby
+repository, not on the primary. They do not open the release gate:
+
+| Type | Name | Value / purpose |
+|---|---|---|
+| Variable | `INSTANCE_ROLE` | `standby`; the existing peer-heartbeat mechanism must mark it active |
+| Variable | `NEWS_CANDIDATES_STANDBY_ENABLED` | `1` to opt in; unset disables candidate standby |
+| Variable | `NEWS_CANDIDATES_STANDBY_REPOSITORY` | Exact `owner/repository` of this standby Actions checkout |
+| Variable | `NEWS_CANDIDATES_STANDBY_BRANCH` | Exact branch on which this standby workflow runs |
+| Variable | `NEWS_CANDIDATES_AUTHORITY_REPOSITORY` / `NEWS_CANDIDATES_AUTHORITY_BRANCH` | The same sole primary authority and branch as above |
+| Secret | `NEWS_CANDIDATES_LEDGER_TOKEN` | A separate least-privilege GitHub credential with Contents read/write on that authority repository; never paste its value in chat |
+
+The standby also needs the same dedicated news destinations, candidate selection, and backfill
+opt-in as the primary; don't configure them for live operation before approval. It checks out the
+single authoritative ledger with the credential in a scoped Git environment, not a URL or file.
+Only sources whose route is already recorded by the primary can run on standby. Stale or missing
+checkouts, missing credentials, route mismatches, uncertain pushes, and ambiguous sends hold. The
+shared branch and verified intent checkpoints fence *cooperating* writers; GitHub Actions
+concurrency alone does not coordinate repositories, and force-pushes, independent ledgers,
+noncooperating writers and operator mistakes are not protected. Recovery still requires pausing
+all writers. `PEER_STATE_URL` must be reachable for the existing standby heartbeat check; this
+prototype has not been validated across real repositories or in production.
 
 Existing short game aliases also work. No `DISCORD_WEBHOOK_NEWS`, catch-all,
 `FORCE_WEBHOOK`, or mirror fallback is used for news. A missing destination skips

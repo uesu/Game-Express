@@ -912,6 +912,284 @@ class CandidateDeliveryTests(unittest.TestCase):
             self.assertEqual(saved["candidate_news"]["silverpalace"]["posted"]["1"]["messages"], ["101"])
             self.assertEqual(git("status", "--porcelain"), b"")
 
+    def test_standby_authority_requires_exact_opt_in_caller_and_current_checkout(self):
+        authority = "uesu/Authority"
+        standby_repo, standby_branch, authority_branch = "uesu/Standby", "main", "main"
+        config = {"INSTANCE_ROLE": "standby", "NEWS_CANDIDATES_STANDBY_ENABLED": "1",
+                  "NEWS_CANDIDATES_AUTHORITY_REPOSITORY": authority,
+                  "NEWS_CANDIDATES_AUTHORITY_BRANCH": authority_branch,
+                  "NEWS_CANDIDATES_STANDBY_REPOSITORY": standby_repo,
+                  "NEWS_CANDIDATES_STANDBY_BRANCH": standby_branch,
+                  "NEWS_CANDIDATES_LEDGER_TOKEN": "github_pat_" + "x" * 30}
+        actions = {"GITHUB_ACTIONS": "true", "GITHUB_EVENT_NAME": "workflow_dispatch",
+                   "GITHUB_REPOSITORY": standby_repo, "GITHUB_REF_NAME": standby_branch,
+                   "GITHUB_REF": f"refs/heads/{standby_branch}"}
+        with (tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", actions, clear=True),
+              patch.object(runner, "_origin_is_authority", return_value=True),
+              patch.object(runner, "_checkout_is_current", return_value=True)):
+            root = Path(tmp)
+            self.assertEqual(runner.standby_authority(load_settings(config), root),
+                             (authority, authority_branch, config["NEWS_CANDIDATES_LEDGER_TOKEN"]))
+            for key, bad in (("INSTANCE_ROLE", "primary"), ("NEWS_CANDIDATES_STANDBY_ENABLED", "0"),
+                             ("NEWS_CANDIDATES_LEDGER_TOKEN", ""), ("NEWS_CANDIDATES_LEDGER_TOKEN", "bad\nsecret"),
+                             ("NEWS_CANDIDATES_AUTHORITY_REPOSITORY", "../Authority"),
+                             ("NEWS_CANDIDATES_AUTHORITY_REPOSITORY", standby_repo),
+                             ("NEWS_CANDIDATES_AUTHORITY_BRANCH", "-bad"),
+                             ("NEWS_CANDIDATES_STANDBY_BRANCH", "other")):
+                self.assertIsNone(runner.standby_authority(load_settings({**config, key: bad}), root), key)
+            for key, bad in (("GITHUB_REPOSITORY", "uesu/Other"), ("GITHUB_ACTIONS", "false"),
+                             ("GITHUB_EVENT_NAME", "pull_request"), ("GITHUB_REF", "refs/tags/main")):
+                with patch.dict("os.environ", {key: bad}):
+                    self.assertIsNone(runner.standby_authority(load_settings(config), root), key)
+            with patch.object(runner, "_origin_is_authority", return_value=False):
+                self.assertIsNone(runner.standby_authority(load_settings(config), root))
+            with patch.object(runner, "_checkout_is_current", return_value=False):
+                self.assertIsNone(runner.standby_authority(load_settings(config), root))
+
+    def test_standby_git_auth_is_scoped_and_never_in_args_or_url(self):
+        token = "github_pat_" + "x" * 30
+        with patch.dict("os.environ", {"GIT_TRACE_CURL": "1", "GH_TOKEN": "other-secret",
+                                      "GE_SECRETS_JSON": "private", "PATH": "/bin"}, clear=True):
+            env = runner._standby_git_environment(token)
+        self.assertNotIn("GH_TOKEN", env)
+        self.assertNotIn("GE_SECRETS_JSON", env)
+        self.assertNotIn("GIT_TRACE_CURL", env)
+        self.assertEqual(env["GIT_CONFIG_KEY_0"], "http.https://github.com/.extraheader")
+        self.assertEqual(env["GIT_CONFIG_KEY_1"], "http.followRedirects")
+        self.assertEqual(env["GIT_CONFIG_VALUE_1"], "false")
+        self.assertNotIn(token, repr({k: v for k, v in env.items() if k != "GIT_CONFIG_VALUE_0"}))
+        checkout = runner.StandbyLedgerCheckout("uesu/Authority", "main", token)
+        seen = []
+
+        def fake_git(*args):
+            seen.append(args)
+            return True
+
+        with patch.object(checkout, "_git", side_effect=fake_git):
+            self.assertTrue(asyncio.run(checkout.open()))
+            root = checkout.root
+            self.assertTrue(root.is_dir())
+            self.assertEqual(seen[1], ("remote", "add", "origin", "https://github.com/uesu/Authority.git"))
+            self.assertNotIn(token, repr(seen))
+            asyncio.run(checkout.close())
+            self.assertFalse(root.exists())
+            self.assertEqual(checkout.env, {})
+        failed = runner.StandbyLedgerCheckout("uesu/Authority", "main", token)
+        with patch.object(failed, "_git", return_value=False):
+            self.assertFalse(asyncio.run(failed.open()))
+        self.assertIsNone(failed.root)
+        self.assertEqual(failed.env, {})
+
+    def test_standby_never_binds_new_routes_and_gate_prevents_checkout(self):
+        settings = load_settings({"INSTANCE_ROLE": "standby", "NEWS_CANDIDATES_STANDBY_ENABLED": "1",
+                                  "NEWS_CANDIDATES_BACKFILL": "1", "NEWS_GAMES": "silverpalace",
+                                  "DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK})
+        class FakeCheckout:
+            closed = False
+            def __init__(self, repository, branch, token):
+                self.root, self.env = Path("/tmp"), {}
+            async def open(self):
+                return True
+            async def close(self):
+                self.closed = True
+        class FakeLedger:
+            def __init__(self, root, branch, *, git_env):
+                self.data, self.poisoned = {"candidate_news": {}}, False
+            async def open(self):
+                return True
+            async def close(self):
+                pass
+        def context():
+            return SimpleNamespace(settings=settings, active=True, now=NOW, fetcher=None,
+                                   webhook=SimpleNamespace(session=None), report=[], warnings=[])
+        with (patch.object(runner, "authoritative_branch", return_value=None),
+              patch.object(runner, "standby_authority", return_value=("uesu/Auth", "main", "x" * 30)),
+              patch.object(runner, "StandbyLedgerCheckout", FakeCheckout),
+              patch.object(runner, "IsolatedGitLedger", FakeLedger),
+              patch.object(delivery, "discover", side_effect=AssertionError("must not discover"))):
+            gated = context()
+            with patch.object(runner, "CANDIDATE_NEWS_READY", False), patch.object(FakeCheckout, "open", side_effect=AssertionError("no checkout")):
+                asyncio.run(runner.run_candidate_news(gated))
+            self.assertIn("not released", gated.warnings[0])
+            active = context()
+            with patch.object(runner, "CANDIDATE_NEWS_READY", True):
+                asyncio.run(runner.run_candidate_news(active))
+            self.assertIn("primary route not yet bound", active.warnings[0])
+
+    def test_standby_failover_holds_ambiguous_primary_and_resumes_only_after_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            authority, seed = base / "authority.git", base / "seed"
+            standby_remote, standby_root = base / "standby.git", base / "standby"
+            seed.mkdir()
+            standby_root.mkdir()
+
+            def git(cwd, *args):
+                return subprocess.run(["git", *args], cwd=cwd, capture_output=True, check=True).stdout
+
+            git(base, "init", "--bare", str(authority))
+            git(seed, "init", "-b", "main")
+            git(seed, "config", "user.name", "Test")
+            git(seed, "config", "user.email", "test@example.invalid")
+            (seed / "state").mkdir()
+            (seed / "state/candidate_news.json").write_text('{"schema":1,"candidate_news":{}}\n', encoding="utf-8")
+            git(seed, "add", "state")
+            git(seed, "commit", "-m", "seed")
+            git(seed, "remote", "add", "origin", str(authority))
+            git(seed, "push", "origin", "HEAD:refs/heads/main")
+            git(base, "init", "--bare", str(standby_remote))
+            git(standby_root, "init", "-b", "main")
+            git(standby_root, "config", "user.name", "Test")
+            git(standby_root, "config", "user.email", "test@example.invalid")
+            (standby_root / "example").write_text("standby", encoding="utf-8")
+            git(standby_root, "add", "example")
+            git(standby_root, "commit", "-m", "standby")
+            git(standby_root, "remote", "add", "origin", str(standby_remote))
+            git(standby_root, "push", "origin", "HEAD:refs/heads/main")
+            settings = load_settings({"INSTANCE_ROLE": "standby", "NEWS_CANDIDATES_STANDBY_ENABLED": "1",
+                "NEWS_CANDIDATES_AUTHORITY_REPOSITORY": "uesu/Authority", "NEWS_CANDIDATES_AUTHORITY_BRANCH": "main",
+                "NEWS_CANDIDATES_STANDBY_REPOSITORY": "uesu/Standby", "NEWS_CANDIDATES_STANDBY_BRANCH": "main",
+                "NEWS_CANDIDATES_LEDGER_TOKEN": "github_pat_" + "x" * 30,
+                "NEWS_CANDIDATES_BACKFILL": "1", "NEWS_GAMES": "silverpalace",
+                "DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK})
+            route = delivery.destination(settings, "silverpalace")[1]
+            attempts = []
+            primary = IsolatedGitLedger(seed, "main")
+            self.assertTrue(asyncio.run(primary.open()))
+            async def checkpoint(state):
+                return await primary.checkpoint("silverpalace", state)
+            async def render_old(candidate):
+                return [payload(candidate["id"])]
+            async def ambiguous(card):
+                attempts.append("primary")
+                return SimpleNamespace(ok=False, message_id=None, ambiguous=True)
+            initial = delivery.ingest("silverpalace", route, None, [row("1")])
+            with self.assertRaises(delivery.DeliveryHold):
+                asyncio.run(delivery.deliver_oldest(initial, "silverpalace", route, as_of=NOW,
+                            checkpoint=checkpoint, render=render_old, send=ambiguous))
+            asyncio.run(primary.close())
+
+            class TestCheckout(runner.StandbyLedgerCheckout):
+                # Replace only the HTTPS transport with a local bare Git repository.
+                def __init__(self, repository, branch, token):
+                    super().__init__(repository, branch, token)
+                    self.env["GIT_CONFIG_VALUE_2"] = "always"
+                def _git(self, *args):
+                    if args[:3] == ("remote", "add", "origin"):
+                        args = (*args[:3], str(authority))
+                    return super()._git(*args)
+
+            async def discover(fetcher, source):
+                return [row("1")]
+            async def render(fetcher, conf, source, candidate):
+                return [payload(candidate["id"])], {}
+            async def send(session, conf, source, card):
+                attempts.append("standby")
+                return SimpleNamespace(ok=True, message_id="101", ambiguous=False)
+            def context(active=True):
+                return SimpleNamespace(settings=settings, active=active, now=NOW, fetcher=None,
+                                       webhook=SimpleNamespace(session=None), report=[], warnings=[])
+            actions = {"GITHUB_ACTIONS": "true", "GITHUB_EVENT_NAME": "workflow_dispatch",
+                       "GITHUB_REPOSITORY": "uesu/Standby", "GITHUB_REF_NAME": "main", "GITHUB_REF": "refs/heads/main"}
+            with (patch.dict("os.environ", actions, clear=True), patch.object(runner, "ROOT", standby_root),
+                  patch.object(runner, "_origin_is_authority", return_value=True),
+                  patch.object(runner, "CANDIDATE_NEWS_READY", True), patch.object(runner, "StandbyLedgerCheckout", TestCheckout),
+                  patch.object(delivery, "discover", discover), patch.object(delivery, "render_candidate_animated", render),
+                  patch.object(delivery, "send_candidate_once", send)):
+                passive = context(False)
+                asyncio.run(runner.run_candidate_news(passive))
+                self.assertEqual(attempts, ["primary"])
+                held = context()
+                asyncio.run(runner.run_candidate_news(held))
+                self.assertEqual(attempts, ["primary"])
+                self.assertTrue(held.warnings)
+                git(seed, "pull", "--ff-only", "origin", "main")
+                ledger = IsolatedGitLedger(seed, "main")
+                self.assertTrue(asyncio.run(ledger.open()))
+                info = recovery.inspect_record(ledger, "silverpalace", route)
+                self.assertTrue(info["inflight"])
+                asyncio.run(recovery.reviewed_resolution(ledger, "silverpalace", route, article_id="1", page=1,
+                    signature=info["signature"], resolution="absent", writers_paused=True, evidence_verified=True))
+                asyncio.run(ledger.close())
+                resumed = context()
+                asyncio.run(runner.run_candidate_news(resumed))
+                self.assertFalse(resumed.warnings)
+                self.assertEqual(attempts, ["primary", "standby"])
+                again = context()
+                asyncio.run(runner.run_candidate_news(again))
+                self.assertEqual(attempts, ["primary", "standby"])
+            persisted = json.loads(git(seed, "--git-dir", str(authority), "show", "refs/heads/main:state/candidate_news.json"))
+            self.assertEqual(persisted["candidate_news"]["silverpalace"]["posted"]["1"]["messages"], ["101"])
+            self.assertFalse((standby_root / "state/candidate_news.json").exists())
+
+    def test_primary_and_standby_runners_race_on_one_shared_ledger(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base, branch = Path(tmp), "main"
+            remote, seed = base / "authority.git", base / "primary"
+            seed.mkdir()
+            def git(cwd, *args):
+                return subprocess.run(["git", *args], cwd=cwd, capture_output=True, check=True).stdout
+            git(base, "init", "--bare", str(remote))
+            git(seed, "init", "-b", branch)
+            git(seed, "config", "user.name", "Test")
+            git(seed, "config", "user.email", "test@example.invalid")
+            config = {"NEWS_CANDIDATES_BACKFILL": "1", "NEWS_GAMES": "silverpalace",
+                      "DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK}
+            primary_settings = load_settings({**config, "INSTANCE_ROLE": "primary"})
+            standby_settings = load_settings({**config, "INSTANCE_ROLE": "standby"})
+            route = delivery.destination(primary_settings, "silverpalace")[1]
+            queued = delivery.ingest("silverpalace", route, None, [row("1")])
+            (seed / "state").mkdir()
+            (seed / "state/candidate_news.json").write_text(json.dumps({"schema": 1, "candidate_news": {"silverpalace": queued}}), encoding="utf-8")
+            git(seed, "add", "state")
+            git(seed, "commit", "-m", "seed")
+            git(seed, "remote", "add", "origin", str(remote))
+            git(seed, "push", "origin", "HEAD:refs/heads/main")
+
+            class LocalCheckout(runner.StandbyLedgerCheckout):
+                def __init__(self, repository, branch, token):
+                    super().__init__(repository, branch, token)
+                    self.env["GIT_CONFIG_VALUE_2"] = "always"
+                def _git(self, *args):
+                    if args[:3] == ("remote", "add", "origin"):
+                        args = (*args[:3], str(remote))
+                    return super()._git(*args)
+
+            barrier = threading.Barrier(2, timeout=20)
+            original_git = IsolatedGitLedger._git
+            def coordinate(ledger, root, *args):
+                if args and args[0] == "push" and not getattr(ledger, "_race_started", False):
+                    ledger._race_started = True
+                    barrier.wait()
+                return original_git(ledger, root, *args)
+            sends = []
+            async def discover(fetcher, source):
+                return [row("1")]
+            async def render(fetcher, settings, source, candidate):
+                return [payload(candidate["id"])], {}
+            async def send(session, settings, source, card):
+                sends.append(settings.instance_role)
+                return SimpleNamespace(ok=True, message_id="101", ambiguous=False)
+            async def compete():
+                def ctx(settings):
+                    return SimpleNamespace(settings=settings, active=True, now=NOW, fetcher=None,
+                                           webhook=SimpleNamespace(session=None), report=[], warnings=[])
+                a, b = ctx(primary_settings), ctx(standby_settings)
+                await asyncio.gather(runner.run_candidate_news(a), runner.run_candidate_news(b))
+                return a, b
+            with (patch.object(runner, "ROOT", seed), patch.object(runner, "CANDIDATE_NEWS_READY", True),
+                  patch.object(runner, "authoritative_branch", side_effect=lambda settings, root: "main" if settings.instance_role == "primary" else None),
+                  patch.object(runner, "standby_authority", return_value=("uesu/Authority", "main", "x" * 30)),
+                  patch.object(runner, "StandbyLedgerCheckout", LocalCheckout),
+                  patch.object(IsolatedGitLedger, "_git", coordinate),
+                  patch.object(delivery, "discover", discover), patch.object(delivery, "render_candidate_animated", render),
+                  patch.object(delivery, "send_candidate_once", send)):
+                a, b = asyncio.run(compete())
+            self.assertEqual(len(sends), 1)
+            self.assertEqual(sum(bool(ctx.warnings) for ctx in (a, b)), 1)
+            result = json.loads(git(seed, "--git-dir", str(remote), "show", "refs/heads/main:state/candidate_news.json"))
+            self.assertEqual(result["candidate_news"]["silverpalace"]["posted"]["1"]["messages"], ["101"])
+
     def test_candidate_authority_restricts_repo_branch_origin_role_and_event(self):
         branch = "arena/98b5f4e1-game-express"
         env = {"GITHUB_ACTIONS": "true", "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REPOSITORY": "uesu/Game-Express",
