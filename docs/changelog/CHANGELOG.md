@@ -1,5 +1,18 @@
 # Changelog — current entries
 
+## 2026-11-27 — Feature 3 animated media follow-up
+
+- For official news, identify GIF-signature media with misleading MIME or file extensions and
+  prepare correctly labelled Discord attachments in source order. Use the original bytes when
+  they fit; larger animations are converted under bounded size, frame and timing limits. Ordinary
+  static images and correctly labelled GIFs retain their previous path. The planner applies to
+  HoYoLAB, Kuro and all three gated candidate sources; the latter remain disabled in production.
+- Discord upload requests for these files stop on ambiguous outcomes. Existing-news updates to a
+  message containing an uploaded GIF are held for manual review, as are unsupported or oversized
+  animations; reveal pings on such messages are suppressed for attachment pagination safety.
+  Sample playback was user-confirmed; full Silver 93/99 private article tests await visual review.
+  Release, checkpoint persistence and failover are not yet validated.
+
 ## 2026-11-27 — Read-only source research (no production behavior changes)
 
 - Prepared candidate news source adapters, queue, full-article rendering and a fail-closed

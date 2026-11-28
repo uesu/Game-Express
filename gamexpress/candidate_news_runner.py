@@ -100,15 +100,24 @@ async def run_candidate_news(ctx):
                     ctx.report.append(f"{source} news: caught up ({len(state['posted'])} recorded)")
                     continue
 
+                animation_assets = {}
+
                 async def checkpoint(snapshot, *, _source=source):
                     return await ledger.checkpoint(_source, snapshot)
 
-                async def render(row, *, _source=source):
-                    return await delivery.render_candidate(ctx.fetcher, settings, _source, row)
+                async def render(row, *, _source=source, _assets=animation_assets):
+                    pages, files = await delivery.render_candidate_animated(ctx.fetcher, settings, _source, row)
+                    _assets.clear()
+                    _assets.update(files)
+                    return pages
 
-                async def send(payload, *, _source=source):
+                async def send(payload, *, _source=source, _assets=animation_assets):
                     # Git checkpoints usually exceed this delay, but never rely on that for pacing.
                     await asyncio.sleep(1.5)
+                    attachments = payload.get("attachments") or []
+                    if attachments:
+                        files = {entry["filename"]: _assets[entry["filename"]] for entry in attachments}
+                        return await delivery.send_candidate_once(ctx.webhook.session, settings, _source, payload, files=files)
                     return await delivery.send_candidate_once(ctx.webhook.session, settings, _source, payload)
 
                 state = await delivery.deliver_oldest(state, source, fingerprint, as_of=ctx.now,

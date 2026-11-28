@@ -19,7 +19,6 @@ import candidate_private_backfill as historic  # noqa: E402
 from live_candidate_probe import NoRedirectSession  # noqa: E402
 
 from gamexpress import candidate_news_delivery as delivery  # noqa: E402
-from gamexpress import news_animation  # noqa: E402
 from gamexpress.http import Fetcher  # noqa: E402
 
 MARKER = "feature3-silver-full-animated-v1"
@@ -68,8 +67,7 @@ async def send(session, fetcher, settings, route):
     article_id = state["pending"][0]["id"]
 
     async def render(row):
-        pages = await delivery.render_candidate(fetcher, settings, "silverpalace", row)
-        planned, data = await news_animation.prepare(fetcher, pages, max_pages=120)
+        planned, data = await delivery.render_candidate_animated(fetcher, settings, "silverpalace", row)
         assets.update(data)
         print(f"::notice title=Full Silver animation render::id={row['id']} pages={len(planned)} "
               f"animated-files={len(data)} bytes={sum(map(len, data.values()))}", flush=True)

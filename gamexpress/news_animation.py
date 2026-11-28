@@ -31,7 +31,7 @@ TRUSTED_EXACT = ("web-static.hg-cdn.com", "ntevmg.perfectworld.com", "s.elementa
 NAME_RE = re.compile(r"animation-([a-f0-9]{64})\.gif\Z")
 
 
-def gif_info(raw: bytes, *, with_duration=False):
+def gif_info(raw: bytes, *, with_duration=False, with_loop=False):
     """Validate GIF block framing, dimensions and animation without decoding pixels."""
     if len(raw) < 14 or raw[:6] not in (b"GIF87a", b"GIF89a"):
         raise ValueError("invalid GIF")
@@ -42,6 +42,7 @@ def gif_info(raw: bytes, *, with_duration=False):
     frames = 0
     duration_cs = 0
     delay_cs = 0
+    loop = None
 
     def subblocks(pos):
         while pos < len(raw):
@@ -58,10 +59,19 @@ def gif_info(raw: bytes, *, with_duration=False):
         if tag == 0x3B:
             if frames < 2 or frames > 600 or i != len(raw):
                 raise ValueError("GIF incomplete or outside frame bound")
-            return (width, height, frames, duration_cs) if with_duration else (width, height, frames)
+            values = (width, height, frames)
+            if with_duration:
+                values += (duration_cs,)
+            if with_loop:
+                values += (loop,)
+            return values
         if tag == 0x21:
             if i + 5 < len(raw) and raw[i] == 0xF9 and raw[i + 1] == 4:
                 delay_cs = int.from_bytes(raw[i + 3:i + 5], "little")
+            if (i + 17 < len(raw) and raw[i] == 0xFF and raw[i + 1] == 11
+                    and raw[i + 2:i + 13] in (b"NETSCAPE2.0", b"ANIMEXTS1.0")
+                    and raw[i + 13:i + 15] == b"\x03\x01"):
+                loop = int.from_bytes(raw[i + 15:i + 17], "little")
             i = subblocks(i + 1)
         elif tag == 0x2C:
             if i + 9 > len(raw):
@@ -79,6 +89,8 @@ def gif_info(raw: bytes, *, with_duration=False):
 
 def trusted_url(url):
     try:
+        if not isinstance(url, str) or len(url) > 1024 or any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in url):
+            return False
         parts = urlsplit(url)
         host = (parts.hostname or "").lower()
         return (parts.scheme == "https" and not parts.username and not parts.password and parts.port in (None, 443)
@@ -111,7 +123,7 @@ def convert_gif(raw):
     The private prototype has been visually confirmed for the 480px/8fps case.
     A rejected conversion is held; it must not silently lose an animation.
     """
-    _, _, _, original_duration = gif_info(raw, with_duration=True)
+    _, _, _, original_duration, original_loop = gif_info(raw, with_duration=True, with_loop=True)
     if len(raw) <= UPLOAD_LIMIT:
         return raw
     import imageio_ffmpeg
@@ -123,16 +135,18 @@ def convert_gif(raw):
             args = [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "2",
                     "-i", str(src), "-filter_complex",
                     f"fps={fps},scale={size}:-2:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a",
-                    "-loop", "0", "-y", str(dst)]
+                    "-loop", str(original_loop if original_loop is not None else -1),
+                    "-fs", str(UPLOAD_LIMIT + 1024 * 1024), "-y", str(dst)]
             result = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                     stderr=subprocess.DEVNULL, timeout=180, check=False)
             if result.returncode:
                 raise ValueError("animation conversion failed")
             if dst.stat().st_size <= UPLOAD_LIMIT:
                 out = dst.read_bytes()
-                _, _, _, output_duration = gif_info(out, with_duration=True)
-                if not original_duration or abs(output_duration - original_duration) > max(40, 200 // fps):
-                    raise ValueError("converted animation duration changed")
+                _, _, _, output_duration, output_loop = gif_info(out, with_duration=True, with_loop=True)
+                if (not original_duration or abs(output_duration - original_duration) > max(40, 200 // fps)
+                        or output_loop != original_loop):
+                    raise ValueError("converted animation timing or loop changed")
                 return out
     raise ValueError("converted GIF exceeds upload safety limit")
 
@@ -200,7 +214,10 @@ async def prepare(fetcher, payloads, *, max_pages=120):
               for entry in child.get("items", [])))
     replacements, assets, total_in, total_out = {}, {}, 0, 0
     for url in urls:
-        prefix = await fetcher._news_media_prefix(url)
+        cached = getattr(fetcher, "media_prefixes", {})
+        prefix = cached.get(url) if isinstance(cached, dict) else None
+        if prefix is None:
+            prefix = await fetcher._news_media_prefix(url)
         if not prefix:
             raise ValueError("animation detection unavailable")
         raw, mime = prefix
@@ -220,3 +237,27 @@ async def prepare(fetcher, payloads, *, max_pages=120):
         replacements[url] = name
         assets[name] = converted
     return split_pages(payloads, replacements, max_pages=max_pages), assets
+
+
+def multipart_form(payload, files):
+    """Build only a validated, one-GIF Discord request; hash binds it to the page."""
+    import json
+
+    from .discord import payload_media_urls
+
+    entries = payload.get("attachments") if isinstance(payload, dict) else None
+    if not isinstance(files, dict) or not isinstance(entries, list) or len(entries) != 1:
+        raise ValueError("invalid attachment plan")
+    entry = entries[0]
+    name = entry.get("filename") if isinstance(entry, dict) and entry.get("id") == 0 else None
+    match = NAME_RE.fullmatch(name) if isinstance(name, str) else None
+    data = files.get(name) if match else None
+    if (not match or set(files) != {name} or not isinstance(data, bytes) or len(data) > UPLOAD_LIMIT
+            or hashlib.sha256(data).hexdigest() != match.group(1)
+            or {u for u in payload_media_urls(payload) if u.startswith("attachment://")} != {"attachment://" + name}):
+        raise ValueError("invalid attachment content")
+    gif_info(data)
+    form = aiohttp.FormData()
+    form.add_field("payload_json", json.dumps(payload, ensure_ascii=False), content_type="application/json")
+    form.add_field("files[0]", data, filename=name, content_type="image/gif")
+    return form

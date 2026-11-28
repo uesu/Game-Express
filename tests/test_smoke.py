@@ -419,12 +419,15 @@ class FakeCodeSources:
 
 
 def make_ctx(state_path, items=None, now=1789300000, codes_table=None, versions=None, overrides=None, **env):
+    async def unchanged_animation_plan(fetcher, pages, **kwargs):
+        return pages, {}
+
     s = settings(**env)
     s.state_path = Path(state_path)
     return Ctx(settings=s, games=[g for g in GAMES.values() if g.enabled], state=State.load(Path(state_path)),
                fetcher=None, webhook=WebhookClient(None, dry_run=True), x=None,
                code_sources=FakeCodeSources(codes_table or {}), overrides=overrides or {}, now=now,
-               versions=versions or {}, items=items or {})
+               versions=versions or {}, items=items or {}, animation_prepare=unchanged_animation_plan)
 
 
 def reveal_ping_games(ctx, *keys):
@@ -28235,3 +28238,91 @@ def test_official_news_runner_verified_youtube_cover_and_native_suppression():
             assert (thumbnail in json.dumps(posts)) is (not native)
             assert dimensions.call_count == (0 if native else 1)
             assert article.images == []
+
+
+def test_news_runner_handles_mislabelled_gifs_across_hoyolab_and_kuro():
+    import base64
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress.models import Item
+    from gamexpress.runner import run_news
+    from gamexpress.sources import hoyolab, kuro
+
+    data = base64.b64decode("R0lGODlhBAAEAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAABAAEAAAICQABCBxIsCCAgAAh+QQBCgABACwAAAAABAAEAIEAAP8AAAAAAAAAAAAICQABCBxIsCCAgAA7")
+    hook = "https://discord.com/api/webhooks/100000000000000099/g_tok"
+    for gk, source, source_name, media_url in (
+        ("zzz", hoyolab, "hoyolab", "https://upload-os-bbs.hoyolab.com/a.jpg"),
+        ("wuwa", kuro, "kuro", "https://wutheringwaves.kurogames.com/a.jpg"),
+    ):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_ctx(Path(tmp) / "state.json", NEWS_ENABLED="1", NEWS_GAMES=gk,
+                           **{f"DISCORD_WEBHOOK_NEWS_{gk.upper()}": hook})
+            ctx.animation_prepare = None  # exercise the production planner
+            ctx.now = 1793160000
+            with patch.object(source, "discover_news", return_value=[]):
+                asyncio.run(run_news(ctx))
+            ctx.now = 1793160030
+            item = Item(source_name, gk, "p1", "https://example.org/1", "Official", "", 1793160008,
+                        article_blocks=[{"kind": "text", "text": "Original text"},
+                                        {"kind": "image", "url": media_url}], official=True)
+            ctx.fetcher = types.SimpleNamespace(_news_media_prefix=AsyncMock(return_value=(data[:32], "image/jpeg")))
+            row = {"id": "p1", "ts": 1793160008}
+            with (patch.object(source, "discover_news", return_value=[row]),
+                  patch.object(source, "news_article", return_value=item),
+                  patch("gamexpress.media.news_media_available", return_value=True),
+                  patch("gamexpress.news_animation.fetch_gif", new=AsyncMock(return_value=data))):
+                asyncio.run(run_news(ctx))
+                assert len(ctx.webhook.sent) == 1, ctx.warnings
+                payload = ctx.webhook.sent[0]["payload"]
+                assert len(payload["attachments"]) == 1 and "attachment://animation-" in json.dumps(payload)
+                rec = ctx.state.news_record(gk)["records"]["p1"]
+                assert rec["status"] == "posted" and rec["has_gif_uploads"] is True
+                # Changed content is held rather than PATCHing away an uploaded GIF.
+                item.article_blocks[0]["text"] = "Changed text"
+                ctx.now += 400
+                asyncio.run(run_news(ctx))
+                assert len(ctx.webhook.sent) == 1
+                assert any("animated attachment edit needs manual review" in warning for warning in ctx.warnings)
+
+
+def test_news_gif_upload_has_no_ambiguous_post_retry():
+    import base64
+    import hashlib
+    from unittest.mock import AsyncMock, patch
+
+    from gamexpress.discord import WebhookClient
+
+    data = base64.b64decode("R0lGODlhBAAEAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAABAAEAAAICQABCBxIsCCAgAAh+QQBCgABACwAAAAABAAEAIEAAP8AAAAAAAAAAAAICQABCBxIsCCAgAA7")
+    name = "animation-" + hashlib.sha256(data).hexdigest() + ".gif"
+    page = {"flags": cards.IS_COMPONENTS_V2, "allowed_mentions": {"parse": []},
+            "attachments": [{"id": 0, "filename": name}],
+            "components": [cards.container([cards.text("Sample"),
+                {"type": 12, "items": [{"media": {"url": "attachment://" + name}}]}])]}
+
+    class Response:
+        status = 500
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def text(self):
+            return "not confirmed"
+
+    class Session:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+            return Response()
+
+    session = Session()
+    client = WebhookClient(session)
+    with patch.object(asyncio, "sleep", new=AsyncMock()):
+        result = asyncio.run(client.send(HOOK, page, stop_on_ambiguous=True, files={name: data}))
+    assert not result.ok and result.ambiguous
+    assert len(session.calls) == 1 and "data" in session.calls[0][1]
+    assert session.calls[0][1]["allow_redirects"] is False

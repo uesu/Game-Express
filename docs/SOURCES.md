@@ -1378,8 +1378,8 @@ the observed NTE and Silver Palace listings contained 103 and 21 articles respec
 body parsed, and all 118 distinct body-media URLs responded to bounded signature inspection.
 No NTE body media in that snapshot was GIF-signature data. Twelve Silver URLs had GIF signatures
 although their path ended in `.jpg`, including all 9 body images in Silver article 93 and all 3
-in article 99. We retain the publisher URL and rely on media bytes/MIME, not extension; this
-is not a guarantee about future media or Discord rendering. The NTE 262101 and 262255 samples
+in article 99. This signature check alone was not evidence of Discord rendering or playback;
+see the animation investigation below. The NTE 262101 and 262255 samples
 preserved 660 and 521 masked UIDs in source order with separators; 262998 put its Important Notes
 heading and first note on the same page. A later read-only audit checked all 30 observed account
 notices. These checks do not establish upstream completeness.
@@ -1408,9 +1408,26 @@ A subsequent [header probe](https://github.com/uesu/Game-Express/actions/runs/46
 GIF-signature media served with `Content-Type: image/jpeg`; this mismatch is a plausible cause,
 not proof of Discord's internal behavior. Observed samples are about 8–20 MB, so uploading each
 unchanged may exceed a destination's upload limit. Two private Components V2 attachment experiments
-were posted for visual evaluation: article 99's original bytes as `image/gif` (105 frames,
-960×540), and a size-reduced article 93 GIF (75 frames, 480×270, 8 fps). Discord accepted the
-99 attachment and reported `image/gif` for its gallery item. Acceptance and frame count do not
-prove the Discord client animates it; user verification is pending. The temporary research-only
-FFmpeg executable is supplied by `imageio-ffmpeg` and is not a production dependency or conversion
-pipeline. No production media or delivery behavior has been changed for this experiment.
+were posted: article 99's original bytes as `image/gif` (105 frames, 960×540), and a size-reduced
+article 93 GIF (75 frames, 480×270, 8 fps). The user confirmed that **both samples animate in
+Discord**. Complete article tests [93](https://github.com/uesu/Game-Express/actions/runs/46123162621)
+(9 pages, 9 animated attachments) and [99](https://github.com/uesu/Game-Express/actions/runs/46123402984)
+(3 pages, 3 animated attachments) have since been sent privately; their full visual review is pending.
+
+The shared Feature 3 planner on this branch detects GIF signatures with misleading MIME or a non-GIF
+path for HoYoLAB/Kuro and the three inactive candidates. Properly labelled `.gif` sources and
+ordinary images retain their existing delivery path. Mislabelled animations are downloaded from
+allowlisted official hosts without redirects and uploaded with GIF filenames and MIME. Original bytes
+are used when they fit; larger files are downscaled/re-encoded with pinned
+[imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg) / [FFmpeg](https://ffmpeg.org/), so
+some quality/frame rate is necessarily lost. Each affected attachment gets its own ordered message;
+source bytes, dimensions, frame count, total work, encoded size, duration and page count are bounded.
+An unsupported/oversized/unavailable animation is held rather than silently posted as a still.
+Attachment filenames contain content hashes so partial-delivery signatures change if bytes change.
+
+Limits remain: the three candidate sources are still **production-gated**, with durable checkpoint,
+ambiguous-outcome recovery and failover not proven ready. For existing news, post-delivery edits of
+articles with uploaded GIFs are held for manual review rather than risking removal of attachments;
+reveal pings on these articles are omitted for pagination safety. Other animated formats, redirects
+on the full GIF download, very large files and channels with stricter upload limits are not guaranteed.
+No finite sample proves upstream completeness or every Discord client's playback behavior.

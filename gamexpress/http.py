@@ -90,6 +90,8 @@ class Fetcher:
     # `Last-Modified` (unix ts) of media URLs seen by `verify_media`, keyed by the URL asked for.
     # Undated CDN paths (Kuro `clientUpload/<slug>.mp4`) get their upload date from here.
     media_dates: dict[str, int] = field(default_factory=dict, repr=False)
+    # Most recent bounded signature result from each real media preflight.
+    media_prefixes: dict[str, tuple[bytes, str]] = field(default_factory=dict, repr=False)
 
     def _gate(self) -> asyncio.Semaphore:
         if self._sem is None:
@@ -249,6 +251,7 @@ class Fetcher:
         """Bounded GET/status/signature preflight; never a Discord decode guarantee."""
         result = await self._news_media_prefix(url)
         if result:
+            self.media_prefixes[url] = result
             raw, mime = result
             image = (raw.startswith((b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n", b"GIF87a", b"GIF89a"))
                      or (raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"))

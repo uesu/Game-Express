@@ -235,6 +235,35 @@ class NewsAnimationPlanTests(unittest.TestCase):
             split_pages(original, {a: "a", b: "b"}, max_pages=1)
         self.assertIs(split_pages(original, {}, max_pages=1), original)
 
+    def test_mislabelled_gif_is_attached_while_regular_gif_is_unchanged(self):
+        import base64
+
+        from gamexpress.cards import IS_COMPONENTS_V2, container, gallery
+        from gamexpress.news_animation import prepare
+
+        data = base64.b64decode("R0lGODlhBAAEAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAABAAEAAAICQABCBxIsCCAgAAh+QQBCgABACwAAAAABAAEAIEAAP8AAAAAAAAAAAAICQABCBxIsCCAgAA7")
+        bad = "https://web-static.hg-cdn.com/image.jpg"
+        good = "https://ntevmg.perfectworld.com/image.gif"
+        pages = [{"flags": IS_COMPONENTS_V2, "components": [container([gallery([bad, good])])]}]
+
+        class Fetcher:
+            async def _news_media_prefix(self, url):
+                return data[:32], "image/jpeg" if url == bad else "image/gif"
+
+        async def fetch(fetcher, url):
+            self.assertEqual(url, bad)
+            return data
+
+        with patch("gamexpress.news_animation.fetch_gif", fetch):
+            result, files = asyncio.run(prepare(Fetcher(), pages))
+        names = list(files)
+        self.assertEqual(len(names), 1)
+        self.assertEqual(files[names[0]], data)
+        urls = [entry["media"]["url"] for p in result for c in p["components"][0]["components"]
+                for entry in c.get("items", [])]
+        self.assertEqual(urls, ["attachment://" + names[0], good])
+        self.assertEqual(pages[0]["components"][0]["components"][0]["items"][0]["media"]["url"], bad)
+
     def test_allowlist_rejects_spoofed_and_non_https_hosts(self):
         from gamexpress.news_animation import trusted_url
 
@@ -255,6 +284,9 @@ class SilverGifProbeTests(unittest.TestCase):
             "R0lGODlhBAAEAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAABAAEAAAICQABCBxIsCCAgAAh+QQBCgABACwAAAAABAAEAIEAAP8AAAAAAAAAAAAICQABCBxIsCCAgAA7"
         )
         self.assertEqual(gif_info(raw), (4, 4, 2))
+        from gamexpress.news_animation import gif_info as runtime_gif_info
+
+        self.assertEqual(runtime_gif_info(raw, with_duration=True, with_loop=True), (4, 4, 2, 20, 0))
         for invalid in (b"", b"GIF89a", raw[:-1], raw + b"extra", b"JPEG" + raw):
             with self.assertRaises(ValueError):
                 gif_info(invalid)

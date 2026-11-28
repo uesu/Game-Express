@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Read-only source research (no production behavior changes)](CHANGELOG.md#2026-11-27--read-only-source-research-no-production-behavior-changes).
+Latest: [Feature 3 animated media follow-up](CHANGELOG.md#2026-11-27--feature-3-animated-media-follow-up).
+
+Previous: [Read-only source research (no production behavior changes)](CHANGELOG.md#2026-11-27--read-only-source-research-no-production-behavior-changes).
 
 Previous: [Reddit intake: match News-Express's newest relay work (body media, `429` evidence)](CHANGELOG.md#2026-11-24--reddit-intake-match-news-expresss-newest-relay-work-body-media-429-evidence).
 

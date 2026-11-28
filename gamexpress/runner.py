@@ -55,6 +55,8 @@ class Ctx:
     # it unset so feature code uses asyncio.sleep; dry-run harnesses can record the intended
     # wait without idling a test suite.
     sleep: Callable[[float], Awaitable[object]] | None = None
+    # Optional deterministic collaborator; production uses the real animation planner.
+    animation_prepare: Callable | None = None
 
 
 async def gather_versions(ctx: Ctx) -> None:
@@ -490,7 +492,7 @@ async def run_news(ctx: Ctx) -> None:
             record["paused"] = True
     ephemeral = ctx.settings.dry_run or ctx.settings.test_mode
 
-    async def _render_article(src, gm: Game, cand: dict) -> tuple[Item, list[dict], str, int]:
+    async def _render_article(src, gm: Game, cand: dict) -> tuple[Item, list[dict], str, int, dict]:
         art = await src.news_article(ctx.fetcher, gm, cand)
         if art is None:
             raise ValueError("full article unavailable/mismatched")
@@ -536,11 +538,15 @@ async def run_news(ctx: Ctx) -> None:
             enabled=ctx.settings.news_group_long_strips,
             max_urls=media_cap,
         )
+        from .news_animation import prepare as prepare_animation
+
+        planner = ctx.animation_prepare or prepare_animation
+        pls, animation_assets = await planner(ctx.fetcher, pls, max_pages=ctx.settings.news_expand_max_pages)
         mod = max(
             int(cand.get("modified_ts") or 0),
             int(getattr(art, "modified_ts", 0) or 0),
         )
-        return art, pls, stable_hash(pls), mod
+        return art, pls, stable_hash(pls), mod, animation_assets
 
     async def _attach_news_ping(gm: Game, art: Item, base_pls: list[dict], ping: Ping) -> list[dict]:
         """Attach `ping` to container 0 / page 1 of `base_pls` while preserving Components V2 validity."""
@@ -702,7 +708,7 @@ async def run_news(ctx: Ctx) -> None:
 
         def _queue_media_heal(article_id: str, message_id: str | None, payload: dict, message: object,
                               *, _queue=heal_queue, _short=game.short) -> None:
-            if ephemeral or not ctx.settings.news_media_heal or not message_id:
+            if ephemeral or not ctx.settings.news_media_heal or not message_id or payload.get("attachments"):
                 return
             own = payload_media_urls(payload)
             cold = [u for u in unresolved_media_urls(message) if u in own]
@@ -777,7 +783,7 @@ async def run_news(ctx: Ctx) -> None:
                 ):
                     continue
                 try:
-                    item, payloads, signature, eff_mod = await _render_article(source, game, row)
+                    item, payloads, signature, eff_mod, animation_assets = await _render_article(source, game, row)
                     eff_mod = max(eff_mod, row_mod)
                     known_sig = rc_sig or rec.get("edit_sig")
                     next_stage = max(cur_stage, target_stage)
@@ -788,6 +794,11 @@ async def run_news(ctx: Ctx) -> None:
                             record.setdefault("rechecks", {})[row["id"]] = [deliv_at, next_stage, signature]
                         if not ephemeral:
                             ctx.state.save()
+                        continue
+                    if rec.get("has_gif_uploads") or animation_assets:
+                        ctx.warnings.append(
+                            f"{game.short} news {row['id']}: animated attachment edit needs manual review; unchanged"
+                        )
                         continue
                     if len(payloads) != len(msgs):
                         if eff_mod > prev_mod:
@@ -875,7 +886,7 @@ async def run_news(ctx: Ctx) -> None:
                 # article. Previously persisted legacy entries carrying {"status": "posted",
                 # "excluded": "schedule"} stay marked "posted" above so historical articles are
                 # never mass-reposted on rollout without separate operator authorization.
-                item, payloads, signature, eff_mod = await _render_article(source, game, row)
+                item, payloads, signature, eff_mod, animation_assets = await _render_article(source, game, row)
                 if rec is not None:
                     if rec.get("ambiguous"):
                         raise ValueError(
@@ -894,6 +905,8 @@ async def run_news(ctx: Ctx) -> None:
                 if rec is None:
                     rec = {"status": "partial", "ts": row["ts"], "row": row,
                            "signature": signature, "messages": []}
+                    if animation_assets:
+                        rec["has_gif_uploads"] = True
                 reveal_match = None
                 should_reveal_ping = False
                 if rev_ping_cfg and len(rec["messages"]) == 0:
@@ -906,6 +919,9 @@ async def run_news(ctx: Ctx) -> None:
                             reveal_match,
                             published_ts=int(item.published_ts or row["ts"] or 0),
                         )
+                        if should_reveal_ping and animation_assets:
+                            should_reveal_ping = False
+                            ctx.warnings.append(f"{game.short} news {row['id']}: reveal ping omitted for animated attachment safety")
                         if should_reveal_ping:
                             payloads = await _attach_news_ping(game, item, payloads, rev_ping_cfg)
                             should_reveal_ping = payloads[0].get("allowed_mentions") == rev_ping_cfg.allowed_mentions
@@ -919,7 +935,12 @@ async def run_news(ctx: Ctx) -> None:
                     raise ValueError("incomplete partial delivery state; manual review required")
                 start_page_idx = len(rec["messages"])
                 for rel_idx, payload in enumerate(payloads[start_page_idx:]):
-                    result = await ctx.webhook.send(hook, payload, stop_on_ambiguous=True)
+                    attachments = payload.get("attachments") or []
+                    if attachments:
+                        files = {entry["filename"]: animation_assets[entry["filename"]] for entry in attachments}
+                        result = await ctx.webhook.send(hook, payload, stop_on_ambiguous=True, files=files)
+                    else:
+                        result = await ctx.webhook.send(hook, payload, stop_on_ambiguous=True)
                     if result.ambiguous or (result.ok and not result.message_id):
                         # Discord may have accepted page 1 and its mention. Treat that reveal
                         # as delivered for dedup until an operator reconciles the held article.
