@@ -508,8 +508,8 @@ ran the real candidate runner, renderer, GIF planner and multipart sender agains
 synthetic listing/detail/media, a test-only in-process release override and a local bare-Git ledger.
 Exactly one message with one two-frame GIF was confirmed, including local pre-send and post-send
 checkpoints; a separate development-branch one-use lock prevents replay. No production webhook or
-state was used, and no private Discord message ID was committed to the public repository. Playback
-of this synthetic test has not been independently confirmed. This is not a production GitHub
+state was used, and no private Discord message ID was committed to the public repository. The
+user confirmed that the synthetic GIF animates and supplied screenshots of its two frames. This is not a production GitHub
 checkpoint, live-source, recovery or cross-repository failover test. A separate
 [development-branch GitHub probe](https://github.com/uesu/Game-Express/actions/runs/46128111745)
 checkpointed a synthetic reviewed `absent` resolution to a temporary ledger, reopened it after
