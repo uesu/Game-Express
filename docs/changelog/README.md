@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Candidate news checkpoint race hardening](CHANGELOG.md#2026-11-27--candidate-news-checkpoint-race-hardening).
+Latest: [Attended candidate recovery and integrated test](CHANGELOG.md#2026-11-27--attended-candidate-recovery-and-integrated-test).
+
+Previous: [Candidate news checkpoint race hardening](CHANGELOG.md#2026-11-27--candidate-news-checkpoint-race-hardening).
 
 Previous: [Feature 3 animated media follow-up](CHANGELOG.md#2026-11-27--feature-3-animated-media-follow-up).
 

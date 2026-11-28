@@ -498,10 +498,12 @@ but **not** a real GitHub remote or production/failover test. The separate earli
 max-resolution test was not repeated. Automated reconciliation tests now hold ambiguous pages and
 verify a human-reviewed resolution against the exact article, page, route and payload signature.
 An `absent` decision requires independently established non-delivery, not merely an unknown outcome;
-the corrected record must be durably checkpointed before resuming. An operator-facing workflow and
-production-grade recovery procedure remain unfinished. Local bare-Git tests show the gated runner
-can checkpoint separately, a stale writer holds, and a normal state commit can rebase over the
-candidate ledger without changing it. Production sync now runs the candidate offline regression
+the corrected record must be durably checkpointed before resuming. The attended recovery workflow
+is implemented but production-grade recovery remains unvalidated. Local bare-Git tests show the gated runner can checkpoint separately, a stale writer holds,
+and a normal state commit can rebase over the candidate ledger without changing it. A further
+offline integrated test exercises the real candidate runner, article renderer, GIF planner,
+multipart sender and isolated Git ledger together, with a fake Discord transport and synthetic
+media. It does not test that runner against live Discord or a production GitHub remote. Production sync now runs the candidate offline regression
 files before applying changes and protects `state/candidate_news.json` from
 creation, modification or deletion; it is not provisioned automatically. A controlled
 [development-branch GitHub probe](https://github.com/uesu/Game-Express/actions/runs/46037384333)
@@ -517,7 +519,9 @@ and HTTPS origin. This permits a primary with a configured standby, but delibera
 the standby to send automatically: a repo-local concurrency group cannot coordinate failover.
 These checks reduce accidental dual writers; they do not prove distributed exclusion. A local
 checkpointed reconciliation primitive validates an operator's decision and persists it without
-sending, but no operational UI or independent proof of delivery is supplied. All writers must be
+sending. A manual-only attended recovery workflow now exposes inspect and guarded resolve, but
+cannot independently prove delivery or pause cross-repository writers; production recovery is not
+yet validated. All writers must be
 paused for human review and an uncertain Git checkpoint must be inspected before any retry.
 
 Silver Palace article 7 exposed a duplicated lead image: the cover and first body image had

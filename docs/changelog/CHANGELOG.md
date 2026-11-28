@@ -1,5 +1,16 @@
 # Changelog — current entries
 
+## 2026-11-27 — Attended candidate recovery and integrated test
+
+- Added a manual-only recovery workflow and operator procedure: inspect validates the existing
+  ledger and route without posting; a reviewed resolution requires explicit attestations, exact
+  held article/page/signature and a durable checkpoint. It cannot verify a user's Discord evidence
+  or pause other repositories and must never automatically resume a held send. The candidate
+  delivery gate remains closed pending production provisioning and real recovery validation.
+- An offline integrated test exercises the actual candidate runner, renderer, GIF planner,
+  multipart sender and isolated Git ledger with a fake Discord transport. Updated the scheduler
+  guide to describe the operator-selected interval rather than prescribing five minutes.
+
 ## 2026-11-27 — Candidate news checkpoint race hardening
 
 - Checkpoint commits now carry unique nonces. Local fixed-clock competing Git writers with the

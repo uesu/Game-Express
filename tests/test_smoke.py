@@ -4316,7 +4316,7 @@ def test_python_patch_selection_is_numeric_stable_and_one_series_at_a_time():
         assert module.bump_ruff_toml(int(target[0]), int(target[1:])) is False
 
 
-WORKFLOW_PINS = ("ci.yml", "monitor.yml", "python_version_bump.yml", "sync_prod.yml")
+WORKFLOW_PINS = ("ci.yml", "monitor.yml", "python_version_bump.yml", "sync_prod.yml", "candidate_news_recovery.yml")
 
 
 def _assert_runtime_python_docs_agree(root: Path) -> None:

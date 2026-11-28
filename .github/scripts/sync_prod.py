@@ -45,6 +45,7 @@ SYNC_WORKFLOW_FILES = (
     ".github/workflows/ci.yml",
     ".github/workflows/monitor.yml",
     ".github/workflows/python_version_bump.yml",
+    ".github/workflows/candidate_news_recovery.yml",
 )
 
 DEV_ONLY_WORKFLOW_FILES = (

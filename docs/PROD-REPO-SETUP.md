@@ -118,12 +118,13 @@ Create a fresh repository and upload these paths; a fork/clone relationship is n
 ```
 gamexpress/                      the whole package, including sources/ (no fixed file count)
   __init__.py  __main__.py  benchmark.py  cards.py  codeposter.py  config.py
-  day_news_candidate.py  discord.py
+  candidate_news_checkpoint.py  candidate_news_delivery.py  candidate_news_recovery.py
+  candidate_news_runner.py  day_news_candidate.py  discord.py  news_animation.py
   http.py  maintenance.py  media.py  models.py  news_timestamps.py  preview_html.py
   runner.py  samples.py  schedule.py  state.py  textutil.py  timeparse.py
   sources/__init__.py  banner_search.py  bannerfeed.py  calendarfeed.py  codes.py
           countdown.py  endfield.py  gachawiki.py  hoyolab.py  kuro.py  launcher.py  newspage.py
-          nte_candidate.py
+          candidate_thumbnail.py  nte_candidate.py
           reddit.py  silverpalace.py  twitter.py
 config/games.json                game definitions, X accounts, code sources
 config/overrides.json            manual corrections
@@ -131,7 +132,8 @@ config/program_announcements.json  discovered tweet ids — the workflow commits
 state/.gitkeep
 state/state.json                 what has been posted (see §4 — copy it, do not start empty)
 requirements.txt
-.github/workflows/monitor.yml    the only workflow prod needs
+.github/workflows/monitor.yml    monitor
+# candidate_news_recovery.yml is included by automated sync; see recovery notes below
 .gitignore
 ```
 
@@ -221,8 +223,8 @@ cp -r --parents \
   /tmp/prod/
 
 find /tmp/prod -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
-find /tmp/prod -type f | wc -l     # expect 56 (54 runtime + 2 policy files)
-                                  # 58 if you also copied the two python-bump files
+find /tmp/prod -type f | wc -l     # expect 57 (55 runtime + 2 policy files)
+                                  # 59 if you also copied the two python-bump files
 ```
 
 **Don't trust that number on its own — verify the package instead.** The count goes stale the
@@ -494,7 +496,7 @@ and `config/program_announcements.json`. So sync code **into** prod, never the r
 Every push to `main` (and any manual **Actions → Sync to Production (8mqzv4k2n7c) → Run workflow**
 dispatch) automatically validates the listed offline pre-sync checks and runs `.github/scripts/sync_prod.py`
 to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, `config/games.json`,
-`config/overrides.json`, `.github/workflows/{ci,monitor,python_version_bump}.yml`,
+`config/overrides.json`, `.github/workflows/{ci,monitor,python_version_bump,candidate_news_recovery}.yml`,
 `.github/dependabot.yml`, `.github/zizmor.yml`, `.gitignore`, `requirements.txt`, `ruff.toml`,
 `state/.gitkeep`) to `uesu/8mqzv4k2n7c`:
 
@@ -502,13 +504,25 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   `state/candidate_news.json` are never created, overwritten, staged, or deleted by sync. The
   candidate ledger is not provisioned automatically; do not create or reset it during research.
   Its production provisioning, recovery and failover process remain unverified and candidate
-  delivery is hard-gated off. Candidate checkpoint commits include a per-write random nonce;
+  delivery is hard-gated off. The attended recovery workflow is copied by sync but is manual-only;
+  it requires matching primary authority, the dedicated destination and explicit operator review. Candidate checkpoint commits include a per-write random nonce;
   local competing-writer tests and a local monitor-state rebase test pass, but they do not prove
   cross-repository failover or actual production recovery. The sync preflight runs the candidate
   offline test files. A local production-shaped tree passed the synced CI test commands without
   copying dev-only research tools; those research tests run in development CI only. The exact
   production variables and secrets cannot be inferred from a public repository view; check their
   presence privately without sharing values.
+- **Attended candidate recovery (not automatic failover):** the manual-only `Candidate news
+  recovery (attended)` workflow can inspect a validated existing ledger without sending. Before
+  using `resolve`, pause every scheduler and writer in every repository and independently inspect
+  the exact Discord destination. Supply the inspected article ID, page and payload signature;
+  choose `delivered` only with its actual message ID, or `absent` only when non-delivery is
+  established—not when the outcome is unknown. Both operator attestations are required. The
+  workflow shares the monitor concurrency group within this repository but cannot verify that
+  outside writers are paused, and it never posts or resumes the scheduler. If the checkpoint
+  outcome is unclear, inspect the authoritative branch before any retry. This workflow does not
+  initialize a ledger, change destination, or unblock the release gate. Its real production use
+  and cross-repository operations remain unvalidated.
 - **Program announcement seeds are union-merged:** `config/program_announcements.json` preserves any
   tweet IDs discovered live by the production monitor while adding/updating entries from dev.
 - **Dev-only files stay in dev:** `docs/`, `README.md`, `AGENTS.md`, `PRIVACY_POLICY.md`,

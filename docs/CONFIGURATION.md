@@ -322,6 +322,17 @@ Use repository **secrets**, never variables, for the five destinations:
 | `DISCORD_WEBHOOK_NEWS_ZZZ` | `zzz-news` |
 | `DISCORD_WEBHOOK_NEWS_WUWA` | `wuwa-news` |
 
+**Three candidate sources are not released yet.** NTE, Arknights: Endfield and Silver Palace
+remain behind a hard-coded gate; merely creating their secrets or adding their game keys does
+not enable delivery. The prepared dedicated secret names are `DISCORD_WEBHOOK_NEWS_NTE`,
+`DISCORD_WEBHOOK_NEWS_ENDFIELD` and `DISCORD_WEBHOOK_NEWS_SILVERPALACE`. Never put their values in
+chat or a repository file. The gated prototype additionally expects `NEWS_CANDIDATES_BACKFILL=1`,
+`NEWS_CANDIDATES_AUTHORITY_REPOSITORY` and `NEWS_CANDIDATES_AUTHORITY_BRANCH` to identify one
+primary writer, plus a deliberately provisioned durable ledger. Do **not** activate or initialize
+these on production until release review and the backfill plan are complete. A standby cannot
+send candidate news automatically. Candidate processing is limited to one article and three pages
+per source per run, independently of the existing-news rules above.
+
 Existing short game aliases also work. No `DISCORD_WEBHOOK_NEWS`, catch-all,
 `FORCE_WEBHOOK`, or mirror fallback is used for news. A missing destination skips
 source requests and baseline creation for that game; a changed destination is

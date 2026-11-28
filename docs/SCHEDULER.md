@@ -1,10 +1,10 @@
-# Scheduler: cron-job.org → GitHub Actions (every 5 minutes)
+# Scheduler: cron-job.org → GitHub Actions (operator-selected interval)
 
 Game-Express uses the same setup as News-Express. [cron-job.org](https://cron-job.org) (free) calls
 GitHub's **workflow_dispatch API** on a fixed interval, and each call starts one
-**Game-Express Monitor** run. **Recommended interval: every 5 minutes** on a public repo — see
-[How fast can it poll?](#how-fast-can-it-poll) for why 5 is the sweet spot and what happens
-below it.
+**Game-Express Monitor** run. Choose the interval in cron-job.org; no code change is required.
+The current live setup uses ten minutes. Shorter intervals improve typical detection latency but
+increase upstream load and Actions runs; see [How fast can it poll?](#how-fast-can-it-poll).
 
 GitHub's own `schedule:` trigger is **disabled** (commented out) in
 `.github/workflows/monitor.yml`, for two reasons:
@@ -61,11 +61,9 @@ The token lives **only inside cron-job.org**. Do not add it to the repo, a secre
      https://api.github.com/repos/<OWNER>/<INSTANCE-REPO>/actions/workflows/monitor.yml/dispatches
      ```
      Example: `https://api.github.com/repos/uesu/<alpha-repo>/actions/workflows/monitor.yml/dispatches`
-   - **Execution schedule**: **Every 5 minutes**. On the custom schedule select minutes
-     `2,7,12,17,22,27,32,37,42,47,52,57` — deliberately **off** the round `0,5,10…` marks, so the
-     run does not land in the same second as every other scraper polling HoYoLAB and the nitter
-     mirrors. (A private repo should use `0,30`; see [Minutes and private
-     repositories](#minutes-and-private-repositories).)
+   - **Execution schedule**: choose your preferred interval, for example every 10 minutes.
+     A custom offset (such as `2,12,22,32,42,52`) avoids the round ten-minute marks. Check
+     cost and quotas separately for private repos; see [Minutes and private repositories](#minutes-and-private-repositories).
 3. **Advanced** tab:
    - **Request method**: `POST`
    - **Headers** (add each with **+**):
@@ -95,8 +93,8 @@ is skipped there.
 
 | Job | URL repo | Schedule | Repo variables |
 |---|---|---|---|
-| `Game-Express alpha` | alpha (primary) | minutes `2,7,12,17,22,27,32,37,42,47,52,57` | `INSTANCE_NAME=alpha`, `HEARTBEAT_MINUTES=60`, `PEER_STATE_URL=<bravo raw state URL>` |
-| `Game-Express bravo` | bravo (standby) | the same minutes **+2** (`4,9,14,…`) | `INSTANCE_NAME=bravo`, `INSTANCE_ROLE=standby`, `PEER_STATE_URL=<alpha raw state URL>`, `FAILOVER_AFTER_MINUTES=150` |
+| `Game-Express alpha` | alpha (primary) | e.g. minutes `2,12,22,32,42,52` | `INSTANCE_NAME=alpha`, `HEARTBEAT_MINUTES=60`, `PEER_STATE_URL=<bravo raw state URL>` |
+| `Game-Express bravo` | bravo (standby) | the same example minutes **+2** (`4,14,24,…`) | `INSTANCE_NAME=bravo`, `INSTANCE_ROLE=standby`, `PEER_STATE_URL=<alpha raw state URL>`, `FAILOVER_AFTER_MINUTES=150` |
 
 The raw state URL looks like this:
 `https://raw.githubusercontent.com/<OWNER>/<REPO>/main/state/state.json` (public repos only).
@@ -106,14 +104,15 @@ The raw state URL looks like this:
   - This happens if alpha's cron job is paused, its token expired, or its Actions are down.
   - bravo never takes over if it can't read alpha's state, so a typo can't cause double posts.
 - The offset means the two repos never hit the same upstream in the same second, and during a
-  fail-over the standby keeps the same 5-minute rhythm.
+  fail-over the standby keeps the same chosen rhythm. Candidate news is a separate gated
+  prototype and does **not** automatically fail over to a standby.
 
 ---
 
 ## Step 3: check it's running
 
-- **cron-job.org → the job → History**: a row every 5 minutes with **204**.
-- **GitHub → instance repo → Actions → Game-Express Monitor**: a green run every 5 minutes.
+- **cron-job.org → the job → History**: a row at your selected interval with **204**.
+- **GitHub → instance repo → Actions → Game-Express Monitor**: a green run at your selected interval.
   - Open one run and read the **Summary**.
   - A normal quiet run says "nothing new" and lists source health, such as
     `hoyolab: 9 ok / 0 fail`.
@@ -137,8 +136,9 @@ The raw state URL looks like this:
 | run appears but is **skipped** (grey) | repository variable `ENABLED_FEATURES=none` | correct only on a development copy; delete it on the repo that posts |
 
 **Can runs overlap?** No. `monitor.yml` has a concurrency group with `cancel-in-progress: false`.
-A trigger that arrives while a run is still going waits, and then checks out the newest state.
-Nothing is posted twice and nothing is cancelled halfway.
+A trigger that arrives while a run is still going may wait and then check out the newest state.
+GitHub keeps at most one pending run per concurrency group and may replace an older pending run;
+this is not a distributed lock or a guarantee against duplicates after crashes.
 
 ## How fast can it poll?
 
@@ -148,7 +148,7 @@ go faster. The limits are these, with the numbers measured on real runs (2026-10
 | What | Measured | Head-room at 5 min |
 |---|---|---|
 | **Run duration, end to end** | **19–36 s** (median ~25 s: ~15 s runner setup + install, ~5–6 s of actual work) | a run occupies **~8 %** of a 5-minute slot |
-| **Overlap** | impossible by construction: the `concurrency` group is `cancel-in-progress: false`, so a trigger that arrives mid-run queues and then checks out the newest state | safe at any interval ≥ 1 min |
+| **Overlap** | one running job per repository concurrency group; a newer queued run may replace an older pending run | monitor for delays and holds |
 | **GitHub Actions minutes** | public repo = **free and unlimited** | no cost |
 | **`workflow_dispatch` API calls** | 12/hour at 5 min, against a 5,000/hour token limit | 0.2 % of the limit |
 | **Upstream requests per run** | ~55–65 (HoYoLAB ×9, code APIs & Reddit community witnesses, nitter ×2 per handle across six X accounts, plus Kuro / launcher / banner feed) | ≈ 17–19 k/day at 5 min, vs 8–9 k/day at 10 min |
@@ -160,15 +160,15 @@ ban makes the monitor **slower**, not faster, because the source goes dark for h
 
 | Interval | Average time to notice something new | Requests/day | Verdict |
 |---|---|---|---|
-| 10 min (previous) | ~5.4 min | ~8 k | safe, but slower than it needs to be |
-| **5 min** | **~2.9 min** | ~17 k | ✅ **recommended** — the sweet spot |
+| 10 min | ~5.4 min | ~8 k | current chosen interval; lower request load |
+| 5 min | ~2.9 min | ~17 k | faster typical detection, roughly twice the request load |
 | 3 min | ~1.9 min | ~28 k | acceptable *if* you watch the `sources:` line in the run summary for `429` / `TimeoutError` and back off when they appear |
 | 2 min | ~1.4 min | ~41 k | not recommended: ~1 min of extra speed for 2.4× the upstream load |
 | 1 min | ~0.9 min | ~83 k | ❌ no: 1,440 runs/day, near-certain rate-limiting of the community mirrors, and cron-job.org's free tier throttles |
 
 Below ~5 minutes the gain shrinks fast (each halving buys progressively less, because a fixed
 ~25 s of runner setup and the announcement's own propagation delay dominate), while the load
-grows linearly. **5 minutes is the recommended setting; 3 minutes is the floor worth defending.**
+grows linearly. Select the interval that fits your needs and monitor source rate limits.
 
 If you do go below 5 minutes, watch for these in the run summary and back off if they show up:
 

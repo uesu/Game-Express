@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from gamexpress import candidate_news_delivery as delivery  # noqa: E402
+from gamexpress import candidate_news_recovery as recovery  # noqa: E402
 from gamexpress import candidate_news_runner as runner  # noqa: E402
 from gamexpress.candidate_news_checkpoint import GitCheckpoint, IsolatedGitLedger, reconcile_checkpointed  # noqa: E402
 from gamexpress.cards import news_payloads  # noqa: E402
@@ -362,14 +363,81 @@ class CandidateDeliveryTests(unittest.TestCase):
                     asyncio.run(reconcile_checkpointed(ledger, "silverpalace", ROUTE, article_id="1", page=2,
                                                        signature="b" * 64, resolution="delivered", message_id="101"))
                 self.assertTrue(ledger.data["candidate_news"]["silverpalace"]["partial"]["inflight"])
-                result = asyncio.run(reconcile_checkpointed(ledger, "silverpalace", ROUTE, article_id="1", page=1,
-                                                           signature="b" * 64, resolution="delivered", message_id="101"))
+                before = git("--git-dir", str(remote), "rev-parse", f"refs/heads/{branch}")
+                summary = recovery.inspect_record(ledger, "silverpalace", ROUTE)
+                self.assertEqual((summary["article_id"], summary["held_page"], summary["inflight"]), ("1", 1, True))
+                self.assertEqual(summary["signature"], "b" * 64)
+                for paused, evidence in ((False, False), (True, False), (False, True)):
+                    with self.assertRaises(delivery.DeliveryHold):
+                        asyncio.run(recovery.reviewed_resolution(ledger, "silverpalace", ROUTE, article_id="1", page=1,
+                            signature="b" * 64, resolution="delivered", message_id="101",
+                            writers_paused=paused, evidence_verified=evidence))
+                self.assertEqual(git("--git-dir", str(remote), "rev-parse", f"refs/heads/{branch}"), before)
+                with self.assertRaises(delivery.DeliveryHold):
+                    recovery.inspect_record(ledger, "silverpalace", "c" * 16)
+                result = asyncio.run(recovery.reviewed_resolution(ledger, "silverpalace", ROUTE, article_id="1", page=1,
+                                                           signature="b" * 64, resolution="delivered", message_id="101",
+                                                           writers_paused=True, evidence_verified=True))
                 self.assertFalse(result["partial"]["inflight"])
                 saved = json.loads(git("--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json"))
                 self.assertEqual(saved["candidate_news"]["silverpalace"], result)
                 self.assertEqual(result["partial"]["messages"], ["101"])
             finally:
                 asyncio.run(ledger.close())
+
+    def test_recovery_environment_requires_authority_and_never_exposes_route(self):
+        state = delivery.ingest("silverpalace", ROUTE, None, [row("1")])
+        state["partial"] = {"id": "1", "signature": "b" * 64, "pages": 1, "messages": [], "inflight": True}
+
+        class FakeLedger:
+            instances = []
+
+            def __init__(self, root, branch):
+                self.data, self.poisoned, self.closed = {"candidate_news": {"silverpalace": state}}, False, False
+                self.instances.append(self)
+
+            async def open(self):
+                return True
+
+            async def close(self):
+                self.closed = True
+
+        env = {"RECOVERY_MODE": "inspect", "RECOVERY_SOURCE": "silverpalace"}
+        out = io.StringIO()
+        with (patch.dict("os.environ", env, clear=True), patch.object(recovery, "load_settings", return_value=object()),
+              patch.object(recovery, "authoritative_branch", return_value="arena/98b5f4e1-game-express"),
+              patch.object(recovery, "destination", return_value=(HOOK, ROUTE)),
+              patch.object(recovery, "IsolatedGitLedger", FakeLedger), contextlib.redirect_stdout(out)):
+            asyncio.run(recovery.run_from_environment())
+        info = json.loads(out.getvalue())
+        self.assertTrue(info["inflight"])
+        self.assertEqual(info["held_page"], 1)
+        self.assertNotIn(HOOK, out.getvalue())
+        self.assertTrue(FakeLedger.instances[-1].closed)
+        with (patch.dict("os.environ", env, clear=True), patch.object(recovery, "load_settings", return_value=object()),
+              patch.object(recovery, "authoritative_branch", return_value=None),
+              patch.object(recovery, "destination", return_value=(HOOK, ROUTE)),
+              patch.object(recovery, "IsolatedGitLedger", side_effect=AssertionError("no ledger access")),
+              self.assertRaises(delivery.DeliveryHold)):
+            asyncio.run(recovery.run_from_environment())
+
+    def test_recovery_workflow_shares_monitor_concurrency_and_has_no_send_step(self):
+        import yaml
+
+        wf = ROOT / ".github/workflows"
+        recovery_path = wf / "candidate_news_recovery.yml"
+        if not recovery_path.exists() and not (ROOT / "tools").is_dir():
+            self.skipTest("optional recovery workflow not present in this production-shaped checkout")
+        monitor = yaml.safe_load((wf / "monitor.yml").read_text())
+        recovery_wf = yaml.safe_load(recovery_path.read_text())
+        self.assertEqual(recovery_wf["concurrency"], monitor["concurrency"])
+        self.assertFalse(recovery_wf["concurrency"]["cancel-in-progress"])
+        steps = recovery_wf["jobs"]["recovery"]["steps"]
+        commands = "\n".join(str(step.get("run", "")) for step in steps)
+        self.assertIn("python -m gamexpress.candidate_news_recovery", commands)
+        self.assertNotIn("${{", commands)
+        self.assertNotIn("curl", commands)
+        self.assertNotIn("discord", commands.lower())
 
     def test_stale_writer_and_crash_hold_until_reviewed_git_reconciliation(self):
         branch = "arena/98b5f4e1-game-express"
@@ -579,6 +647,115 @@ class CandidateDeliveryTests(unittest.TestCase):
             recorded = json.loads(git("--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json"))
             self.assertEqual(recorded["candidate_news"]["silverpalace"]["posted"]["1"]["messages"], ["101"])
             self.assertEqual(recorded["candidate_news"]["silverpalace"]["pending"][0]["id"], "2")
+
+    def test_integrated_runner_real_render_planner_multipart_and_git_checkpoint(self):
+        import base64
+
+        branch = "arena/98b5f4e1-game-express"
+        gif = base64.b64decode("R0lGODlhBAAEAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAABAAEAAAICQABCBxIsCCAgAAh+QQBCgABACwAAAAABAAEAIEAAP8AAAAAAAAAAAAICQABCBxIsCCAgAA7")
+        urls = ("https://s.elementagames.com/a.jpg", "https://s.elementagames.com/b.jpg")
+        contents = {urls[0]: gif, urls[1]: gif.replace(b"NETSCAPE2.0", b"ANIMEXTS1.0")}
+        with tempfile.TemporaryDirectory() as tmp:
+            root, remote = Path(tmp) / "work", Path(tmp) / "remote.git"
+            root.mkdir()
+
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=root, capture_output=True, check=True).stdout
+
+            git("init", "--bare", str(remote))
+            git("init", "-b", branch)
+            git("config", "user.name", "Test")
+            git("config", "user.email", "test@example.invalid")
+            (root / "state").mkdir()
+            (root / "state/state.json").write_text('{"schema":1}\n', encoding="utf-8")
+            (root / "state/candidate_news.json").write_text('{"schema":1,"candidate_news":{}}\n', encoding="utf-8")
+            git("add", "state")
+            git("commit", "-m", "initial")
+            git("remote", "add", "origin", str(remote))
+            git("push", "origin", f"HEAD:refs/heads/{branch}")
+            game = delivery.candidate_game("silverpalace")
+            item = Item(source="silverpalace", game="silverpalace", id="1", title="Official 1",
+                        url="https://silverpalace.elementagames.com/en-us/newsDetail?id=1", text="", published_ts=0,
+                        article_blocks=[{"kind": "text", "text": "Before"}, {"kind": "image", "url": urls[0]},
+                                        {"kind": "text", "text": "Middle"}, {"kind": "image", "url": urls[1]}])
+
+            class Fetcher:
+                def __init__(self):
+                    self.media_prefixes = {}
+
+                async def verify_media(self, url):
+                    self.media_prefixes[url] = (contents[url][:32], "image/jpeg")
+                    return True
+
+                async def media_dimensions(self, url):
+                    return None
+
+            class Response:
+                status = 200
+                content = None
+
+                def __init__(self):
+                    self.content = self
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    return False
+
+                async def iter_chunked(self, size):
+                    yield b'{"id":"101"}'
+
+            class Session:
+                def __init__(self):
+                    self.calls = []
+
+                def post(self, url, **kwargs):
+                    current = json.loads(git("--git-dir", str(remote), "show",
+                                             f"refs/heads/{branch}:state/candidate_news.json"))
+                    self_test.assertTrue(current["candidate_news"]["silverpalace"]["partial"]["inflight"])
+                    self_test.assertFalse(kwargs["allow_redirects"])
+                    form = kwargs["data"]
+                    fields = [field[0].get("name") for field in form._fields]
+                    self_test.assertEqual(fields, ["payload_json", "files[0]", "files[1]"])
+                    self.calls.append(kwargs)
+                    return Response()
+
+            self_test = self
+            session, fetcher = Session(), Fetcher()
+            settings = load_settings({"ENABLED_FEATURES": "news", "NEWS_GAMES": "silverpalace",
+                                      "NEWS_CANDIDATES_BACKFILL": "1", "DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK,
+                                      "NEWS_CANDIDATES_AUTHORITY_REPOSITORY": "uesu/Game-Express",
+                                      "NEWS_CANDIDATES_AUTHORITY_BRANCH": branch})
+            ctx = SimpleNamespace(settings=settings, active=True, now=NOW, fetcher=fetcher,
+                                  webhook=SimpleNamespace(session=session), report=[], warnings=[])
+
+            async def discover(fetcher, source):
+                return [row("1")]
+
+            async def article(fetcher, actual_game, candidate):
+                self.assertEqual(actual_game, game)
+                return item
+
+            async def fetch_gif(fetcher, url):
+                return contents[url]
+
+            async def sleep(seconds):
+                pass
+
+            with (patch.dict("os.environ", {"GITHUB_ACTIONS": "true", "GITHUB_REF_NAME": branch,
+                                            "GITHUB_REF": f"refs/heads/{branch}", "GITHUB_REPOSITORY": "uesu/Game-Express",
+                                            "GITHUB_EVENT_NAME": "workflow_dispatch"}),
+                  patch.object(runner, "_origin_is_authority", return_value=True), patch.object(runner, "ROOT", root),
+                  patch.object(runner, "CANDIDATE_NEWS_READY", True), patch.object(runner.asyncio, "sleep", sleep),
+                  patch.object(delivery, "discover", discover), patch.object(delivery.silverpalace, "news_article", article),
+                  patch("gamexpress.news_animation.fetch_gif", fetch_gif)):
+                asyncio.run(runner.run_candidate_news(ctx))
+            self.assertEqual(len(session.calls), 1)
+            self.assertFalse(ctx.warnings)
+            saved = json.loads(git("--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json"))
+            self.assertEqual(saved["candidate_news"]["silverpalace"]["posted"]["1"]["messages"], ["101"])
+            self.assertEqual(git("status", "--porcelain"), b"")
 
     def test_candidate_authority_restricts_repo_branch_origin_role_and_event(self):
         branch = "arena/98b5f4e1-game-express"
