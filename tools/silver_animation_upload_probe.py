@@ -199,9 +199,12 @@ async def send(session, fetcher, settings, route):
             if not 200 <= status < 300 or not isinstance(mid, str) or not mid.isdigit():
                 return SimpleNamespace(ok=False, ambiguous=True, message_id=None)
             attachments = result.get("attachments") or []
-            types = sorted({a.get("content_type", "missing") for a in attachments if isinstance(a, dict)})
+            media = [entry.get("media", {}) for box in result.get("components", []) if isinstance(box, dict)
+                     for child in box.get("components", []) if isinstance(child, dict) and child.get("type") == 12
+                     for entry in child.get("items", []) if isinstance(entry, dict)]
+            types = sorted({m.get("content_type", "missing") for m in media if isinstance(m, dict)})
             print(f"::notice title=Silver upload response::status={status} attachments={len(attachments)} "
-                  f"mime={','.join(types)}", flush=True)
+                  f"gallery-items={len(media)} gallery-mime={','.join(types)}", flush=True)
             return SimpleNamespace(ok=True, ambiguous=False,
                 message_id=historic.anonymize(mid, settings.env["DISCORD_WEBHOOK_NEWS_SILVERPALACE"]))
 
