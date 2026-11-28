@@ -186,7 +186,7 @@ class Tests(unittest.TestCase):
         self.assertIn("default: all", workflow)
         self.assertIn("if: ${{ inputs.scope == 'feature3-prepare' }}", workflow)
         self.assertIn("if: ${{ inputs.scope == 'feature3-post' }}", workflow)
-        self.assertEqual(workflow.count("secrets.FEATURE3_TEST_WEBHOOK"), 14)
+        self.assertEqual(workflow.count("secrets.FEATURE3_TEST_WEBHOOK"), 16)
         self.assertIn("inputs.scope == 'candidate-private-post'", workflow)
         self.assertIn("inputs.scope == 'nte-taygedo-correction'", workflow)
         self.assertIn("inputs.scope == 'nte-corrections-prepare'", workflow)
@@ -195,6 +195,8 @@ class Tests(unittest.TestCase):
         self.assertIn("inputs.scope == 'silver-rechecks-send'", workflow)
         self.assertIn("inputs.scope == 'zzz-example-prepare'", workflow)
         self.assertIn("inputs.scope == 'zzz-example-send'", workflow)
+        self.assertIn("inputs.scope == 'silver-upload-prepare'", workflow)
+        self.assertIn("inputs.scope == 'silver-upload-test'", workflow)
         self.assertEqual(workflow.count("python tools/feature3_webhook_test.py --prepare-only"), 1)
         self.assertEqual(workflow.count("run: python tools/feature3_webhook_test.py\n"), 1)
 
