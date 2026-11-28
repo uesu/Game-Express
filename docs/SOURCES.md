@@ -1412,7 +1412,8 @@ were posted: article 99's original bytes as `image/gif` (105 frames, 960×540), 
 article 93 GIF (75 frames, 480×270, 8 fps). The user confirmed that **both samples animate in
 Discord**. Complete article tests [93](https://github.com/uesu/Game-Express/actions/runs/46123162621)
 (9 pages, 9 animated attachments) and [99](https://github.com/uesu/Game-Express/actions/runs/46123402984)
-(3 pages, 3 animated attachments) have since been sent privately; their full visual review is pending.
+(3 pages, 3 animated attachments) were sent privately. The user confirmed the animations play,
+but requested fewer message/container breaks.
 
 The shared Feature 3 planner on this branch detects GIF signatures with misleading MIME or a non-GIF
 path for HoYoLAB/Kuro and the three inactive candidates. Properly labelled `.gif` sources and
@@ -1420,8 +1421,11 @@ ordinary images retain their existing delivery path. Mislabelled animations are 
 allowlisted official hosts without redirects and uploaded with GIF filenames and MIME. Original bytes
 are used when they fit; larger files are downscaled/re-encoded with pinned
 [imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg) / [FFmpeg](https://ffmpeg.org/), so
-some quality/frame rate is necessarily lost. Each affected attachment gets its own ordered message;
-source bytes, dimensions, frame count, total work, encoded size, duration and page count are bounded.
+some quality/frame rate is necessarily lost. The updated planner packs multiple attachments into the
+original page when possible, with at most 10 files and 24 MiB of file bytes per message (reserving
+room under the documented 25 MiB message-request cap), then splits in source order if necessary.
+The multi-file layout still requires private Discord validation. Source bytes, dimensions, frame
+count, total work, encoded size, duration and page count are bounded.
 An unsupported/oversized/unavailable animation is held rather than silently posted as a still.
 Attachment filenames contain content hashes so partial-delivery signatures change if bytes change.
 

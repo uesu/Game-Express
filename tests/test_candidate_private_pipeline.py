@@ -214,26 +214,59 @@ class PrivateHarnessTests(unittest.TestCase):
 
 
 class NewsAnimationPlanTests(unittest.TestCase):
-    def test_split_preserves_all_text_and_media_order(self):
+    def test_pack_preserves_layout_and_splits_only_at_budget(self):
         from gamexpress.cards import IS_COMPONENTS_V2, container, gallery, text, validate_payload
         from gamexpress.news_animation import split_pages
 
         a, b, static = "https://s.elementagames.com/a.jpg", "https://s.elementagames.com/b.jpg", "https://s.elementagames.com/c.jpg"
+        first, second = "animation-" + "a" * 64 + ".gif", "animation-" + "b" * 64 + ".gif"
         original = [{"flags": IS_COMPONENTS_V2, "allowed_mentions": {"parse": []}, "components": [container([
             text("Header and first text"), gallery([a]), text("Middle"), gallery([static, b]), text("Footer")])]}]
         snapshot = copy.deepcopy(original)
-        planned = split_pages(original, {a: "animation-" + "a" * 64 + ".gif", b: "animation-" + "b" * 64 + ".gif"}, max_pages=10)
+        files = {first: b"a" * 100, second: b"b" * 100}
+        with patch("gamexpress.news_animation.MESSAGE_FILE_BUDGET", 200):
+            packed = split_pages(original, {a: first, b: second}, files, max_pages=10)
+        self.assertEqual(len(packed), 1)
+        self.assertEqual([x["filename"] for x in packed[0]["attachments"]], [first, second])
+        self.assertEqual([len(c["items"]) for c in packed[0]["components"][0]["components"] if c["type"] == 12], [1, 2])
+        with patch("gamexpress.news_animation.MESSAGE_FILE_BUDGET", 199):
+            planned = split_pages(original, {a: first, b: second}, files, max_pages=10)
+            with self.assertRaises(ValueError):
+                split_pages(original, {a: first, b: second}, files, max_pages=1)
         self.assertEqual(original, snapshot)
         self.assertEqual(len(planned), 2)
         children = [c for p in planned for box in p["components"] for c in box["components"]]
         self.assertEqual([c["content"] for c in children if c["type"] == 10], ["Header and first text", "Middle", "Footer"])
         media = [entry["media"]["url"] for c in children if c["type"] == 12 for entry in c["items"]]
-        self.assertEqual(media, ["attachment://animation-" + "a" * 64 + ".gif", static,
-                                 "attachment://animation-" + "b" * 64 + ".gif"])
+        self.assertEqual(media, ["attachment://" + first, static, "attachment://" + second])
         self.assertTrue(all(len(p["attachments"]) == 1 and not validate_payload(p) for p in planned))
+        self.assertEqual(planned[1]["components"][0]["components"][0]["content"], "Middle")
+        self.assertIs(split_pages(original, {}, {}, max_pages=1), original)
+
+    def test_multi_file_multipart_validates_ids_hashes_and_references(self):
+        import base64
+        import hashlib
+
+        from gamexpress.cards import IS_COMPONENTS_V2, container, gallery
+        from gamexpress.news_animation import multipart_form
+
+        raw = base64.b64decode("R0lGODlhBAAEAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAABAAEAAAICQABCBxIsCCAgAAh+QQBCgABACwAAAAABAAEAIEAAP8AAAAAAAAAAAAICQABCBxIsCCAgAA7")
+        other = raw.replace(b"NETSCAPE2.0", b"ANIMEXTS1.0")
+        names = ["animation-" + hashlib.sha256(x).hexdigest() + ".gif" for x in (raw, other)]
+        payload = {"flags": IS_COMPONENTS_V2, "components": [container([gallery([])])],
+                   "attachments": [{"id": i, "filename": name} for i, name in enumerate(names)]}
+        payload["components"][0]["components"][0]["items"] = [{"media": {"url": "attachment://" + name}} for name in names]
+        files = dict(zip(names, (raw, other), strict=True))
+        multipart_form(payload, files)
+        bad = copy.deepcopy(payload)
+        bad["attachments"][1]["id"] = 0
         with self.assertRaises(ValueError):
-            split_pages(original, {a: "a", b: "b"}, max_pages=1)
-        self.assertIs(split_pages(original, {}, max_pages=1), original)
+            multipart_form(bad, files)
+        with self.assertRaises(ValueError):
+            multipart_form(payload, {names[0]: raw})
+        with (patch("gamexpress.news_animation.MESSAGE_FILE_BUDGET", len(raw) + len(other) - 1),
+              self.assertRaises(ValueError)):
+            multipart_form(payload, files)
 
     def test_mislabelled_gif_is_attached_while_regular_gif_is_unchanged(self):
         import base64

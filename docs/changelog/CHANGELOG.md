@@ -10,7 +10,8 @@
 - Discord upload requests for these files stop on ambiguous outcomes. Existing-news updates to a
   message containing an uploaded GIF are held for manual review, as are unsupported or oversized
   animations; reveal pings on such messages are suppressed for attachment pagination safety.
-  Sample playback was user-confirmed; full Silver 93/99 private article tests await visual review.
+  Full Silver 93/99 private article playback was user-confirmed. The follow-up packs multiple GIFs
+  per original page where limits permit; a new private test of that layout is pending.
   Release, checkpoint persistence and failover are not yet validated.
 
 ## 2026-11-27 — Read-only source research (no production behavior changes)

@@ -22,6 +22,8 @@ from .http import BROWSER_UA
 
 SOURCE_LIMIT = 24 * 1024 * 1024
 UPLOAD_LIMIT = 8 * 1024 * 1024
+MESSAGE_FILE_BUDGET = 24 * 1024 * 1024  # leave room under the 25 MiB request cap
+MESSAGE_FILE_COUNT = 10
 TOTAL_SOURCE_LIMIT = 256 * 1024 * 1024
 TOTAL_UPLOAD_LIMIT = 96 * 1024 * 1024
 TRUSTED_SUFFIXES = ("hoyolab.com", "hoyoverse.com", "hoyocdn.com", "mihoyo.com", "mihoyocdn.com",
@@ -151,8 +153,8 @@ def convert_gif(raw):
     raise ValueError("converted GIF exceeds upload safety limit")
 
 
-def split_pages(payloads, replacements, *, max_pages):
-    """Replace selected gallery URLs, split at attachment boundaries, and preserve order."""
+def split_pages(payloads, replacements, assets, *, max_pages):
+    """Pack uploads into original pages where possible, preserving child and media order."""
     if not replacements:
         return payloads
     out = []
@@ -162,40 +164,64 @@ def split_pages(payloads, replacements, *, max_pages):
             raise ValueError("unsupported animation article layout")
         template = copy.deepcopy(original)
         children = template["components"][0]["components"]
+        # Tokenize each gallery item, remembering its original gallery so that
+        # unsplit galleries keep their original visual arrangement.
         atoms = []
-        for child in children:
-            if child.get("type") == 12:
-                for entry in child["items"]:
-                    atom = copy.deepcopy(child)
-                    atom["items"] = [copy.deepcopy(entry)]
-                    atoms.append(atom)
-            else:
-                atoms.append(child)
-        segments, current, has_file = [], [], False
-        for index, child in enumerate(atoms):
-            url = child["items"][0]["media"]["url"] if child.get("type") == 12 else None
-            name = replacements.get(url)
-            if name:
-                if has_file:
-                    raise ValueError("animation pagination failure")
-                child["items"][0]["media"]["url"] = "attachment://" + name
-                has_file = True
-            current.append(child)
-            if has_file and any(x.get("type") == 12 and x["items"][0]["media"]["url"] in replacements
-                                for x in atoms[index + 1:]):
-                segments.append(current)
-                current, has_file = [], False
-        if current:
-            segments.append(current)
-        for kids in segments:
+        for group, child in enumerate(children):
+            if child.get("type") != 12:
+                atoms.append((group, child, None))
+                continue
+            for entry in child["items"]:
+                atom = copy.deepcopy(child)
+                atom["items"] = [copy.deepcopy(entry)]
+                media = atom["items"][0]["media"]
+                name = replacements.get(media["url"])
+                if name:
+                    if name not in assets or len(assets[name]) > UPLOAD_LIMIT:
+                        raise ValueError("missing or oversized animation")
+                    media["url"] = "attachment://" + name
+                atoms.append((group, atom, name))
+
+        def page_for(tokens, *, template=template):
             page = copy.deepcopy(template)
+            kids, names, last_group = [], [], None
+            for group, child, name in tokens:
+                if child.get("type") == 12 and last_group == group:
+                    kids[-1]["items"].extend(copy.deepcopy(child["items"]))
+                else:
+                    kids.append(copy.deepcopy(child))
+                last_group = group
+                if name and name not in names:
+                    names.append(name)
             page["components"][0]["components"] = kids
-            names = [x["items"][0]["media"]["url"][len("attachment://"):]
-                     for x in kids if x.get("type") == 12 and x["items"][0]["media"]["url"].startswith("attachment://")]
-            if len(names) > 1:
-                raise ValueError("more than one upload per message")
             if names:
-                page["attachments"] = [{"id": 0, "filename": names[0]}]
+                page["attachments"] = [{"id": i, "filename": name} for i, name in enumerate(names)]
+            return page, names
+
+        current = []
+        for atom in atoms:
+            candidate, names = page_for(current + [atom])
+            too_many = (len(names) > MESSAGE_FILE_COUNT or
+                        sum(len(assets[name]) for name in names) > MESSAGE_FILE_BUDGET)
+            if too_many or validate_payload(candidate):
+                # Prefer a break just after the last uploaded media; headings and
+                # text following it move with the next media instead of orphaning.
+                cuts = [i + 1 for i, token in enumerate(current) if token[2]]
+                cut = cuts[-1] if too_many and cuts else len(current)
+                if not cut:
+                    raise ValueError("animation page cannot fit")
+                page, _ = page_for(current[:cut])
+                if validate_payload(page):
+                    raise ValueError("invalid animation page")
+                out.append(page)
+                current = current[cut:]
+                candidate, names = page_for(current + [atom])
+                if (len(names) > MESSAGE_FILE_COUNT or sum(len(assets[name]) for name in names) > MESSAGE_FILE_BUDGET
+                        or validate_payload(candidate)):
+                    raise ValueError("animation page cannot fit")
+            current.append(atom)
+        if current:
+            page, _ = page_for(current)
             if validate_payload(page):
                 raise ValueError("invalid animation page")
             out.append(page)
@@ -236,28 +262,36 @@ async def prepare(fetcher, payloads, *, max_pages=120):
         name = "animation-" + hashlib.sha256(converted).hexdigest() + ".gif"
         replacements[url] = name
         assets[name] = converted
-    return split_pages(payloads, replacements, max_pages=max_pages), assets
+    return split_pages(payloads, replacements, assets, max_pages=max_pages), assets
 
 
 def multipart_form(payload, files):
-    """Build only a validated, one-GIF Discord request; hash binds it to the page."""
+    """Build a bounded GIF upload; content hashes bind every file to the page."""
     import json
 
     from .discord import payload_media_urls
 
     entries = payload.get("attachments") if isinstance(payload, dict) else None
-    if not isinstance(files, dict) or not isinstance(entries, list) or len(entries) != 1:
+    if not isinstance(files, dict) or not isinstance(entries, list) or not 1 <= len(entries) <= MESSAGE_FILE_COUNT:
         raise ValueError("invalid attachment plan")
-    entry = entries[0]
-    name = entry.get("filename") if isinstance(entry, dict) and entry.get("id") == 0 else None
-    match = NAME_RE.fullmatch(name) if isinstance(name, str) else None
-    data = files.get(name) if match else None
-    if (not match or set(files) != {name} or not isinstance(data, bytes) or len(data) > UPLOAD_LIMIT
-            or hashlib.sha256(data).hexdigest() != match.group(1)
-            or {u for u in payload_media_urls(payload) if u.startswith("attachment://")} != {"attachment://" + name}):
+    names = []
+    for i, entry in enumerate(entries):
+        name = entry.get("filename") if isinstance(entry, dict) and entry.get("id") == i else None
+        match = NAME_RE.fullmatch(name) if isinstance(name, str) else None
+        data = files.get(name) if match else None
+        if (not match or name in names or not isinstance(data, bytes) or len(data) > UPLOAD_LIMIT
+                or hashlib.sha256(data).hexdigest() != match.group(1)):
+            raise ValueError("invalid attachment content")
+        gif_info(data)
+        names.append(name)
+    encoded = json.dumps(payload, ensure_ascii=False)
+    if (set(files) != set(names) or sum(len(files[name]) for name in names) > MESSAGE_FILE_BUDGET
+            or len(encoded.encode("utf-8")) > 512 * 1024
+            or {u for u in payload_media_urls(payload) if u.startswith("attachment://")} !=
+               {"attachment://" + name for name in names}):
         raise ValueError("invalid attachment content")
-    gif_info(data)
     form = aiohttp.FormData()
-    form.add_field("payload_json", json.dumps(payload, ensure_ascii=False), content_type="application/json")
-    form.add_field("files[0]", data, filename=name, content_type="image/gif")
+    form.add_field("payload_json", encoded, content_type="application/json")
+    for i, name in enumerate(names):
+        form.add_field(f"files[{i}]", files[name], filename=name, content_type="image/gif")
     return form

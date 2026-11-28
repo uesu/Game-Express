@@ -6,7 +6,7 @@ on:
       scope:
         description: Research scope
         type: choice
-        options: [all, endfield-card, feature3-prepare, feature3-post, video-research, video-followup, feature3-expanded-prepare, feature3-expanded-post, nte-thumbnail-post, candidate-pipeline, candidate-private-prepare, candidate-private-post, silver-image-research, silver-dedup-private, candidate-historic-prepare, candidate-historic-send, feature3-hold-diagnostic, nte-taygedo-correction, feature3-fidelity-audit, skport-public-research, hoyo-thumbnail-audit, nte-account-audit, nte-corrections-prepare, nte-corrections-send, silver-rechecks-prepare, silver-rechecks-send, zzz-example-prepare, zzz-example-send, silver-media-headers, silver-upload-prepare, silver-upload-test, silver-full-animation-prepare, silver-full-animation-send]
+        options: [all, endfield-card, feature3-prepare, feature3-post, video-research, video-followup, feature3-expanded-prepare, feature3-expanded-post, nte-thumbnail-post, candidate-pipeline, candidate-private-prepare, candidate-private-post, silver-image-research, silver-dedup-private, candidate-historic-prepare, candidate-historic-send, feature3-hold-diagnostic, nte-taygedo-correction, feature3-fidelity-audit, skport-public-research, hoyo-thumbnail-audit, nte-account-audit, nte-corrections-prepare, nte-corrections-send, silver-rechecks-prepare, silver-rechecks-send, zzz-example-prepare, zzz-example-send, silver-media-headers, silver-upload-prepare, silver-upload-test, silver-full-animation-prepare, silver-full-animation-send, silver-packed-animation-prepare, silver-packed-animation-send]
         default: all
 
 permissions:
@@ -710,3 +710,36 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
         run: python tools/silver_full_animation_test.py --send
+
+  silver-packed-animation:
+    if: ${{ github.repository == 'uesu/Game-Express' && github.ref_name == 'arena/98b5f4e1-game-express' && (inputs.scope == 'silver-packed-animation-prepare' || inputs.scope == 'silver-packed-animation-send') }}
+    name: Private packed Silver animated articles
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: candidate-private-pipeline
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - run: python -m pip install -q -r requirements.txt
+      - name: Prepare new independent journal without sending
+        if: ${{ inputs.scope == 'silver-packed-animation-prepare' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/silver_packed_animation_test.py --prepare
+      - name: Send one packed complete article
+        if: ${{ inputs.scope == 'silver-packed-animation-send' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE3_TEST_WEBHOOK: ${{ secrets.FEATURE3_TEST_WEBHOOK }}
+        run: python tools/silver_packed_animation_test.py --send
