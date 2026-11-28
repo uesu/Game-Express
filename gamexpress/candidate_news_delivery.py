@@ -239,7 +239,8 @@ async def deliver_oldest(state, source, route, *, as_of, checkpoint, render, sen
         partial["inflight"] = False
         if len(partial["messages"]) == len(payloads):
             # The final acknowledged page and completed article are one atomic Git
-            # checkpoint. If it fails, the durable prior state remains in-flight.
+            # checkpoint. If its outcome is uncertain, the remote must be inspected:
+            # it may contain either the prior in-flight hold or the completed article.
             state["posted"][row["id"]] = {"messages": list(partial["messages"]), "signature": signature}
             state["pending"].pop(0)
             state["partial"] = None
