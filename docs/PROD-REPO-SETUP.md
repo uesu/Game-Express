@@ -519,15 +519,16 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   confirm writers are paused, and type `FIRST_INSTALL_BACKFILL` only if these destinations have
   never used candidate news anywhere and the available history is approved for posting. `source`
   is ignored for initialization. The workflow checks distinct routes, an up-to-date full Git
-  history and that no ledger appears in fetched history; it checkpoints an empty ledger and sends
-  nothing. This is not a way to restore a lost ledger: force-pushed/unavailable history and other
+  history and that no ledger appears in fetched history; it checkpoints empty records bound to
+  the three distinct route fingerprints and sends nothing. Both primary and standby hold before
+  discovery if a source record is missing or its route no longer matches. This is not a way to restore a lost ledger: force-pushed/unavailable history and other
   repositories cannot be detected. If there is any uncertainty, stop and investigate; if the push
   outcome is unclear, inspect the authoritative remote before any retry. The hard release gate
   remains closed. No live production initialization has been performed.
 - **Experimental candidate standby:** the shared-ledger path described in
   [CONFIGURATION](CONFIGURATION.md) is opt-in and remains behind the release gate. It must use
   the same authoritative branch, same dedicated destinations and a narrowly scoped credential;
-  only the primary may establish a new source's route. Existing peer-heartbeat logic decides
+  only attended first-install initialization establishes source routes. Existing peer-heartbeat logic decides
   whether a standby is active, and an unavailable peer leaves it passive. A stale checkout,
   changed route, failed/uncertain Git operation or held page stops that source. Cross-repository
   Actions and real production failover have not been validated. Do not activate it as part of

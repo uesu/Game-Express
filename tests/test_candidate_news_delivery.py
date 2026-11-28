@@ -30,6 +30,15 @@ from gamexpress.state import State  # noqa: E402
 ROUTE = "a" * 16
 NOW = 1795824000
 HOOK = "https://discord.com/api/webhooks/123456789012345678/example_token_123456789"
+INITIAL_ROUTES = {"nte": "a" * 16, "endfield": "b" * 16, "silverpalace": "c" * 16}
+
+
+def empty_record(source, route):
+    return {"version": 1, "source": source, "route": route, "pending": [], "posted": {}, "partial": None}
+
+
+def initialized_ledger(routes):
+    return {"schema": 1, "candidate_news": {source: empty_record(source, route) for source, route in routes.items()}}
 
 
 def row(cid, date="2026-11-27"):
@@ -148,21 +157,25 @@ class CandidateDeliveryTests(unittest.TestCase):
             git(base, "clone", "-b", branch, str(remote), str(stale))
             head = git(seed, "rev-parse", "HEAD")
             (seed / "local-uncommitted.txt").write_text("preserved", encoding="utf-8")
-            self.assertTrue(asyncio.run(IsolatedGitLedger(seed, branch).initialize_empty()))
+            for bad in ({}, {**INITIAL_ROUTES, "nte": INITIAL_ROUTES["endfield"]},
+                        {**INITIAL_ROUTES, "nte": "not-a-fingerprint"}):
+                self.assertFalse(asyncio.run(IsolatedGitLedger(seed, branch).initialize_empty(bad)))
+            self.assertEqual(git(seed, "rev-parse", "HEAD"), head)
+            self.assertTrue(asyncio.run(IsolatedGitLedger(seed, branch).initialize_empty(INITIAL_ROUTES)))
             self.assertEqual(git(seed, "rev-parse", "HEAD"), head)
             self.assertFalse((seed / "state/candidate_news.json").exists())
             self.assertEqual((seed / "state/state.json").read_text(), '{"live":"untouched"}\n')
             blob = git(seed, "--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json")
-            self.assertEqual(json.loads(blob), {"schema": 1, "candidate_news": {}})
+            self.assertEqual(json.loads(blob), initialized_ledger(INITIAL_ROUTES))
             writer = IsolatedGitLedger(stale, branch)
-            self.assertFalse(asyncio.run(writer.initialize_empty()))
+            self.assertFalse(asyncio.run(writer.initialize_empty(INITIAL_ROUTES)))
             self.assertTrue(writer.poisoned)
             git(seed, "pull", "--ff-only", "origin", branch)
-            self.assertFalse(asyncio.run(IsolatedGitLedger(seed, branch).initialize_empty()))
+            self.assertFalse(asyncio.run(IsolatedGitLedger(seed, branch).initialize_empty(INITIAL_ROUTES)))
             git(seed, "rm", "state/candidate_news.json")
             git(seed, "commit", "-m", "simulate missing ledger")
             git(seed, "push", "origin", f"HEAD:refs/heads/{branch}")
-            self.assertFalse(asyncio.run(IsolatedGitLedger(seed, branch).initialize_empty()))
+            self.assertFalse(asyncio.run(IsolatedGitLedger(seed, branch).initialize_empty(INITIAL_ROUTES)))
             self.assertEqual(git(seed, "worktree", "list", "--porcelain").count(b"worktree "), 1)
             self.assertEqual((seed / "local-uncommitted.txt").read_text(), "preserved")
 
@@ -190,16 +203,16 @@ class CandidateDeliveryTests(unittest.TestCase):
             git(base, "clone", "-b", branch, str(remote), str(a))
             git(base, "clone", "-b", branch, str(remote), str(b))
             git(base, "clone", "--depth=1", "-b", branch, remote.as_uri(), str(shallow))
-            self.assertFalse(asyncio.run(IsolatedGitLedger(shallow, branch).initialize_empty()))
+            self.assertFalse(asyncio.run(IsolatedGitLedger(shallow, branch).initialize_empty(INITIAL_ROUTES)))
 
             async def initialize_both():
-                return await asyncio.gather(IsolatedGitLedger(a, branch).initialize_empty(),
-                                            IsolatedGitLedger(b, branch).initialize_empty())
+                return await asyncio.gather(IsolatedGitLedger(a, branch).initialize_empty(INITIAL_ROUTES),
+                                            IsolatedGitLedger(b, branch).initialize_empty(INITIAL_ROUTES))
 
             results = asyncio.run(initialize_both())
             self.assertEqual(sorted(results), [False, True])
             blob = git(seed, "--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json")
-            self.assertEqual(json.loads(blob), {"schema": 1, "candidate_news": {}})
+            self.assertEqual(json.loads(blob), initialized_ledger(INITIAL_ROUTES))
 
     def test_uncertain_initialization_push_holds_and_cannot_reinitialize(self):
         branch = "arena/98b5f4e1-game-express"
@@ -231,13 +244,13 @@ class CandidateDeliveryTests(unittest.TestCase):
                 return result
 
             with patch.object(ledger, "_git", side_effect=uncertain_push):
-                self.assertFalse(asyncio.run(ledger.initialize_empty()))
+                self.assertFalse(asyncio.run(ledger.initialize_empty(INITIAL_ROUTES)))
             self.assertTrue(ledger.poisoned)
-            self.assertFalse(asyncio.run(ledger.initialize_empty()))
+            self.assertFalse(asyncio.run(ledger.initialize_empty(INITIAL_ROUTES)))
             blob = git(seed, "--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json")
-            self.assertEqual(json.loads(blob), {"schema": 1, "candidate_news": {}})
+            self.assertEqual(json.loads(blob), initialized_ledger(INITIAL_ROUTES))
             git(seed, "pull", "--ff-only", "origin", branch)
-            self.assertFalse(asyncio.run(IsolatedGitLedger(seed, branch).initialize_empty()))
+            self.assertFalse(asyncio.run(IsolatedGitLedger(seed, branch).initialize_empty(INITIAL_ROUTES)))
 
     def test_initialize_requires_explicit_attestations_and_distinct_destinations(self):
         class FakeLedger:
@@ -246,7 +259,8 @@ class CandidateDeliveryTests(unittest.TestCase):
             def __init__(self, root, branch):
                 pass
 
-            async def initialize_empty(self):
+            async def initialize_empty(self, routes):
+                assert routes == {source: target[1] for source, target in destinations.items()}
                 FakeLedger.calls += 1
                 return True
 
@@ -704,7 +718,8 @@ class CandidateDeliveryTests(unittest.TestCase):
 
         class Ledger:
             def __init__(self, root, branch):
-                self.data, self.poisoned = {"candidate_news": {}}, False
+                fingerprint = delivery.destination(settings, "silverpalace")[1]
+                self.data, self.poisoned = {"candidate_news": {"silverpalace": empty_record("silverpalace", fingerprint)}}, False
                 if branch != "arena/98b5f4e1-game-express":
                     raise AssertionError("wrong branch")
                 ledgers.append(self)
@@ -757,7 +772,8 @@ class CandidateDeliveryTests(unittest.TestCase):
             git("config", "user.email", "test@example.invalid")
             (root / "state").mkdir()
             (root / "state/state.json").write_text('{"schema":1,"news":{"old":"unchanged"}}\n', encoding="utf-8")
-            (root / "state/candidate_news.json").write_text('{"schema":1,"candidate_news":{}}\n', encoding="utf-8")
+            route = delivery.destination(load_settings({"DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK}), "silverpalace")[1]
+            (root / "state/candidate_news.json").write_text(json.dumps(initialized_ledger({"silverpalace": route})), encoding="utf-8")
             git("add", "state")
             git("commit", "-m", "initial")
             git("remote", "add", "origin", str(remote))
@@ -823,7 +839,8 @@ class CandidateDeliveryTests(unittest.TestCase):
             git("config", "user.email", "test@example.invalid")
             (root / "state").mkdir()
             (root / "state/state.json").write_text('{"schema":1}\n', encoding="utf-8")
-            (root / "state/candidate_news.json").write_text('{"schema":1,"candidate_news":{}}\n', encoding="utf-8")
+            route = delivery.destination(load_settings({"DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK}), "silverpalace")[1]
+            (root / "state/candidate_news.json").write_text(json.dumps(initialized_ledger({"silverpalace": route})), encoding="utf-8")
             git("add", "state")
             git("commit", "-m", "initial")
             git("remote", "add", "origin", str(remote))
@@ -930,6 +947,8 @@ class CandidateDeliveryTests(unittest.TestCase):
             root = Path(tmp)
             self.assertEqual(runner.standby_authority(load_settings(config), root),
                              (authority, authority_branch, config["NEWS_CANDIDATES_LEDGER_TOKEN"]))
+            printable_token = "token.with+punctuation/" + "x" * 24
+            self.assertEqual(runner.standby_authority(load_settings({**config, "NEWS_CANDIDATES_LEDGER_TOKEN": printable_token}), root)[2], printable_token)
             for key, bad in (("INSTANCE_ROLE", "primary"), ("NEWS_CANDIDATES_STANDBY_ENABLED", "0"),
                              ("NEWS_CANDIDATES_LEDGER_TOKEN", ""), ("NEWS_CANDIDATES_LEDGER_TOKEN", "bad\nsecret"),
                              ("NEWS_CANDIDATES_AUTHORITY_REPOSITORY", "../Authority"),
@@ -1014,7 +1033,38 @@ class CandidateDeliveryTests(unittest.TestCase):
             active = context()
             with patch.object(runner, "CANDIDATE_NEWS_READY", True):
                 asyncio.run(runner.run_candidate_news(active))
-            self.assertIn("primary route not yet bound", active.warnings[0])
+            self.assertIn("initialized route missing", active.warnings[0])
+
+    def test_route_mismatch_holds_before_discovery_on_primary_and_standby(self):
+        settings = load_settings({"NEWS_CANDIDATES_BACKFILL": "1", "NEWS_GAMES": "silverpalace",
+                                  "DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK})
+        class Ledger:
+            def __init__(self, root, branch, **kwargs):
+                self.data = {"candidate_news": {"silverpalace": empty_record("silverpalace", "f" * 16)}}
+                self.poisoned = False
+            async def open(self):
+                return True
+            async def close(self):
+                pass
+        class Checkout:
+            def __init__(self, *args):
+                self.root, self.env = Path("/tmp"), {}
+            async def open(self):
+                return True
+            async def close(self):
+                pass
+        def ctx():
+            return SimpleNamespace(settings=settings, active=True, now=NOW, fetcher=None,
+                                   webhook=SimpleNamespace(session=None), report=[], warnings=[])
+        with (patch.object(runner, "CANDIDATE_NEWS_READY", True), patch.object(runner, "IsolatedGitLedger", Ledger),
+              patch.object(runner, "StandbyLedgerCheckout", Checkout),
+              patch.object(runner, "standby_authority", return_value=("uesu/Auth", "main", "x" * 30)),
+              patch.object(delivery, "discover", side_effect=AssertionError("route mismatch must hold first"))):
+            for branch in ("main", None):
+                with patch.object(runner, "authoritative_branch", return_value=branch):
+                    result = ctx()
+                    asyncio.run(runner.run_candidate_news(result))
+                    self.assertIn("held (DeliveryHold)", result.warnings[0])
 
     def test_standby_failover_holds_ambiguous_primary_and_resumes_only_after_review(self):
         with tempfile.TemporaryDirectory() as tmp:

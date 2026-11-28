@@ -5,10 +5,14 @@
 - Added a gated, explicitly opted-in standby path using the primary's authoritative Git branch
   and per-page intent checkpoints, not a copied ledger. It requires the existing heartbeat to
   activate the standby, exact repository/ref identities, a current standby checkout and a
-  narrowly scoped cross-repository credential. The standby cannot establish a new source route.
+  narrowly scoped cross-repository credential. Attended first-install initialization binds all
+  three route fingerprints before discovery; neither primary nor standby silently creates or
+  rebinds a missing source record.
 - Local bare-Git tests cover primary/standby races, ambiguous primary outcomes, reviewed
-  recovery and repeat holds. Real cross-repository authentication and production failover remain
-  unvalidated; force-pushes, independent ledgers and noncooperative writers are not fenced.
+  recovery and repeat holds. A no-send GitHub simulation used a real read-only second-repository
+  checkout and authority-branch checkpoints with simulated standby identity and heartbeat; it is
+  not a separately triggered standby job. Production failover remains unvalidated; force-pushes,
+  independent ledgers and noncooperative writers are not fenced.
   Candidate delivery remains hard-gated and no production configuration was changed.
 
 ## 2026-11-27 — Private integrated runner test

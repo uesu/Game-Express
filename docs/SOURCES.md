@@ -524,8 +524,9 @@ process**, not a process restart. Temporary state files were removed and no Disc
 Neither probe validates the full recovery workflow, real delivery evidence or production failover. Production sync now runs the candidate offline regression
 files before applying changes and protects `state/candidate_news.json` from
 creation, modification or deletion; it is not provisioned automatically. An attended, no-post
-first-install initializer checks for previously tracked ledger history and requires explicit
-first-install/backfill and writer-pause attestations; it cannot detect force-pushed or external
+first-install initializer checks for previously tracked ledger history, pins three distinct route
+fingerprints in otherwise empty source records, and requires explicit first-install/backfill and
+writer-pause attestations; it cannot detect force-pushed or external
 history and has not been validated in production. A [development-only GitHub Actions
 probe](https://github.com/uesu/Game-Express/actions/runs/46128928271) exercised the actual
 initialization entry point and remote push with synthetic webhook URLs and a temporary, non-production
@@ -543,11 +544,17 @@ production or cross-repository failover validation, and the release gate remains
 The gated prototype also requires an explicitly nominated `NEWS_CANDIDATES_AUTHORITY_REPOSITORY`
 and `NEWS_CANDIDATES_AUTHORITY_BRANCH`, matching primary role, Actions repository/ref, allowed event,
 and HTTPS origin. An opt-in experimental standby now checks out the same authoritative branch
-with a separately scoped Git credential after the existing heartbeat marks it active. A source must
-already have its route bound by the primary; both writers use the same ledger and per-page Git
-intent checkpoints. Offline tests cover a primary/standby race and reviewed recovery against a
-shared bare-Git remote, but they do not validate real cross-repository authentication or production
-failover. A repo-local concurrency group is not a distributed lock; force-pushes, independent
+with a separately scoped Git credential after the existing heartbeat marks it active. Each source route must
+already be bound by attended first-install initialization; both writers use the same ledger and per-page Git
+intent checkpoints. Offline tests cover a primary/standby race and reviewed recovery against a shared bare-Git remote.
+A [no-send GitHub simulation](https://github.com/uesu/Game-Express/actions/runs/46131615180)
+used a read-only checkout of a second public repository, real authenticated GitHub checkpoints in
+a temporary development-branch ledger, synthetic data and a fake Discord sender. It simulated the
+standby Actions identity and active heartbeat inside the process; the credential came from the
+authority job, not an independently configured standby. Earlier runs 46131430195 and 46131498312
+held before writes because the credential-format check was too narrow; the subsequent fix accepts
+bounded printable credentials without putting them in a URL or Git argv. The fixture was removed.
+Real standby-issued credentials, separately triggered jobs and production failover remain unvalidated. A repo-local concurrency group is not a distributed lock; force-pushes, independent
 ledgers, noncooperating writers and incorrect human reconciliation remain outside this protection. A local
 checkpointed reconciliation primitive validates an operator's decision and persists it without
 sending. A manual-only attended recovery workflow now exposes inspect and guarded resolve, but

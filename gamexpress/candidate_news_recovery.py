@@ -62,12 +62,13 @@ async def run_from_environment():
         if (os.environ.get("RECOVERY_WRITERS_PAUSED") != "true"
                 or os.environ.get("RECOVERY_INIT_CONFIRM") != "FIRST_INSTALL_BACKFILL"):
             raise DeliveryHold("first-install attestations required")
-        targets = [destination(settings, candidate) for candidate in sorted(SOURCES)]
-        if any(target is None for target in targets) or len({target[1] for target in targets}) != len(SOURCES):
+        targets = {candidate: destination(settings, candidate) for candidate in sorted(SOURCES)}
+        if any(target is None for target in targets.values()) or len({target[1] for target in targets.values()}) != len(SOURCES):
             raise DeliveryHold("distinct dedicated destinations required")
-        if not await ledger.initialize_empty():
+        routes = {candidate: target[1] for candidate, target in targets.items()}
+        if not await ledger.initialize_empty(routes):
             raise DeliveryHold("ledger initialization not confirmed")
-        print("Empty ledger checkpointed. No discovery or Discord messages sent; release gate remains closed.")
+        print("Empty, route-bound ledger checkpointed. No discovery or Discord messages sent; release gate remains closed.")
         return
     target = destination(settings, source)
     if target is None:

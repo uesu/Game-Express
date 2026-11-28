@@ -343,8 +343,9 @@ selection, append the three candidate keys rather than replacing your selection 
 The default active instance role is `primary`. A separate standby remains disabled unless the
 experimental shared-ledger failover below is explicitly configured; it is still behind the release
 gate. Adding candidate keys does not change schedule, codes, maintenance or Reddit.
-An empty, deliberately provisioned candidate ledger causes the first complete snapshot to queue
-**available history**, not a silent baseline. The attended initialization path is described in
+An empty, deliberately provisioned candidate ledger binds each source to its dedicated route;
+the first complete snapshot then queues **available history**, not a silent baseline. A missing
+record or changed route is held before discovery, even on the first run. The attended initialization path is described in
 [production setup](PROD-REPO-SETUP.md); it and actual production recovery remain unvalidated.
 Do not initialize or activate production until release review and the backfill plan are complete.
 Candidate processing is limited to one article and three pages per source per run, independently
@@ -366,13 +367,15 @@ repository, not on the primary. They do not open the release gate:
 The standby also needs the same dedicated news destinations, candidate selection, and backfill
 opt-in as the primary; don't configure them for live operation before approval. It checks out the
 single authoritative ledger with the credential in a scoped Git environment, not a URL or file.
-Only sources whose route is already recorded by the primary can run on standby. Stale or missing
+Both primary and standby require the route recorded by attended initialization. Stale or missing
 checkouts, missing credentials, route mismatches, uncertain pushes, and ambiguous sends hold. The
 shared branch and verified intent checkpoints fence *cooperating* writers; GitHub Actions
 concurrency alone does not coordinate repositories, and force-pushes, independent ledgers,
 noncooperating writers and operator mistakes are not protected. Recovery still requires pausing
 all writers. `PEER_STATE_URL` must be reachable for the existing standby heartbeat check; this
-prototype has not been validated across real repositories or in production.
+prototype has not been validated with separately triggered standby Actions jobs or in production.
+A no-send test used a real second-repository checkout but simulated the Actions identity and
+heartbeat; it is not a production failover test.
 
 Existing short game aliases also work. No `DISCORD_WEBHOOK_NEWS`, catch-all,
 `FORCE_WEBHOOK`, or mirror fallback is used for news. A missing destination skips

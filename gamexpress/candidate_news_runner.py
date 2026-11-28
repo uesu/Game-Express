@@ -224,13 +224,12 @@ async def run_candidate_news(ctx):
             try:
                 # Read each record from the separately checkpointed authoritative ledger.
                 prior = ledger.data["candidate_news"].get(source)
-                if prior is None and standby_checkout is not None:
-                    # The standby may only use a route already bound by the primary.
-                    # Otherwise its first snapshot could silently choose a different channel.
-                    ctx.warnings.append(f"{source} news: primary route not yet bound; standby held")
+                if prior is None:
+                    # Only attended first-install initialization can bind a source route.
+                    # Neither primary nor standby may silently create missing records.
+                    ctx.warnings.append(f"{source} news: initialized route missing; source held")
                     continue
-                if prior is not None:
-                    delivery._validate(prior, source, fingerprint)
+                delivery._validate(prior, source, fingerprint)
                 rows = await delivery.discover(ctx.fetcher, source)
                 state = delivery.ingest(source, fingerprint, prior, rows)
                 if not state["pending"]:

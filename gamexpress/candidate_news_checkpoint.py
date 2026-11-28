@@ -171,8 +171,8 @@ class IsolatedGitLedger:
         except (OSError, ValueError, TypeError, subprocess.SubprocessError):
             return False
 
-    def _initialize_empty(self):
-        """Create only a never-before-tracked empty ledger, without touching the checkout.
+    def _initialize_empty(self, routes):
+        """Create a never-before-tracked empty ledger with each source route bound.
 
         The caller must require explicit first-install and writer-pause attestations.
         History checks cannot see discarded/force-pushed history or external copies.
@@ -181,8 +181,14 @@ class IsolatedGitLedger:
         import tempfile
 
         try:
-            if self.poisoned or self.worktree is not None or not isinstance(self.branch, str) or not self.branch:
+            if (self.poisoned or self.worktree is not None or not isinstance(self.branch, str) or not self.branch
+                    or not isinstance(routes, dict) or set(routes) != SOURCES or len(set(routes.values())) != len(SOURCES)):
                 return False
+            records = {source: {"version": 1, "source": source, "route": routes[source], "pending": [],
+                                "posted": {}, "partial": None} for source in sorted(SOURCES)}
+            for source, record in records.items():
+                _validate(record, source, routes[source])
+            new = {"schema": 1, "candidate_news": records}
             current = self._git(self.root, "symbolic-ref", "--quiet", "--short", "HEAD")
             shallow = self._git(self.root, "rev-parse", "--is-shallow-repository")
             if (current.returncode or current.stdout.strip() != self.branch.encode()
@@ -206,7 +212,7 @@ class IsolatedGitLedger:
             path = self.worktree / self.LEDGER
             if state_dir.is_symlink() or not state_dir.is_dir() or path.exists() or path.is_symlink():
                 return False
-            path.write_text('{"schema": 1, "candidate_news": {}}\n', encoding="utf-8")
+            path.write_text(json.dumps(new, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             if self._git(self.worktree, "add", "--", self.LEDGER).returncode:
                 return False
             staged = self._git(self.worktree, "diff", "--cached", "--name-only", "-z")
@@ -220,13 +226,13 @@ class IsolatedGitLedger:
             new_head = self._head(self.worktree)
             if not new_head or self._remote() != new_head:
                 return False
-            self.data = {"schema": 1, "candidate_news": {}}
+            self.data = new
             return True
         except (OSError, ValueError, TypeError, subprocess.SubprocessError):
             return False
 
-    async def initialize_empty(self):
-        ok = await asyncio.to_thread(self._initialize_empty)
+    async def initialize_empty(self, routes):
+        ok = await asyncio.to_thread(self._initialize_empty, routes)
         if not ok:
             self.poisoned = True
         await asyncio.to_thread(self._close)
