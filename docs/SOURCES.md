@@ -524,7 +524,10 @@ process**, not a process restart. Temporary state files were removed and no Disc
 Neither probe validates the full recovery workflow, real delivery evidence or production failover.
 The attended workflow also offers a paused-writer, no-send preview of the next candidate's real
 listing/render/GIF plan against the existing bound ledger; it does not checkpoint, post, or prove
-Discord acceptance. Production preview and recovery have not been run. Production sync now runs the candidate offline regression
+Discord acceptance. A [development GitHub preview](https://github.com/uesu/Game-Express/actions/runs/46132264773)
+completed real listing, rendering and GIF planning for all three sources using a synthetic bound
+ledger and fake destination URLs; no Discord post or checkpoint occurred, and the fixture was
+removed. Production preview and recovery have not been run. Production sync now runs the candidate offline regression
 files before applying changes and protects `state/candidate_news.json` from
 creation, modification or deletion; it is not provisioned automatically. An attended, no-post
 first-install initializer checks for previously tracked ledger history, pins three distinct route

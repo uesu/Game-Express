@@ -16,7 +16,8 @@
   Candidate delivery remains hard-gated and no production configuration was changed.
 - Added a paused-writer, no-Discord-post preview that validates a bound route and ledger, fetches
   a live source and plans the next article without checkpointing. It reports counts, not a visual
-  Discord preview, and does not prove Discord acceptance.
+  Discord preview, and does not prove Discord acceptance. A no-send development GitHub run
+  completed that preview for all three live official sources with synthetic destination routes.
 
 ## 2026-11-27 — Private integrated runner test
 

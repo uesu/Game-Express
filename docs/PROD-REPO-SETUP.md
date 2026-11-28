@@ -520,8 +520,10 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   never used candidate news anywhere and the available history is approved for posting. `source`
   is ignored for initialization. The workflow checks distinct routes, an up-to-date full Git
   history and that no ledger appears in fetched history; it checkpoints empty records bound to
-  the three distinct route fingerprints and sends nothing. Both primary and standby hold before
-  discovery if a source record is missing or its route no longer matches. This is not a way to restore a lost ledger: force-pushed/unavailable history and other
+  the three distinct route fingerprints and sends nothing. Distinct webhook fingerprints do not
+  prove different Discord channels: independently verify the destination of each secret before
+  initializing. Both primary and standby hold before discovery if a source record is missing or
+  its route no longer matches. This is not a way to restore a lost ledger: force-pushed/unavailable history and other
   repositories cannot be detected. If there is any uncertainty, stop and investigate; if the push
   outcome is unclear, inspect the authoritative remote before any retry. The hard release gate
   remains closed. No live production initialization has been performed.
