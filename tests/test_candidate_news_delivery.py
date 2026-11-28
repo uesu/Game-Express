@@ -467,6 +467,69 @@ class CandidateDeliveryTests(unittest.TestCase):
                 for ledger in ledgers:
                     asyncio.run(ledger.close())
 
+    def test_final_checkpoint_uncertain_push_is_inspected_not_reposted_after_restart(self):
+        branch = "arena/98b5f4e1-game-express"
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            remote, seed = base / "remote.git", base / "seed"
+            seed.mkdir()
+
+            def git(cwd, *args):
+                return subprocess.run(["git", *args], cwd=cwd, capture_output=True, check=True).stdout
+
+            git(base, "init", "--bare", str(remote))
+            git(seed, "init", "-b", branch)
+            git(seed, "config", "user.name", "Test")
+            git(seed, "config", "user.email", "test@example.invalid")
+            (seed / "state").mkdir()
+            queued = delivery.ingest("silverpalace", ROUTE, None, [row("1")])
+            (seed / "state/candidate_news.json").write_text(json.dumps({"schema": 1,
+                                             "candidate_news": {"silverpalace": queued}}))
+            git(seed, "add", "state")
+            git(seed, "commit", "-m", "initial")
+            git(seed, "remote", "add", "origin", str(remote))
+            git(seed, "push", "origin", f"HEAD:refs/heads/{branch}")
+            ledger = IsolatedGitLedger(seed, branch)
+            self.assertTrue(asyncio.run(ledger.open()))
+            original_git, pushes, sent = ledger._git, [], []
+
+            def uncertain_final(root, *args):
+                result = original_git(root, *args)
+                if args and args[0] == "push":
+                    pushes.append(True)
+                    saved = json.loads((root / "state/candidate_news.json").read_text())
+                    completed = "1" in saved["candidate_news"]["silverpalace"]["posted"]
+                    if completed and result.returncode == 0:
+                        return subprocess.CompletedProcess(result.args, 1, b"", b"simulated lost confirmation")
+                return result
+
+            async def checkpoint(snapshot): return await ledger.checkpoint("silverpalace", snapshot)
+            async def render(_article): return [payload("1")]
+            async def send(_card):
+                sent.append(True)
+                return SimpleNamespace(ok=True, ambiguous=False, message_id="101")
+
+            try:
+                with patch.object(ledger, "_git", side_effect=uncertain_final), self.assertRaises(delivery.DeliveryHold):
+                    asyncio.run(delivery.deliver_oldest(queued, "silverpalace", ROUTE, as_of=NOW,
+                                checkpoint=checkpoint, render=render, send=send))
+                self.assertTrue(ledger.poisoned)
+                self.assertEqual(len(sent), 1)
+                self.assertGreaterEqual(len(pushes), 3)
+            finally:
+                asyncio.run(ledger.close())
+            restarted = base / "restarted"
+            git(base, "clone", "-b", branch, str(remote), str(restarted))
+            reader = IsolatedGitLedger(restarted, branch)
+            self.assertTrue(asyncio.run(reader.open()))
+            try:
+                actual = reader.data["candidate_news"]["silverpalace"]
+                self.assertEqual(actual["posted"]["1"]["messages"], ["101"])
+                self.assertFalse(delivery.ingest("silverpalace", ROUTE, actual, [row("1")])["pending"])
+                self.assertEqual(len(sent), 1)
+            finally:
+                asyncio.run(reader.close())
+
     def test_isolated_ledger_requires_existing_tracked_valid_file(self):
         branch = "arena/98b5f4e1-game-express"
         with tempfile.TemporaryDirectory() as tmp:
@@ -1030,10 +1093,11 @@ asyncio.run(main())
         state = SimpleNamespace(data={"news": {"genshin": {"unchanged": True}}})
         ctx = SimpleNamespace(settings=settings, active=True, state=state, now=NOW,
                               fetcher=object(), webhook=SimpleNamespace(session=object()), report=[], warnings=[])
-        rendered, sent = [], []
+        rendered, sent, discovered = [], [], []
 
         async def discover(fetcher, source):
             self.assertEqual(source, "silverpalace")
+            discovered.append(source)
             return [row("2", "2026-01-02"), row("1", "2026-01-01")]
 
         async def render(fetcher, conf, source, candidate):
@@ -1068,7 +1132,7 @@ asyncio.run(main())
             self.assertEqual(source, "silverpalace")
             self.assertTrue(ledgers[0].data["candidate_news"][source]["partial"]["inflight"])
             sent.append(card)
-            return SimpleNamespace(ok=True, message_id="101", ambiguous=False)
+            return SimpleNamespace(ok=True, message_id=str(100 + len(sent)), ambiguous=False)
 
         with (patch.dict("os.environ", {"GITHUB_ACTIONS": "true", "GITHUB_REF_NAME": "arena/98b5f4e1-game-express",
                                        "GITHUB_REF": "refs/heads/arena/98b5f4e1-game-express",
@@ -1079,12 +1143,145 @@ asyncio.run(main())
               patch.object(delivery, "render_candidate", render), patch.object(delivery, "send_candidate_once", send)):
             asyncio.run(runner.run_candidate_news(ctx))
         result = ledgers[0].data["candidate_news"]["silverpalace"]
-        self.assertEqual(rendered, ["1"])
-        self.assertEqual(len(sent), 1)
+        self.assertEqual(rendered, ["1", "2"])
+        self.assertEqual(discovered, ["silverpalace"])
+        self.assertEqual(len(sent), 2)
         self.assertEqual(result["posted"]["1"]["messages"], ["101"])
-        self.assertEqual([r["id"] for r in result["pending"]], ["2"])
+        self.assertEqual(result["posted"]["2"]["messages"], ["102"])
+        self.assertFalse(result["pending"])
         self.assertEqual(state.data["news"], {"genshin": {"unchanged": True}})
         self.assertFalse(ctx.warnings)
+
+    def test_normal_runner_finishes_more_than_three_pages_and_honours_deadline(self):
+        settings = load_settings({"NEWS_GAMES": "silverpalace", "NEWS_CANDIDATES_BACKFILL": "1",
+                                  "DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK})
+        ledgers, sent, render_calls = [], [], []
+
+        class Ledger:
+            def __init__(self, root, branch):
+                route = delivery.destination(settings, "silverpalace")[1]
+                self.data = {"candidate_news": {"silverpalace": empty_record("silverpalace", route)}}
+                self.poisoned = False
+                ledgers.append(self)
+            async def open(self): return True
+            async def close(self): pass
+            async def checkpoint(self, source, snapshot):
+                self.data["candidate_news"][source] = copy.deepcopy(snapshot)
+                return True
+
+        async def discover(_fetcher, _source): return [row("1")]
+        async def render(_fetcher, _settings, _source, candidate):
+            render_calls.append(candidate["id"])
+            return [payload("1")] * 5, {}
+        async def send(_session, _settings, _source, _card):
+            record = ledgers[-1].data["candidate_news"]["silverpalace"]
+            self.assertTrue(record["partial"]["inflight"])
+            sent.append(True)
+            return SimpleNamespace(ok=True, ambiguous=False, message_id=str(100 + len(sent)))
+        async def sleep(_seconds): pass
+
+        def context(deadline):
+            return SimpleNamespace(settings=settings, active=True, now=NOW, fetcher=None,
+                                   webhook=SimpleNamespace(session=None), report=[], warnings=[],
+                                   candidate_deadline=deadline)
+
+        with (patch.object(runner, "authoritative_branch", return_value="test"),
+              patch.object(runner, "IsolatedGitLedger", Ledger), patch.object(runner.asyncio, "sleep", sleep),
+              patch.object(delivery, "discover", discover), patch.object(delivery, "render_candidate_animated", render),
+              patch.object(delivery, "send_candidate_once", send)):
+            ctx = context(None)
+            asyncio.run(runner.run_candidate_news(ctx))
+            self.assertEqual(len(sent), 5)
+            self.assertFalse(ctx.warnings)
+            self.assertEqual(len(ledgers[-1].data["candidate_news"]["silverpalace"]["posted"]["1"]["messages"]), 5)
+            before = len(ledgers)
+            ctx = context(0)
+            asyncio.run(runner.run_candidate_news(ctx))
+            self.assertEqual(len(sent), 5)
+            self.assertEqual(len(ledgers), before + 1)
+            self.assertEqual(render_calls, ["1"])
+            self.assertTrue(any("time budget" in warning for warning in ctx.warnings))
+
+    def test_normal_runner_uses_fair_rounds_and_never_retries_a_held_source(self):
+        hooks = {"endfield": HOOK,
+                 "silverpalace": "https://discord.com/api/webhooks/222222222222222222/bbbbbbbbbbbbbbbbbbbb"}
+        env = {"NEWS_GAMES": ",".join(hooks), "NEWS_CANDIDATES_BACKFILL": "1"}
+        env.update({f"DISCORD_WEBHOOK_NEWS_{source.upper()}": url for source, url in hooks.items()})
+        settings = load_settings(env)
+        ctx = SimpleNamespace(settings=settings, active=True, now=NOW, fetcher=None,
+                              webhook=SimpleNamespace(session=None), report=[], warnings=[])
+        observed, discoveries, rendered = [], [], {}
+        ledgers = []
+
+        class Ledger:
+            def __init__(self, root, branch):
+                routes = {source: delivery.destination(settings, source)[1] for source in hooks}
+                self.data, self.poisoned = initialized_ledger(routes), False
+                ledgers.append(self)
+            async def open(self): return True
+            async def close(self): pass
+            async def checkpoint(self, source, snapshot):
+                self.data["candidate_news"][source] = copy.deepcopy(snapshot)
+                return True
+
+        async def discover(_fetcher, source):
+            discoveries.append(source)
+            if source == "endfield":
+                return [{"id": "2", "title": "two", "ts": NOW - 1},
+                        {"id": "1", "title": "one", "ts": NOW - 2}]
+            return [row("2"), row("1")]
+        async def render(_fetcher, _settings, source, candidate):
+            rendered.setdefault(source, []).append(candidate["id"])
+            if source == "endfield" and candidate["id"] == "2":
+                raise ValueError("simulated hold")
+            return [payload(candidate["id"])], {}
+        async def send(_session, _settings, source, _card):
+            record = ledgers[-1].data["candidate_news"][source]
+            self.assertTrue(record["partial"]["inflight"])
+            observed.append((source, record["partial"]["id"]))
+            return SimpleNamespace(ok=True, ambiguous=False, message_id=str(100 + len(observed)))
+        async def sleep(_seconds): pass
+
+        with (patch.object(runner, "authoritative_branch", return_value="test"),
+              patch.object(runner, "IsolatedGitLedger", Ledger), patch.object(runner.asyncio, "sleep", sleep),
+              patch.object(delivery, "discover", discover), patch.object(delivery, "render_candidate_animated", render),
+              patch.object(delivery, "send_candidate_once", send)):
+            asyncio.run(runner.run_candidate_news(ctx))
+        self.assertEqual(observed, [("endfield", "1"), ("silverpalace", "1"), ("silverpalace", "2")])
+        self.assertEqual(discoveries, ["endfield", "silverpalace"])
+        self.assertEqual(rendered["endfield"], ["1", "2"])
+        self.assertTrue(any("endfield news: held" in warning for warning in ctx.warnings))
+        self.assertEqual([r["id"] for r in ledgers[-1].data["candidate_news"]["endfield"]["pending"]], ["2"])
+        self.assertFalse(ledgers[-1].data["candidate_news"]["silverpalace"]["pending"])
+
+    def test_runner_holds_a_pending_source_that_makes_no_progress(self):
+        settings = load_settings({"NEWS_GAMES": "silverpalace", "NEWS_CANDIDATES_BACKFILL": "1",
+                                  "DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK})
+        route = delivery.destination(settings, "silverpalace")[1]
+        initial = delivery.ingest("silverpalace", route, None, [row("1")])
+        ctx = SimpleNamespace(settings=settings, active=True, now=NOW, fetcher=None,
+                              webhook=SimpleNamespace(session=None), report=[], warnings=[])
+        calls = []
+
+        class Ledger:
+            def __init__(self, *args):
+                self.data = {"candidate_news": {"silverpalace": initial}}
+                self.poisoned = False
+            async def open(self): return True
+            async def close(self): pass
+            async def checkpoint(self, source, snapshot): raise AssertionError("unexpected checkpoint")
+
+        async def discover(*args): return [row("1")]
+        async def no_progress(state, *args, **kwargs):
+            calls.append(True)
+            return state
+
+        with (patch.object(runner, "authoritative_branch", return_value="test"),
+              patch.object(runner, "IsolatedGitLedger", Ledger), patch.object(delivery, "discover", discover),
+              patch.object(delivery, "deliver_oldest", no_progress)):
+            asyncio.run(runner.run_candidate_news(ctx))
+        self.assertEqual(calls, [True])
+        self.assertTrue(any("no delivery progress" in warning for warning in ctx.warnings))
 
     def test_gated_runner_uses_real_isolated_ledger_without_touching_monitor_state(self):
         branch = "arena/98b5f4e1-game-express"
@@ -1126,7 +1323,7 @@ asyncio.run(main())
                 recorded = json.loads(git("--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json"))
                 self.assertTrue(recorded["candidate_news"][source]["partial"]["inflight"])
                 sends.append(source)
-                return SimpleNamespace(ok=True, message_id="101", ambiguous=False)
+                return SimpleNamespace(ok=True, message_id=str(100 + len(sends)), ambiguous=False)
 
             async def sleep(seconds):
                 pass
@@ -1138,7 +1335,7 @@ asyncio.run(main())
                   patch.object(runner.asyncio, "sleep", sleep), patch.object(delivery, "discover", discover),
                   patch.object(delivery, "render_candidate", render), patch.object(delivery, "send_candidate_once", send)):
                 asyncio.run(runner.run_candidate_news(ctx))
-            self.assertEqual(sends, ["silverpalace"])
+            self.assertEqual(sends, ["silverpalace", "silverpalace"])
             self.assertFalse(ctx.warnings)
             self.assertEqual(git("rev-parse", "HEAD"), before)
             self.assertEqual(git("status", "--porcelain"), b"")
@@ -1146,7 +1343,8 @@ asyncio.run(main())
             self.assertNotIn("candidate_news", ctx.state.data)
             recorded = json.loads(git("--git-dir", str(remote), "show", f"refs/heads/{branch}:state/candidate_news.json"))
             self.assertEqual(recorded["candidate_news"]["silverpalace"]["posted"]["1"]["messages"], ["101"])
-            self.assertEqual(recorded["candidate_news"]["silverpalace"]["pending"][0]["id"], "2")
+            self.assertEqual(recorded["candidate_news"]["silverpalace"]["posted"]["2"]["messages"], ["102"])
+            self.assertFalse(recorded["candidate_news"]["silverpalace"]["pending"])
 
     def test_integrated_runner_real_render_planner_multipart_and_git_checkpoint(self):
         import base64
@@ -1835,6 +2033,76 @@ asyncio.run(main())
         self.assertNotIn("webhook", str(result).lower())
         after = delivery.ingest("silverpalace", ROUTE, result, [row("1"), row("2")])
         self.assertEqual(after["pending"], [row("2")])
+
+    def test_final_acknowledgement_and_completion_share_one_checkpoint(self):
+        state = delivery.ingest("silverpalace", ROUTE, None, [row("1")])
+        store = Storage()
+        sent = []
+
+        async def render(_article): return [payload("1"), payload("1")]
+        async def send(_page):
+            self.assertTrue(store.states[-1]["partial"]["inflight"])
+            sent.append(True)
+            return SimpleNamespace(ok=True, ambiguous=False, message_id=str(100 + len(sent)))
+
+        result = asyncio.run(delivery.deliver_oldest(state, "silverpalace", ROUTE, as_of=NOW,
+                             checkpoint=store.checkpoint, render=render, send=send))
+        self.assertEqual(len(sent), 2)
+        self.assertEqual(store.calls, 6)  # queue, partial, intent/ack, intent/final ack
+        self.assertEqual(store.states[-1], result)
+        self.assertIsNone(result["partial"])
+        self.assertEqual(result["posted"]["1"]["messages"], ["101", "102"])
+
+    def test_failed_final_completion_checkpoint_remains_held_before_retry(self):
+        state = delivery.ingest("silverpalace", ROUTE, None, [row("1")])
+        store = Storage(fail_at=4)
+        sent = []
+
+        async def render(_article): return [payload("1")]
+        async def send(_page):
+            sent.append(True)
+            return SimpleNamespace(ok=True, ambiguous=False, message_id="101")
+
+        with self.assertRaises(delivery.DeliveryHold):
+            asyncio.run(delivery.deliver_oldest(state, "silverpalace", ROUTE, as_of=NOW,
+                        checkpoint=store.checkpoint, render=render, send=send))
+        held = store.states[-1]
+        self.assertTrue(held["partial"]["inflight"])
+        self.assertNotIn("1", held["posted"])
+        with self.assertRaises(delivery.DeliveryHold):
+            asyncio.run(delivery.deliver_oldest(held, "silverpalace", ROUTE, as_of=NOW,
+                        checkpoint=store.checkpoint, render=render, send=send))
+        self.assertEqual(len(sent), 1)
+        reviewed = delivery.reconcile_inflight(held, "silverpalace", ROUTE, article_id="1", page=1,
+                   signature=held["partial"]["signature"], resolution="delivered", message_id="101")
+        posted = asyncio.run(delivery.deliver_oldest(reviewed, "silverpalace", ROUTE, as_of=NOW,
+                             checkpoint=store.checkpoint, render=render, send=send))
+        self.assertEqual(posted["posted"]["1"]["messages"], ["101"])
+        self.assertEqual(len(sent), 1)
+
+    def test_page_budget_stops_safely_between_posts_and_resumes_without_duplicates(self):
+        state = delivery.ingest("silverpalace", ROUTE, None, [row("1")])
+        store, sent = Storage(), []
+        pages = [payload("1")] * 5
+
+        async def render(_article): return pages
+        async def send(_page):
+            self.assertTrue(store.states[-1]["partial"]["inflight"])
+            sent.append(True)
+            return SimpleNamespace(ok=True, ambiguous=False, message_id=str(100 + len(sent)))
+
+        state = asyncio.run(delivery.deliver_oldest(state, "silverpalace", ROUTE, as_of=NOW,
+                          checkpoint=store.checkpoint, render=render, send=send,
+                          can_start_page=lambda: len(sent) < 2))
+        self.assertEqual(state, store.states[-1])
+        self.assertFalse(state["partial"]["inflight"])
+        self.assertEqual(state["partial"]["messages"], ["101", "102"])
+        self.assertNotIn("1", state["posted"])
+        state = asyncio.run(delivery.deliver_oldest(state, "silverpalace", ROUTE, as_of=NOW,
+                          checkpoint=store.checkpoint, render=render, send=send,
+                          can_start_page=lambda: True))
+        self.assertEqual(state["posted"]["1"]["messages"], ["101", "102", "103", "104", "105"])
+        self.assertEqual(len(sent), 5)
 
     def test_reviewed_reconciliation_prevents_blind_resend_and_rejects_stale_evidence(self):
         state = delivery.ingest("silverpalace", ROUTE, None, [row("1")])

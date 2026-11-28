@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -24,8 +25,9 @@ from .config import ROOT
 # authority, dedicated routes, and an attended route-bound ledger initialization.
 CANDIDATE_NEWS_READY = True
 
-# Backfill is intentionally slow: at most one article / three pages per source per run.
-MAX_PAGES_PER_SOURCE_RUN = 3
+# An ordinary run can finish a multi-page article, bounded by the renderer's
+# existing safety ceiling and the monitor's shared best-effort time budget.
+MAX_PAGES_PER_SOURCE_RUN = 120
 
 
 def _valid_repository(value):
@@ -212,59 +214,93 @@ async def run_candidate_news(ctx):
         ctx.warnings.append("Candidate news: authoritative ledger unavailable or stale; no posts")
         return
     try:
-        for source in selected:
-            if ledger.poisoned:
-                ctx.warnings.append("Candidate news: checkpoint failed; remaining sources held")
+        deadline = getattr(ctx, "candidate_deadline", None)
+
+        def has_time():
+            return deadline is None or time.monotonic() < deadline
+
+        # One complete source snapshot per run, then fair rounds across sources.
+        # This drains multiple newly discovered articles without refetching a large
+        # listing for every page; incomplete/failed sources are never blindly retried.
+        snapshots = {}
+        active = selected
+        rounds = 0
+        max_rounds = getattr(ctx, "candidate_max_rounds", None)
+        while active:
+            pending_again = []
+            stop = False
+            for source in active:
+                if ledger.poisoned:
+                    ctx.warnings.append("Candidate news: checkpoint failed; remaining sources held")
+                    stop = True
+                    break
+                if not has_time():
+                    ctx.warnings.append("Candidate news: time budget reached; remaining sources continue on a later run")
+                    stop = True
+                    break
+                target = delivery.destination(settings, source)
+                if target is None:
+                    ctx.warnings.append(f"{source} news: dedicated destination missing or invalid; no discovery or posts")
+                    continue
+                _, fingerprint = target
+                try:
+                    # Read each record from the separately checkpointed authoritative ledger.
+                    prior = ledger.data["candidate_news"].get(source)
+                    if prior is None:
+                        ctx.warnings.append(f"{source} news: initialized route missing; source held")
+                        continue
+                    delivery._validate(prior, source, fingerprint)
+                    if source not in snapshots:
+                        snapshots[source] = await delivery.discover(ctx.fetcher, source)
+                    state = delivery.ingest(source, fingerprint, prior, snapshots[source])
+                    if not state["pending"]:
+                        ctx.report.append(f"{source} news: caught up ({len(state['posted'])} recorded)")
+                        continue
+
+                    animation_assets = {}
+
+                    async def checkpoint(snapshot, *, _source=source):
+                        return await ledger.checkpoint(_source, snapshot)
+
+                    async def render(row, *, _source=source, _assets=animation_assets):
+                        pages, files = await delivery.render_candidate_animated(ctx.fetcher, settings, _source, row)
+                        _assets.clear()
+                        _assets.update(files)
+                        return pages
+
+                    async def send(payload, *, _source=source, _assets=animation_assets):
+                        # Git checkpoints usually exceed this delay, but never rely on that for pacing.
+                        await asyncio.sleep(1.5)
+                        attachments = payload.get("attachments") or []
+                        if attachments:
+                            files = {entry["filename"]: _assets[entry["filename"]] for entry in attachments}
+                            return await delivery.send_candidate_once(ctx.webhook.session, settings, _source, payload, files=files)
+                        return await delivery.send_candidate_once(ctx.webhook.session, settings, _source, payload)
+
+                    before = (len(state["posted"]),
+                              len(state["partial"]["messages"]) if state["partial"] else 0)
+                    state = await delivery.deliver_oldest(state, source, fingerprint, as_of=ctx.now,
+                                                          checkpoint=checkpoint, render=render, send=send,
+                                                          max_pages=MAX_PAGES_PER_SOURCE_RUN, can_start_page=has_time)
+                    pages = len(state["partial"]["messages"]) if state["partial"] else 0
+                    ctx.report.append(f"{source} news: queued={len(state['pending'])} recorded={len(state['posted'])} "
+                                      f"partial-pages={pages}")
+                    if not has_time():
+                        ctx.warnings.append("Candidate news: time budget reached; remaining sources continue on a later run")
+                        stop = True
+                        break
+                    if state["pending"]:
+                        if (len(state["posted"]), pages) == before:
+                            ctx.warnings.append(f"{source} news: no delivery progress; source held for inspection")
+                        else:
+                            pending_again.append(source)
+                except Exception as exc:  # noqa: BLE001 — hold this source without affecting unrelated news
+                    # Never interpolate exceptions: HTTP clients can include secret URLs.
+                    ctx.warnings.append(f"{source} news: held ({type(exc).__name__}); inspect before retry")
+            rounds += 1
+            if stop or (max_rounds is not None and rounds >= max_rounds):
                 break
-            target = delivery.destination(settings, source)
-            if target is None:
-                ctx.warnings.append(f"{source} news: dedicated destination missing or invalid; no discovery or posts")
-                continue
-            _, fingerprint = target
-            try:
-                # Read each record from the separately checkpointed authoritative ledger.
-                prior = ledger.data["candidate_news"].get(source)
-                if prior is None:
-                    # Only attended first-install initialization can bind a source route.
-                    # Neither primary nor standby may silently create missing records.
-                    ctx.warnings.append(f"{source} news: initialized route missing; source held")
-                    continue
-                delivery._validate(prior, source, fingerprint)
-                rows = await delivery.discover(ctx.fetcher, source)
-                state = delivery.ingest(source, fingerprint, prior, rows)
-                if not state["pending"]:
-                    ctx.report.append(f"{source} news: caught up ({len(state['posted'])} recorded)")
-                    continue
-
-                animation_assets = {}
-
-                async def checkpoint(snapshot, *, _source=source):
-                    return await ledger.checkpoint(_source, snapshot)
-
-                async def render(row, *, _source=source, _assets=animation_assets):
-                    pages, files = await delivery.render_candidate_animated(ctx.fetcher, settings, _source, row)
-                    _assets.clear()
-                    _assets.update(files)
-                    return pages
-
-                async def send(payload, *, _source=source, _assets=animation_assets):
-                    # Git checkpoints usually exceed this delay, but never rely on that for pacing.
-                    await asyncio.sleep(1.5)
-                    attachments = payload.get("attachments") or []
-                    if attachments:
-                        files = {entry["filename"]: _assets[entry["filename"]] for entry in attachments}
-                        return await delivery.send_candidate_once(ctx.webhook.session, settings, _source, payload, files=files)
-                    return await delivery.send_candidate_once(ctx.webhook.session, settings, _source, payload)
-
-                state = await delivery.deliver_oldest(state, source, fingerprint, as_of=ctx.now,
-                                                      checkpoint=checkpoint, render=render, send=send,
-                                                      max_pages=MAX_PAGES_PER_SOURCE_RUN)
-                pages = len(state["partial"]["messages"]) if state["partial"] else 0
-                ctx.report.append(f"{source} news: queued={len(state['pending'])} recorded={len(state['posted'])} "
-                                  f"partial-pages={pages}")
-            except Exception as exc:  # noqa: BLE001 — hold this source without affecting unrelated news
-                # Never interpolate exceptions: HTTP clients can include secret URLs.
-                ctx.warnings.append(f"{source} news: held ({type(exc).__name__}); inspect before retry")
+            active = pending_again
     finally:
         try:
             await ledger.close()

@@ -68,6 +68,7 @@ def _refresh(branch):
 
 async def run_from_environment():
     """Require explicit approval, primary identity and a previously bound ledger."""
+    deadline = time.monotonic() + MAX_RUNTIME_SECONDS
     settings = load_settings()
     if (os.environ.get("CATCHUP_WRITERS_PAUSED") != "true"
             or os.environ.get("CATCHUP_CONFIRM") != "START_CANDIDATE_BACKFILL"
@@ -112,7 +113,8 @@ async def run_from_environment():
                 raise CatchupHold("authoritative branch update not confirmed")
             settings.games_filter = {source}
             ctx = SimpleNamespace(settings=settings, active=True, now=int(time.time()), fetcher=fetcher,
-                                  webhook=SimpleNamespace(session=session), report=[], warnings=[])
+                                  webhook=SimpleNamespace(session=session), report=[], warnings=[],
+                                  candidate_deadline=deadline, candidate_max_rounds=1)
             await runner.run_candidate_news(ctx)
             if ctx.warnings or not ctx.report:
                 raise CatchupHold(f"{source}: held; inspect ledger before resuming")

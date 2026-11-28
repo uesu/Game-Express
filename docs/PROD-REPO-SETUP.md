@@ -510,8 +510,8 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   `variables and secrets for game express.txt`, `variables and secrets for news express.txt`,
   `news express twitter and reddit.txt`) are never created, overwritten, staged, or deleted by sync. The
   candidate ledger is not provisioned automatically; do not create or reset it during research.
-  Attended first-install initialization and recovery have not yet been validated in production.
-  Candidate delivery requires explicit configuration and a route-bound ledger. The attended
+  Attended first-install initialization was validated in production; actual ambiguous-page
+  recovery remains unvalidated there. Candidate delivery requires explicit configuration and a route-bound ledger. The attended
   recovery workflow is copied by sync but is manual-only;
   it requires matching primary authority, the dedicated destination and explicit operator review. Candidate checkpoint commits include a per-write random nonce;
   local competing-writer tests and a local monitor-state rebase test pass, but they do not prove
@@ -520,6 +520,17 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   copying dev-only research tools; those research tests run in development CI only. The exact
   production variables and secrets cannot be inferred from a public repository view; check their
   presence privately without sharing values.
+- **State unification is not a file move:** `state/state.json` includes schedule, codes,
+  maintenance, beta and legacy news, whose time-window, cutoff, route and pruning rules differ
+  from the isolated candidate ledger's durable page intents, signatures and retained IDs. The
+  candidate checkpoint writer validates a strict separate-file schema and uses a detached Git
+  worktree; the monitor independently writes the legacy file. Moving either file or merging JSON
+  without changing and testing both writers can overwrite live state or repost historical news.
+  Keep both files authoritative; do not reset, merge, prune candidate IDs or rewrite Git history.
+  Candidate sources already share one ledger. A future source needs an implemented adapter and a
+  reviewed per-source route-binding/onboarding operation; do not rerun first-install initialization
+  on an established ledger. A separately designed migration would require paused writers, verified
+  backups, cross-writer concurrency, failure/recovery tests and a rollback procedure.
 - **Attended first-install initialization:** after release and explicit approval of historical
   backfill, configure the three distinct dedicated webhook secrets and primary authority variables
   listed in [CONFIGURATION](CONFIGURATION.md). Pause all writers/schedulers everywhere. In the
@@ -533,8 +544,8 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   initializing. Both primary and standby hold before discovery if a source record is missing or
   its route no longer matches. This is not a way to restore a lost ledger: force-pushed/unavailable history and other
   repositories cannot be detected. If there is any uncertainty, stop and investigate; if the push
-  outcome is unclear, inspect the authoritative remote before any retry. No live production
-  initialization has been performed at the time of writing.
+  outcome is unclear, inspect the authoritative remote before any retry. The current production
+  ledger has already been initialized: never repeat first-install initialization for it.
 - **Single-production activation order:** On `uesu/8mqzv4k2n7c`, first verify the three
   intended Discord channels are distinct and that no previous candidate posts in them need
   deduplication. If unsure, stop; an empty ledger cannot reconstruct old posts. In cron-job.org,
@@ -552,8 +563,9 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   **last**. Keep all writers paused. To catch up continuously, run `Candidate news catch-up
   (attended live)` on the authority branch, check `writers_paused`, and type
   `START_CANDIDATE_BACKFILL`. This sends real messages. It cycles through all three sources,
-  delivering up to one article (three pages maximum) per source per cycle with paced requests,
-  until all three authoritative records have no pending or partial article. It checks every route
+  delivering up to one article per source per cycle with paced requests (up to the 120-page
+  article safety bound), until all three authoritative records have no pending or partial article.
+  It checks every route
   and held page before sending, checkpoints before and after each POST, and stops on any warning,
   ambiguous outcome, no progress, or a five-hour internal time budget. GitHub's job timeout is
   six hours; an interrupted POST can leave an in-flight hold requiring independent review. Check
@@ -562,9 +574,14 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   provided every historic post. Backfill is oldest-first **per source**; same-day order for
   day-only feeds is a deterministic ID tie-break, not proven publication order. Once all three
   are complete, resume the same cron job; no additional scheduler is needed. Normal monitoring
-  still sends at most one article and three pages per source per run. First production
-  initialization, previews, catch-up, recovery and real-source delivery are unvalidated until
-  actually run; installing code or secrets alone does not prove them.
+  reuses one checked snapshot per source and works through its queues in fair source rounds,
+  stopping before another page intent when its shared ten-minute best-effort budget is exhausted.
+  An individual article remains bounded to 120 pages. Slow rendering, network calls, or a hard
+  workflow timeout can exceed the budget; an interrupted POST still requires attended review.
+  A held source is not retried in the same run, and later source failures cannot be silently treated
+  as successful. Production initialization, previews, catch-up and a caught-up normal monitor
+  have succeeded; ongoing delivery of a genuinely new production article after those runs has not
+  been observed yet.
 - **No-send live-source preview:** after approved initialization, pause all schedulers/writers,
   select `preview` and a source in the same attended workflow, and attest that writers are paused.
   It checks the bound destination and existing ledger, fetches a fresh bounded official listing,
