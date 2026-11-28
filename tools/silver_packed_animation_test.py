@@ -22,7 +22,7 @@ from gamexpress import candidate_news_delivery as delivery  # noqa: E402
 from gamexpress.http import Fetcher  # noqa: E402
 
 MARKER = "feature3-silver-packed-animated-v1"
-COMMENT_ID = 0  # Set only after independent preparation and verification.
+COMMENT_ID = 7236479891  # independently verified; preparation permanently locked
 IDS = {"93", "99"}
 
 
