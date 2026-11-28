@@ -513,7 +513,10 @@ files before applying changes and protects `state/candidate_news.json` from
 creation, modification or deletion; it is not provisioned automatically. An attended, no-post
 first-install initializer checks for previously tracked ledger history and requires explicit
 first-install/backfill and writer-pause attestations; it cannot detect force-pushed or external
-history and has not been validated in production. A controlled
+history and has not been validated in production. A [development-only GitHub Actions
+probe](https://github.com/uesu/Game-Express/actions/runs/46128928271) exercised the actual
+initialization entry point and remote push with synthetic webhook URLs and a temporary, non-production
+ledger path; it reopened the branch and rejected a repeat without sending. The fixture was removed. A controlled
 [development-branch GitHub probe](https://github.com/uesu/Game-Express/actions/runs/46037384333)
 confirmed real pushes/ref verification, a stale writer hold and two simulated pages in a separate
 throwaway ledger, without Discord or monitor-state writes. Its `restart=pass` annotation means

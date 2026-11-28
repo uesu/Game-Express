@@ -5,7 +5,8 @@
 - Added attended initialization of an empty candidate ledger with a full-history check, unique
   dedicated destinations, primary authority and explicit first-install/backfill and paused-writer
   confirmation. It never posts, cannot prove discarded/external history and must not restore lost
-  state. Candidates remain gated; no production initialization has been performed.
+  state. A development-only GitHub probe exercised the real initializer against a synthetic ledger,
+  with no Discord posts. Candidates remain gated; no production initialization has been performed.
 - Documented the exact future secret and variable names, including the candidate game selection
   and its historical-backfill semantics. Do not activate these settings until release review.
 
