@@ -38,7 +38,8 @@ async def main():
             if original != rendered or glued:
                 raise ValueError("notice table mismatch")
             print(f"::notice title=NTE account notice::{row['id']} ids={len(original)} same-order=1 joined-ids=0", flush=True)
-        print(f"::notice title=NTE account notice audit::listed={len(rows)} matching-notices={len(matches)}", flush=True)
+        print(f"::notice title=NTE account notice audit::listed={len(rows)} matching-notices={len(matches)} "
+              f"article-ids={','.join(r['id'] for r in matches)}", flush=True)
 
 
 if __name__ == "__main__":
