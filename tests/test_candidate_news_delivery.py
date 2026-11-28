@@ -879,6 +879,10 @@ class CandidateDeliveryTests(unittest.TestCase):
         steps = catchup_wf["jobs"]["catchup"]["steps"]
         self.assertFalse(steps[0]["with"]["persist-credentials"])
         self.assertEqual(steps[0]["with"]["fetch-depth"], 0)
+        self.assertIn("imageio_ffmpeg.get_ffmpeg_exe()", steps[-2]["run"])
+        self.assertIn("check=True", steps[-2]["run"])
+        self.assertNotIn("command -v ffmpeg", steps[-1]["run"])
+        self.assertNotIn("command -v ffprobe", steps[-1]["run"])
         self.assertIn("python -m gamexpress.candidate_news_catchup", steps[-1]["run"])
         self.assertNotIn("${{", steps[-1]["run"])
         self.assertIn("CATCHUP_CONFIRM", steps[-1]["env"])
