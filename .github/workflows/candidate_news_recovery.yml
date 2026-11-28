@@ -61,12 +61,14 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.15.2'
       - run: python -m pip install -q -r requirements.txt
       - name: Initialize or review ledger (never sends)
         env:
+          RECOVERY_GITHUB_TOKEN: ${{ github.token }}
           GE_VARS_JSON: ${{ toJSON(vars) }}
           DISCORD_WEBHOOK_NEWS_NTE: ${{ secrets.DISCORD_WEBHOOK_NEWS_NTE }}
           DISCORD_WEBHOOK_NEWS_ENDFIELD: ${{ secrets.DISCORD_WEBHOOK_NEWS_ENDFIELD }}
@@ -81,4 +83,12 @@ jobs:
           RECOVERY_WRITERS_PAUSED: ${{ inputs.writers_paused }}
           RECOVERY_EVIDENCE_VERIFIED: ${{ inputs.evidence_verified }}
           RECOVERY_INIT_CONFIRM: ${{ inputs.initialization_confirmation }}
-        run: python -m gamexpress.candidate_news_recovery
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$RECOVERY_GITHUB_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          unset RECOVERY_GITHUB_TOKEN auth
+          python -m gamexpress.candidate_news_recovery

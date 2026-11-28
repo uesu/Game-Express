@@ -582,7 +582,10 @@ class CandidateDeliveryTests(unittest.TestCase):
         self.assertEqual(recovery_wf["concurrency"], monitor["concurrency"])
         # GitHub workflow_dispatch accepts at most ten top-level inputs.
         self.assertLessEqual(len(recovery_wf[True]["workflow_dispatch"]["inputs"]), 10)
-        self.assertEqual(recovery_wf["jobs"]["recovery"]["steps"][0]["with"]["fetch-depth"], 0)
+        checkout = recovery_wf["jobs"]["recovery"]["steps"][0]["with"]
+        self.assertEqual(checkout["fetch-depth"], 0)
+        self.assertFalse(checkout["persist-credentials"])
+        self.assertNotIn("env", recovery_wf["jobs"]["recovery"])
         self.assertFalse(recovery_wf["concurrency"]["cancel-in-progress"])
         steps = recovery_wf["jobs"]["recovery"]["steps"]
         commands = "\n".join(str(step.get("run", "")) for step in steps)
