@@ -296,7 +296,7 @@ def _body(html):
         parser.close()
         if parser.found != 1 or parser.closed != 1 or parser.depth:
             return None
-        blocks = news_blocks("".join(parser.parts))
+        blocks = news_blocks("".join(parser.parts), escape_literal_tildes=True)
     except (ValueError, TypeError, AttributeError, RecursionError):
         return None
     return blocks or None

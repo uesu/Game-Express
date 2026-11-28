@@ -488,8 +488,9 @@ def news_link(label: str, url: str) -> str:
 
 
 class _NewsHTML(HTMLParser):
-    def __init__(self):
+    def __init__(self, *, escape_literal_tildes=False):
         super().__init__(convert_charrefs=True)
+        self.escape_literal_tildes = escape_literal_tildes
         self.blocks = []
         self.parts = []
         self.skip = 0
@@ -620,6 +621,15 @@ class _NewsHTML(HTMLParser):
                     return
                 self.list_prefix_pending = False
             value = _escape_cms_stars(value)
+            if self.escape_literal_tildes:
+                # Literal CMS prose is not Discord strikethrough. Leave URLs alone.
+                pieces, last = [], 0
+                for match in _INLINE_HTTP_URL_RE.finditer(value):
+                    pieces.append(re.sub(r"(?<!\\)~", r"\~", value[last:match.start()]))
+                    pieces.append(match.group(0))
+                    last = match.end()
+                pieces.append(re.sub(r"(?<!\\)~", r"\~", value[last:]))
+                value = "".join(pieces)
             need_open = (
                 (self.bold_depth and not self.bold_open)
                 or (self.strike_depth and not self.strike_open)
@@ -642,7 +652,8 @@ class _NewsHTML(HTMLParser):
             self.parts.append(value)
 
 
-def news_blocks(content: str, structured: str = "", videos: dict[str, str] | None = None) -> list[dict]:
+def news_blocks(content: str, structured: str = "", videos: dict[str, str] | None = None, *,
+                escape_literal_tildes: bool = False) -> list[dict]:
     """Full HTML/Quill article in source order, including linked external players.
 
     Prefer Quill when provided: it retains media that HoYoLAB's plain content can omit.
@@ -733,7 +744,7 @@ def news_blocks(content: str, structured: str = "", videos: dict[str, str] | Non
         return blocks
     if re.fullmatch(r"[a-z]{2}-[a-z]{2}", (content or "").strip()):
         raise ValueError("article body unavailable")
-    parser = _NewsHTML()
+    parser = _NewsHTML(escape_literal_tildes=escape_literal_tildes)
     parser.feed(content or "")
     parser.close()
     parser.flush()

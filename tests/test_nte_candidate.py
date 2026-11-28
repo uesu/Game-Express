@@ -85,6 +85,18 @@ class NteCandidateTests(unittest.TestCase):
             self.assertIsNone(asyncio.run(nte_candidate.news_article(fetcher, game, {**row, "url": url})))
             self.assertFalse(fetcher.calls)
 
+    def test_literal_tildes_do_not_strike_through_article_and_real_strike_is_kept(self):
+        html = ('<div class="articleContent"><p>Taygedo~~taygedo!</p><p>Text in between</p>'
+                '<p>Taygedo~~taygedo!</p><p><del>obsolete</del> '
+                '<a href="https://example.test/~user">visit</a></p></div>')
+        blocks = nte_candidate._body(html)
+        text = "\n".join(b["text"] for b in blocks if b["kind"] == "text")
+        self.assertEqual(text.count(r"Taygedo\~\~taygedo!"), 2)
+        self.assertIn("~~obsolete~~", text)
+        self.assertIn("https://example.test/~user", text)
+        self.assertIn("Text in between", text)
+        self.assertEqual(news_blocks("<p>A~~B</p>")[0]["text"], "A~~B")  # other sources unchanged
+
     def test_synthetic_short_trailer_keeps_watch_link_in_same_news_card(self):
         # Contract experiment only: no NTE detail reader or delivery is registered.
         game = Game(key="nte", name="Neverness to Everness", short="NTE", enabled=False, color=0)
