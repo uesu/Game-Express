@@ -1424,8 +1424,10 @@ are used when they fit; larger files are downscaled/re-encoded with pinned
 some quality/frame rate is necessarily lost. The updated planner packs multiple attachments into the
 original page when possible, with at most 10 files and 24 MiB of file bytes per message (reserving
 room under the documented 25 MiB message-request cap), then splits in source order if necessary.
-The multi-file layout still requires private Discord validation. Source bytes, dimensions, frame
-count, total work, encoded size, duration and page count are bounded.
+The multi-file layout was sent privately in independent tests: [93](https://github.com/uesu/Game-Express/actions/runs/46125080681)
+uses 3 messages with 4, 4 and 1 GIFs, and [99](https://github.com/uesu/Game-Express/actions/runs/46125244022)
+uses one message with 3 GIFs; user visual review of the new layout and playback is pending.
+Source bytes, dimensions, frame count, total work, encoded size, duration and page count are bounded.
 An unsupported/oversized/unavailable animation is held rather than silently posted as a still.
 Attachment filenames contain content hashes so partial-delivery signatures change if bytes change.
 

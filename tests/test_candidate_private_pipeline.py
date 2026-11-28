@@ -243,6 +243,24 @@ class NewsAnimationPlanTests(unittest.TestCase):
         self.assertEqual(planned[1]["components"][0]["components"][0]["content"], "Middle")
         self.assertIs(split_pages(original, {}, {}, max_pages=1), original)
 
+    def test_attachment_count_and_duplicate_bytes_are_bounded(self):
+        from gamexpress.cards import IS_COMPONENTS_V2, container, gallery, text
+        from gamexpress.news_animation import split_pages
+
+        urls = [f"https://s.elementagames.com/{i}.jpg" for i in range(11)]
+        names = [f"animation-{i:064x}.gif" for i in range(11)]
+        files = {name: b"x" for name in names}
+        children = [item for i, url in enumerate(urls) for item in (text(f"Heading {i}"), gallery([url]))]
+        original = [{"flags": IS_COMPONENTS_V2, "components": [container(children)]}]
+        pages = split_pages(original, dict(zip(urls, names, strict=True)), files, max_pages=3)
+        self.assertEqual([len(p["attachments"]) for p in pages], [10, 1])
+        self.assertEqual(pages[1]["components"][0]["components"][0]["content"], "Heading 10")
+        # Two different URLs with identical converted bytes share one upload on a page.
+        same = [{"flags": IS_COMPONENTS_V2, "components": [container([gallery(urls[:2])])]}]
+        page = split_pages(same, {urls[0]: names[0], urls[1]: names[0]}, files, max_pages=1)[0]
+        self.assertEqual(len(page["attachments"]), 1)
+        self.assertEqual(len(page["components"][0]["components"][0]["items"]), 2)
+
     def test_multi_file_multipart_validates_ids_hashes_and_references(self):
         import base64
         import hashlib

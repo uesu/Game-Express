@@ -11,7 +11,8 @@
   message containing an uploaded GIF are held for manual review, as are unsupported or oversized
   animations; reveal pings on such messages are suppressed for attachment pagination safety.
   Full Silver 93/99 private article playback was user-confirmed. The follow-up packs multiple GIFs
-  per original page where limits permit; a new private test of that layout is pending.
+  per original page where limits permit. New private tests sent 93 in three messages and 99 in
+  one; user visual review of that packed layout and playback is pending.
   Release, checkpoint persistence and failover are not yet validated.
 
 ## 2026-11-27 — Read-only source research (no production behavior changes)
