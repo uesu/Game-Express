@@ -1,6 +1,8 @@
 # Changelog
 
-Latest: [Single production repository clarification](CHANGELOG.md#2026-11-27--single-production-repository-clarification).
+Latest: [Opt-in candidate news release preparation](CHANGELOG.md#2026-11-27--opt-in-candidate-news-release-preparation).
+
+Previous: [Single production repository clarification](CHANGELOG.md#2026-11-27--single-production-repository-clarification).
 
 Previous: [Experimental shared-ledger candidate standby](CHANGELOG.md#2026-11-27--experimental-shared-ledger-candidate-standby).
 

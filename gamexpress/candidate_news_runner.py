@@ -2,8 +2,8 @@
 
 The primary and an explicitly opted-in standby must use the SAME authoritative
 Git branch and ledger. Each page requires a verified Git checkpoint and a one-shot
-POST. Unknown outcomes hold. This remains gated and failover is not production-validated.
-This path is not activated by adding a game to NEWS_GAMES alone.
+POST. Unknown outcomes hold. Separate-repository failover is experimental and not
+production-validated. This path is not activated by adding a game to NEWS_GAMES alone.
 """
 from __future__ import annotations
 
@@ -20,9 +20,9 @@ from . import candidate_news_delivery as delivery
 from .candidate_news_checkpoint import IsolatedGitLedger
 from .config import ROOT
 
-# A release gate, not a configuration flag. No production posts until the
-# end-of-job persistence/rebase and multi-instance failure paths are reviewed.
-CANDIDATE_NEWS_READY = False
+# Release switch: ordinary use still requires explicit backfill opt-in, primary
+# authority, dedicated routes, and an attended route-bound ledger initialization.
+CANDIDATE_NEWS_READY = True
 
 # Backfill is intentionally slow: at most one article / three pages per source per run.
 MAX_PAGES_PER_SOURCE_RUN = 3

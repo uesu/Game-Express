@@ -1,5 +1,17 @@
 # Changelog — current entries
 
+## 2026-11-27 — Opt-in candidate news release preparation
+
+- Opened the candidate release switch while retaining explicit backfill opt-in, an authority and
+  dedicated routes, attended route binding and per-page write-ahead checkpoints. This does not
+  initialize production, alter its settings, or by itself send a backlog. A production deployment
+  still requires the operator to verify first-install channel history and follow the activation order.
+- Use a candidate-only 120-page article limit, matching the completed private historical test;
+  the existing 12-page default otherwise holds known long articles and blocks catch-up. Existing
+  news page limits remain unchanged; character, media and per-run safety bounds still apply.
+- Real production initialization, recovery and real-source delivery remain unvalidated until
+  performed; optional separate-repository standby remains experimental and is not needed.
+
 ## 2026-11-27 — Single production repository clarification
 
 - Added a no-network, multi-process crash test using the integrated candidate runner and a local

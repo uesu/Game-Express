@@ -104,7 +104,7 @@ The raw state URL looks like this:
   - This happens if alpha's cron job is paused, its token expired, or its Actions are down.
   - bravo never takes over if it can't read alpha's state, so a typo can't cause double posts.
 - The offset reduces simultaneous upstream requests, and during a fail-over the standby keeps
-  the same chosen rhythm. Candidate news is a separate gated prototype; its experimental
+  the same chosen rhythm. Candidate news uses a separate opt-in ledger; its experimental
   shared-ledger standby requires explicit setup and has not been validated in production.
 
 ---
@@ -119,7 +119,7 @@ The raw state URL looks like this:
 - **Commits**: `auto: update state [skip ci]` appears only when something changed, plus a
   heartbeat about once an hour on alpha. Most runs commit nothing.
 - **Existing schedule and code paths seed on their first live run.** Candidate news is different:
-  its gated, attended first installation queues available history when backfill is approved. Do
+  its attended first installation queues available history when backfill is approved. Do
   not initialize or enable it without release review and an explicit backfill plan.
 
 ---

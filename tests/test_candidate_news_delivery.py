@@ -860,9 +860,10 @@ asyncio.run(main())
         base = {"NEWS_GAMES": "silverpalace", "NEWS_CANDIDATES_BACKFILL": "1",
                 "DISCORD_WEBHOOK_NEWS_SILVERPALACE": HOOK}
         output = io.StringIO()
+        self.assertTrue(runner.CANDIDATE_NEWS_READY)
         with patch.dict("os.environ", base, clear=True), contextlib.redirect_stdout(output):
-            self.assertEqual(cmd_validate(None), 1)
-        self.assertIn("delivery is not released", output.getvalue())
+            self.assertEqual(cmd_validate(None), 0)
+        self.assertNotIn("delivery is not released", output.getvalue())
         self.assertIn("candidate news silverpalace: dedicated route configured", output.getvalue())
         self.assertNotIn(HOOK, output.getvalue())
         output = io.StringIO()
@@ -1458,10 +1459,10 @@ asyncio.run(main())
             settings = load_settings({"ENABLED_FEATURES": "news", "NEWS_GAMES": "silverpalace",
                                       "NEWS_CANDIDATES_BACKFILL": "1", "PEER_STATE_URL": "https://example.org/state"})
             ctx.settings = settings
-            asyncio.run(runner.run_candidate_news(ctx))
-            self.assertIn("not released", ctx.warnings[-1])
-            with patch.object(runner, "CANDIDATE_NEWS_READY", True):
+            with patch.object(runner, "CANDIDATE_NEWS_READY", False):
                 asyncio.run(runner.run_candidate_news(ctx))
+            self.assertIn("not released", ctx.warnings[-1])
+            asyncio.run(runner.run_candidate_news(ctx))
             self.assertIn("authority unavailable", ctx.warnings[-1])
             self.assertEqual(ctx.state.data, {})
 
@@ -1505,9 +1506,14 @@ asyncio.run(main())
             pages = asyncio.run(delivery.render_candidate(None, settings, "silverpalace", row("1")))
         self.assertGreater(len(pages), 1)
         self.assertNotIn("**Excerpt — this article", json.dumps(pages, ensure_ascii=False))
+        # Existing-news page settings do not truncate candidate catch-up; candidates have
+        # their own hard safety bound, which still holds instead of sending an excerpt.
         settings = load_settings({"NEWS_EXPAND_MAX_PAGES": "1"})
+        with patch.object(delivery.silverpalace, "news_article", read):
+            pages = asyncio.run(delivery.render_candidate(None, settings, "silverpalace", row("1")))
+        self.assertGreater(len(pages), 1)
         with (patch.object(delivery.silverpalace, "news_article", read),
-              self.assertRaises(delivery.DeliveryHold)):
+              patch.object(delivery, "MAX_CANDIDATE_PAGES", 1), self.assertRaises(delivery.DeliveryHold)):
             asyncio.run(delivery.render_candidate(None, settings, "silverpalace", row("1")))
 
     def test_private_destination_sends_once_without_redirects_or_retries(self):

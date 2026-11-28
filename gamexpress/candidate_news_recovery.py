@@ -104,7 +104,7 @@ async def run_from_environment():
         routes = {candidate: target[1] for candidate, target in targets.items()}
         if not await ledger.initialize_empty(routes):
             raise DeliveryHold("ledger initialization not confirmed")
-        print("Empty, route-bound ledger checkpointed. No discovery or Discord messages sent; release gate remains closed.")
+        print("Empty, route-bound ledger checkpointed. No discovery or Discord messages sent; keep writers paused until setup is reviewed.")
         return
     target = destination(settings, source)
     if target is None:

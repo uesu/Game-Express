@@ -414,10 +414,11 @@ page fetcher, and so were the ennead calendars. The production reachability of t
 
 ## Research: Crimson Witch, Hoyocodes and prospective games (2026-11-27)
 
-**Research only, not an enabled feature or reliability certification.** The production monitor,
-source ranking, voting, targets and state are unchanged. Web-page observations below came from a
-page-fetching service, not this repository's HTTP client or a GitHub Actions runner. A single
-observation cannot prove freshness, uptime, complete pagination, or successful redemption.
+**Research only, not an enabled feature or reliability certification.** This introduction
+covers the original research; the NTE, Endfield and Silver Palace news adapters subsequently
+became opt-in candidate delivery paths, requiring separate production setup. Web-page observations
+below came from a page-fetching service, not this repository's HTTP client or a GitHub Actions
+runner. A single observation cannot prove freshness, uptime, complete pagination, or redemption.
 
 The attended private expanded-card test [run 46014528959](https://github.com/uesu/Game-Express/actions/runs/46014528959)
 posted 14 test messages without production state. The user subsequently confirmed that the
@@ -425,9 +426,9 @@ shown Endfield GIFs animate and the text format looked good. In the [read-only c
 run 46024433163](https://github.com/uesu/Game-Express/actions/runs/46024433163), the same fixed
 Endfield `1340` article was an excerpt in default mode but complete across six expanded pages;
 `3840`, NTE `252469`, and Silver `1`/`120` were not excerpted in either tested mode. These
-are fixed-article observations, not proof for all future articles. The inactive candidate-only
-YouTube fallback verifies maximum-resolution thumbnail dimensions/signature first and falls
-back when unavailable; native images/video remain preferred. It is not wired into production.
+are fixed-article observations, not proof for all future articles. The candidate-only YouTube
+fallback verifies maximum-resolution thumbnail dimensions/signature first and falls back when
+unavailable; native images/video remain preferred.
 
 The user separately authorized a full **private-channel** historic test. A fixed read-only snapshot
 observed 103 NTE, 143 Endfield and 21 Silver Palace articles. Test-only JSON journals in three
@@ -460,7 +461,7 @@ The private historic test subsequently **completed**: the journals confirmed 103
 batch was [46096334852](https://github.com/uesu/Game-Express/actions/runs/46096334852). The
 separate Taygedo correction is not included in those counts. Day-only timestamps still cannot
 establish exact same-day publication order, and the snapshot does not prove upstream completeness.
-Production remains gated and the private test is not evidence of complete production/failover readiness.
+This private test is not evidence of production delivery or failover readiness.
 
 NTE article 252478 contained literal double tildes, which Discord interpreted as a strikethrough
 across paragraphs. NTE parsing now escapes literal tildes in prose while preserving actual HTML
@@ -474,10 +475,8 @@ renderer, uses exact dedicated webhook routes, and queues every observed ID olde
 ID is only a deterministic same-day tie-break, not evidence of publication time. Two matching scans
 reduce but cannot eliminate source pagination races.
 
-An experimental monitor path and Git checkpoint are under a **hard-coded release gate**: no
-candidate discovery or posts occur there, even if `NEWS_CANDIDATES_BACKFILL=1` is configured. Its
-prototype uses a separate detached-worktree Git ledger to checkpoint write-ahead intent and
-confirmed IDs via same-branch push/ref checks,
+The opt-in monitor path uses a separate detached-worktree Git ledger to checkpoint write-ahead
+intent and confirmed IDs via same-branch push/ref checks,
 uses one-shot Discord POSTs, limits a source to one article / three pages per run, and requires full
 expanded output (holding rather than sending a safety-limit excerpt). Local mocked runner and bare
 Git tests do not establish production correctness. The detached-ledger checkpoint uses a random
@@ -485,8 +484,8 @@ per-commit nonce so identical simultaneous writers cannot produce the same Git c
 fixed-clock bare-Git races now verify that one of two competing identical checkpoints wins and that
 only one of two competing delivery coordinators sends. A separate local test rebases the monitor
 state commit over the ledger. A further development-only GitHub Actions simulation (detailed below) exercises a monitor-style
-rebase and reviewed recovery, but production persistence, real ambiguous outcomes and
-cross-repository failover still require validation before removing the gate. A single-repo
+rebase and reviewed recovery. Production persistence, real ambiguous outcomes and
+cross-repository failover have not yet been validated. A single-repo
 Actions concurrency group is not a distributed lock. No backlog or production state change has
 been performed. Existing game news routing and behavior remain unchanged.
 
@@ -499,7 +498,7 @@ max-resolution test was not repeated. Automated reconciliation tests now hold am
 verify a human-reviewed resolution against the exact article, page, route and payload signature.
 An `absent` decision requires independently established non-delivery, not merely an unknown outcome;
 the corrected record must be durably checkpointed before resuming. The attended recovery workflow
-is implemented but production-grade recovery remains unvalidated. Local bare-Git tests show the gated runner can checkpoint separately, a stale writer holds,
+is implemented but production recovery remains unvalidated. Local bare-Git tests show the runner can checkpoint separately, a stale writer holds,
 and a normal state commit can rebase over the candidate ledger without changing it. A further
 offline integrated test exercises the real candidate runner, article renderer, GIF planner,
 multipart sender and isolated Git ledger together, with a fake Discord transport and synthetic
@@ -547,9 +546,9 @@ confirmed real pushes/ref verification, a stale writer hold and two simulated pa
 throwaway ledger, without Discord or monitor-state writes. Its `restart=pass` annotation means
 resumption between coordinator calls in the same process, **not** a new-process restart; that
 stronger case is only locally tested. The probe ledger was removed after the run. This is not
-production or cross-repository failover validation, and the release gate remains closed.
+production or cross-repository failover validation.
 
-The gated prototype also requires an explicitly nominated `NEWS_CANDIDATES_AUTHORITY_REPOSITORY`
+The opt-in delivery path also requires an explicitly nominated `NEWS_CANDIDATES_AUTHORITY_REPOSITORY`
 and `NEWS_CANDIDATES_AUTHORITY_BRANCH`, matching primary role, Actions repository/ref, allowed event,
 and HTTPS origin. An opt-in experimental standby now checks out the same authoritative branch
 with a separately scoped Git credential after the existing heartbeat marks it active. Each source route must
@@ -1471,7 +1470,7 @@ Discord**. Complete article tests [93](https://github.com/uesu/Game-Express/acti
 but requested fewer message/container breaks.
 
 The shared Feature 3 planner on this branch detects GIF signatures with misleading MIME or a non-GIF
-path for HoYoLAB/Kuro and the three inactive candidates. Properly labelled `.gif` sources and
+path for HoYoLAB/Kuro and the three opt-in candidates. Properly labelled `.gif` sources and
 ordinary images retain their existing delivery path. Mislabelled animations are downloaded from
 allowlisted official hosts without redirects and uploaded with GIF filenames and MIME. Original bytes
 are used when they fit; larger files are downscaled/re-encoded with pinned
@@ -1487,8 +1486,8 @@ Source bytes, dimensions, frame count, total work, encoded size, duration and pa
 An unsupported/oversized/unavailable animation is held rather than silently posted as a still.
 Attachment filenames contain content hashes so partial-delivery signatures change if bytes change.
 
-Limits remain: the three candidate sources are still **production-gated**, with durable checkpoint,
-ambiguous-outcome recovery and failover not proven ready. For existing news, post-delivery edits of
+Limits remain: real production delivery and recovery have not yet been validated, and experimental
+standby failover is not production-validated. For existing news, post-delivery edits of
 articles with uploaded GIFs are held for manual review rather than risking removal of attachments;
 reveal pings on these articles are omitted for pagination safety. Other animated formats, redirects
 on the full GIF download, very large files and channels with stricter upload limits are not guaranteed.

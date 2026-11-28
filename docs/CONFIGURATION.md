@@ -322,10 +322,11 @@ Use repository **secrets**, never variables, for the five destinations:
 | `DISCORD_WEBHOOK_NEWS_ZZZ` | `zzz-news` |
 | `DISCORD_WEBHOOK_NEWS_WUWA` | `wuwa-news` |
 
-**Three candidate sources are not released yet.** NTE, Arknights: Endfield and Silver Palace
-remain behind a hard-coded gate. Creating secrets or variables does not enable them. When the
-release and backfill plan have been approved, configure these in the **production** repository
-(Settings → Secrets and variables → Actions); values must never be pasted in chat or committed:
+**NTE, Arknights: Endfield and Silver Palace are opt-in news sources.** Setting up the routes,
+authority and attended ledger does not itself send anything; adding the `NEWS_CANDIDATES_BACKFILL=1`
+variable can start the available historical backlog on the next scheduled live run. Configure these
+in the **production** repository (Settings → Secrets and variables → Actions); never paste secret
+values in chat or commit them:
 
 | Type | Name | Value / purpose |
 |---|---|---|
@@ -341,19 +342,22 @@ For example, if all five default existing sources should remain selected, the fu
 value is `genshin,starrail,zzz,wuwa,hna,nte,endfield,silverpalace`. If you already use a custom
 selection, append the three candidate keys rather than replacing your selection with that example.
 The default active instance role is `primary`. A separate standby remains disabled unless the
-experimental shared-ledger failover below is explicitly configured; it is still behind the release
-gate. Adding candidate keys does not change schedule, codes, maintenance or Reddit.
+experimental shared-ledger failover below is explicitly configured. Adding candidate keys does not
+change schedule, codes, maintenance or Reddit.
 An empty, deliberately provisioned candidate ledger binds each source to its dedicated route;
 the first complete snapshot then queues **available history**, not a silent baseline. A missing
 record or changed route is held before discovery, even on the first run. The attended initialization and no-send live-source preview are described in
 [production setup](PROD-REPO-SETUP.md); actual production setup and recovery remain unvalidated.
-Do not initialize or activate production until release review and the backfill plan are complete.
+Verify that the three live channels are distinct and do not already contain deliveries from an
+untracked candidate instance. Do not initialize or activate if prior delivery history is uncertain.
 Candidate processing is limited to one article and three pages per source per run, independently
-of the existing-news rules above.
+of the existing-news rules above. A candidate article may have up to 120 pages in total (subject
+to the shared character and media bounds); the existing-news `NEWS_EXPAND_MAX_PAGES` setting does
+not lower this candidate-only bound. Articles exceeding a safety bound are held, not excerpted.
 
 **Experimental candidate standby (not yet production-validated):** no standby settings are
 needed for a single primary. When separately approved for failover, configure these on the standby
-repository, not on the primary. They do not open the release gate:
+repository, not on the primary. Do not enable this experimental path for the current single-repo installation:
 
 | Type | Name | Value / purpose |
 |---|---|---|
@@ -382,7 +386,7 @@ Existing short game aliases also work. No `DISCORD_WEBHOOK_NEWS`, catch-all,
 source requests and baseline creation for that game; a changed destination is
 held for operator review, not silently reposted. The existing workflow already
 imports repository variables/secrets via its JSON blobs for the existing sources. Unlike those
-existing sources, the gated candidates require their separate ledger and attended setup described
+existing sources, the opt-in candidates require their separate ledger and attended setup described
 above.
 
 Official news delivery is strictly independent of schedule extraction, schedule

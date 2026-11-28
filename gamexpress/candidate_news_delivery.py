@@ -1,8 +1,8 @@
-"""Fail-closed delivery primitives for the three inactive candidate news sources.
+"""Fail-closed delivery primitives for the three opt-in candidate news sources.
 
-The production integration has a hard release gate and cannot post yet. The checkpoint
-callback MUST durably commit state to the authoritative store before returning True. A local temp-file save alone
-is not such a checkpoint for an ephemeral Actions runner. No webhook URL is stored.
+The checkpoint callback MUST durably commit state to the authoritative store before returning
+True. A local temp-file save alone is not such a checkpoint for an ephemeral Actions runner.
+No webhook URL is stored.
 """
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from .state import stable_hash
 
 SOURCES = frozenset(("nte", "endfield", "silverpalace"))
 MAX_IDS = 10000
+MAX_CANDIDATE_PAGES = 120
 _ID = re.compile(r"[0-9]{1,32}\Z")
 _HASH = re.compile(r"[a-f0-9]{16}\Z")
 _SIGNATURE = re.compile(r"[a-f0-9]{64}\Z")
@@ -281,8 +282,11 @@ async def render_candidate(fetcher, settings, source, row):
     if source == "silverpalace":
         item = await silverpalace.without_duplicate_leading_cover(fetcher, item)
     item = await with_verified_fallback(fetcher, item)
+    # Candidate catch-up was validated with up to 120 pages; applying the existing-news
+    # 12-page default would permanently hold known long historical articles. This bound
+    # is candidate-only and does not change the existing games' rendering settings.
     pages = news_payloads(game, item, timestamps=settings.news_timestamps,
-                          expand_full=True, max_pages=settings.news_expand_max_pages,
+                          expand_full=True, max_pages=MAX_CANDIDATE_PAGES,
                           max_chars=settings.news_expand_max_chars, max_media=settings.news_expand_max_media)
     # The common renderer deliberately falls back to an excerpt at its safety
     # limits. Candidate catch-up requires the full article: hold instead.
@@ -305,14 +309,14 @@ async def render_candidate_animated(fetcher, settings, source, row):
     from .news_animation import prepare
 
     pages = await render_candidate(fetcher, settings, source, row)
-    return await prepare(fetcher, pages, max_pages=settings.news_expand_max_pages)
+    return await prepare(fetcher, pages, max_pages=MAX_CANDIDATE_PAGES)
 
 
 async def send_candidate_once(session, settings, source, payload, *, files=None):
     """One guarded POST to the dedicated destination; never retries or logs secrets.
 
     Even a non-success response is held for review by the delivery coordinator.
-    The production path remains behind a hard release gate.
+    Production delivery requires explicit opt-in and a route-bound authoritative ledger.
     """
     import aiohttp
 

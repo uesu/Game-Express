@@ -504,12 +504,13 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
 `.github/dependabot.yml`, `.github/zizmor.yml`, `.gitignore`, `requirements.txt`, `ruff.toml`,
 `state/.gitkeep`) to `uesu/8mqzv4k2n7c`:
 
-- **Live state and inventory are protected:** `state/state.json`, the gated candidate ledger
+- **Live state and inventory are protected:** `state/state.json`, the candidate ledger
   `state/candidate_news.json`, and production's `variables and secrets.txt` are never created,
   overwritten, staged, or deleted by sync. The
   candidate ledger is not provisioned automatically; do not create or reset it during research.
-  Attended first-install initialization is implemented but not validated in production. Candidate
-  delivery is hard-gated off. The attended recovery workflow is copied by sync but is manual-only;
+  Attended first-install initialization and recovery have not yet been validated in production.
+  Candidate delivery requires explicit configuration and a route-bound ledger. The attended
+  recovery workflow is copied by sync but is manual-only;
   it requires matching primary authority, the dedicated destination and explicit operator review. Candidate checkpoint commits include a per-write random nonce;
   local competing-writer tests and a local monitor-state rebase test pass, but they do not prove
   real cross-repository failover or actual production recovery. The sync preflight runs the candidate
@@ -530,8 +531,29 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   initializing. Both primary and standby hold before discovery if a source record is missing or
   its route no longer matches. This is not a way to restore a lost ledger: force-pushed/unavailable history and other
   repositories cannot be detected. If there is any uncertainty, stop and investigate; if the push
-  outcome is unclear, inspect the authoritative remote before any retry. The hard release gate
-  remains closed. No live production initialization has been performed.
+  outcome is unclear, inspect the authoritative remote before any retry. No live production
+  initialization has been performed at the time of writing.
+- **Single-production activation order:** On `uesu/8mqzv4k2n7c`, first verify the three
+  intended Discord channels are distinct and that no previous candidate posts in them need
+  deduplication. If unsure, stop; an empty ledger cannot reconstruct old posts. In cron-job.org,
+  pause the Game-Express production job and wait for any active/queued monitor runs to finish.
+  In production GitHub Settings → Secrets and variables → Actions, add the three dedicated
+  candidate webhook **secrets** and the two authority **variables** listed in
+  [CONFIGURATION](CONFIGURATION.md); leave `NEWS_CANDIDATES_BACKFILL` unset. Never paste a
+  webhook URL into chat, a variable, a workflow input, or a repository file. In production
+  Actions → `Candidate news recovery (attended)` → Run workflow, choose branch `main`, mode
+  `initialize`, check `writers_paused`, enter `FIRST_INSTALL_BACKFILL` and run it once. `source`
+  is ignored in this mode. If it fails or the result is uncertain, inspect the authoritative
+  ledger before any retry. After a successful initialization, run the no-send `preview` for each
+  source while still paused and inspect holds. Then append `nte,endfield,silverpalace` to the
+  existing `NEWS_GAMES` variable (preserve existing keys), and set `NEWS_CANDIDATES_BACKFILL=1`
+  **last**. Resume the same cron job; do not add another scheduler. Watch the next production
+  Actions summaries and the three Discord channels. Backfill is oldest-first per source, at most
+  one article and three pages per source per run; same-day order for day-only feeds is a
+  deterministic ID tie-break, not proven publication order. On an ambiguous hold, pause the
+  scheduler and use the attended recovery procedure; do not reset the ledger or blindly retry.
+  First production initialization, previews, recovery and real-source delivery are unvalidated
+  until actually run; installing code or secrets alone does not prove them.
 - **No-send live-source preview:** after approved initialization, pause all schedulers/writers,
   select `preview` and a source in the same attended workflow, and attest that writers are paused.
   It checks the bound destination and existing ledger, fetches a fresh bounded official listing,
@@ -539,10 +561,11 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   Discord request and no ledger checkpoint. An in-flight page, changed partial payload, future day,
   route mismatch, unavailable media or failed Git verification holds. Preview does not prove
   Discord acceptance, rendering or upstream completeness. It shares the monitor concurrency group
-  and may take up to 15 minutes; pausing avoids delaying or replacing scheduled runs. The release
-  gate stays closed and the operation must not be confused with posting history.
+  and may take up to 15 minutes; pausing avoids delaying or replacing scheduled runs. The preview
+  must not be confused with posting history.
 - **Experimental candidate standby:** the shared-ledger path described in
-  [CONFIGURATION](CONFIGURATION.md) is opt-in and remains behind the release gate. It must use
+  [CONFIGURATION](CONFIGURATION.md) is opt-in and not needed for the current single-repository
+  installation. If separately approved, it must use
   the same authoritative branch, same dedicated destinations and a narrowly scoped credential;
   only attended first-install initialization establishes source routes. Existing peer-heartbeat logic decides
   whether a standby is active, and an unavailable peer leaves it passive. A stale checkout,
@@ -559,7 +582,7 @@ to synchronize the runtime subset (`gamexpress/`, `tests/`, `.github/scripts/`, 
   workflow shares the monitor concurrency group within this repository but cannot verify that
   outside writers are paused, and it never posts or resumes the scheduler. If the checkpoint
   outcome is unclear, inspect the authoritative branch before any retry. This workflow does not
-  change destination or unblock the release gate. Its real production use
+  change a destination or resume the scheduler. Its real production use
   and cross-repository operations remain unvalidated.
 - **Program announcement seeds are union-merged:** `config/program_announcements.json` preserves any
   tweet IDs discovered live by the production monitor while adding/updating entries from dev.
