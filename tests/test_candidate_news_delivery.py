@@ -42,6 +42,19 @@ def payload(cid):
     return news_payloads(game, item)[0]
 
 
+def test_long_comma_list_splits_without_loss_or_markdown_corruption():
+    from gamexpress.cards import _split_expanded_text
+
+    content = (r"171137\*\*\*\*\*\*0311553、" * 5000) + "end"
+    pieces = _split_expanded_text(content, 3000)
+    assert pieces and len(pieces) > 12
+    assert "".join(pieces) == content
+    assert all(len(piece) <= 3000 for piece in pieces)
+    assert _split_expanded_text("a" * 5000, 100) is None
+    assert _split_expanded_text("[" + content + "](https://example.test/)", 100) is None
+    assert _split_expanded_text("**" + content + "**", 100) is None
+
+
 class Storage:
     def __init__(self, fail_at=0):
         self.states, self.calls, self.fail_at = [], 0, fail_at

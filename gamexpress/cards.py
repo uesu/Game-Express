@@ -768,10 +768,27 @@ def _split_expanded_text(content: str, max_chars: int) -> list[str] | None:
                 out.append(line)
                 continue
             tokens = [tok for tok in re.findall(r"\S+\s*", line) if tok]
-            buf = ""
+            safe_tokens = []
             for tok in tokens:
-                if len(tok) > max_chars:
+                if len(tok) <= max_chars:
+                    safe_tokens.append(tok)
+                    continue
+                # Publisher lists can be one huge token of masked identifiers
+                # separated by ideographic commas. Split only at those separators,
+                # without inserting or dropping characters, and never split links
+                # or Markdown formatting. Unknown long tokens still fail closed.
+                if ("、" not in tok or any(mark in tok for mark in
+                        ("[", "]", "`", "**", "~~", "http://", "https://"))):
                     return None
+                segments = tok.split("、")
+                pieces = [part + "、" for part in segments[:-1]]
+                if segments[-1]:
+                    pieces.append(segments[-1])
+                if not pieces or any(len(part) > max_chars for part in pieces):
+                    return None
+                safe_tokens.extend(pieces)
+            buf = ""
+            for tok in safe_tokens:
                 cand = buf + tok
                 if len(cand) <= max_chars:
                     buf = cand

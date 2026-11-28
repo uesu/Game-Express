@@ -122,7 +122,11 @@ class CommentJournal:
 
 def settings_and_routes():
     webhook = os.environ.get("FEATURE3_TEST_WEBHOOK", "")
-    settings = load_settings({f"DISCORD_WEBHOOK_NEWS_{source.upper()}": webhook for source in SOURCES})
+    env = {f"DISCORD_WEBHOOK_NEWS_{source.upper()}": webhook for source in SOURCES}
+    # Private full-content test: larger articles are still bounded and paced;
+    # this setting does not alter the inactive production candidate path.
+    env["NEWS_EXPAND_MAX_PAGES"] = "120"
+    settings = load_settings(env)
     routes = {source: delivery.destination(settings, source) for source in SOURCES}
     if any(value is None for value in routes.values()):
         raise ValueError("private test destination unavailable")
